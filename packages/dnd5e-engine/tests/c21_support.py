@@ -1,15 +1,20 @@
-"""Seeded grid combats shared by the C21a tests: the concentration anchor,
-Magic Weapon, Spiritual Weapon, Wild Shape and Polymorph."""
+"""Seeded grid combats shared by the C21 tests: the concentration anchor,
+Magic Weapon, Spiritual Weapon, Wild Shape, Polymorph and Summon Dragon."""
 
 from __future__ import annotations
 
 import asyncio
 from typing import Any
 
-from dnd5e_engine import CombatHandle, PlayerIntent
+from dnd5e_engine import ActiveEffect, CombatHandle, PlayerIntent
+from dnd5e_engine.activities.conjuration import StatBlockMagnitudes
+from dnd5e_engine.events import CombatantJoined
 from dnd5e_engine.orchestrator import (
+    _anchor_identity,
     _get_live,
+    _insert_into_roster,
     _LiveCombat,
+    _Summon,
     advance_monster_turn,
     start_combat,
     submit_player_intent,
@@ -117,3 +122,85 @@ def combatant(live: _LiveCombat, entity_id: str = "char:hero") -> Combatant:
 
 def events[T](live: _LiveCombat, kind: type[T]) -> list[T]:
     return [e for e in live.event_log if isinstance(e, kind)]
+
+
+# ── C21b: roster summons ─────────────────────────────────────────────────────
+
+
+def summoner(entity_id: str = "char:summoner", **fields: Any) -> PartyMemberSpec:
+    """A Wizard 9 with INT 18 at cell 0,0 who acts first: spell attack +8
+    (PB 4 + INT 4), spellcasting modifier +4. Knows Summon Dragon and Fog Cloud
+    (a rider-less concentration spell); two level-5 slots and one level-1 slot."""
+    base: dict[str, Any] = {
+        "class_slug": "wizard",
+        "character_level": 9,
+        "intelligence": 18,
+        "spells_known": ["summon-dragon", "fog-cloud"],
+        "spell_slots": {1: 1, 5: 2},
+    }
+    return pc(entity_id, **(base | fields))
+
+
+def joined(live: _LiveCombat, owner_id: str) -> list[CombatantJoined]:
+    """The ``CombatantJoined`` events of the summons ``owner_id`` made, in order."""
+    return [e for e in events(live, CombatantJoined) if e.origin_caster_id == owner_id]
+
+
+def roster(live: _LiveCombat) -> list[str]:
+    """The initiative order as entity ids."""
+    return [c.entity_id for c in live.initiative]
+
+
+def anchor_effect(owner_id: str, spell_id: str = "summon-dragon") -> ActiveEffect:
+    """The concentration anchor a cast of ``spell_id`` leaves on ``owner_id``,
+    for seeding through ``start(..., active_effects=[...])``."""
+    return ActiveEffect(
+        id=f"effect:{spell_id}",
+        name=spell_id.replace("-", " ").title(),
+        origin=f"cast:{spell_id}:{owner_id}",
+        target_id=owner_id,
+        flags={"concentration": True, "concentration_anchor": True},
+    )
+
+
+def seat_summon(
+    live: _LiveCombat, owner_id: str, *, zone_id: str, hp: int = 50, serial: int = 1
+) -> str:
+    """Seat a level-5 Draconic Spirit for ``owner_id`` through the roster
+    primitives, as a cast would — right after its owner, anchored to the
+    owner's Summon Dragon concentration — and return its id. For tests that
+    need a summon but no cast (seed the anchor with ``anchor_effect``)."""
+    owner = combatant(live, owner_id)
+    entity_id = f"summon:{owner_id}:draconic-spirit:{serial}"
+    spirit = Combatant(
+        entity_id=entity_id,
+        entity_type="Monster",
+        name="Draconic Spirit",
+        initiative=owner.initiative,
+        hp_current=hp,
+        hp_max=hp,
+        ac=19,
+        strength=19,
+        dexterity=14,
+        constitution=17,
+        wisdom=14,
+        charisma=14,
+        creature_type="dragon",
+    )
+    index = [c.entity_id for c in live.initiative].index(owner_id) + 1
+    _insert_into_roster(live, spirit, index, zone_id=zone_id)
+    live.monster_slug_by_entity[entity_id] = "draconic-spirit"
+    live.summons[entity_id] = _Summon(
+        entity_id=entity_id,
+        owner_id=owner_id,
+        spell_id="summon-dragon",
+        stat_block_slug="draconic-spirit",
+        slot_level=5,
+        anchor=_anchor_identity("summon-dragon", owner_id),
+        magnitudes=StatBlockMagnitudes(
+            ability_scores={"str": 19, "dex": 14, "con": 17, "int": 10, "wis": 14, "cha": 14},
+            proficiency_bonus=4,
+        ),
+        attacks_per_action=2,
+    )
+    return entity_id

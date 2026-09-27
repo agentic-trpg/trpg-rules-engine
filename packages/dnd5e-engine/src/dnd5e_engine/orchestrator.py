@@ -98,13 +98,19 @@ from dnd5e_engine.activities.conjuration import (
     CONJURATION_ALLOWLIST,
     CONSTRUCTS,
     ENCHANTED_WEAPON_FLAG,
+    SUMMONS,
     TRANSFORM_FORM_FLAG,
     TRANSFORM_RIDERS,
     ConjurationCarrier,
     StatBlockMagnitudes,
+    SummonRequest,
+    SummonRollData,
     TransformSource,
     construct_attack_activity,
     enchant_weapon,
+    evaluate_summon_formula,
+    summon_attack_count,
+    summon_magnitudes,
     uses_summon_roll_data,
     wild_shape_tier,
 )
@@ -133,7 +139,11 @@ from dnd5e_engine.events import (
     AttackFailed,
     AttackRolled,
     CastFailed,
+    CastFailedReason,
     CheckRolled,
+    CombatantJoined,
+    CombatantLeft,
+    CombatantLeftReason,
     CombatantMoved,
     CombatEnded,
     CombatEvent,
@@ -191,7 +201,7 @@ from dnd5e_engine.rules.conditions import (
 )
 from dnd5e_engine.rules.dice import ability_modifier
 from dnd5e_engine.rules.uses import UsesRollData, evaluate_uses_formula
-from dnd5e_engine.spatial import GridTopology, SpatialTopology, parse_cell
+from dnd5e_engine.spatial import GridTopology, SpatialTopology, cell_id, parse_cell
 from dnd5e_engine.specs import (
     EncounterMemberSpec,
     GridScene,
@@ -919,7 +929,7 @@ def _run_monster_turn_start(live: _LiveCombat, current: Combatant) -> None:
     """SRD 5.2 "at the start of each of its turns" monster mechanics.
 
     Runs once per driven monster turn (idempotent on
-    ``(round_number, current_turn_index)``): legendary-action pool reset,
+    ``(round_number, entity_id)``): legendary-action pool reset,
     recharge rolls, then regeneration — in that fixed order. Lives here
     rather than as a ``turn_lifecycle`` ``turn_start`` hook because the
     engine emits ``TurnStarted`` at the PREVIOUS turn's end, before the
@@ -931,7 +941,7 @@ def _run_monster_turn_start(live: _LiveCombat, current: Combatant) -> None:
     at all: nothing runs, no recharge die is drawn and no ``RechargeRolled``
     is emitted for a corpse.
     """
-    key = (live.round_number, live.current_turn_index)
+    key = (live.round_number, current.entity_id)
     if live.monster_turn_start_done == key:
         return
     live.monster_turn_start_done = key
@@ -1179,12 +1189,28 @@ def _target_distance_map(
 
 def _side_of(live: _LiveCombat, entity_id: str) -> set[str] | None:
     """The side (``live.party_ids`` or ``live.encounter_ids``) ``entity_id``
-    belongs to, or ``None`` for an unregistered id."""
+    belongs to, or ``None`` for an unregistered id. A summon fights on its
+    owner's side without joining its side set (C21). SRD 5.2 Summon Dragon:
+    "The creature is an ally to you and your allies."
+    """
+    summon = live.summons.get(entity_id)
+    if summon is not None:
+        return _side_of(live, summon.owner_id)
     if entity_id in live.party_ids:
         return live.party_ids
     if entity_id in live.encounter_ids:
         return live.encounter_ids
     return None
+
+
+def _allied_ids(live: _LiveCombat, entity_id: str) -> set[str]:
+    """Every combatant in the initiative order on ``entity_id``'s side, itself
+    included: its side set's members and the summons they own (C21). Empty
+    for an unregistered id. Without summons it is exactly the side set."""
+    side = _side_of(live, entity_id)
+    if side is None:
+        return set()
+    return {c.entity_id for c in live.initiative if _side_of(live, c.entity_id) is side}
 
 
 def _is_enemy(live: _LiveCombat, entity_id: str, other_id: str) -> bool:
@@ -1201,22 +1227,23 @@ def _target_help_advantage_map(
     """SRD 5.2 §Actions in Combat — Help, Assist an Attack Roll (C14 Task 4):
     per-TARGET, does an outstanding ``live.help_grants`` entry against this
     target belong to an ALLY of ``attacker_id`` (same side: both in
-    ``party_ids`` or both in ``encounter_ids``)? ``target == attacker_id``
+    ``party_ids`` or both in ``encounter_ids``, or a summon of that side —
+    ``_allied_ids``)? ``target == attacker_id``
     never qualifies — Help assists an ALLY's attack roll, not the
     helped-against target's own. Threaded into
     ``ActivityResolutionContext.target_help_advantage``; the one-use pop
     happens after resolution (``_pop_help_grant``) — this is a read-only
     projection.
     """
-    attacker_side = _side_of(live, attacker_id)
-    if attacker_side is None:
+    allies = _allied_ids(live, attacker_id)
+    if not allies:
         return {}
     out: dict[str, bool] = {}
     for target in targets:
         if target.entity_id == attacker_id:
             continue
         helpers = live.help_grants.get(target.entity_id)
-        if helpers and any(h in attacker_side for h in helpers):
+        if helpers and any(h in allies for h in helpers):
             out[target.entity_id] = True
     return out
 
@@ -1239,8 +1266,8 @@ def _pop_help_grant(
     roll" (singular, unconditional), not "the next attack roll that
     resolves with advantage".
     """
-    attacker_side = _side_of(live, attacker_id)
-    if attacker_side is None:
+    allies = _allied_ids(live, attacker_id)
+    if not allies:
         return
     recent = live.event_log[pre_event_count:]
     for target in targets:
@@ -1257,7 +1284,7 @@ def _pop_help_grant(
         if not fired:
             continue
         for idx, helper_id in enumerate(helpers):
-            if helper_id in attacker_side:
+            if helper_id in allies:
                 del helpers[idx]
                 break
         if not helpers:
@@ -1422,11 +1449,11 @@ def _cleave_candidate(
     """
     if weapon is None or weapon.mastery != "cleave" or not targets:
         return None
-    attacker_side = _side_of(live, attacker.entity_id)
+    allies = _allied_ids(live, attacker.entity_id)
     attacker_zone = live.actor_zone.get(attacker.entity_id)
     first = targets[0]
     first_zone = live.actor_zone.get(first.entity_id)
-    if attacker_side is None or attacker_zone is None or first_zone is None:
+    if not allies or attacker_zone is None or first_zone is None:
         return None
     reach = 10 if WeaponProperty.REACH in weapon.properties else 5
     # F4 — exclude EVERY primary target's id, not just ``first``'s: a
@@ -1438,7 +1465,7 @@ def _cleave_candidate(
     for other in live.initiative:
         if (
             other.entity_id in primary_target_ids
-            or other.entity_id in attacker_side
+            or other.entity_id in allies
             or other.entity_id in live.dead_ids
             or not other.is_alive
         ):
@@ -1511,18 +1538,16 @@ def _sneak_ally_adjacent_map(
 
     A new CONSUMER of the ``spatial.py`` distance seam (``within_range`` at 5
     ft), NOT a new spatial primitive. "Ally" = a living combatant on the
-    caster's own side (party vs encounter) other than the caster. The
+    caster's own side (party vs encounter; a summon is on its owner's —
+    ``_allied_ids``) other than the caster. The
     Incapacitated read uses the SRD condition-implication chain (Paralyzed /
     Stunned / Petrified / Unconscious all imply Incapacitated). Threaded into
     ``ActivityResolutionContext.sneak_attack_ally_adjacent`` so the pure
     resolver never touches the spatial seam. Absent zone data for the caster's
     side, a target, or every ally contributes no entry (⇒ no adjacent ally).
     """
-    if caster.entity_id in live.party_ids:
-        side = live.party_ids
-    elif caster.entity_id in live.encounter_ids:
-        side = live.encounter_ids
-    else:
+    side = _allied_ids(live, caster.entity_id)
+    if not side:
         return {}
     allies = [
         c
@@ -1552,8 +1577,8 @@ def _pack_tactics_map(
 ) -> dict[str, bool]:
     """SRD 5.2 stat-block trait "Pack Tactics" (R8) — per target, is at
     least one of the ATTACKER's allies (any OTHER living combatant on its
-    own side — the encounter for a monster attacker) within 5 ft of that
-    target and not Incapacitated?
+    own side — the encounter for a monster attacker, a summon on its
+    owner's) within 5 ft of that target and not Incapacitated?
 
     Mirrors ``_sneak_ally_adjacent_map``'s geometry (same spatial-seam
     consumer shape) with two differences per R8: the ally gate is
@@ -1568,11 +1593,8 @@ def _pack_tactics_map(
     attacker's side, a target, or every ally contributes no entry (⇒ no
     qualifying ally).
     """
-    if attacker.entity_id in live.party_ids:
-        side = live.party_ids
-    elif attacker.entity_id in live.encounter_ids:
-        side = live.encounter_ids
-    else:
+    side = _allied_ids(live, attacker.entity_id)
+    if not side:
         return {}
     allies = [
         c
@@ -1610,12 +1632,19 @@ def _special_sense_reaches(live: _LiveCombat, viewer: Combatant, target: Combata
     line of sight is re-checked by ``SpatialTopology.can_see``. Untracked
     positions ⇒ False. Darkvision is NOT a special sense here (it only
     re-grades light — SRD 5.2 Darkvision)."""
-    viewer_zone = live.actor_zone.get(viewer.entity_id)
     target_zone = live.actor_zone.get(target.entity_id)
-    if viewer_zone is None or target_zone is None:
+    return target_zone is not None and _special_sense_reaches_zone(live, viewer, target_zone)
+
+
+def _special_sense_reaches_zone(live: _LiveCombat, viewer: Combatant, zone: str) -> bool:
+    """``_special_sense_reaches`` for a space rather than a creature: the
+    viewer's Blindsight or Truesight range reaches ``zone``. Untracked viewer
+    position ⇒ False."""
+    viewer_zone = live.actor_zone.get(viewer.entity_id)
+    if viewer_zone is None:
         return False
     for range_ft in (viewer.senses.blindsight, viewer.senses.truesight):
-        if range_ft and live.topology.within_range(viewer_zone, target_zone, range_ft):
+        if range_ft and live.topology.within_range(viewer_zone, zone, range_ft):
             return True
     return False
 
@@ -1766,9 +1795,9 @@ def _hostile_adjacent_to_attacker(live: _LiveCombat, caster: Combatant) -> bool:
     the roll if you are within 5 feet of an enemy who can see you and
     doesn't have the Incapacitated condition."
 
-    Scans ``live.initiative`` for a LIVING hostile (opposite side of
-    ``caster``, via ``party_ids``/``encounter_ids``) within 5 ft of the
-    ATTACKER's own zone. The attack's TARGET is never special-cased — if it
+    Scans ``live.initiative`` for a LIVING hostile (any combatant outside
+    ``_allied_ids(caster)``, so an allied summon never counts) within 5 ft of
+    the ATTACKER's own zone. The attack's TARGET is never special-cased — if it
     happens to be adjacent it's simply one more entry in ``live.initiative``
     and counts like any other hostile (SRD: "an enemy", not "an enemy other
     than your target"). Excludes an Incapacitated hostile
@@ -1781,15 +1810,15 @@ def _hostile_adjacent_to_attacker(live: _LiveCombat, caster: Combatant) -> bool:
     source without importing the spatial seam. An unregistered side or an
     untracked attacker position yields ``False``.
     """
-    attacker_side = _side_of(live, caster.entity_id)
-    if attacker_side is None:
+    allies = _allied_ids(live, caster.entity_id)
+    if not allies:
         return False
     attacker_zone = live.actor_zone.get(caster.entity_id)
     if attacker_zone is None:
         return False
     for hostile in live.initiative:
         if (
-            hostile.entity_id in attacker_side
+            hostile.entity_id in allies
             or hostile.entity_id in live.dead_ids
             or not hostile.is_alive
         ):
@@ -2044,28 +2073,31 @@ def _walk_zone_path(live: _LiveCombat, mover_id: str, path: Sequence[str]) -> No
 
 
 def _execute_flee_retreat(
-    live: _LiveCombat, monster: Combatant, alive_pcs: Sequence[Combatant]
+    live: _LiveCombat, monster: Combatant, enemies: Sequence[Combatant]
 ) -> None:
     """A fleeing monster spends movement increasing distance from its threat.
 
     Monster-AI plumbing (DM-adjudicated, not codified SRD text): the flee gate
     ``_monster_is_fleeing`` decides the monster *wants* to disengage; this gives
-    that decision teeth. The threat is the nearest alive PC by topology distance;
-    the destination is ``_plan_flee_destination``'s farthest-reachable zone. When
-    no such zone exists (already cornered, no budget, or grid backend) the monster
-    simply holds — the same no-move it did before, now via a real evaluation.
+    that decision teeth. The threat is the nearest living enemy (a summon
+    included) by topology distance; the destination is
+    ``_plan_flee_destination``'s farthest-reachable zone. When no such zone
+    exists (already cornered, no budget, or grid backend) the monster simply
+    holds — the same no-move it did before, now via a real evaluation.
     """
     start_zone = live.actor_zone.get(monster.entity_id)
-    if start_zone is None or not alive_pcs:
+    if start_zone is None or not enemies:
         return
     threats: list[tuple[int, str, str]] = []
-    for pc in alive_pcs:
-        pc_zone = live.actor_zone.get(pc.entity_id)
-        if pc_zone is None:
+    for enemy in enemies:
+        enemy_zone = live.actor_zone.get(enemy.entity_id)
+        if enemy_zone is None:
             continue
-        dist = _path_total_distance(live.topology, live.topology.shortest_path(start_zone, pc_zone))
+        dist = _path_total_distance(
+            live.topology, live.topology.shortest_path(start_zone, enemy_zone)
+        )
         if dist is not None:
-            threats.append((dist, pc.entity_id, pc_zone))
+            threats.append((dist, enemy.entity_id, enemy_zone))
     if not threats:
         return
     threats.sort(key=lambda t: (t[0], t[1]))
@@ -2079,7 +2111,7 @@ def _execute_flee_retreat(
 
 
 def _apply_monster_flee_stance(
-    live: _LiveCombat, current: Combatant, alive_pcs: Sequence[Combatant]
+    live: _LiveCombat, current: Combatant, enemies: Sequence[Combatant]
 ) -> Combatant:
     """Persist ``Combatant.has_fled`` across turns (C18 Task 9, R9).
 
@@ -2102,7 +2134,7 @@ def _apply_monster_flee_stance(
         return current
     fleeing = _monster_is_fleeing(current)
     if fleeing:
-        _execute_flee_retreat(live, current, alive_pcs)
+        _execute_flee_retreat(live, current, enemies)
         current = next(c for c in live.initiative if c.entity_id == current.entity_id)
     for idx, c in enumerate(live.initiative):
         if c.entity_id == current.entity_id:
@@ -2426,26 +2458,28 @@ def _mark_monster_action_used(live: _LiveCombat, current: Combatant, action: Mon
 
 
 def _select_monster_targets(live: _LiveCombat, current: Combatant) -> list[Combatant]:
-    """Alive-PC target pool for ``current``'s attack/legendary action: every
-    living party member, minus a charmer (SRD 5.2 Charmed — "You can't
-    attack the charmer"). Extracted from the main-turn targeting block so
-    a legendary action (Task 6) can share it byte-for-byte.
+    """Target pool for ``current``'s attack/legendary action: every living
+    enemy of ``current`` — the party's members and the summons they own
+    (C21: "The creature is an ally to you and your allies") — minus a
+    charmer (SRD 5.2 Charmed — "You can't attack the charmer"). Extracted
+    from the main-turn targeting block so a legendary action can share it
+    byte-for-byte.
     """
-    alive_pcs = [
+    enemies = [
         c
         for c in live.initiative
-        if c.entity_id in live.party_ids and c.is_alive and c.hp_current > 0
+        if _is_enemy(live, current.entity_id, c.entity_id) and c.is_alive and c.hp_current > 0
     ]
     charmer_id = _condition_source_entity(live, current, "charmed")
     if charmer_id is not None:
-        alive_pcs = [c for c in alive_pcs if c.entity_id != charmer_id]
-    return alive_pcs
+        enemies = [c for c in enemies if c.entity_id != charmer_id]
+    return enemies
 
 
-def _lowest_hp_target(pcs: list[Combatant]) -> Combatant | None:
-    """SRD 5.2 monster gambit targeting — lowest current HP among ``pcs``,
+def _lowest_hp_target(enemies: list[Combatant]) -> Combatant | None:
+    """SRD 5.2 monster gambit targeting — lowest current HP among ``enemies``,
     or ``None`` when the list is empty."""
-    return min(pcs, key=lambda c: c.hp_current) if pcs else None
+    return min(enemies, key=lambda c: c.hp_current) if enemies else None
 
 
 def _resolve_monster_activities(
@@ -3152,16 +3186,25 @@ class _LiveCombat:
         default_factory=dict
     )
     # C18 — idempotency guard for ``_run_monster_turn_start``: the
-    # ``(round_number, current_turn_index)`` pair the turn-start mechanics
-    # (legendary reset, recharge rolls, regeneration) last ran for. ``None``
-    # before the first driven monster turn.
-    monster_turn_start_done: tuple[int, int] | None = None
+    # ``(round_number, entity_id)`` pair the turn-start mechanics (legendary
+    # reset, recharge rolls, regeneration) last ran for. ``None`` before the
+    # first driven monster turn. Keyed by the creature, not its slot: a
+    # creature that leaves the initiative order mid-round (C21) shifts every
+    # later slot back by one, and a slot key would then skip the next
+    # monster's turn start or run one twice.
+    monster_turn_start_done: tuple[int, str] | None = None
     # C18 §Monster action economy — legendary actions (Task 6). The
     # ``(round_number, actor_id)`` of the LAST turn to end (recorded in
     # ``_end_turn_and_advance`` before the round/turn-index bump), read by
     # ``_eligible_legendary_actor``'s "immediately after ANOTHER creature's
     # turn" gate. ``None`` before any turn has ended.
     last_ended_turn: tuple[int, str] | None = None
+    # The current actor that left the initiative order while an intent or a
+    # legendary action was resolving (C21). The turn passes on only once that
+    # resolution completes (``_hand_off_departed_turn``), so every event it
+    # emits precedes the next ``TurnStarted``. While it is set no turn is
+    # running: the pointer names the next creature to open.
+    departed_actor_id: str | None = None
     # C18 §Monster action economy — one-shot guard for "only one of these
     # actions can be taken at a time": every ``(round, ended_actor_id,
     # monster_id)`` window that has already spent a legendary action.
@@ -3208,6 +3251,14 @@ class _LiveCombat:
     # C21 — live transformations (SRD 5.2 Wild Shape, Polymorph) keyed by the
     # transformed creature's entity id: at most one per creature.
     transforms: dict[str, _Transform] = field(default_factory=dict)
+    # C21 — roster summons (SRD 5.2 Summon Dragon's Draconic Spirit) keyed by
+    # entity id. Never in ``party_ids`` / ``encounter_ids``: a summon's
+    # allegiance is its owner's (``_side_of``), so every reader of the side
+    # sets as "the PCs" / "the foes" stays correct.
+    summons: dict[str, _Summon] = field(default_factory=dict)
+    # C21 — roster summons each owner has made: never reset and never purged,
+    # so a summon id is never reused.
+    summon_counts: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -3261,6 +3312,26 @@ class _Transform:
     form_proficiency_bonus: int
     attacks_per_action: int
     clears_temp_hp_on_end: bool
+
+
+@dataclass
+class _Summon:
+    """One summoned creature in the initiative order (C21): SRD 5.2 Summon
+    Dragon's Draconic Spirit. ``anchor`` is its caster's concentration-anchor
+    ``(target_id, effect_id, origin)`` identity: the creature disappears when
+    that effect expires ("when the spell ends"). ``magnitudes`` and
+    ``attacks_per_action`` are fixed when it is seated, from the slot level
+    and its caster ("Use the spell slot's level for the spell's level in the
+    stat block")."""
+
+    entity_id: str
+    owner_id: str
+    spell_id: str
+    stat_block_slug: str
+    slot_level: int
+    anchor: tuple[str, str, str]
+    magnitudes: StatBlockMagnitudes
+    attacks_per_action: int
 
 
 _REGISTRY: dict[str, _LiveCombat] = {}
@@ -4253,7 +4324,7 @@ def _handle_hide(live: _LiveCombat, current: Combatant, intent: PlayerIntent) ->
     # hider's cell already breaks every enemy's line; the conjunct bites only
     # for a hider relying on obscurement/darkness alone.
     if cover not in ("three_quarters", "total"):
-        hider_side = _side_of(live, actor_id) or set()
+        hider_side = _allied_ids(live, actor_id)
         for hostile in live.initiative:
             if (
                 hostile.entity_id in hider_side
@@ -4926,7 +4997,12 @@ def _emit_apply_damage(live: _LiveCombat, event: DamageApplied) -> None:
         if not succeeded:
             _drop_concentration(live, event.target_id)
     if new_hp <= 0 and event.target_id not in live.dead_ids:
-        if event.target_id in live.party_ids:
+        if event.target_id in live.summons:
+            # SRD 5.2 Summon Dragon: "The creature disappears when it drops to
+            # 0 Hit Points" — no death, death save or XP. Its caster keeps
+            # concentrating (the SRD is silent; a host can drop it).
+            _leave_roster(live, event.target_id, "zero_hp")
+        elif event.target_id in live.party_ids:
             _apply_zero_hp_to_character(live, event, hp_before=tracked, damage_after_temp=remaining)
         else:
             # SRD 5.2 "Monster Death" — a monster dies the instant it drops to
@@ -6427,6 +6503,7 @@ def _fold_resolution_outcome(
     _end_superseded_enchantments(live, caster, actx, pre_event_count)
     _apply_concentration_anchor(live, caster, spell, pre_event_count)
     _apply_construct_requests(live, caster, actx)
+    _apply_summon_requests(live, caster, actx)
     _writeback_concentration(live, caster, pre_event_count)
     _record_effect_lifecycle_links(
         live, caster, pre_event_count, concentration_max_rounds=concentration_max_rounds
@@ -7665,10 +7742,14 @@ def _attacks_per_action(live: _LiveCombat, current: Combatant) -> int:
     """The swings one Attack action gives ``current``: its form's count while
     it is transformed (C21 — the form's Multiattack, or for Wild Shape the
     higher of that and the creature's own Extra Attack, as ``_apply_transform``
-    fixed it), else its own (``_own_attacks_per_action``)."""
+    fixed it), a summon's Multiattack count at its spell's level (fixed when it
+    was seated), else its own (``_own_attacks_per_action``)."""
     transform = _transform_of(live, current.entity_id)
     if transform is not None:
         return transform.attacks_per_action
+    summon = live.summons.get(current.entity_id)
+    if summon is not None:
+        return summon.attacks_per_action
     return _own_attacks_per_action(current)
 
 
@@ -8472,14 +8553,31 @@ def _begin_turn(live: _LiveCombat, *, new_round: bool) -> None:
     _maybe_roll_death_save(live)
 
 
+def _open_turn_at_current_index(live: _LiveCombat) -> None:
+    """Open the turn ``live.current_turn_index`` names, wrapping to a new
+    round when the index has run past the last slot.
+
+    Shared by ``_end_turn_and_advance`` (after the ending actor's turn-end
+    phase) and ``_hand_off_departed_turn`` (a current actor that left the
+    initiative order, whose removal already moved the pointer on, C21), so
+    neither path skips the next creature's turn.
+    """
+    new_round = live.current_turn_index >= len(live.initiative)
+    if new_round:
+        live.current_turn_index = 0
+        live.round_number += 1
+    _begin_turn(live, new_round=new_round)
+
+
 def _end_turn_and_advance(live: _LiveCombat, actor_id: str) -> None:
     """SRD §Action Economy — end ``actor_id``'s turn and start the next.
 
     The ONE turn-advance implementation in the engine: ``submit_player_intent``
     (both the spell-slot reject paths and the normal post-resolution path) and
-    ``advance_monster_turn`` all route through here, and ``start_combat`` runs
-    the second half via ``_begin_turn``. Before F3a each of those three sites
-    carried its own copy of the emit-and-wrap block.
+    ``advance_monster_turn`` all route through here, ``start_combat`` runs
+    the second half via ``_begin_turn``, and ``_hand_off_departed_turn``
+    reuses both halves for a creature that left mid-turn (C21). Before F3a
+    each of those three sites carried its own copy of the emit-and-wrap block.
 
     Event order at the boundary is fixed and pinned by
     ``tests/test_turn_lifecycle.py``::
@@ -8496,7 +8594,23 @@ def _end_turn_and_advance(live: _LiveCombat, actor_id: str) -> None:
     hook rather than a call at the intent sites — so it fires exactly once per
     turn end and never on the bonus-action path, which returns before reaching
     here.
+
+    A creature that left the initiative order during its own turn (C21) is
+    no longer in it: its removal already moved the pointer to the next
+    creature, so ending its turn is the pending hand-off
+    (``_hand_off_departed_turn``), done once.
     """
+    if _find_combatant(live, actor_id) is None:
+        _hand_off_departed_turn(live)
+        return
+    _close_turn(live, actor_id)
+    live.current_turn_index += 1
+    _open_turn_at_current_index(live)
+
+
+def _close_turn(live: _LiveCombat, actor_id: str) -> None:
+    """The first half of the turn boundary: ``actor_id``'s turn-end phase and
+    hooks, ``TurnEnded``, and the legendary-action window after it."""
     _emit(
         live,
         TurnPhase(actor_id=actor_id, phase="turn_end", round_number=live.round_number),
@@ -8504,15 +8618,43 @@ def _end_turn_and_advance(live: _LiveCombat, actor_id: str) -> None:
     run_turn_end(live, actor_id)
     _emit(live, TurnEnded(actor_id=actor_id))
     # C18 §Monster action economy — record the window a legendary action may
-    # be taken in, BEFORE the round/turn-index bump below moves
+    # be taken in, BEFORE the caller's round/turn-index bump moves
     # ``live.round_number`` past the round this turn just ended in.
     live.last_ended_turn = (live.round_number, actor_id)
-    live.current_turn_index += 1
-    new_round = live.current_turn_index >= len(live.initiative)
-    if new_round:
-        live.current_turn_index = 0
-        live.round_number += 1
-    _begin_turn(live, new_round=new_round)
+
+
+def _hand_off_departed_turn(live: _LiveCombat, *, turn_began: bool = True) -> None:
+    """Open the next creature's turn after the current actor left the
+    initiative order (C21), once the intent or legendary action that removed
+    it has resolved, so all of that resolution's events precede the next
+    ``TurnStarted``. Its removal already moved the pointer to the next
+    creature, so the pointer is not bumped. A no-op when nothing is pending.
+
+    A creature that left during its own intent had a turn, and it ends as any
+    turn does — the ``turn_end`` phase and hooks, ``TurnEnded``, and the
+    window SRD 5.2 Legendary Actions open "immediately after another
+    creature's turn". ``turn_began=False`` is a legendary action's removal:
+    taken in the window after the previous creature's turn, before this one
+    acted, so the departed creature had no turn to end and opens no window.
+    """
+    departed = live.departed_actor_id
+    if departed is None:
+        return
+    if turn_began:
+        _close_turn(live, departed)
+    live.departed_actor_id = None
+    _open_turn_at_current_index(live)
+
+
+def _keep_turn(live: _LiveCombat) -> None:
+    """The tail of an intent that keeps its actor's turn: roll the actor's
+    pending death save — unless the actor left the initiative order during
+    the intent, whose turn is then handed on instead (the pointer already
+    names the next creature, whose own turn start rolls its death save)."""
+    if live.departed_actor_id is not None:
+        _hand_off_departed_turn(live)
+        return
+    _maybe_roll_death_save(live)
 
 
 def _end_action(live: _LiveCombat, actor_id: str, intent: PlayerIntent) -> None:
@@ -8525,6 +8667,147 @@ def _end_action(live: _LiveCombat, actor_id: str, intent: PlayerIntent) -> None:
         _maybe_roll_death_save(live)
         return
     _end_turn_and_advance(live, actor_id)
+
+
+def _insert_into_roster(
+    live: _LiveCombat, combatant: Combatant, index: int, *, zone_id: str
+) -> None:
+    """Seat ``combatant`` at ``index`` of the initiative order (C21).
+
+    A positional insert, never a re-sort: SRD 5.2 Summon Dragon, "the
+    creature shares your Initiative count, but it takes its turn immediately
+    after yours". An insert at or before the current slot moves the pointer
+    on by one, so the creature whose turn it is keeps it. Registers the
+    creature's zone and tracked Hit Points; emits nothing (the caller emits
+    ``CombatantJoined`` with the seat's own fields).
+    """
+    live.initiative.insert(index, combatant)
+    if index <= live.current_turn_index:
+        live.current_turn_index += 1
+    live.actor_zone[combatant.entity_id] = zone_id
+    live.tracked_hp[combatant.entity_id] = combatant.hp_current
+
+
+def _purge_entity_state(live: _LiveCombat, entity_id: str) -> None:
+    """Drop every trace of a creature that left the initiative order (C21):
+    its own per-entity state, the marks and grants it holds or sourced, and
+    the effect identities that target it.
+
+    Another caster's concentration on it keeps running (its
+    ``concentration_chain`` entry is kept): SRD 5.2 is silent on a spell whose
+    target vanishes, so when that concentration ends its cascade still runs
+    and may name the departed id. Its own chain is only dropped here: its
+    concentration must already have ended through ``_drop_concentration``
+    (``_leave_roster`` runs it first), or the effects it maintained on other
+    creatures would outlive it with nothing left to end them.
+    """
+    per_entity: tuple[dict[str, Any], ...] = (
+        live.actor_zone,
+        live.monster_slug_by_entity,
+        live.xp_value_by_entity,
+        live.tracked_hp,
+        live.tracked_temp_hp,
+        live.undead_fortitude_holds,
+        live.active_conditions,
+        live.active_effects,
+        live.expended_resources,
+        live.spell_slots_by_entity,
+        live.pact_slots_by_entity,
+        live.spells_known_by_entity,
+        live.custom_counters_by_entity,
+        live.concentration_chain,
+        live.concentration_rounds_remaining,
+        live.reaction_effects_pending_expiry,
+        live.help_grants,
+        live.vex_grants,
+        live.sap_marks,
+        live.slow_marks,
+        live.monster_action_uses_by_entity,
+        live.legendary_resistance_armed,
+        live.transforms,
+        live.summons,
+    )
+    for state in per_entity:
+        state.pop(entity_id, None)
+    live.hidden_entities.discard(entity_id)
+    live.rage_bonus_extensions.discard(entity_id)
+    by_identity: tuple[dict[tuple[str, str, str], Any], ...] = (
+        live.conditions_by_effect,
+        live.repeat_save_on_turn_end,
+    )
+    for identities in by_identity:
+        for identity in [key for key in identities if key[0] == entity_id]:
+            del identities[identity]
+    live.pending_reactions[:] = [r for r in live.pending_reactions if r.owner_id != entity_id]
+    for construct_id in [k for k, c in live.constructs.items() if c.owner_id == entity_id]:
+        del live.constructs[construct_id]
+    _purge_references_to(live, entity_id)
+
+
+def _purge_references_to(live: _LiveCombat, entity_id: str) -> None:
+    """Drop ``entity_id`` where it appears inside another creature's entry: a
+    Help grant it gave, a Vex grant against it, a Sap mark it sourced, a Slow
+    mark it sourced. An entry left empty goes with it."""
+    for target in list(live.help_grants):
+        helpers = [h for h in live.help_grants[target] if h != entity_id]
+        if helpers:
+            live.help_grants[target] = helpers
+        else:
+            del live.help_grants[target]
+    for attacker in list(live.vex_grants):
+        live.vex_grants[attacker].pop(entity_id, None)
+        if not live.vex_grants[attacker]:
+            del live.vex_grants[attacker]
+    for sapped in [s for s, source in live.sap_marks.items() if source == entity_id]:
+        del live.sap_marks[sapped]
+    for slowed in list(live.slow_marks):
+        live.slow_marks[slowed].discard(entity_id)
+        if not live.slow_marks[slowed]:
+            del live.slow_marks[slowed]
+
+
+def _remove_from_roster(live: _LiveCombat, entity_id: str) -> bool:
+    """Splice ``entity_id`` out of the initiative order and purge its state
+    (C21); return whether it was the current actor.
+
+    A removal before the current slot moves the pointer back by one, so the
+    current actor keeps its turn. Removing the current actor leaves the
+    pointer where it is: that slot now names the next creature, or runs past
+    the last slot (the caller opens that turn). Precondition: ``entity_id``
+    is in the roster.
+    """
+    index = next(i for i, c in enumerate(live.initiative) if c.entity_id == entity_id)
+    del live.initiative[index]
+    _purge_entity_state(live, entity_id)
+    was_current = index == live.current_turn_index
+    if index < live.current_turn_index:
+        live.current_turn_index -= 1
+    return was_current
+
+
+def _leave_roster(live: _LiveCombat, entity_id: str, reason: CombatantLeftReason) -> None:
+    """A creature disappears from the combat (C21). SRD 5.2 Summon Dragon:
+    "The creature disappears when it drops to 0 Hit Points or when the spell
+    ends."
+
+    Ends whatever it concentrates on through the drop cascade (nothing it
+    maintained outlives it), then splices it out and emits
+    ``CombatantLeft``. When it was the current
+    actor, the turn passes on — nobody skipped — once the resolution in
+    progress completes (``_hand_off_departed_turn``), so the rest of that
+    resolution never lands inside the next turn. While that hand-off is
+    pending no turn is running, so a creature removed from the slot the
+    pointer names never had a turn to end. A no-op for an id not in the
+    roster, so two expiries in one cascade never remove it twice. Draws
+    nothing.
+    """
+    if _find_combatant(live, entity_id) is None:
+        return
+    _drop_concentration(live, entity_id)
+    was_current = _remove_from_roster(live, entity_id)
+    _emit(live, CombatantLeft(entity_id=entity_id, reason=reason))
+    if was_current and live.departed_actor_id is None:
+        live.departed_actor_id = entity_id
 
 
 def _validate_intent_preconditions(
@@ -8635,9 +8918,9 @@ def _handle_move(live: _LiveCombat, current: Combatant, intent: PlayerIntent) ->
         _emit(live, MoveFailed(actor_id=actor_id, reason="blocked_path"))
         return
     if on_grid:
-        # Enemy spaces are impassable on the grid only, for the same reason.
-        side = live.party_ids if actor_id in live.party_ids else live.encounter_ids
-        enemy_cells: Collection[str] = _occupied_cells(live, exclude=side)
+        # Enemy spaces are impassable on the grid only, for the same reason;
+        # an ally's space, a summon's included, may be passed through.
+        enemy_cells: Collection[str] = _occupied_cells(live, exclude=_allied_ids(live, actor_id))
         path = live.topology.shortest_path(start_zone, destination, avoid=enemy_cells)
         if not path:
             _emit(live, MoveFailed(actor_id=actor_id, reason="unreachable"))
@@ -8687,7 +8970,9 @@ def _handle_move(live: _LiveCombat, current: Combatant, intent: PlayerIntent) ->
                 )
                 break
         live.actor_zone[actor_id] = next_zone
-    if spent == 0:
+    # A summon dropped to 0 HP on the way has left the order, and its
+    # departure already opened the next turn: no ActorMoved.
+    if spent == 0 or _find_combatant(live, actor_id) is None:
         return
     _emit(
         live,
@@ -8715,17 +9000,21 @@ def _conjuration_gate_failure(
     intent it does not govern."""
     # A shape-shifted actor is refused first: it cannot cast any spell at all,
     # nor make a weapon attack — so a form's weapon attack is refused here,
-    # before the stat-block check below ever sees it. A readied conjuration is
-    # refused before the enchant gate reads its (absent) weapon; the rest
-    # govern disjoint intents (a construct's attack names a spell, a
-    # stat-block swing names an action, Wild Shape and Polymorph each their
-    # own allowlisted source), so their order only fixes which reason a
-    # malformed intent reports.
+    # before the stat-block check below ever sees it. A summon's own limits
+    # come next, for the same reason: it casts nothing, so a readied
+    # conjuration of its reports that, and only its stat block's attacks reach
+    # the stat-block check. A readied conjuration is refused before the
+    # enchant gate reads its (absent) weapon; the rest govern disjoint intents
+    # (a construct's attack names a spell, a stat-block swing names an action,
+    # Wild Shape and Polymorph each their own allowlisted source), so their
+    # order only fixes which reason a malformed intent reports.
     checks: tuple[_ConjurationGate, ...] = (
         _shape_shifted_failure,
+        _summon_command_failure,
         _readied_conjuration_failure,
         _enchant_cast_failure,
         _construct_cast_failure,
+        _summon_cast_failure,
         _construct_attack_failure,
         _stat_block_attack_failure,
         _wild_shape_failure,
@@ -8804,6 +9093,11 @@ def _conjuration_carrier(
         return ConjurationCarrier(source_slug=source, weapon_slug=intent.weapon_id)
     if kind == "construct":
         return ConjurationCarrier(source_slug=source, cell=_construct_cell(live, current, intent))
+    if kind == "summon":
+        # SRD 5.2 Summon Dragon: the space ``_summon_cast_failure`` accepted.
+        return ConjurationCarrier(
+            source_slug=source, cell=_summon_placement(live, current, intent)[0]
+        )
     if kind == "transform":
         # SRD 5.2 Wild Shape: the Beast form ``_wild_shape_failure`` accepted;
         # a leave names none and resolves nothing.
@@ -9178,13 +9472,305 @@ def _resolve_construct_attack_intent(
 
 
 def _end_anchor_dependents(live: _LiveCombat, event: EffectExpired) -> None:
-    """Remove every construct whose concentration anchor just expired: the
-    force "lasts for the duration" of its concentration spell, so a broken or
-    dropped concentration, the spell's end, its owner's death or Incapacitated
-    condition, and a recast all end it here."""
+    """Remove every construct and summon whose concentration anchor just
+    expired: the force "lasts for the duration" of its concentration spell,
+    and a summoned creature "disappears ... when the spell ends", so a broken
+    or dropped concentration, the spell's end, its owner's death or
+    Incapacitated condition, and a recast all end them here. A summon leaves
+    with ``spell_ended`` at the spell's maximum duration and with
+    ``concentration_drop`` on every other path."""
     identity = (event.target_id, event.effect_id, event.origin)
     for construct_id in [cid for cid, c in live.constructs.items() if c.anchor == identity]:
         del live.constructs[construct_id]
+    reason: CombatantLeftReason = (
+        "spell_ended" if event.reason == "duration" else "concentration_drop"
+    )
+    for summon_id in [sid for sid, s in live.summons.items() if s.anchor == identity]:
+        _leave_roster(live, summon_id, reason)
+
+
+# ── C21 roster summons (SRD 5.2 Summon Dragon) ─────────────────────────────
+
+
+def _grid_cells_by_distance(topology: GridTopology, origin: str, radius_ft: int) -> list[str]:
+    """Every valid cell within ``radius_ft`` of ``origin`` (Chebyshev), nearest
+    first, ties broken by row, then column: a fixed scan order, so the same
+    combat always places a summon in the same space."""
+    col, row = parse_cell(origin)
+    reach = radius_ft // topology.cell_size_ft
+    ranked = sorted(
+        (max(abs(dc), abs(dr)), row + dr, col + dc)
+        for dr in range(-reach, reach + 1)
+        for dc in range(-reach, reach + 1)
+    )
+    return [cid for _, r, c in ranked if topology.is_valid_cell(cid := cell_id(c, r))]
+
+
+def _summon_placement(
+    live: _LiveCombat, current: Combatant, intent: PlayerIntent
+) -> tuple[str | None, CastFailedReason | None]:
+    """Where a summon cast seats its creature, ``(cell, None)``, or why it
+    cannot, ``(None, reason)``.
+
+    SRD 5.2 Summon Dragon: "It manifests in an unoccupied space that you can
+    see within range". A space is legal when the caster can measure it, it is
+    within the spell's range with line of sight and not behind total cover,
+    the caster is not Blinded (SRD 5.2: "You can't see") unless its Blindsight
+    or Truesight reaches the space, and — on a grid, where spaces are
+    exclusive — it is one of the grid's own cell ids (``col,row``) that no
+    living creature occupies. An explicit ``target_zone_id`` must be legal: an
+    invalid, non-canonical or occupied cell is ``"target_invalid"``, one
+    beyond range or out of sight ``"out_of_range"``. Without one, the first
+    legal cell of the fixed scan outward from the caster (on a zone graph, the
+    caster's own zone). A creature ``target_id`` plays no part: the spell
+    targets a space.
+    """
+    caster_cell = live.actor_zone.get(current.entity_id)
+    spell = get_lib_loader().get_spell(intent.spell_id or "")
+    range_ft = (
+        spell.range.value
+        if spell is not None and spell.range.units == SpellRangeUnits.FEET
+        else None
+    )
+    if caster_cell is None or range_ft is None:
+        return None, "out_of_range"
+    grid = live.topology if isinstance(live.topology, GridTopology) else None
+    occupied = _occupied_cells(live, exclude=()) if grid is not None else set()
+    blinded = is_condition_active(Condition.BLINDED, _condition_names(current))
+
+    def _free(cell: str) -> bool:
+        # ``is_valid_cell`` parses with ``int()``, which also reads "1, 1": a
+        # creature seated there would match no other position check.
+        return grid is None or (
+            grid.is_valid_cell(cell) and cell == cell_id(*parse_cell(cell)) and cell not in occupied
+        )
+
+    def _seen(cell: str) -> bool:
+        return not blinded or _special_sense_reaches_zone(live, current, cell)
+
+    def _in_sight(cell: str) -> bool:
+        return (
+            live.topology.distance_ft(caster_cell, cell) is not None
+            and _in_range_with_los(live.topology, caster_cell, cell, range_ft)
+            and _seen(cell)
+        )
+
+    if intent.target_zone_id is not None:
+        if not _free(intent.target_zone_id):
+            return None, "target_invalid"
+        if not _in_sight(intent.target_zone_id):
+            return None, "out_of_range"
+        return intent.target_zone_id, None
+    if grid is None:
+        return (caster_cell, None) if _seen(caster_cell) else (None, "out_of_range")
+    cell = next(
+        (
+            c
+            for c in _grid_cells_by_distance(grid, caster_cell, range_ft)
+            if _free(c) and _in_sight(c)
+        ),
+        None,
+    )
+    return (cell, None) if cell is not None else (None, "out_of_range")
+
+
+def _summon_cast_failure(
+    live: _LiveCombat, current: Combatant, intent: PlayerIntent
+) -> CombatEvent | None:
+    """``CastFailed`` for a summon cast whose creature has no legal space
+    (``_summon_placement``'s reason), so the refusal spends no slot and no
+    Action; ``None`` for every other intent."""
+    spell_id = intent.spell_id or ""
+    if intent.intent_type != "cast_spell" or CONJURATION_ALLOWLIST.get(spell_id) != "summon":
+        return None
+    _, reason = _summon_placement(live, current, intent)
+    if reason is None:
+        return None
+    return CastFailed(actor_id=current.entity_id, spell_id=spell_id, reason=reason)
+
+
+def _summon_command_failure(
+    live: _LiveCombat, current: Combatant, intent: PlayerIntent
+) -> CombatEvent | None:
+    """What a summoned creature cannot be commanded to do (C21): anything off
+    its stat block. ``None`` for every other creature.
+
+    ``CastFailed(reason="no_spellcasting")`` for a cast or a readied spell:
+    the Draconic Spirit's stat block has no Spellcasting, and SRD 5.2 Ready
+    says "When you Ready a spell, you cast it as normal".
+    ``AttackFailed(reason="action_unavailable")`` for an attack that names no
+    stat-block action — a plain attack, a weapon, or an Unarmed Strike ("a
+    melee attack that involves you using your body to damage, grapple, or
+    shove a target"), so a Grapple or a Shove too: its attacks are its stat
+    block's (``_stat_block_attack_failure`` vets the one a command names).
+    Every other action stands — SRD 5.2 Monsters: "A monster can take the
+    actions in this section or take one of the actions available to all
+    creatures", Dash, Disengage, Dodge, Help and Hide among them. A refusal
+    spends nothing.
+    """
+    if current.entity_id not in live.summons:
+        return None
+    if intent.intent_type == "cast_spell" or (intent.intent_type == "ready" and intent.spell_id):
+        return CastFailed(
+            actor_id=current.entity_id, spell_id=intent.spell_id or "", reason="no_spellcasting"
+        )
+    if intent.intent_type in ("grapple", "shove") or (
+        intent.intent_type == "attack" and not intent.stat_block_action_id
+    ):
+        return AttackFailed(
+            actor_id=current.entity_id, target_id=intent.target_id, reason="action_unavailable"
+        )
+    return None
+
+
+def _summon_id(live: _LiveCombat, owner_id: str, stat_block_slug: str) -> str:
+    """``summon:<owner>:<stat block>:<n>``, ``n`` counting the owner's summons
+    from 1: a recast or a re-summon never reuses an id."""
+    count = live.summon_counts.get(owner_id, 0) + 1
+    live.summon_counts[owner_id] = count
+    return f"summon:{owner_id}:{stat_block_slug}:{count}"
+
+
+def _summon_insert_index(live: _LiveCombat, owner_id: str) -> int:
+    """The roster slot a new summon of ``owner_id`` takes: right after its
+    owner and after the owner's summons already acting there. SRD 5.2 Summon
+    Dragon: "the creature shares your Initiative count, but it takes its turn
+    immediately after yours" — a slot, never a re-sort (the tie-break by
+    Dexterity could put the creature ahead of its caster)."""
+    ids = [c.entity_id for c in live.initiative]
+    index = ids.index(owner_id) + 1
+    while (
+        index < len(ids)
+        and (summon := live.summons.get(ids[index])) is not None
+        and summon.owner_id == owner_id
+    ):
+        index += 1
+    return index
+
+
+def _summon_combatant(
+    owner: Combatant,
+    monster: Monster,
+    *,
+    entity_id: str,
+    ac: int,
+    hp: int,
+    magnitudes: StatBlockMagnitudes,
+) -> Combatant:
+    """The summoned creature as a ``Monster`` combatant acting from
+    ``monster``'s stat block at its summoner's numbers: ``ac`` and ``hp`` as
+    the spell's bonuses made them, the magnitudes' Proficiency Bonus, and the
+    flat to-hit on the legacy ``attack_bonus`` too. It shares its owner's
+    Initiative count and enters with its full walking Speed."""
+    return Combatant(
+        entity_id=entity_id,
+        entity_type="Monster",
+        name=monster.name,
+        initiative=owner.initiative,
+        hp_current=hp,
+        hp_max=hp,
+        creature_type=monster.creature_type.value,
+        attack_bonus=magnitudes.attack_bonus,
+        movement_remaining=monster.movement.walk or 0,
+        **(
+            _stat_block_fields(monster)
+            | {"ac": ac, "proficiency_bonus_override": magnitudes.proficiency_bonus}
+        ),
+    )
+
+
+def _seat_summon(live: _LiveCombat, caster: Combatant, request: SummonRequest) -> None:
+    """Seat the creature ``request`` summons and announce it with
+    ``CombatantJoined``. Draws nothing.
+
+    SRD 5.2 Summon Dragon: "Use the spell slot's level for the spell's level in
+    the stat block." The spell's ``bonuses`` give the Draconic Spirit's "AC 14
+    + the spell's level" and "HP 50 + 10 for each spell level above 5", and its
+    ``match`` flags the summoner's spell attack and Proficiency Bonus; the
+    Multiattack count reads the slot level. The creature records its caster's
+    concentration anchor, so it leaves when that concentration ends."""
+    monster = get_lib_loader().get_monster(SUMMONS[request.spell_id].stat_block_slug)
+    # The registry test pins that every ``SUMMONS`` stat block loads with an AC.
+    assert monster is not None
+    assert monster.ac is not None
+    ability = _construct_spellcasting_ability(caster)
+    spell_attack, modifier = spell_attack_magnitudes(caster, ability)
+    roll_data = SummonRollData(level=request.slot_level, mod=modifier)
+    ac = monster.ac + evaluate_summon_formula(request.bonuses.ac, roll_data)
+    hp = monster.hp + evaluate_summon_formula(request.bonuses.hp, roll_data)
+    magnitudes = summon_magnitudes(
+        monster,
+        request.match,
+        spell_attack_bonus=spell_attack,
+        proficiency_bonus=proficiency_bonus_of(caster),
+        attack_damage_bonus=evaluate_summon_formula(request.bonuses.attack_damage, roll_data),
+    )
+    count = summon_attack_count(monster, roll_data)
+    entity_id = _summon_id(live, caster.entity_id, monster.slug)
+    index = _summon_insert_index(live, caster.entity_id)
+    after = live.initiative[index - 1].entity_id
+    _insert_into_roster(
+        live,
+        _summon_combatant(
+            caster, monster, entity_id=entity_id, ac=ac, hp=hp, magnitudes=magnitudes
+        ),
+        index,
+        zone_id=request.cell,
+    )
+    live.monster_slug_by_entity[entity_id] = monster.slug
+    live.monster_action_uses_by_entity[entity_id] = _hydrate_monster_action_uses(monster)
+    live.summons[entity_id] = _Summon(
+        entity_id=entity_id,
+        owner_id=caster.entity_id,
+        spell_id=request.spell_id,
+        stat_block_slug=monster.slug,
+        slot_level=request.slot_level,
+        anchor=_anchor_identity(request.spell_id, caster.entity_id),
+        magnitudes=magnitudes,
+        attacks_per_action=count if count is not None else multiattack_count(monster),
+    )
+    _emit(
+        live,
+        CombatantJoined(
+            entity_id=entity_id,
+            name=monster.name,
+            stat_block_slug=monster.slug,
+            origin_caster_id=caster.entity_id,
+            spell_id=request.spell_id,
+            initiative_count=caster.initiative,
+            after_entity_id=after,
+            zone_id=request.cell,
+            hp_max=hp,
+            ac=ac,
+        ),
+    )
+
+
+def _run_uncommanded_summon_turn(live: _LiveCombat, current: Combatant) -> None:
+    """A summon's turn with no command. SRD 5.2 Summon Dragon: "It obeys your
+    verbal commands (no action required by you). If you don't issue any, it
+    takes the Dodge action and uses its movement to avoid danger." A summon
+    that cannot take the Action (Incapacitated, or its Action already spent on
+    a command) passes instead. It moves nowhere and draws nothing."""
+    actor_id = current.entity_id
+    if current.action_available and not conditions_block_actions(_condition_names(current)):
+        _emit(live, IntentSubmitted(actor_id=actor_id, intent_type="dodge"))
+        _set_dodging(live, actor_id)
+    else:
+        _emit(live, IntentSubmitted(actor_id=actor_id, intent_type="pass"))
+    _end_turn_and_advance(live, actor_id)
+
+
+def _apply_summon_requests(
+    live: _LiveCombat, caster: Combatant, actx: ActivityResolutionContext | None
+) -> None:
+    """Fold step 6: seat each creature this resolution summoned. Runs after the
+    concentration anchor, so the creature records a live identity, and a
+    same-spell recast's drop has already dismissed the old creature."""
+    if actx is None:
+        return
+    for request in actx.summon_requests:
+        _seat_summon(live, caster, request)
 
 
 # ── C21 transformations (SRD 5.2 Wild Shape, Polymorph) ────────────────────
@@ -9194,29 +9780,40 @@ def _transform_of(live: _LiveCombat, entity_id: str) -> _Transform | None:
     return live.transforms.get(entity_id)
 
 
-def _form_stat_fields(target: Combatant, form: Monster, source: TransformSource) -> dict[str, Any]:
-    """The ``Combatant`` fields a transformation into ``form`` replaces, with
-    the form's values.
+def _stat_block_fields(monster: Monster) -> dict[str, Any]:
+    """The ``Combatant`` fields of a creature acting wholly from ``monster``'s
+    stat block: its physical statistics (``_physical_stat_fields``) and its
+    INT / WIS / CHA, Proficiency Bonus, proficiencies, spellcasting ability and
+    legendary pools. A Polymorph form (SRD 5.2: "The target's game statistics
+    are replaced by the stat block of the chosen Beast") and a summoned
+    creature both take all of them."""
+    scores = monster.ability_scores
+    legendary_actions = _legendary_action_uses_max(monster)
+    legendary_resistances = _legendary_resistance_max(monster)
+    return _physical_stat_fields(monster) | {
+        "intelligence": scores.int,
+        "wisdom": scores.wis,
+        "charisma": scores.cha,
+        "proficiency_bonus_override": monster.proficiency_bonus,
+        "save_proficiencies": [
+            a for a in ABILITY_CODES if getattr(monster.saving_throws, a) is not None
+        ],
+        "skill_proficiencies": [k for k, v in monster.skills.model_dump().items() if v is not None],
+        "skill_expertise": [],
+        "spellcasting_ability": monster.spellcasting_ability,
+        "legendary_actions_max": legendary_actions,
+        "legendary_actions_remaining": legendary_actions,
+        "legendary_resistances_max": legendary_resistances,
+        "legendary_resistances_remaining": legendary_resistances,
+    }
 
-    Both sources swap the physical stat block: AC, STR / DEX / CON, Speed and
-    movement modes, senses, damage and condition traits, trait mechanics, and a
-    5-ft reach (the corpus carries no melee reach). SRD 5.2 Polymorph: "The
-    target's game statistics are replaced by the stat block of the chosen
-    Beast, but the target retains its alignment, personality, creature type,
-    Hit Points, and Hit Point Dice" — so it also takes the form's INT / WIS /
-    CHA, Proficiency Bonus, proficiencies, spellcasting ability and legendary
-    pools. SRD 5.2 Wild Shape: "you retain your creature type; Hit Points; Hit
-    Point Dice; Intelligence, Wisdom, and Charisma scores; class features;
-    languages; and feats. You also retain your skill and saving throw
-    proficiencies and use your Proficiency Bonus for them, in addition to
-    gaining the proficiencies of the creature." A druid's Proficiency Bonus is
-    never below a CR 1 or lower Beast's, so the union already gives "the one in
-    the stat block" whenever that is higher.
-    """
+
+def _physical_stat_fields(form: Monster) -> dict[str, Any]:
+    """AC, STR / DEX / CON, Speed and movement modes, senses, damage and
+    condition traits, trait mechanics, and a 5-ft reach (the corpus carries no
+    melee reach) — the stat block every transformation swaps in."""
     scores = form.ability_scores
-    saves = [a for a in ABILITY_CODES if getattr(form.saving_throws, a) is not None]
-    skills = [k for k, v in form.skills.model_dump().items() if v is not None]
-    fields: dict[str, Any] = {
+    return {
         "ac": form.ac,
         "strength": scores.str,
         "dexterity": scores.dex,
@@ -9242,32 +9839,40 @@ def _form_stat_fields(target: Combatant, form: Monster, source: TransformSource)
         "physical_resistances_nonmagical_only": False,
         "trait_mechanics": [a.mechanic for a in form.special_abilities if a.mechanic is not None],
     }
-    if source == "wild-shape":
-        return fields | {
-            "save_proficiencies": [
-                *target.save_proficiencies,
-                *(a for a in saves if a not in target.save_proficiencies),
-            ],
-            "skill_proficiencies": [
-                *target.skill_proficiencies,
-                *(k for k in skills if k not in target.skill_proficiencies),
-            ],
-        }
-    legendary_actions = _legendary_action_uses_max(form)
-    legendary_resistances = _legendary_resistance_max(form)
-    return fields | {
-        "intelligence": scores.int,
-        "wisdom": scores.wis,
-        "charisma": scores.cha,
-        "proficiency_bonus_override": form.proficiency_bonus,
-        "save_proficiencies": saves,
-        "skill_proficiencies": skills,
-        "skill_expertise": [],
-        "spellcasting_ability": form.spellcasting_ability,
-        "legendary_actions_max": legendary_actions,
-        "legendary_actions_remaining": legendary_actions,
-        "legendary_resistances_max": legendary_resistances,
-        "legendary_resistances_remaining": legendary_resistances,
+
+
+def _form_stat_fields(target: Combatant, form: Monster, source: TransformSource) -> dict[str, Any]:
+    """The ``Combatant`` fields a transformation into ``form`` replaces, with
+    the form's values.
+
+    Both sources swap the physical stat block: AC, STR / DEX / CON, Speed and
+    movement modes, senses, damage and condition traits, trait mechanics, and a
+    5-ft reach (the corpus carries no melee reach). SRD 5.2 Polymorph: "The
+    target's game statistics are replaced by the stat block of the chosen
+    Beast, but the target retains its alignment, personality, creature type,
+    Hit Points, and Hit Point Dice" — so it also takes the form's INT / WIS /
+    CHA, Proficiency Bonus, proficiencies, spellcasting ability and legendary
+    pools. SRD 5.2 Wild Shape: "you retain your creature type; Hit Points; Hit
+    Point Dice; Intelligence, Wisdom, and Charisma scores; class features;
+    languages; and feats. You also retain your skill and saving throw
+    proficiencies and use your Proficiency Bonus for them, in addition to
+    gaining the proficiencies of the creature." A druid's Proficiency Bonus is
+    never below a CR 1 or lower Beast's, so the union already gives "the one in
+    the stat block" whenever that is higher.
+    """
+    if source == "polymorph":
+        return _stat_block_fields(form)
+    saves = [a for a in ABILITY_CODES if getattr(form.saving_throws, a) is not None]
+    skills = [k for k, v in form.skills.model_dump().items() if v is not None]
+    return _physical_stat_fields(form) | {
+        "save_proficiencies": [
+            *target.save_proficiencies,
+            *(a for a in saves if a not in target.save_proficiencies),
+        ],
+        "skill_proficiencies": [
+            *target.skill_proficiencies,
+            *(k for k in skills if k not in target.skill_proficiencies),
+        ],
     }
 
 
@@ -9445,9 +10050,11 @@ def _challenge_rating_of(live: _LiveCombat, entity_id: str) -> float | None:
     Challenge Rating equal to or less than the target's (or the target's level
     if it doesn't have a Challenge Rating)" — a Character's level; a monster's
     template CR (its own, not its form's, while it is transformed); ``None``
-    for a template-less creature, which is refused rather than guessed."""
+    for a template-less creature, which is refused rather than guessed, and
+    for a summoned creature, whose stat block reads "CR None" (the Draconic
+    Spirit's dataset ``cr`` of 0 cannot say so)."""
     target = _find_combatant(live, entity_id)
-    if target is None:
+    if target is None or entity_id in live.summons:
         return None
     if target.entity_type == "Character":
         return float(target.character_level)
@@ -9526,11 +10133,13 @@ def _end_polymorph_on_depletion(live: _LiveCombat, target_id: str) -> None:
 def _stat_block_magnitudes_of(live: _LiveCombat, current: Combatant) -> StatBlockMagnitudes | None:
     """A transformed actor's stat-block numbers: its current six scores (the
     form's physical ones; Wild Shape keeps its own INT / WIS / CHA) and the
-    form's Proficiency Bonus, which its stat-block attacks use. ``None`` for a
-    creature in its own form."""
+    form's Proficiency Bonus, which its stat-block attacks use. A summon's are
+    the ones fixed when it was seated, its summoner's to-hit and damage bonus
+    included. ``None`` for any other creature."""
     transform = live.transforms.get(current.entity_id)
     if transform is None:
-        return None
+        summon = live.summons.get(current.entity_id)
+        return summon.magnitudes if summon is not None else None
     return StatBlockMagnitudes(
         ability_scores={
             "str": current.strength,
@@ -11221,6 +11830,9 @@ async def submit_player_intent(
     # ``_dispatch_turn_nonending_intent``'s docstring for the SRD framing
     # of each.
     if await _dispatch_turn_nonending_intent(live, current, intent):
+        # The actor keeps its turn — unless an opportunity attack on its move
+        # made it leave the initiative order.
+        _hand_off_departed_turn(live)
         return
 
     # USE_FEATURE — resolve the feature to its single concrete activity BEFORE
@@ -11849,7 +12461,7 @@ async def submit_player_intent(
     # (Action Surge) is part of the turn rather than an action, so it keeps
     # the turn too.
     if is_bonus_action or action_cost.is_free_action or funding != "action":
-        _maybe_roll_death_save(live)
+        _keep_turn(live)
         return
     # SRD §Extra Attack — a main-hand attack keeps the turn (R1) while
     # swings remain this Action, OR a two-weapon-fighting off-hand window
@@ -11857,7 +12469,7 @@ async def submit_player_intent(
     # ``_twf_window_open`` is always False, so a 1-attack actor's attack
     # ends the turn exactly as before this feature — the back-compat bar).
     if intent.intent_type == "attack" and not _attack_action_is_spent(live, current):
-        _maybe_roll_death_save(live)
+        _keep_turn(live)
         return
     # An Action intent ends the turn unless an Action Surge extra action is left.
     _end_action(live, actor_id, intent)
@@ -12118,14 +12730,20 @@ def _fire_monster_opportunity_attacks_on_move(
 
     Returns ``True`` if the mover dropped to 0 HP from any AoO — the caller
     cancels the move (SRD: *"The attack occurs right before it leaves your
-    reach"*; a dead mover stops in place).
+    reach"*; a dead mover stops in place, and a summon dropped to 0 HP has
+    left the initiative order).
     """
     mover = next((c for c in live.initiative if c.entity_id == mover_id), None)
     if mover is None or mover.disengaging_this_turn:
         return False
     mover_died = False
-    for idx, reactor in enumerate(live.initiative):
-        if reactor.entity_id not in live.encounter_ids:
+    # Iterate the ids and re-read each reactor: an opportunity attack can make
+    # a summon leave the order mid-loop (its caster's concentration breaks, or
+    # the summon is the mover), and a live-list iterator would then skip the
+    # next reactor. A reactor that left no longer reacts.
+    for reactor_id in [c.entity_id for c in live.initiative]:
+        reactor = _find_combatant(live, reactor_id)
+        if reactor is None or reactor_id not in live.encounter_ids:
             continue
         if not reactor.is_alive or reactor.hp_current <= 0:
             continue
@@ -12196,7 +12814,7 @@ def _fire_monster_opportunity_attacks_on_move(
         )
         # Consume the reaction regardless of hit/miss (SRD: reactions are
         # spent on use, not on success).
-        live.initiative[idx] = reactor.model_copy(update={"reaction_available": False})
+        _update_combatant(live, reactor_id, reaction_available=False)
         if is_hit:
             damage = _roll_damage_expression(live, reactor.damage_dice, crit=is_crit)
             if damage > 0:
@@ -12217,7 +12835,7 @@ def _fire_monster_opportunity_attacks_on_move(
                         is_crit=is_crit,
                     ),
                 )
-                if mover_id in live.dead_ids:
+                if mover_id in live.dead_ids or _find_combatant(live, mover_id) is None:
                     mover_died = True
                     break
     return mover_died
@@ -12273,9 +12891,11 @@ async def advance_monster_turn(
     Selection: ``select_typed_monster_action``
     picks an action from the typed ``Monster.actions`` (fetched from the lib
     loader by ``monster_template_slug``); ``expand_action_to_activities`` fans
-    multiattack out into its sub-attacks. Targeting: lowest-HP alive PC in
-    initiative order (the legacy gambit's ``target_priority="lowest_hp"``
-    semantics). Resolution: each returned ``Activity`` runs through
+    multiattack out into its sub-attacks. Targeting: the lowest-HP living
+    enemy, first in initiative order on a tie (the legacy gambit's
+    ``target_priority="lowest_hp"`` semantics) — the party's members and the
+    summons they own, a charmer excepted (``_select_monster_targets``).
+    Resolution: each returned ``Activity`` runs through
     ``resolve_activity`` against a context
     built by ``build_activity_context`` — the same typed path as the PC
     turn /6 of the Foundry cutover).
@@ -12288,10 +12908,15 @@ async def advance_monster_turn(
     ``legendary=True`` (C18 §Monster action economy) takes a SEPARATE path:
     a host calls this ANY time another creature's turn has just ended
     (including a PC's) to let one eligible encounter member spend a
-    legendary action. It never touches ``current_turn_index``, never emits
-    ``TurnStarted``/``TurnEnded``/``TurnPhase``, spends no action economy,
-    and runs no turn-lifecycle hooks — see ``_eligible_legendary_actor`` and
-    ``_take_legendary_action``. ``actor_id`` picks a specific encounter
+    legendary action. It spends no action economy and ends no turn — see
+    ``_eligible_legendary_actor`` and ``_take_legendary_action``. It changes
+    the turn order only through a departure (C21): a summon it drops leaves
+    the initiative order, shifting ``current_turn_index`` when it sat before
+    the pointer, and when that summon was the current actor (its turn begun,
+    nothing done yet) the next creature's turn opens once the legendary
+    action has resolved — ``TurnStarted``, ``TurnPhase``, its turn-start
+    hooks and death save, but no ``TurnEnded`` and no new window
+    (``_hand_off_departed_turn``). ``actor_id`` picks a specific encounter
     member (else the first eligible one in initiative order); both raise
     ``IntentRejectedError("no_legendary_action", ...)`` when nothing
     qualifies right now.
@@ -12302,6 +12927,7 @@ async def advance_monster_turn(
 
     if legendary:
         _take_legendary_action(live, _eligible_legendary_actor(live, actor_id))
+        _hand_off_departed_turn(live, turn_began=False)
         return
 
     current = _current_actor(live)
@@ -12317,6 +12943,15 @@ async def advance_monster_turn(
     # whether the monster acts); a dead monster has no turn start at all.
     _run_monster_turn_start(live, current)
 
+    # SRD 5.2 Summon Dragon: "It obeys your verbal commands (no action
+    # required by you). If you don't issue any, it takes the Dodge action
+    # and uses its movement to avoid danger." A summon never reaches the
+    # monster AI below: its own turn is either a command already resolved
+    # through ``submit_player_intent`` or this uncommanded Dodge/pass.
+    if current.entity_id in live.summons:
+        _run_uncommanded_summon_turn(live, current)
+        return
+
     # Dead / unconscious monsters skip with a no-op record. The legacy
     # behavior-based flee gate (monster_ai.select_monster_action) is reapplied
     # here against the live Combatant — the typed selector only sees the static
@@ -12331,21 +12966,22 @@ async def advance_monster_turn(
         or conditions_block_actions(_condition_names(current))
     )
 
-    # Build alive-PC target list (lowest_hp priority — the legacy
-    # gambit's target rule). Empty targets degrades to pass. SRD 5.2
+    # Build the target list: every living enemy, a summon included
+    # (lowest_hp priority — the legacy gambit's target rule). Empty targets
+    # degrades to pass. SRD 5.2
     # Charmed — "You can't attack the charmer or target the charmer with
     # damaging abilities or magical effects" — is folded into
     # ``_select_monster_targets``. Knock-on, accepted deliberately:
-    # ``alive_pcs`` is also the threat list ``_execute_flee_retreat``
+    # ``enemies`` is also the threat list ``_execute_flee_retreat``
     # measures distance against, so a charmed FLEEING monster no longer
     # counts its charmer as someone to run from. Flavour-defensible (you do
     # not flee the creature that has charmed you) and SRD-silent, but it is
     # a second consequence of this one filter.
-    alive_pcs = _select_monster_targets(live, current)
-    if not alive_pcs:
+    enemies = _select_monster_targets(live, current)
+    if not enemies:
         skip_to_record_pass = True
 
-    chosen_target: Combatant | None = _lowest_hp_target(alive_pcs)
+    chosen_target: Combatant | None = _lowest_hp_target(enemies)
 
     # ── Fleeing retreat ──────────────────────────────────────────
     # A live monster over the flee threshold spends its movement putting
@@ -12355,7 +12991,7 @@ async def advance_monster_turn(
     # ``IntentSubmitted(intent_type="pass")`` — but now with real
     # ``ActorMoved`` events preceding it (reusing ``"pass"`` per the catalog;
     # no new IntentType is minted). Dead/unconscious monsters never retreat.
-    current = _apply_monster_flee_stance(live, current, alive_pcs)
+    current = _apply_monster_flee_stance(live, current, enemies)
 
     # ── Typed-Activity monster resolution (Foundry cutover, ─────────
     #

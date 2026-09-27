@@ -41,9 +41,12 @@ that's the gap Nat20 fills.
 
 ## Known gaps
 
-Nat20 does not implement all of SRD 5.2. Lair actions, summoning and
-polymorph are among the rules it does not resolve today, and about a third of the spell corpus loads
-without producing any mechanical effect. The
+Nat20 does not implement all of SRD 5.2. Lair actions, and every summon,
+shape-shift or weapon enchantment beyond the few it resolves (Summon Dragon
+and Spiritual Weapon as summons, Magic Weapon as a weapon enchantment, Wild
+Shape and Polymorph as shape-shifts), are among the rules it does not resolve
+today, and about a third of the spell corpus loads without producing any
+mechanical effect. The
 [capability matrix](capabilities.md) lists all of it per mechanic, and
 [`BACKLOG.md`](https://github.com/tapestria/nat20/blob/main/BACKLOG.md) is the
 tracked gap ledger.

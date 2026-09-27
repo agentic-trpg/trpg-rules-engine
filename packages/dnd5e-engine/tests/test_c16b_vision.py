@@ -16,10 +16,17 @@ from dnd5e_engine.orchestrator import (
     _fire_monster_opportunity_attacks_on_move,
     _fire_pc_opportunity_attacks_on_move,
     _get_live,
+    _pierces_invisibility,
     start_combat,
     submit_player_intent,
 )
-from dnd5e_engine.specs import EncounterMemberSpec, GridScene, PartyMemberSpec
+from dnd5e_engine.specs import (
+    EncounterMemberSpec,
+    GridScene,
+    PartyMemberSpec,
+    SceneTopology,
+    ZoneEdge,
+)
 from dnd5e_engine.types.conditions import ActiveCondition
 from tests.e2e.harness import cell, events_of, run_async
 
@@ -645,3 +652,63 @@ def test_opportunity_attack_populates_split_source_lists():
     assert rolled.disadvantage_sources == []
     assert "unseen" in rolled.advantage_sources
     assert "condition:target" in rolled.advantage_sources
+
+
+def test_truesight_does_not_pierce_the_blinded_condition():
+    """SRD 5.2 Blinded: "You can't see". Truesight enhances vision ("your
+    vision pierces through" Darkness and Invisibility); only Blindsight works
+    "even if you have the Blinded condition"."""
+    _handle, live = _start([_hero()], [_foe()], GridScene(width=10, height=10))
+    _give_condition(live, "char:hero", "blinded")
+    hero, foe = _combatant(live, "char:hero"), _combatant(live, "mon:foe")
+    _give_senses(live, "char:hero", truesight=30)
+    assert _combatant_can_see(live, hero, foe) is False
+    _give_senses(live, "char:hero", truesight=30, blindsight=10)
+    assert _combatant_can_see(live, hero, foe) is True
+
+
+def test_pierces_invisibility_requires_blindsight_when_viewer_is_blinded():
+    """M1 fix: ``_pierces_invisibility`` must gate Truesight on Blinded the
+    same way ``_combatant_can_see`` does. SRD 5.2 Blinded: "You can't see".
+    Truesight is enhanced vision ("your vision pierces through" Darkness and
+    Invisibility), not an exemption from Blinded; only Blindsight works
+    "even if you have the Blinded condition"."""
+    _handle, live = _start([_hero()], [_foe()], GridScene(width=10, height=10))
+    _give_condition(live, "char:hero", "blinded")
+    hero, foe = _combatant(live, "char:hero"), _combatant(live, "mon:foe")
+    _give_senses(live, "char:hero", truesight=30)
+    assert _pierces_invisibility(live, hero, foe) is False
+    _give_senses(live, "char:hero", truesight=30, blindsight=10)
+    assert _pierces_invisibility(live, hero, foe) is True
+
+
+def test_a_host_driven_foe_draws_no_opportunity_attack_from_its_own_side():
+    """SRD 5.2 Opportunity Attacks: "when a creature that you can see leaves
+    your reach". A foe moved through ``submit_player_intent`` can't leave its
+    own reach, and its ally doesn't strike it on the way out."""
+    scene = SceneTopology(zones=["near", "far"], edges=[ZoneEdge(a="near", b="far", distance_ft=5)])
+    party = [_hero(zone_id="far", initiative=1)]
+    foes = [
+        _foe(zone_id="near", initiative=20, attack_bonus=5),
+        _foe(entity_id="mon:ally", name="Ally", zone_id="near", initiative=10, attack_bonus=5),
+    ]
+
+    async def _inner():
+        start = await start_combat(
+            session_id="c16b-own-side",
+            party=party,
+            encounter=foes,
+            scene_zones=scene,
+            grid_scene=None,
+            rng_seed=1,
+        )
+        await submit_player_intent(
+            start.handle,
+            actor_id="mon:foe",
+            intent=PlayerIntent(intent_type="move", target_zone_id="far"),
+        )
+        return _get_live(start.handle)
+
+    live = _run(_inner())
+    assert [e for e in events_of(live, AttackRolled) if e.is_opportunity_attack] == []
+    assert live.actor_zone["mon:foe"] == "far"

@@ -54,6 +54,7 @@ import logging
 import random
 import re
 import warnings
+from collections import deque
 from collections.abc import AsyncIterator, Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any, Final, Literal
@@ -1649,6 +1650,19 @@ def _special_sense_reaches_zone(live: _LiveCombat, viewer: Combatant, zone: str)
     return False
 
 
+def _blindsight_reaches_zone(live: _LiveCombat, viewer: Combatant, zone: str) -> bool:
+    """The one sense that works through the Blinded condition. SRD 5.2
+    Blindsight: "you can see anything that isn't behind Total Cover even if
+    you have the Blinded condition"; Truesight is enhanced vision ("your
+    vision pierces through" Darkness and Invisibility), and a Blinded creature
+    "can't see". Untracked viewer position ⇒ False."""
+    viewer_zone = live.actor_zone.get(viewer.entity_id)
+    reach = viewer.senses.blindsight
+    if viewer_zone is None or not reach:
+        return False
+    return live.topology.within_range(viewer_zone, zone, reach)
+
+
 def _combatant_can_see(live: _LiveCombat, viewer: Combatant, target: Combatant) -> bool:
     """C16b composite "can see" predicate (plan ruling R4) for every SRD 5.2
     "can see" conjunct: Dodge, Ranged Attacks in Close Combat, Opportunity
@@ -1657,8 +1671,8 @@ def _combatant_can_see(live: _LiveCombat, viewer: Combatant, target: Combatant) 
     1. Untracked position on either side ⇒ True (a scene with no positional
        data can never impose a penalty — same convention as
        ``_target_visibility_maps``).
-    2. Blinded viewer (SRD 5.2 Blinded: "You can't see") ⇒ False unless a
-       special sense reaches (``_special_sense_reaches``).
+    2. Blinded viewer (SRD 5.2 Blinded: "You can't see") ⇒ False unless its
+       Blindsight reaches (``_blindsight_reaches_zone``; Truesight is sight).
     3. Invisible target (SRD 5.2 Invisible: "If a creature can somehow see
        you, you don't gain this benefit against that creature") ⇒ False
        unless a special sense reaches — plan ruling R3. A creature hidden
@@ -1673,10 +1687,13 @@ def _combatant_can_see(live: _LiveCombat, viewer: Combatant, target: Combatant) 
     target_zone = live.actor_zone.get(target.entity_id)
     if viewer_zone is None or target_zone is None:
         return True
-    special = _special_sense_reaches(live, viewer, target)
-    if is_condition_active(Condition.BLINDED, _condition_names(viewer)) and not special:
+    if is_condition_active(
+        Condition.BLINDED, _condition_names(viewer)
+    ) and not _blindsight_reaches_zone(live, viewer, target_zone):
         return False
-    if is_condition_active(Condition.INVISIBLE, _condition_names(target)) and not special:
+    if is_condition_active(
+        Condition.INVISIBLE, _condition_names(target)
+    ) and not _special_sense_reaches(live, viewer, target):
         return False
     return live.topology.can_see(viewer_zone, target_zone, viewer.senses)
 
@@ -1740,21 +1757,30 @@ def _pierces_invisibility(live: _LiveCombat, viewer: Combatant, target: Combatan
     (whether or not ``target`` actually carries it — the maps below are
     computed unconditionally; the SRD row in ``rules/conditions.py`` gates on
     the condition itself)? SRD 5.2 Blindsight: "in that range, you can see
-    something has the Invisible condition." Truesight: "You see creatures and
-    objects that have the Invisible condition." Both need REACH
-    (``_special_sense_reaches``) AND line of sight
-    (``SpatialTopology.can_see`` with the viewer's own senses) — Darkvision
-    never pierces (it only re-grades light, and is excluded from
-    ``_special_sense_reaches``). Untracked positions ⇒ False (mirrors
+    something has the Invisible condition ... even if you have the Blinded
+    condition." Truesight: "You see creatures and objects that have the
+    Invisible condition" — enhanced vision, not an exemption from Blinded's
+    "You can't see". So a Blinded viewer pierces only through Blindsight
+    (``_blindsight_reaches_zone``); an unblinded viewer through either sense
+    (``_special_sense_reaches_zone``) — the same split ``_combatant_can_see``
+    applies. Either way REACH AND line of sight (``SpatialTopology.can_see``
+    with the viewer's own senses) are both required — Darkvision never
+    pierces (it only re-grades light). Untracked positions ⇒ False (mirrors
     ``_special_sense_reaches``; an untracked pair never grants a piercing
     benefit, unlike the "everyone seen" convention used for the raw
     visibility maps).
     """
-    if not _special_sense_reaches(live, viewer, target):
+    target_zone = live.actor_zone.get(target.entity_id)
+    if target_zone is None:
+        return False
+    if is_condition_active(Condition.BLINDED, _condition_names(viewer)):
+        reaches = _blindsight_reaches_zone(live, viewer, target_zone)
+    else:
+        reaches = _special_sense_reaches_zone(live, viewer, target_zone)
+    if not reaches:
         return False
     viewer_zone = live.actor_zone.get(viewer.entity_id)
-    target_zone = live.actor_zone.get(target.entity_id)
-    if viewer_zone is None or target_zone is None:
+    if viewer_zone is None:
         return False
     return live.topology.can_see(viewer_zone, target_zone, viewer.senses)
 
@@ -3336,6 +3362,15 @@ class _Summon:
 
 _REGISTRY: dict[str, _LiveCombat] = {}
 
+#: How many ended combats stay readable after ``end_combat`` (a repeat close,
+#: a late ``drain_pending_events`` / ``narration_events`` drain, a last
+#: ``get_live``) before the oldest is released, so a long-running host holds a
+#: bounded number of them rather than every combat it ever ran.
+_ENDED_COMBATS_KEPT: Final = 64
+#: The ended combats still in ``_REGISTRY``, oldest first, each with the handle
+#: id it was registered under.
+_ENDED: deque[tuple[str, _LiveCombat]] = deque()
+
 
 def _get_live(handle: CombatHandle) -> _LiveCombat:
     live = _REGISTRY.get(handle.handle_id)
@@ -3893,9 +3928,9 @@ def _release_one_grapple_effect(live: _LiveCombat, victim_id: str, effect_id: st
 def _release_grapple_victims_of(live: _LiveCombat, grappler_id: str) -> None:
     """SRD 5.2 "Ending a Grapple" — "The condition also ends if the grappler
     has the Incapacitated condition." Called from
-    ``_fold_condition_onto_combatant``'s Incapacitated branch (beside the
-    C13 concentration drop) whenever ``grappler_id`` newly becomes
-    Incapacitated: release every combatant currently Grappled BY it (per
+    ``_end_what_incapacitation_ends`` (beside the concentration drop) whenever
+    ``grappler_id`` newly becomes Incapacitated, however the condition
+    arrives: release every combatant currently Grappled BY it (per
     ``_condition_source_entity``'s resolution of the ``grapple:`` origin
     prefix)."""
     for victim in list(live.initiative):
@@ -7550,7 +7585,23 @@ def _resolve_initiative(
         return spec.initiative
     disadvantage = spec.is_surprised or spec.entity_id in seeded_incapacitated
     sources = AdvantageSources(disadvantage=("condition:attacker",) if disadvantage else ())
-    return roll_d20_test(rng, ability_modifier(spec.dexterity), sources).total
+    return roll_d20_test(rng, ability_modifier(_initiative_dexterity(spec)), sources).total
+
+
+def _initiative_dexterity(spec: PartyMemberSpec | EncounterMemberSpec) -> int:
+    """The Dexterity score an engine-rolled Initiative adds. An encounter
+    member's ``10`` defers to its resolvable ``monster_template_slug``, exactly
+    as the combatant's own ``dexterity`` does (``_build_foe_combatants``), so
+    the roll and the tie-break read the same score."""
+    if (
+        isinstance(spec, EncounterMemberSpec)
+        and spec.dexterity == 10
+        and spec.monster_template_slug
+    ):
+        monster = get_lib_loader().get_monster(spec.monster_template_slug)
+        if monster is not None:
+            return monster.ability_scores.dex
+    return spec.dexterity
 
 
 async def start_combat(
@@ -8406,10 +8457,16 @@ def _resolve_feature_invocation(
             return None
         selected = chosen
     scaling_value = (pool_points or 1) if _scales_by_amount(selected) else None
+    # The per-rest cap resolves against the caster's real ScaleValue map, so a
+    # ``@scale.*`` maximum (Second Wind's ``@scale.fighter.second-wind``, 3 at
+    # Fighter 5) gives its level-scaled cap rather than a conservative floor.
     scale_values = _scale_values_of(caster)
     activation = getattr(selected.activation, "type", None)
     invocation = _FeatureInvocation(
         activities=[selected],
+        # Rage's melee damage bonus and resistances ride a PassiveEffect on the
+        # feature; threading it lets the UtilityActivity's effect rider resolve
+        # to a runtime ActiveEffect.
         passive_effects=list(feature.passive_effects) if feature else [],
         is_bonus_action=activation == "bonus",
         is_free_action=activation == "special" and selected.kind in _FREE_SPECIAL_ACTIVITY_KINDS,
@@ -8690,8 +8747,8 @@ def _insert_into_roster(
 
 def _purge_entity_state(live: _LiveCombat, entity_id: str) -> None:
     """Drop every trace of a creature that left the initiative order (C21):
-    its own per-entity state, the marks and grants it holds or sourced, and
-    the effect identities that target it.
+    its own per-entity state, the marks and grants it holds or sourced, the
+    constructs it owns, and the effect identities that target it.
 
     Another caster's concentration on it keeps running (its
     ``concentration_chain`` entry is kept): SRD 5.2 is silent on a spell whose
@@ -9516,7 +9573,7 @@ def _summon_placement(
     see within range". A space is legal when the caster can measure it, it is
     within the spell's range with line of sight and not behind total cover,
     the caster is not Blinded (SRD 5.2: "You can't see") unless its Blindsight
-    or Truesight reaches the space, and — on a grid, where spaces are
+    reaches the space (``_blindsight_reaches_zone``), and — on a grid, where spaces are
     exclusive — it is one of the grid's own cell ids (``col,row``) that no
     living creature occupies. An explicit ``target_zone_id`` must be legal: an
     invalid, non-canonical or occupied cell is ``"target_invalid"``, one
@@ -9546,7 +9603,7 @@ def _summon_placement(
         )
 
     def _seen(cell: str) -> bool:
-        return not blinded or _special_sense_reaches_zone(live, current, cell)
+        return not blinded or _blindsight_reaches_zone(live, current, cell)
 
     def _in_sight(cell: str) -> bool:
         return (
@@ -12743,7 +12800,13 @@ def _fire_monster_opportunity_attacks_on_move(
     # next reactor. A reactor that left no longer reacts.
     for reactor_id in [c.entity_id for c in live.initiative]:
         reactor = _find_combatant(live, reactor_id)
-        if reactor is None or reactor_id not in live.encounter_ids:
+        # Only the mover's foes react: a creature can't leave its own reach,
+        # and a host-driven foe's move must not draw its allies' attacks.
+        if (
+            reactor is None
+            or reactor_id not in live.encounter_ids
+            or not _is_enemy(live, reactor_id, mover_id)
+        ):
             continue
         if not reactor.is_alive or reactor.hp_current <= 0:
             continue
@@ -13309,8 +13372,11 @@ async def end_combat(handle: CombatHandle) -> EndCombatResult:
 
     Idempotent: calling twice returns the same outcome (with an empty
     ``events`` list on subsequent calls — the close events were only
-    emitted once on the first invocation), no re-emission of events, no
-    double-removal from the registry.
+    emitted once on the first invocation), no re-emission of events. The
+    ended combat stays readable — a repeat ``end_combat``, ``get_live``,
+    ``drain_pending_events``, ``narration_events`` — until
+    ``_ENDED_COMBATS_KEPT`` later combats have ended; its handle then raises
+    ``UnknownHandleError`` (``_keep_ended``).
     """
     live = _get_live(handle)
     surviving = tuple(eff for target_list in live.active_effects.values() for eff in target_list)
@@ -13333,6 +13399,7 @@ async def end_combat(handle: CombatHandle) -> EndCombatResult:
 
     live.ended = True
     live.final_outcome = outcome
+    _keep_ended(live)
     # Re-snapshot after CombatEnded emission in case any listener mutated
     # the active_effects registry (e.g. expire handler).
     surviving = tuple(eff for target_list in live.active_effects.values() for eff in target_list)
@@ -13341,6 +13408,18 @@ async def end_combat(handle: CombatHandle) -> EndCombatResult:
         events=end_events,
         final_active_effects=surviving,
     )
+
+
+def _keep_ended(live: _LiveCombat) -> None:
+    """Record ``live`` as ended and release the oldest ended combat beyond
+    ``_ENDED_COMBATS_KEPT``. A live combat is never released, and neither is a
+    new combat a later ``start_combat`` registered under a reused handle id
+    (``combat:<session>:<seed>``): only the very combat that ended leaves."""
+    _ENDED.append((live.handle_id, live))
+    while len(_ENDED) > _ENDED_COMBATS_KEPT:
+        handle_id, ended = _ENDED.popleft()
+        if _REGISTRY.get(handle_id) is ended:
+            del _REGISTRY[handle_id]
 
 
 def _reset_registry_for_tests() -> None:
@@ -13352,6 +13431,7 @@ def _reset_registry_for_tests() -> None:
     tests start from a clean slate.
     """
     _REGISTRY.clear()
+    _ENDED.clear()
 
 
 __all__ = [

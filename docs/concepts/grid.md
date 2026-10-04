@@ -1,9 +1,10 @@
 # Grid
 
-Nat20 supports both abstract zone topologies and a concrete 2-D grid. Pass a
-**`GridScene`** to `start_combat` and combat resolves over a square grid using
-Chebyshev (8-direction) distance, where one cell equals `cell_size_ft`
-(default 5).
+Combat resolves on a 2-D grid. `start_combat` requires a **`GridScene`**: its
+square cells use Chebyshev (8-direction) distance, and one cell equals
+`cell_size_ft` (default 5). (0.7.0 removed the abstract zone graph; the
+[v0.6 → v0.7 migration guide](../migration/v0.6-to-v0.7.md) shows how to port a
+zone layout.)
 
 ## Positioning
 
@@ -49,10 +50,6 @@ square, does not cross a `wall_segments` entry, and — for a diagonal — does 
 cut an obstruction's corner. Occupancy follows SRD 5.2 §Moving Around Other
 Creatures: **allies are passable, enemies are not**, and a move may not *end* on
 a cell another creature occupies, ally or enemy.
-
-Multi-cell routing and occupancy are both **grid-only**: on the legacy zone
-graph a `"move"` intent is still a single step to an *adjacent* zone, and a
-non-adjacent destination is still `MoveFailed(reason="not_adjacent")`.
 
 A step that takes the mover out of an enemy's reach draws that enemy's
 opportunity attack first, whoever drives the mover: a `move` intent, the
@@ -112,6 +109,11 @@ and the engine aims caster → named target. A self-origin cone/line/cube with
 neither is rejected before the slot is spent, with
 `CastFailed(reason="target_invalid")`.
 
+A template the engine can't map onto the grid (the five `wall` spells: Blade
+Barrier, Tsunami, Wall of Fire, Wall of Thorns and Wind Wall; and Confusion,
+whose size is a formula) affects only the creatures standing on its anchor
+cell: the named target's, else the caster's. `BACKLOG.md` tracks it.
+
 ## Vision and light
 
 Three optional `GridScene` fields model SRD 5.2 §Vision and Light:
@@ -147,20 +149,3 @@ gate (attack-roll disadvantage and the "can't willingly move closer to the
 source of fear" movement rule). See
 [`docs/dev/spatial-geometry.md`](../dev/spatial-geometry.md#composite-predicate)
 for the exact step order.
-
-## Zones vs grid
-
-!!! warning "The zone graph is deprecated"
-
-    `start_combat(scene_zones=...)` raises a `DeprecationWarning` as of 0.6.0
-    and the backend is **removed in 0.7.0**. Pass a `GridScene` instead; if you
-    have no tactical map, a one-row grid preserves the zone semantics:
-    `GridScene(width=len(zones), height=1)` with `zone_id = cell_id(i, 0)`.
-
-`scene_zones` (a `SceneTopology` of named `zones` connected by `ZoneEdge`s)
-resolves combat over an abstract graph of locations. It and `GridScene` are
-mutually exclusive inputs to the same combat loop. The zone backend has no
-positional model at all — sight is always clear, cover is always `"none"`,
-`can_see` is always true between any two known zones, AoE spells fall back to
-zone-equality targeting, occupancy is not enforced, and every spatial feature
-added in 0.6 is grid-only.

@@ -122,7 +122,6 @@ async def _start(party, encounter, *, seed=1, width=10, session="c18-units", sun
         session_id=session,
         party=party,
         encounter=encounter,
-        scene_zones=None,
         grid_scene=GridScene(width=width, height=10, cell_size_ft=5, sunlight=sunlight),
         rng_seed=seed,
     )
@@ -1182,7 +1181,7 @@ def test_grapple_conversion_emits_legendary_resistance_used_after_save_rolled():
     assert dragon.legendary_resistances_remaining == 2
 
 
-def test_concentration_conversion_emits_legendary_resistance_used_after_both_checks():
+def test_concentration_conversion_emits_legendary_resistance_used_after_the_check():
     async def go():
         handle, live = await _wizard_vs_dragon(seed=1)
         assert resolve_legendary_resistance(handle, "mon:foe") == 1
@@ -1214,7 +1213,7 @@ def test_concentration_conversion_emits_legendary_resistance_used_after_both_che
         for e in tail
         if isinstance(e, (SaveRolled, ConcentrationCheck, LegendaryResistanceUsed))
     ]
-    assert kinds == ["SaveRolled", "ConcentrationCheck", "LegendaryResistanceUsed"]
+    assert kinds == ["ConcentrationCheck", "LegendaryResistanceUsed"]
     check = next(e for e in tail if isinstance(e, ConcentrationCheck))
     assert check.succeeded is True
     dragon = next(c for c in live.initiative if c.entity_id == "mon:foe")

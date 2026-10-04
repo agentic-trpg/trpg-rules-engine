@@ -82,7 +82,6 @@ def test_c13_s01_second_concentration_spell_ends_the_first():
                     zone_id=cell(9, 9),
                 )
             ],
-            scene_zones=None,
             grid_scene=grid_scene(),
             rng_seed=7,
         )
@@ -132,8 +131,7 @@ def test_c13_s02_damage_triggers_concentration_check_with_con_modifier():
     to a maximum DC of 30."
     (packs/_source/content24/appendices/appendix-d-rule-references.yml:5261-5266).
     F1c gave ``_emit_apply_damage`` the real CON modifier and F2c emits the
-    harmonised ``ConcentrationCheck`` (alongside the legacy ``SaveRolled``
-    until v0.7); F1c also added ``PartyMemberSpec.save_proficiencies``, so a
+    harmonised ``ConcentrationCheck``; F1c also added ``PartyMemberSpec.save_proficiencies``, so a
     CON-save-proficient caster IS expressible now (set below). C13 added the
     DC's SRD maximum-of-30 clamp — pinned separately by C13-S05 below.
     """
@@ -178,7 +176,6 @@ def test_c13_s02_damage_triggers_concentration_check_with_con_modifier():
                 session_id="e2e-c13-s02",
                 party=[PartyMemberSpec(**_cleric_kwargs(constitution, proficient))],
                 encounter=[_foe()],
-                scene_zones=None,
                 grid_scene=grid_scene(),
                 rng_seed=42,
             )
@@ -258,7 +255,6 @@ def test_c13_s03_caster_reduced_to_zero_hp_ends_concentration():
                     zone_id=cell(1, 0),
                 )
             ],
-            scene_zones=None,
             grid_scene=grid_scene(),
             rng_seed=5,
         )
@@ -335,7 +331,6 @@ def test_c13_s04_voluntary_drop_costs_no_action():
                     zone_id=cell(4, 0),
                 )
             ],
-            scene_zones=None,
             grid_scene=grid_scene(),
             rng_seed=9,
         )
@@ -417,7 +412,6 @@ def test_c13_s05_concentration_dc_caps_at_30():
                         zone_id=cell(1, 0),
                     )
                 ],
-                scene_zones=None,
                 grid_scene=grid_scene(),
                 rng_seed=13,
             )

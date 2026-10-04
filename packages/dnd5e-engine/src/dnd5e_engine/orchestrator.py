@@ -191,7 +191,6 @@ from dnd5e_engine.rules.conditions import (
     Condition,
     active_condition_names,
     conditions_block_actions,
-    conditions_grant_advantage_on_attack,
     d20_test_penalty,
     exhaustion_level_of,
     is_condition_active,
@@ -638,7 +637,7 @@ def _weapon_attack_range_ft(weapon: Weapon | None) -> tuple[int, int] | None:
         return None
     rng = weapon.range
     if rng.kind == "melee":
-        reach = 10 if WeaponProperty.REACH in weapon.properties else 5
+        reach = _weapon_melee_reach_ft(weapon)
         if WeaponProperty.THROWN not in weapon.properties:
             return reach, reach
         thrown_normal = rng.value if isinstance(rng.value, int) and rng.value > 0 else None
@@ -652,6 +651,12 @@ def _weapon_attack_range_ft(weapon: Weapon | None) -> tuple[int, int] | None:
         return None
     long_band = rng.long if isinstance(rng.long, int) and rng.long > 0 else ranged_normal
     return ranged_normal, max(ranged_normal, long_band)
+
+
+def _weapon_melee_reach_ft(weapon: Weapon) -> int:
+    """SRD 5.2 Reach property: "This weapon adds 5 feet to your reach when you
+    attack with it" — 10 ft for a Reach weapon, 5 ft for any other."""
+    return 10 if WeaponProperty.REACH in weapon.properties else 5
 
 
 def _versatile_grip_applies(weapon: Weapon | None, distance_ft: int | None) -> bool:
@@ -1387,9 +1392,10 @@ def _fold_mastery_procs(
     appended to ``ctx.mastery_procs`` this resolution into live combat
     state:
 
-    * ``"vex"`` -> ``live.vex_grants[attacker_id][target_id] = 2`` ("before
-      the end of your NEXT turn" — decremented at the attacker's own turn
-      end, see ``_end_turn_and_advance``).
+    * ``"vex"`` -> ``live.vex_grants[attacker_id][target_id] = 2, or 1 for a
+      proc on another creature's turn`` ("before the end of your NEXT turn"
+      — decremented at the attacker's own turn end, see
+      ``_end_turn_and_advance``).
     * ``"sap"`` -> ``live.sap_marks[target_id] = attacker_id`` ("before the
       start of your next turn" — cleared at the attacker's own next
       ``TurnStarted``, see ``_emit_apply_turn_started``).
@@ -1411,7 +1417,12 @@ def _fold_mastery_procs(
     attacker_cell = live.actor_zone.get(attacker_id)
     for mastery_slug, target_id in ctx.mastery_procs:
         if mastery_slug == "vex":
-            live.vex_grants.setdefault(attacker_id, {})[target_id] = 2
+            # "before the end of your next turn": on the attacker's own turn
+            # that is two of its turn ends; on another creature's turn (an
+            # opportunity attack) only its next one.
+            live.vex_grants.setdefault(attacker_id, {})[target_id] = (
+                2 if live.current_actor_id == attacker_id else 1
+            )
         elif mastery_slug == "sap":
             live.sap_marks[target_id] = attacker_id
         elif mastery_slug == "slow":
@@ -1926,7 +1937,6 @@ def _apply_forced_movement_riders(
 def _record_sneak_attack_spent(
     live: _LiveCombat,
     caster: Combatant,
-    intent: PlayerIntent,
     weapon: Weapon | None,
     targets: Sequence[Combatant],
     actx: ActivityResolutionContext,
@@ -1941,12 +1951,12 @@ def _record_sneak_attack_spent(
     target satisfied the trigger (``sneak_attack_triggers`` — the SAME predicate
     the resolver gated the fold on, reused here so the two never diverge).
 
-    Today no PC multi-attack-per-turn intent path exists, so the flag it sets is
-    never re-read within the same turn (the cap is exercised only at the resolver
-    seam, . Recording it anyway keeps the actor-state honest for the day
-    a second-attack path lands.
+    ``weapon`` is the swung weapon — ``None`` for anything but a weapon
+    attack, which spends nothing. The flag clears at every ``TurnStarted``
+    (``_emit_apply_turn_started``), so an opportunity attack on another
+    creature's turn can deal Sneak Attack again.
     """
-    if intent.intent_type != "attack" or weapon is None:
+    if weapon is None:
         return
     if caster.sneak_attack_spent_this_turn or sneak_attack_dice(actx) is None:
         return
@@ -2014,126 +2024,122 @@ def _monster_dash_movement_budget(
     return dashed_budget
 
 
-def _plan_flee_destination(
-    topology: SpatialTopology,
-    start_zone: str,
-    threat_zone: str,
-    movement_remaining: int,
-) -> str | None:
-    """Pick the reachable zone that MAXIMIZES topology distance from a threat.
+def _plan_flee_route(
+    grid: GridTopology,
+    start: str,
+    threat_cells: Collection[str],
+    budget_ft: int,
+    *,
+    enemy_cells: Collection[str],
+    occupied_cells: Collection[str],
+) -> list[str] | None:
+    """The route a fleeing monster standing on ``start`` walks to get as far
+    from its threats as ``budget_ft`` allows (``route[0]`` is ``start``), or
+    ``None`` when it holds: cornered, out of movement, or nowhere farther.
+    Monster AI, DM-adjudicated rather than SRD text; it draws no dice.
 
-    The inverse of ``advance_monster_turn``'s greedy CLOSING walk: rather than
-    stepping along ``shortest_path`` *toward* the target, enumerate every zone
-    reachable within ``movement_remaining`` and choose the one whose distance to
-    ``threat_zone`` is greatest (ties broken toward the cheapest to reach, then
-    zone id for determinism). Returns ``None`` when no reachable zone strictly
-    increases the distance to the threat — the monster then holds its ground.
-
-    Zone-graph only: a grid backend exposes no finite named-zone set to rank, so
-    a fleeing monster on a grid stays put (not a pinned behaviour — grid retreat
-    pathing is a surviving BACKLOG item). Composed entirely from the existing
-    ``shortest_path`` / ``edge_distance`` primitives (via ``_path_total_distance``);
-    no new ``SpatialTopology`` capability is introduced.
+    The candidates are the cells ``GridTopology.reachable_cells`` reaches
+    without entering an enemy's space, except ``start`` and any cell a
+    creature stands on (SRD 5.2: "You can't willingly end a move in a space
+    occupied by another creature"). A candidate scores its Chebyshev distance
+    to the NEAREST threat, the same measure as reach, and only a cell that
+    scores above ``start`` qualifies. The best has the highest score, then
+    the cheapest route, then the lowest ``(column, row)`` compared as
+    integers (the string ``"10,0"`` sorts before ``"2,0"``).
     """
-    if not isinstance(topology, _ZoneGraph):
-        return None
-    baseline = _path_total_distance(topology, topology.shortest_path(start_zone, threat_zone))
-    if baseline is None:
-        return None
-    # (dist_to_threat, cost_to_reach, zone) for each zone that (a) is reachable
-    # within budget and (b) strictly increases distance from the threat.
-    candidates: list[tuple[int, int, str]] = []
-    for zone in sorted(topology._zones):
-        if zone == start_zone:
-            continue
-        cost = _path_total_distance(topology, topology.shortest_path(start_zone, zone))
-        if cost is None or cost > movement_remaining:
-            continue
-        dist = _path_total_distance(topology, topology.shortest_path(zone, threat_zone))
-        if dist is None or dist <= baseline:
-            continue
-        candidates.append((dist, cost, zone))
+
+    def nearest_threat_ft(cell: str) -> int:
+        return min(grid.distance_ft(cell, threat) or 0 for threat in threat_cells)
+
+    reached = grid.reachable_cells(start, budget_ft, avoid=enemy_cells)
+    occupied = set(occupied_cells)
+    baseline = nearest_threat_ft(start)
+    candidates = [
+        (-score, cost, parse_cell(cell), cell)
+        for cell, (cost, _previous) in reached.items()
+        if cell != start and cell not in occupied and (score := nearest_threat_ft(cell)) > baseline
+    ]
     if not candidates:
         return None
-    # Farthest from the threat wins; ties → cheapest to reach → stable zone id.
-    candidates.sort(key=lambda c: (-c[0], c[1], c[2]))
-    return candidates[0][2]
+    route = [min(candidates)[3]]
+    while (previous := reached[route[-1]][1]) is not None:
+        route.append(previous)
+    return route[::-1]
 
 
-def _walk_zone_path(live: _LiveCombat, mover_id: str, path: Sequence[str]) -> None:
-    """Step ``mover_id`` along ``path`` (a ``shortest_path`` result), paying each
-    edge out of ``movement_remaining`` and emitting one ``ActorMoved`` per step.
+def _take_walk_step(live: _LiveCombat, mover_id: str, next_cell: str) -> bool:
+    """One step of a monster's walk (the closing walk, the flee walk): fire the
+    opportunity attacks it provokes, then pay the step out of
+    ``movement_remaining``, move, and emit its own ``ActorMoved``.
 
-    The fleeing-retreat counterpart to ``advance_monster_turn``'s inline CLOSING
-    walk (kept separate: the closing loop early-outs once the target is in attack
-    range, which a retreat has no analogue for). Fires PC opportunity attacks
-    before the mover leaves each zone and stops if an AoO drops the mover, or once
-    the next edge no longer fits the remaining budget.
-    """
-    for next_zone in path[1:]:
-        snapshot = next(c for c in live.initiative if c.entity_id == mover_id)
-        from_zone = live.actor_zone[mover_id]
-        step_distance = live.topology.edge_distance(from_zone, next_zone)
-        if step_distance is None or snapshot.movement_remaining < step_distance:
-            break
-        if _fire_pc_opportunity_attacks_on_move(
-            live, mover_id=mover_id, from_zone=from_zone, to_zone=next_zone
-        ):
-            break
-        for idx, c in enumerate(live.initiative):
-            if c.entity_id == mover_id:
-                live.initiative[idx] = c.model_copy(
-                    update={"movement_remaining": c.movement_remaining - step_distance}
-                )
-                break
-        live.actor_zone[mover_id] = next_zone
-        _emit(
-            live,
-            ActorMoved(
-                actor_id=mover_id,
-                from_zone=from_zone,
-                to_zone=next_zone,
-                distance_ft=step_distance,
-            ),
-        )
+    Returns ``False``, without moving, when the walk ends here instead: the
+    step is illegal or no longer affordable (an opportunity attack's rider can
+    cut the budget), or an opportunity attack stopped the mover
+    (``_walk_must_stop``)."""
+    mover = _find_combatant(live, mover_id)
+    from_cell = live.actor_zone.get(mover_id)
+    if mover is None or from_cell is None:
+        return False
+    step_distance = live.topology.edge_distance(from_cell, next_cell)
+    if step_distance is None or mover.movement_remaining < step_distance:
+        return False
+    if _fire_opportunity_attacks_on_step(
+        live, mover_id=mover_id, from_cell=from_cell, to_cell=next_cell
+    ):
+        return False
+    mover = _find_combatant(live, mover_id)
+    if mover is None or mover.movement_remaining < step_distance:
+        return False
+    _update_combatant(live, mover_id, movement_remaining=mover.movement_remaining - step_distance)
+    live.actor_zone[mover_id] = next_cell
+    _emit(
+        live,
+        ActorMoved(
+            actor_id=mover_id, from_zone=from_cell, to_zone=next_cell, distance_ft=step_distance
+        ),
+    )
+    return True
+
+
+def _walk_path(live: _LiveCombat, mover_id: str, path: Sequence[str]) -> None:
+    """Walk ``mover_id`` along ``path`` (``path[0]`` is its own cell) one
+    ``_take_walk_step`` at a time, stopping at the first step that can't be
+    taken. The flee walk's counterpart of the closing walk, which also stops
+    once its target is in range."""
+    for next_cell in path[1:]:
+        if not _take_walk_step(live, mover_id, next_cell):
+            return
 
 
 def _execute_flee_retreat(
     live: _LiveCombat, monster: Combatant, enemies: Sequence[Combatant]
 ) -> None:
-    """A fleeing monster spends movement increasing distance from its threat.
-
-    Monster-AI plumbing (DM-adjudicated, not codified SRD text): the flee gate
-    ``_monster_is_fleeing`` decides the monster *wants* to disengage; this gives
-    that decision teeth. The threat is the nearest living enemy (a summon
-    included) by topology distance; the destination is
-    ``_plan_flee_destination``'s farthest-reachable zone. When no such zone
-    exists (already cornered, no budget, or grid backend) the monster simply
-    holds — the same no-move it did before, now via a real evaluation.
+    """A fleeing monster spends its movement getting away from ``enemies``,
+    every living enemy it would otherwise attack (a charmer excluded): the
+    route ``_plan_flee_route`` picks, walked by ``_walk_path``. Fleeing takes
+    no Disengage or Dash, so each step out of an enemy's reach provokes its
+    opportunity attack. Monster-AI plumbing (DM-adjudicated, not SRD text):
+    ``_monster_is_fleeing`` decides the monster wants to get away; this gives
+    that decision teeth. A monster with nowhere farther to go holds.
     """
-    start_zone = live.actor_zone.get(monster.entity_id)
-    if start_zone is None or not enemies:
+    start = live.actor_zone.get(monster.entity_id)
+    threat_cells = [
+        cell for enemy in enemies if (cell := live.actor_zone.get(enemy.entity_id)) is not None
+    ]
+    # zone graph: legacy behaviour until removal in 0.7 — it has no cells to
+    # rank, so a fleeing monster holds there.
+    if start is None or not threat_cells or not isinstance(live.topology, GridTopology):
         return
-    threats: list[tuple[int, str, str]] = []
-    for enemy in enemies:
-        enemy_zone = live.actor_zone.get(enemy.entity_id)
-        if enemy_zone is None:
-            continue
-        dist = _path_total_distance(
-            live.topology, live.topology.shortest_path(start_zone, enemy_zone)
-        )
-        if dist is not None:
-            threats.append((dist, enemy.entity_id, enemy_zone))
-    if not threats:
-        return
-    threats.sort(key=lambda t: (t[0], t[1]))
-    _, _, threat_zone = threats[0]
-    destination = _plan_flee_destination(
-        live.topology, start_zone, threat_zone, monster.movement_remaining
+    route = _plan_flee_route(
+        live.topology,
+        start,
+        threat_cells,
+        monster.movement_remaining,
+        enemy_cells=_occupied_cells(live, exclude=_allied_ids(live, monster.entity_id)),
+        occupied_cells=_occupied_cells(live, exclude=(monster.entity_id,)),
     )
-    if destination is None:
-        return
-    _walk_zone_path(live, monster.entity_id, live.topology.shortest_path(start_zone, destination))
+    if route is not None:
+        _walk_path(live, monster.entity_id, route)
 
 
 def _apply_monster_flee_stance(
@@ -2142,7 +2148,9 @@ def _apply_monster_flee_stance(
     """Persist ``Combatant.has_fled`` across turns (C18 Task 9, R9).
 
     A live, conscious monster over the flee threshold (``_monster_is_fleeing``)
-    spends its movement retreating (``_execute_flee_retreat``) and is marked
+    that is not Incapacitated (SRD 5.2: "You can't take any action, Bonus
+    Action, or Reaction"; an Incapacitated monster takes no flee stance at
+    all) spends its movement retreating (``_execute_flee_retreat``) and is marked
     ``has_fled=True`` regardless of whether that retreat actually moved it
     (already cornered, no movement budget left, or a backend with no
     reachable destination) — the flag records the monster's STANCE this
@@ -2158,7 +2166,9 @@ def _apply_monster_flee_stance(
     """
     if not (current.is_alive and current.hp_current > 0):
         return current
-    fleeing = _monster_is_fleeing(current)
+    fleeing = _monster_is_fleeing(current) and not conditions_block_actions(
+        _condition_names(current)
+    )
     if fleeing:
         _execute_flee_retreat(live, current, enemies)
         current = next(c for c in live.initiative if c.entity_id == current.entity_id)
@@ -2826,6 +2836,8 @@ def _resolve_monster_attack_activities(
     actor: Combatant,
     target_list: list[Combatant],
     activities: Sequence[Any],
+    *,
+    is_opportunity_attack: bool = False,
 ) -> None:
     """Resolve a monster's own attack/save ``Activity`` list against
     ``target_list``: Shield drain, ``build_activity_context`` (via
@@ -2838,7 +2850,8 @@ def _resolve_monster_attack_activities(
     before calling this) and a legendary action's own attack/save entry
     (``_take_legendary_action``, which never moves and always resolves
     from the monster's current position — same as a stat-block spellcast,
-    ``_resolve_monster_cast``). Extracted (C18 Task 6 fix round 1) so a
+    ``_resolve_monster_cast``) and a stat-block creature's opportunity attack
+    (``is_opportunity_attack``). Extracted (C18 Task 6 fix round 1) so a
     future hook added to one caller can't silently miss the other.
     """
     # SRD §Reactions — drain the attacked PC's pending ``hit_by_attack``
@@ -2882,6 +2895,7 @@ def _resolve_monster_attack_activities(
         # delegation lives in _build_cast_spell_book; extending it here
         # is a recorded follow-up.
         spell_book={},
+        is_opportunity_attack=is_opportunity_attack,
         **_monster_context_kwargs(live, actor, target_list, payload),
     )
     for activity in activities:
@@ -2901,9 +2915,7 @@ def _resolve_monster_attack_activities(
     # moment IT makes an attack roll (no monster gambit currently
     # issues a Hide intent, so this is defensive symmetry, not a
     # reachable path today).
-    if actor.entity_id in live.hidden_entities:
-        _emit(live, ConditionRemoved(target_id=actor.entity_id, condition="invisible"))
-        live.hidden_entities.discard(actor.entity_id)
+    _break_hide(live, actor.entity_id)
     # Symmetric concentration writeback for spellcaster monsters
     # (mirrors the PC path; no-op for non-caster monsters).
     _writeback_concentration(live, actor, pre_event_count)
@@ -3012,6 +3024,10 @@ class _LiveCombat:
     final_outcome: CombatOutcome | None = None
     # zone occupancy, per entity_id (read by handlers via the ZoneTopology)
     actor_zone: dict[str, str] = field(default_factory=dict)
+    # SRD 5.2 Opportunity Attacks: the weapon slug each character makes its
+    # opportunity attacks with (``_opportunity_attack_weapon_slug``); a
+    # character absent from it makes an Unarmed Strike.
+    opportunity_attack_weapons: dict[str, str] = field(default_factory=dict)
     # monster-template slug, per entity_id (drives gambit lookup in
     # ``advance_monster_turn``). Absent for PCs and slug-less NPCs.
     monster_slug_by_entity: dict[str, str] = field(default_factory=dict)
@@ -3158,10 +3174,12 @@ class _LiveCombat:
     # with this weapon and deal damage to the creature, you have Advantage
     # on your next attack roll against that creature before the end of your
     # next turn."* Keyed ATTACKER entity_id -> {TARGET entity_id ->
-    # rounds-remaining}. A fresh proc sets rounds-remaining to 2 ("before
-    # the end of your NEXT turn" spans this turn's remainder plus the
-    # attacker's whole next turn); re-procing the SAME attacker/target pair
-    # REFRESHES to 2 rather than stacking (controller ruling R5 — riders are
+    # rounds-remaining}. A fresh proc sets rounds-remaining to 2, or 1 for a
+    # proc on another creature's turn ("before the end of your NEXT turn"
+    # spans this turn's remainder plus the attacker's whole next turn, but an
+    # off-turn proc has no remainder of the attacker's own turn left to
+    # span); re-procing the SAME attacker/target pair REFRESHES to that same
+    # value rather than stacking (controller ruling R5 — riders are
     # non-stacking). Decremented for the ENDING actor's own grants at
     # ``_end_turn_and_advance`` (dropping entries that reach 0); the
     # one-use consumption pop (after that attacker's next attack roll vs
@@ -4478,10 +4496,18 @@ def _break_hide_on_attack_or_verbal_cast(
         and cast_spell is not None
         and SpellComponent.VOCAL in cast_spell.components
     )
-    if not breaks:
+    if breaks:
+        _break_hide(live, current.entity_id)
+
+
+def _break_hide(live: _LiveCombat, entity_id: str) -> None:
+    """SRD 5.2 Hide: end the Invisible condition a successful Hide gave
+    ``entity_id`` ("the condition ends on you immediately after ... you make
+    an attack roll"); a no-op for a creature that isn't hidden."""
+    if entity_id not in live.hidden_entities:
         return
-    _emit(live, ConditionRemoved(target_id=current.entity_id, condition="invisible"))
-    live.hidden_entities.discard(current.entity_id)
+    _emit(live, ConditionRemoved(target_id=entity_id, condition="invisible"))
+    live.hidden_entities.discard(entity_id)
 
 
 def _handle_disengage(live: _LiveCombat, current: Combatant, intent: PlayerIntent) -> None:
@@ -4490,9 +4516,9 @@ def _handle_disengage(live: _LiveCombat, current: Combatant, intent: PlayerInten
 
     Consumes the Action — or, with ``intent.use_bonus_action``, the Bonus
     Action through Cunning Action (``_disengage_as_bonus_action``) — and sets
-    ``disengaging_this_turn`` so the monster-reactor opportunity-attack scan
-    (``_fire_monster_opportunity_attacks_on_move``) suppresses AoOs for the
-    rest of the turn. Does NOT advance the turn (mirrors Dash) so a
+    ``disengaging_this_turn`` so ``_opportunity_attackers`` lets no one, on
+    either side, make an opportunity attack against it for the rest of the
+    turn. Does NOT advance the turn (mirrors Dash) so a
     same-turn Disengage→Move sequence works. Rejects with
     ``IntentRejectedError("no_action_economy")`` when neither the Action nor
     an Action Surge extra action is left, or when the Bonus Action is asked
@@ -4795,10 +4821,6 @@ def _emit_apply_turn_started(live: _LiveCombat, event: TurnStarted) -> None:
                     # SRD §Disengage — "for the rest of the turn"; this is
                     # the start of a NEW turn, so the suppression lapses.
                     "disengaging_this_turn": False,
-                    # SRD §Sneak Attack, "Once per turn" — the per-turn cap
-                    # clears at the start of the actor's own turn (symmetric
-                    # with the action-economy resets above).
-                    "sneak_attack_spent_this_turn": False,
                     # SRD §Extra Attack / §Two-Weapon Fighting — refresh the
                     # per-Action attack budget and clear the TWF window at
                     # the start of the actor's own turn.
@@ -4832,6 +4854,11 @@ def _emit_apply_turn_started(live: _LiveCombat, event: TurnStarted) -> None:
                 }
             )
             break
+    # SRD 5.2 Sneak Attack: "Once per turn" — any creature's turn, not only the
+    # rogue's own: an opportunity attack on another creature's turn can deal it.
+    for idx, c in enumerate(live.initiative):
+        if c.sneak_attack_spent_this_turn:
+            live.initiative[idx] = c.model_copy(update={"sneak_attack_spent_this_turn": False})
     # SRD 5.2 §Actions in Combat — Help: "This benefit expires at the start
     # of your next turn" — the HELPER's own next turn, not the helped-
     # against target's. Strip this actor's entity_id out of every grant
@@ -7707,6 +7734,11 @@ async def start_combat(
         pact_slots_by_entity=pact_slots_by_entity,
         spells_known_by_entity=spells_known_by_entity,
         custom_counters_by_entity=custom_counters_by_entity,
+        opportunity_attack_weapons={
+            pc.entity_id: slug
+            for pc in party
+            if (slug := _opportunity_attack_weapon_slug(pc)) is not None
+        },
     )
     # C18 — per-foe limited-use state (recharge actions, N/Day trait uses),
     # hydrated from the same monster template each foe's other stats came
@@ -8914,7 +8946,7 @@ def _handle_move(live: _LiveCombat, current: Combatant, intent: PlayerIntent) ->
     """SRD 5.2 §Movement and Position — move ``current`` to ``target_zone_id``
     along the fewest-cells legal route (``shortest_path``), paying each leg's
     ``edge_distance`` (difficult terrain doubles) out of ``movement_remaining``.
-    One ``ActorMoved`` per intent carries the total distance. Movement does
+    Each uninterrupted run of steps emits one ``ActorMoved`` (see below). Movement does
     NOT end the turn.
 
     Rejections (``MoveFailed``, nothing mutated): ``not_adjacent`` — no
@@ -8939,9 +8971,12 @@ def _handle_move(live: _LiveCombat, current: Combatant, intent: PlayerIntent) ->
     intermediate zones), and a PC may still move into a zone an enemy holds to
     engage it in melee.
 
-    Opportunity attacks (monster reactor / PC mover) fire before each cell is
-    left; a mover dropped to 0 HP stops where the drop happened and the
-    ``ActorMoved`` (if any cells were crossed) reflects the partial walk.
+    Every opportunity attack a step provokes, from either side, fires before
+    the mover leaves its cell (``_fire_opportunity_attacks_on_step``). A step
+    that provokes closes the ``ActorMoved`` run walked so far, so the attack
+    lands between two events. A mover an attack stops (0 HP, Speed 0, gone)
+    stays on the cell it was leaving; a mover an attack pushes stops where
+    the push leaves it, keeping its unspent movement.
     """
     actor_id = current.entity_id
     # SRD 5.2 "Speed 0. Your Speed is 0 and can't increase." (Grappled /
@@ -9003,43 +9038,47 @@ def _handle_move(live: _LiveCombat, current: Combatant, intent: PlayerIntent) ->
     if _frightened_approach_blocked(live, current, path):
         _emit(live, MoveFailed(actor_id=actor_id, reason="frightened"))
         return
-    spent = 0
-    position = start_zone
-    for next_zone in path[1:]:
-        step_distance = live.topology.edge_distance(position, next_zone)
+    # SRD 5.2 Opportunity Attacks: "The attack occurs right before the
+    # creature leaves your reach." One ``ActorMoved`` per uninterrupted run of
+    # steps: a step that provokes first closes the run walked so far, so the
+    # attack lands between the two events.
+    run_start, run_ft, position = start_zone, 0, start_zone
+    for next_cell in path[1:]:
+        step_distance = live.topology.edge_distance(position, next_cell)
         if step_distance is None:  # pragma: no cover - route is legal by construction
             break
-        # SRD §Opportunity Attacks — monster-reactor / PC-mover direction,
-        # fired before the mover leaves each cell's reach. A mover dropped to
-        # 0 HP stops where the drop happened.
-        if _fire_monster_opportunity_attacks_on_move(
-            live, mover_id=actor_id, from_zone=position, to_zone=next_zone
+        if run_ft and _opportunity_attackers(
+            live, mover_id=actor_id, from_cell=position, to_cell=next_cell
+        ):
+            _emit(
+                live,
+                ActorMoved(
+                    actor_id=actor_id, from_zone=run_start, to_zone=position, distance_ft=run_ft
+                ),
+            )
+            run_start, run_ft = position, 0
+        if _fire_opportunity_attacks_on_step(
+            live, mover_id=actor_id, from_cell=position, to_cell=next_cell
         ):
             break
-        spent += step_distance
-        position = next_zone
-        # Decrement budget + update position. model_copy + slot-replace
-        # mirrors the C-1 action-economy mutation pattern.
-        for idx, c in enumerate(live.initiative):
-            if c.entity_id == actor_id:
-                live.initiative[idx] = c.model_copy(
-                    update={"movement_remaining": c.movement_remaining - step_distance}
-                )
-                break
-        live.actor_zone[actor_id] = next_zone
+        mover = _find_combatant(live, actor_id)
+        if mover is None or mover.movement_remaining < step_distance:
+            break
+        _update_combatant(
+            live, actor_id, movement_remaining=mover.movement_remaining - step_distance
+        )
+        live.actor_zone[actor_id] = next_cell
+        position = next_cell
+        run_ft += step_distance
     # A summon dropped to 0 HP on the way has left the order, and its
     # departure already opened the next turn: no ActorMoved.
-    if spent == 0 or _find_combatant(live, actor_id) is None:
-        return
-    _emit(
-        live,
-        ActorMoved(
-            actor_id=actor_id,
-            from_zone=start_zone,
-            to_zone=position,
-            distance_ft=spent,
-        ),
-    )
+    if run_ft and _find_combatant(live, actor_id) is not None:
+        _emit(
+            live,
+            ActorMoved(
+                actor_id=actor_id, from_zone=run_start, to_zone=position, distance_ft=run_ft
+            ),
+        )
     # Turn stays live — no TurnEnded, no current_turn_index advance.
 
 
@@ -11862,6 +11901,118 @@ async def _dispatch_turn_nonending_intent(
     return False
 
 
+def _pc_attack_context_kwargs(
+    live: _LiveCombat,
+    current: Combatant,
+    geometry_targets: list[Combatant],
+    *,
+    base_weapon: Weapon | None,
+    weapon: Weapon | None,
+    payload: dict[str, Any],
+    cover_origin: str | None = None,
+) -> dict[str, Any]:
+    """The ``build_activity_context`` keyword block a character's resolution
+    shares between its on-turn intent (``submit_player_intent``) and its
+    opportunity attack (``_resolve_opportunity_attack``): every argument that
+    depends on the attacker, its targets (``geometry_targets``), the weapon it
+    swings (``base_weapon`` as fetched, ``weapon`` with its enchantments) and
+    the hydration ``payload`` — never on the intent. ``cover_origin`` is an
+    area's point of origin, ``None`` for the attacker's own cell."""
+    target_unseen, attacker_unseen_by = _target_visibility_maps(live, current, geometry_targets)
+    attacker_invisibility_pierced_by, target_invisibility_pierced = _invisibility_pierced_maps(
+        live, current, geometry_targets
+    )
+    return {
+        "passive_damage_modifiers": payload["passive_damage_modifiers"],
+        "save_modifiers": payload["save_modifiers"],
+        "check_modifiers": payload["check_modifiers"],
+        "d20_test_penalty": payload["d20_test_penalty"],
+        # The degenerate case where an area's point of origin coincides with
+        # the target's own cell (a small sphere centred on the lone creature
+        # it affects) is handled inside ``_target_cover_map`` itself.
+        "target_cover": _target_cover_map(
+            live, current.entity_id, geometry_targets, origin_cell=cover_origin
+        ),
+        "target_distance_ft": _target_distance_map(live, current.entity_id, geometry_targets),
+        # SRD 5.2 §Actions in Combat — Dodge: per-target dodge-benefit flag
+        # folded into attack disadvantage (attack.py). C16b: *"any attack roll
+        # made against you has Disadvantage if you can see the attacker"* —
+        # the dodging target must also see THIS attacker (``current``).
+        "target_dodging": {
+            t.entity_id: _dodge_benefit_active(live, t) and _combatant_can_see(live, t, current)
+            for t in geometry_targets
+        },
+        # SRD 5.2 §Actions in Combat — Help, Assist an Attack Roll (C14 Task
+        # 4): per-target ally-of-attacker Help grant folded into attack
+        # advantage (attack.py); the one-use pop fires after resolution.
+        "target_help_advantage": _target_help_advantage_map(
+            live, current.entity_id, geometry_targets
+        ),
+        "attacker_grappler_id": _condition_source_entity(live, current, "grappled"),
+        "target_unseen": target_unseen,
+        "attacker_unseen_by": attacker_unseen_by,
+        "attacker_invisibility_pierced_by": attacker_invisibility_pierced_by,
+        "target_invisibility_pierced": target_invisibility_pierced,
+        # SRD 5.2 Frightened line-of-sight gate (C16b): PRE-RESOLVED
+        # attacker-own-perception flag.
+        "attacker_fear_source_in_sight": _fear_source_in_sight(live, current),
+        # The caster's ScaleValue magnitudes + class levels, pre-resolved at
+        # the seam (loader access here): ``@scale.*`` /
+        # ``@classes.<class>.levels`` formula tokens read these carriers.
+        "scale_values": _scale_values_of(current),
+        "class_levels": _class_levels(current),
+        # SRD 5.2 Martial Arts: PRE-RESOLVED (armor/Shield + the granted
+        # feature) — ``attack.py`` still gates per swing on the weapon being
+        # unarmed or a Monk weapon.
+        "martial_arts": _martial_arts_active(current),
+        # SRD §Advantage / §Sneak Attack — the caster's own active effects
+        # (attacker-side advantage flags) plus the two Sneak Attack sidecars:
+        # the per-turn "spent" gate rebuilt from the live Combatant flag, and
+        # the per-target ally-adjacent predicate (a spatial read owned here,
+        # not in the pure resolver).
+        "active_effects": tuple(live.active_effects.get(current.entity_id, [])),
+        "sneak_attack_spent": {current.entity_id: current.sneak_attack_spent_this_turn},
+        "sneak_attack_ally_adjacent": _sneak_ally_adjacent_map(live, current, geometry_targets),
+        # SRD 5.2 §Weapon Proficiency (C15) — real gate: proficient iff
+        # ``current.weapon_proficiencies`` is the ``None`` sentinel (host never
+        # opted in) or the weapon's category/slug is listed; ``True`` for a
+        # ``None`` weapon.
+        "is_proficient_attack": _is_proficient_with_weapon(current, weapon),
+        # SRD 5.2 §Range (C15 Task 2) — per-target "beyond normal range" flag
+        # folded into attack disadvantage (attack.py, "range:long").
+        "target_beyond_normal_range": _target_beyond_normal_range_map(
+            live, current.entity_id, weapon, geometry_targets
+        ),
+        # SRD 5.2 "Ranged Attacks in Close Combat" (C15 Task 3): per-ATTACKER
+        # flag folded into attack disadvantage (attack.py, "ranged_in_melee")
+        # for an effectively-ranged attack.
+        "attacker_ranged_in_melee": _hostile_adjacent_to_attacker(live, current),
+        # SRD 5.2 §Weapon Mastery — Vex / Sap (C15 Task 6): PRE-RESOLVED
+        # per-target vex-grant / per-attacker sap-mark flags, mirroring the
+        # Help geometry above. The one-use pops fire after resolution.
+        "attacker_vex_advantage": _attacker_vex_advantage_map(
+            live, current.entity_id, geometry_targets
+        ),
+        "attacker_sapped": current.entity_id in live.sap_marks,
+        # C18 §Monster action economy — Legendary Resistance sidecars (Task
+        # 7): a PC attack/cast/item/feature can force a save on a monster
+        # target holding a pre-armed conversion.
+        "legendary_resistance_armed": payload["legendary_resistance_armed"],
+        "legendary_resistances_remaining_by_entity": payload[
+            "legendary_resistances_remaining_by_entity"
+        ],
+        # C18 §Monster action economy, fix round 1 — Undead Fortitude
+        # write-back handshake (see ``_LiveCombat.undead_fortitude_holds``):
+        # the live object itself, never a copy.
+        "undead_fortitude_holds": live.undead_fortitude_holds,
+        "weapon_enchantment_to_hit": _weapon_enchantment_to_hit(current, base_weapon, weapon),
+        # SRD 5.2 stat-block trait "Pack Tactics" holds whichever entry point
+        # drives its bearer: a form's (C21) or a host-driven monster's.
+        # ``attack.py`` applies it only to an attacker carrying the trait.
+        "pack_tactics_ally_adjacent": _pack_tactics_map(live, current, geometry_targets),
+    }
+
+
 async def submit_player_intent(
     handle: CombatHandle,
     actor_id: str,
@@ -12190,14 +12341,6 @@ async def submit_player_intent(
         elif intent.intent_type == "use_item" and intent.item_id:
             _LOGGER.warning("activity_resolution_empty slug=%s", intent.item_id)
     else:
-        # Pre-resolve the caster's ScaleValue magnitudes + class levels at the
-        # seam (loader access here), passing plain data into the pure
-        # ``build_activity_context``. ``@scale.*`` / ``@classes.<class>.levels``
-        # formula tokens read these carriers — the formula resolver never
-        # touches a loader. The species slug threads through so species @scale
-        # tables (e.g. Dragonborn breath) resolve alongside class + subclass.
-        scale_values = _scale_values_of(current)
-        class_levels = _class_levels(current)
         # SRD 5.2 §Weapon Mastery — Cleave (C15 Task 7): the once-per-turn
         # gate + the R5 deterministic second target, both pre-resolved here
         # (spatial + per-turn state are orchestrator-owned); ``attack.py``
@@ -12213,10 +12356,10 @@ async def submit_player_intent(
         cleave_candidate = (
             _cleave_candidate(live, current, fetched_weapon, targets) if cleave_available else None
         )
-        # Fix round 1 (controller ruling): every PER-TARGET sidecar below is
-        # built over the primary targets PLUS the cleave candidate, so the
-        # chained roll sees the candidate's own full SRD geometry (visibility,
-        # cover, distance, range tier, Dodge, Help, Vex) through the same
+        # Fix round 1 (controller ruling): every PER-TARGET sidecar is built
+        # over the primary targets PLUS the cleave candidate, so the chained
+        # roll sees the candidate's own full SRD geometry (visibility, cover,
+        # distance, range tier, Dodge, Help, Vex) through the same
         # ``_attack_roll_sources`` path as a main swing. ``ctx.targets``
         # itself stays the PRIMARY list — damage / effects / turn-state
         # writebacks never treat the candidate as a primary target. The
@@ -12226,10 +12369,6 @@ async def submit_player_intent(
         # against that creature").
         geometry_targets: list[Combatant] = (
             [*targets, cleave_candidate] if cleave_candidate is not None else targets
-        )
-        target_unseen, attacker_unseen_by = _target_visibility_maps(live, current, geometry_targets)
-        attacker_invisibility_pierced_by, target_invisibility_pierced = _invisibility_pierced_maps(
-            live, current, geometry_targets
         )
         # SRD 5.2 Versatile property (C15 Task 4) — the attacker's declared
         # two-handed grip (``intent.two_handed``) applies only when the
@@ -12265,58 +12404,6 @@ async def submit_player_intent(
             # extra charges paid for; ``None`` (the common case) lets
             # ``resolve_cast`` fall through to the wrapper's own/base level.
             cast_level_override=_item_cast_level_override(intent),
-            passive_damage_modifiers=payload["passive_damage_modifiers"],
-            save_modifiers=payload["save_modifiers"],
-            check_modifiers=payload["check_modifiers"],
-            d20_test_penalty=payload["d20_test_penalty"],
-            # SRD 5.2 §Cover — an area of effect measures cover from its point
-            # of origin, which for a target-origin template is NOT the caster's
-            # cell. ``None`` for every non-AoE cast/attack ⇒ caster's cell. The
-            # degenerate case where that point of origin coincides with the
-            # target's own cell (a small sphere centred on the lone creature it
-            # affects) is handled inside ``_target_cover_map`` itself — see its
-            # docstring — rather than by special-casing the call here.
-            target_cover=_target_cover_map(
-                live,
-                current.entity_id,
-                geometry_targets,
-                origin_cell=(
-                    _aoe_cover_origin(live, current.entity_id, intent, activities)
-                    if intent.intent_type == "cast_spell" and _typed_spell_broadcasts(activities)
-                    else None
-                ),
-            ),
-            target_distance_ft=_target_distance_map(live, current.entity_id, geometry_targets),
-            # SRD 5.2 §Actions in Combat — Dodge: per-target dodge-benefit
-            # flag folded into attack disadvantage (attack.py). C16b: *"any
-            # attack roll made against you has Disadvantage if you can see
-            # the attacker"* — the dodging target must also see THIS
-            # attacker (``current``) for the benefit to apply here.
-            target_dodging={
-                t.entity_id: _dodge_benefit_active(live, t) and _combatant_can_see(live, t, current)
-                for t in geometry_targets
-            },
-            # SRD 5.2 §Actions in Combat — Help, Assist an Attack Roll (C14
-            # Task 4): per-target ally-of-attacker Help grant folded into
-            # attack advantage (attack.py); the one-use pop fires after
-            # resolution below.
-            target_help_advantage=_target_help_advantage_map(
-                live, current.entity_id, geometry_targets
-            ),
-            attacker_grappler_id=_condition_source_entity(live, current, "grappled"),
-            target_unseen=target_unseen,
-            attacker_unseen_by=attacker_unseen_by,
-            attacker_invisibility_pierced_by=attacker_invisibility_pierced_by,
-            target_invisibility_pierced=target_invisibility_pierced,
-            # SRD 5.2 Frightened line-of-sight gate (C16b): PRE-RESOLVED
-            # attacker-own-perception flag.
-            attacker_fear_source_in_sight=_fear_source_in_sight(live, current),
-            scale_values=scale_values,
-            class_levels=class_levels,
-            # SRD 5.2 Martial Arts: PRE-RESOLVED (armor/Shield + the granted
-            # feature) — ``attack.py`` still gates per swing on the weapon
-            # being unarmed or a Monk weapon.
-            martial_arts=_martial_arts_active(current),
             # SRD 5.2 Bardic Inspiration: the die THIS attack asks to redeem
             # (``PlayerIntent.redeem_granted_die``), sized from the granting
             # bard now — ``None`` for every non-attack intent and an attack
@@ -12325,32 +12412,6 @@ async def submit_player_intent(
             # A FEATURE invocation must not inherit the blanket spell
             # save_dc_override; its save activity computes its own ability+PB DC.
             is_feature_invocation=bool(intent.feature_id),
-            # SRD §Advantage / §Sneak Attack — the caster's own active effects
-            # (attacker-side advantage flags) plus the two Sneak Attack
-            # sidecars: the per-turn "spent" gate rebuilt from the live
-            # Combatant flag, and the per-target ally-adjacent predicate (a
-            # spatial read owned here, not in the pure resolver).
-            active_effects=tuple(live.active_effects.get(current.entity_id, [])),
-            sneak_attack_spent={current.entity_id: current.sneak_attack_spent_this_turn},
-            sneak_attack_ally_adjacent=_sneak_ally_adjacent_map(live, current, geometry_targets),
-            # SRD 5.2 §Weapon Proficiency (C15) — real gate: proficient iff
-            # ``current.weapon_proficiencies`` is the ``None`` sentinel (host
-            # never opted in) or the fetched weapon's category/slug is
-            # listed. ``fetched_weapon`` is ``None`` for every non-attack
-            # intent (cast_spell/use_item/feature), and the helper returns
-            # ``True`` for a ``None`` weapon, so this is a no-op there.
-            is_proficient_attack=_is_proficient_with_weapon(current, fetched_weapon),
-            # SRD 5.2 §Range (C15 Task 2) — per-target "beyond normal range"
-            # flag folded into attack disadvantage (attack.py, "range:long").
-            # ``None``/empty for every non-attack intent (fetched_weapon is
-            # None), keeping the golden corpus identical.
-            target_beyond_normal_range=_target_beyond_normal_range_map(
-                live, current.entity_id, fetched_weapon, geometry_targets
-            ),
-            # SRD 5.2 "Ranged Attacks in Close Combat" (C15 Task 3): per-
-            # ATTACKER flag folded into attack disadvantage (attack.py,
-            # "ranged_in_melee") for an effectively-ranged attack.
-            attacker_ranged_in_melee=_hostile_adjacent_to_attacker(live, current),
             # SRD 5.2 Light: the extra attack adds no positive ability modifier —
             # unless Two-Weapon Fighting: "you can add your ability modifier to
             # the damage of that attack if you aren't already adding it".
@@ -12360,33 +12421,12 @@ async def submit_player_intent(
             # SRD 5.2 Versatile property (C15 Task 4) — see
             # ``use_versatile_damage`` computation above.
             use_versatile_damage=use_versatile_damage,
-            # SRD 5.2 §Weapon Mastery — Vex / Sap (C15 Task 6): PRE-RESOLVED
-            # per-target vex-grant / per-attacker sap-mark flags, mirroring
-            # the Help geometry above. The one-use pops fire after
-            # resolution below.
-            attacker_vex_advantage=_attacker_vex_advantage_map(
-                live, current.entity_id, geometry_targets
-            ),
-            attacker_sapped=current.entity_id in live.sap_marks,
             # SRD 5.2 §Weapon Mastery — Cleave (C15 Task 7): see the
             # ``cleave_available`` / ``cleave_candidate`` computation above.
             # The monster site does not thread these: a monster attack
             # carries no ``Weapon``, so it can never cleave today.
             cleave_available=cleave_available,
             cleave_candidate=cleave_candidate,
-            # C18 §Monster action economy — Legendary Resistance sidecars
-            # (Task 7): a PC attack/cast/item/feature can force a save on a
-            # monster target holding a pre-armed conversion.
-            legendary_resistance_armed=payload["legendary_resistance_armed"],
-            legendary_resistances_remaining_by_entity=payload[
-                "legendary_resistances_remaining_by_entity"
-            ],
-            # C18 §Monster action economy, fix round 1 — Undead Fortitude
-            # write-back handshake (see ``_LiveCombat.undead_fortitude_
-            # holds``): a PC's own weapon/spell attack is the MOST common
-            # real path a bearer (a zombie fought by the party) resolves
-            # through, so this is wired here too, not just monster-side.
-            undead_fortitude_holds=live.undead_fortitude_holds,
             # SRD 5.2 Lay on Hands — the ``@scaling`` token this resolution's
             # formulas see: the pool points drawn, set only when the resolved
             # feature activity scales its own-pool cost by amount.
@@ -12394,19 +12434,28 @@ async def submit_player_intent(
                 feature_invocation.scaling_value if feature_invocation is not None else None
             ),
             conjuration=_conjuration_carrier(live, current, intent),
-            weapon_enchantment_to_hit=_weapon_enchantment_to_hit(
-                current, resolved.fetched_weapon, fetched_weapon
-            ),
             # A stat-block command (C21) rolls at the stat block's
             # own scores and Proficiency Bonus.
             stat_block_magnitudes=(
                 _stat_block_magnitudes_of(live, current) if intent.stat_block_action_id else None
             ),
-            # SRD 5.2 stat-block trait "Pack Tactics" holds whichever entry
-            # point drives its bearer: a form's (C21) or a host-driven
-            # monster's. ``attack.py`` applies it only to an attacker carrying
-            # the trait.
-            pack_tactics_ally_adjacent=_pack_tactics_map(live, current, geometry_targets),
+            **_pc_attack_context_kwargs(
+                live,
+                current,
+                geometry_targets,
+                base_weapon=resolved.fetched_weapon,
+                weapon=fetched_weapon,
+                payload=payload,
+                # SRD 5.2 §Cover — an area of effect measures cover from its
+                # point of origin, which for a target-origin template is NOT the
+                # caster's cell. ``None`` for every non-AoE cast/attack ⇒ the
+                # caster's cell.
+                cover_origin=(
+                    _aoe_cover_origin(live, current.entity_id, intent, activities)
+                    if intent.intent_type == "cast_spell" and _typed_spell_broadcasts(activities)
+                    else None
+                ),
+            ),
         )
         for activity in activities:
             resolve_activity(activity, actx, weapon=fetched_weapon)
@@ -12444,9 +12493,7 @@ async def submit_player_intent(
         # A rider fired iff the caster was sneak-eligible for a hit target this
         # resolution (finesse/ranged weapon + Advantage or an adjacent ally),
         # was not already spent, and at least one target took damage.
-        _record_sneak_attack_spent(
-            live, current, intent, fetched_weapon, targets, actx, pre_event_count
-        )
+        _record_sneak_attack_spent(live, current, fetched_weapon, targets, actx, pre_event_count)
 
         # SRD 5.2 §Spell Descriptions — typed forced-movement riders (e.g.
         # Thunderwave's "pushed 10 feet away from you") fire after the
@@ -12532,411 +12579,265 @@ async def submit_player_intent(
     _end_action(live, actor_id, intent)
 
 
-def _fire_pc_opportunity_attacks_on_move(
-    live: _LiveCombat,
-    *,
-    mover_id: str,
-    from_zone: str,
-    to_zone: str,
-) -> bool:
-    """SRD §Opportunity Attacks — fire PC AoOs when ``mover_id`` leaves reach.
+def _opportunity_attackers(
+    live: _LiveCombat, *, mover_id: str, from_cell: str, to_cell: str
+) -> list[str]:
+    """SRD 5.2 Opportunity Attacks: "You can make an Opportunity Attack when a
+    creature that you can see leaves your reach using its action, its Bonus
+    Action, its Reaction, or one of its speeds." The ids of every creature the
+    step ``from_cell`` -> ``to_cell`` lets make one, in initiative order.
 
-    *"You can make an Opportunity Attack when a creature that you can see
-    leaves your reach using its action, its Bonus Action, its Reaction, or
-    one of its speeds."* (SRD 5.2; C16b: a reactor that can't see the mover
-    — ``_combatant_can_see(live, reactor, mover)`` — never triggers, no
-    Reaction spent, no event emitted, the same as any other gate below.)
-
-    Phase-6 wires this for the **PC reactor / monster mover** direction
-    only — the symmetric monster-AoO path requires the reaction-queue
-    machinery deferred to the monster-spellcasting epic (see
-    ``BACKLOG.md`` [combat] entry).
-
-    Zone-graph reach approximation: in the current zone model the only
-    reach band the orchestrator can resolve cheaply is "same zone" (≤5ft
-    melee adjacency). A 10ft-reach AoO from a polearm-wielding PC against
-    a mover in an adjacent zone is not modeled here; ``melee_reach_ft``
-    on the Combatant is the threshold but the within-range check below
-    only fires for same-zone reactors. Extending to adjacent-zone reach
-    is a follow-up when the zone graph carries directional
-    "melee-adjacent" semantics.
-
-    For each alive PC with reaction available in ``from_zone`` (the zone
-    the mover is *leaving*), where ``to_zone`` falls outside the PC's
-    ``melee_reach_ft``, fire one AoO:
-
-      * roll d20 + PC.attack_bonus, hit on total ≥ mover.ac (nat 20 crit,
-        nat 1 auto-miss — same rules as the regular attack handler);
-      * emit ``AttackRolled(is_opportunity_attack=True)``;
-      * on hit, roll the PC's ``damage_dice`` and emit ``DamageApplied``
-        — ``_emit`` handles HP tracking + synthesizing the ``Death`` if
-        the mover drops to 0 HP;
-      * consume the PC's ``reaction_available``.
-
-    Returns ``True`` if the mover dropped to 0 HP from any AoO this
-    step — the caller cancels the remaining MOVE then (SRD: *"the attack
-    interrupts the provoking creature's Movement"*; a dead mover stops
-    in place rather than completing the step).
+    A reactor is a member of either side (a summon takes no reactions) that is
+    the mover's enemy, alive above 0 HP, not Incapacitated, has its Reaction
+    and a melee attack to make (``_opportunity_attack_of``), can see the mover
+    (``_combatant_can_see``) and is not Charmed by it (SRD 5.2 Charmed: "You
+    can't attack the charmer"). The step provokes when ``from_cell`` is within
+    that attack's reach, with line of sight and short of total cover, and
+    ``to_cell`` is not: reach is Chebyshev, so stepping around inside it never
+    provokes. A mover that took the Disengage action
+    this turn provokes nothing, from either side ("Your movement doesn't
+    provoke Opportunity Attacks for the rest of the turn").
     """
-    mover = next((c for c in live.initiative if c.entity_id == mover_id), None)
-    if mover is None:
-        return False
-    mover_died = False
-    for idx, reactor in enumerate(live.initiative):
-        if reactor.entity_id not in live.party_ids:
+    mover = _find_combatant(live, mover_id)
+    if mover is None or mover.disengaging_this_turn:
+        return []
+    reactors: list[str] = []
+    for reactor in live.initiative:
+        reactor_id = reactor.entity_id
+        if (
+            reactor_id not in live.party_ids and reactor_id not in live.encounter_ids
+        ) or not _is_enemy(live, reactor_id, mover_id):
             continue
-        if not reactor.is_alive or reactor.hp_current <= 0:
+        if not reactor.is_alive or reactor.hp_current <= 0 or not reactor.reaction_available:
             continue
-        # SRD 5.2 Incapacitated — no Reaction (so no opportunity attack either).
         if conditions_block_actions(_condition_names(reactor)):
             continue
-        if not reactor.reaction_available:
-            continue
-        if live.actor_zone.get(reactor.entity_id) != from_zone:
-            continue
-        # Same-zone reach approximation: a 5ft melee reach covers same-zone
-        # adjacency; an out-of-zone move always provokes (the mover leaves
-        # the reactor's reach band).
-        if to_zone == from_zone:
-            continue
-        # SRD 5.2 §Opportunity Attacks — "a creature that you can see": a
-        # Blinded (or otherwise sight-blocked) reactor never triggers; no
-        # Reaction spent, no event emitted.
-        if not _combatant_can_see(live, reactor, mover):
-            continue
-        # Roll the AoO attack through the shared SRD 5.2 D20 Test primitive
-        # (C14) — same rules shape as effects/attack.py — nat 20 crit, nat 1
-        # auto-miss, total ≥ AC on hit; now honors Exhaustion's flat penalty
-        # and the condition/Dodge advantage-disadvantage rows so an AoO is no
-        # longer a bare unconditioned d20.
-        # C15: reactor.attack_bonus is int | None (None = host never set
-        # PartyMemberSpec.attack_bonus); or 0 mirrors the pre-C15 int default.
-        modifier = (reactor.attack_bonus or 0) + d20_test_penalty(reactor.conditions)
-        adv_sources, dis_sources = _opportunity_attack_advantage_sources(
-            live, reactor=reactor, mover=mover
-        )
-        roll = roll_d20_test(
-            live.rng,
-            modifier,
-            AdvantageSources(advantage=tuple(adv_sources), disadvantage=tuple(dis_sources)),
-        )
-        natural, total = roll.kept, roll.total
-        if natural == 20:
-            is_crit, is_hit = True, True
-        elif natural == 1:
-            is_crit, is_hit = False, False
-        else:
-            is_crit = False
-            is_hit = total >= mover.ac
-        _emit(
-            live,
-            IntentSubmitted(
-                actor_id=reactor.entity_id,
-                intent_type="reaction",
-                target_id=mover_id,
-            ),
-        )
-        _emit(
-            live,
-            AttackRolled(
-                attacker_id=reactor.entity_id,
-                target_id=mover_id,
-                roll_total=total,
-                advantage=roll.mode,
-                is_crit=is_crit,
-                is_hit=is_hit,
-                is_opportunity_attack=True,
-                natural=natural,
-                modifier=modifier,
-                sources=list(roll.sources),
-                advantage_sources=list(adv_sources),
-                disadvantage_sources=list(dis_sources),
-            ),
-        )
-        # Consume the reaction regardless of hit/miss (SRD: reactions are
-        # spent on use, not on success).
-        live.initiative[idx] = reactor.model_copy(update={"reaction_available": False})
-        if is_hit:
-            damage = _roll_damage_expression(live, reactor.damage_dice, crit=is_crit)
-            if damage > 0:
-                tracked_before = live.tracked_hp.get(mover_id, mover.hp_current)
-                _emit(
-                    live,
-                    DamageApplied(
-                        target_id=mover_id,
-                        amount=damage,
-                        damage_type=reactor.damage_type,
-                        is_overkill=damage > tracked_before,
-                        # F2 — an opportunity attack always resolves through the
-                        # reactor's legacy attack_bonus/damage_dice fields (see
-                        # _synthesize_attack_from_legacy_fields), never a typed
-                        # weapon/activity, so attribute it the same synthesized id
-                        # that path uses rather than inventing a new naming scheme.
-                        source_id="synth:legacy-swing",
-                        is_crit=is_crit,
-                    ),
-                )
-                # _emit synthesizes Death + records dead_ids when tracked HP
-                # hits 0 — check that here to cancel the rest of the move.
-                if mover_id in live.dead_ids:
-                    mover_died = True
-                    break
-    return mover_died
-
-
-def _opportunity_attack_advantage_sources(
-    live: _LiveCombat, *, reactor: Combatant, mover: Combatant
-) -> tuple[list[AdvantageSource], list[AdvantageSource]]:
-    """The typed advantage/disadvantage sources for an opportunity attack,
-    assembled the same way ``activities/attack.py::resolve_attack`` does for
-    a regular Attack: the condition-derived half (Prone/Grappled/etc, called
-    once per side so the emitted source names which side produced it — now
-    also threading the C16b Invisible "can somehow see you" carve-out via
-    ``_pierces_invisibility`` in each direction) plus the Dodge action's
-    disadvantage and the C16b "Unseen Attackers and Targets" advantage row
-    (mover can't see reactor). AoOs are always melee (same-zone reach
-    approximation — see the callers' docstrings), so the Prone-target
-    distance check always resolves within-5ft.
-    """
-    reactor_conditions = _condition_names(reactor)
-    mover_conditions = _condition_names(mover)
-    reactor_cond_adv, reactor_cond_dis = conditions_grant_advantage_on_attack(
-        reactor_conditions,
-        [],
-        grappler_id=_condition_source_entity(live, reactor, "grappled"),
-        target_id=mover.entity_id,
-        # C16b — does the mover (AoO TARGET) pierce the reactor's (AoO
-        # ATTACKER) Invisible condition?
-        attacker_invisibility_pierced=_pierces_invisibility(live, mover, reactor),
-        # C16b — SRD 5.2 Frightened line-of-sight gate: does the reactor's
-        # (AoO ATTACKER) own fear source stay in sight?
-        fear_source_in_sight=_fear_source_in_sight(live, reactor),
-    )
-    mover_cond_adv, mover_cond_dis = conditions_grant_advantage_on_attack(
-        [],
-        mover_conditions,
-        distance_ft=5,
-        # C16b — does the reactor pierce the mover's Invisible condition?
-        target_invisibility_pierced=_pierces_invisibility(live, reactor, mover),
-    )
-    adv_sources: list[AdvantageSource] = []
-    dis_sources: list[AdvantageSource] = []
-    if reactor_cond_adv:
-        adv_sources.append("condition:attacker")
-    if mover_cond_adv:
-        adv_sources.append("condition:target")
-    if reactor_cond_dis:
-        dis_sources.append("condition:attacker")
-    if mover_cond_dis:
-        dis_sources.append("condition:target")
-    # SRD 5.2 §Actions in Combat — Dodge: "any attack roll made against
-    # you has Disadvantage if you can see the attacker" (C16b: the mover
-    # is the dodging "you" here, the reactor is "the attacker").
-    if _dodge_benefit_active(live, mover) and _combatant_can_see(live, mover, reactor):
-        dis_sources.append("dodge")
-    # SRD 5.2 "Unseen Attackers and Targets": "When a creature can't see
-    # you, you have Advantage on attack rolls against it" — the mover
-    # (AoO target) can't see the reactor (AoO attacker). Plan ruling R4: this
-    # row uses raw scene vision (``SpatialTopology.can_see``), NOT the
-    # ``_combatant_can_see`` composite, mirroring ``_target_visibility_maps``
-    # exactly — Blinded/Invisible already emit their own ``condition:*``
-    # sources above, so folding them into "unseen" too would double-tag a
-    # Blinded mover. Untracked position on either side ⇒ skip the row (same
-    # "untracked ⇒ seen" convention as ``_target_visibility_maps``).
-    mover_zone = live.actor_zone.get(mover.entity_id)
-    reactor_zone = live.actor_zone.get(reactor.entity_id)
-    if (
-        mover_zone is not None
-        and reactor_zone is not None
-        and not live.topology.can_see(mover_zone, reactor_zone, mover.senses)
-    ):
-        adv_sources.append("unseen")
-    return adv_sources, dis_sources
-
-
-def _fire_monster_opportunity_attacks_on_move(
-    live: _LiveCombat,
-    *,
-    mover_id: str,
-    from_zone: str,
-    to_zone: str,
-) -> bool:
-    """SRD §Opportunity Attacks — fire monster AoOs when a PC leaves reach.
-
-    *"You can make an Opportunity Attack when a creature that you can see
-    leaves your reach using its action, its Bonus Action, its Reaction, or
-    one of its speeds."* (SRD 5.2; C16b: a reactor that can't see the mover
-    — ``_combatant_can_see(live, reactor, mover)`` — never triggers, no
-    Reaction spent, no event emitted, mirrors the PC direction.)
-
-    The monster-reactor / PC-mover mirror of
-    ``_fire_pc_opportunity_attacks_on_move`` same hit/crit rules,
-    same reaction-consumed-on-use semantics, same
-    ``AttackRolled(is_opportunity_attack=True)`` event shape, same same-zone
-    reach approximation (see the shipped direction's docstring — extending
-    to adjacent-zone ``melee_reach_ft`` reach is a follow-up on BOTH
-    directions). An opportunity attack is an always-available reaction gated
-    only on ``reaction_available`` — it does NOT go through the pre-armed
-    ``pending_reactions`` queue (docs/dev/reaction-queue.md, "Why AoO is not
-    a queued reaction").
-
-    One guard the shipped direction does not need: a mover who took the
-    Disengage action this turn (``disengaging_this_turn``) never provokes —
-    the trigger is suppressed entirely, no reactor spends a Reaction
-    .
-
-    Returns ``True`` if the mover dropped to 0 HP from any AoO — the caller
-    cancels the move (SRD: *"The attack occurs right before it leaves your
-    reach"*; a dead mover stops in place, and a summon dropped to 0 HP has
-    left the initiative order).
-    """
-    mover = next((c for c in live.initiative if c.entity_id == mover_id), None)
-    if mover is None or mover.disengaging_this_turn:
-        return False
-    mover_died = False
-    # Iterate the ids and re-read each reactor: an opportunity attack can make
-    # a summon leave the order mid-loop (its caster's concentration breaks, or
-    # the summon is the mover), and a live-list iterator would then skip the
-    # next reactor. A reactor that left no longer reacts.
-    for reactor_id in [c.entity_id for c in live.initiative]:
-        reactor = _find_combatant(live, reactor_id)
-        # Only the mover's foes react: a creature can't leave its own reach,
-        # and a host-driven foe's move must not draw its allies' attacks.
+        reactor_cell = live.actor_zone.get(reactor_id)
+        attack = _opportunity_attack_of(live, reactor) if reactor_cell is not None else None
         if (
-            reactor is None
-            or reactor_id not in live.encounter_ids
-            or not _is_enemy(live, reactor_id, mover_id)
+            attack is None
+            or reactor_cell is None
+            or not _in_range_with_los(live.topology, reactor_cell, from_cell, attack.reach_ft)
+            or live.topology.within_range(reactor_cell, to_cell, attack.reach_ft)
         ):
             continue
-        if not reactor.is_alive or reactor.hp_current <= 0:
-            continue
-        # SRD 5.2 Incapacitated — no Reaction (so no opportunity attack either).
-        if conditions_block_actions(_condition_names(reactor)):
-            continue
-        if not reactor.reaction_available:
-            continue
-        if live.actor_zone.get(reactor.entity_id) != from_zone:
-            continue
-        # Same-zone reach approximation: a 5ft melee reach covers same-zone
-        # adjacency; an out-of-zone move always provokes (the mover leaves
-        # the reactor's reach band).
-        if to_zone == from_zone:
-            continue
-        # SRD 5.2 §Opportunity Attacks — "a creature that you can see": a
-        # sight-blocked reactor never triggers; no Reaction spent, no event
-        # emitted.
         if not _combatant_can_see(live, reactor, mover):
             continue
-        # Roll the AoO attack through the shared SRD 5.2 D20 Test primitive
-        # (C14) — see ``_fire_pc_opportunity_attacks_on_move`` for the
-        # rationale (Exhaustion penalty + condition/Dodge advantage rows now
-        # reach this roll instead of a bare unconditioned d20).
-        # C15: reactor.attack_bonus is int | None (None = host never set
-        # PartyMemberSpec.attack_bonus); or 0 mirrors the pre-C15 int default.
-        modifier = (reactor.attack_bonus or 0) + d20_test_penalty(reactor.conditions)
-        adv_sources, dis_sources = _opportunity_attack_advantage_sources(
-            live, reactor=reactor, mover=mover
-        )
-        roll = roll_d20_test(
-            live.rng,
-            modifier,
-            AdvantageSources(advantage=tuple(adv_sources), disadvantage=tuple(dis_sources)),
-        )
-        natural, total = roll.kept, roll.total
-        if natural == 20:
-            is_crit, is_hit = True, True
-        elif natural == 1:
-            is_crit, is_hit = False, False
-        else:
-            is_crit = False
-            is_hit = total >= mover.ac
-        _emit(
-            live,
-            IntentSubmitted(
-                actor_id=reactor.entity_id,
-                intent_type="reaction",
-                target_id=mover_id,
-            ),
-        )
-        _emit(
-            live,
-            AttackRolled(
-                attacker_id=reactor.entity_id,
-                target_id=mover_id,
-                roll_total=total,
-                advantage=roll.mode,
-                is_crit=is_crit,
-                is_hit=is_hit,
-                is_opportunity_attack=True,
-                natural=natural,
-                modifier=modifier,
-                sources=list(roll.sources),
-                advantage_sources=list(adv_sources),
-                disadvantage_sources=list(dis_sources),
-            ),
-        )
-        # Consume the reaction regardless of hit/miss (SRD: reactions are
-        # spent on use, not on success).
-        _update_combatant(live, reactor_id, reaction_available=False)
-        if is_hit:
-            damage = _roll_damage_expression(live, reactor.damage_dice, crit=is_crit)
-            if damage > 0:
-                tracked_before = live.tracked_hp.get(mover_id, mover.hp_current)
-                _emit(
-                    live,
-                    DamageApplied(
-                        target_id=mover_id,
-                        amount=damage,
-                        damage_type=reactor.damage_type,
-                        is_overkill=damage > tracked_before,
-                        # F2 — an opportunity attack always resolves through the
-                        # reactor's legacy attack_bonus/damage_dice fields (see
-                        # _synthesize_attack_from_legacy_fields), never a typed
-                        # weapon/activity, so attribute it the same synthesized id
-                        # that path uses rather than inventing a new naming scheme.
-                        source_id="synth:legacy-swing",
-                        is_crit=is_crit,
-                    ),
-                )
-                if mover_id in live.dead_ids or _find_combatant(live, mover_id) is None:
-                    mover_died = True
-                    break
-    return mover_died
+        if _condition_source_entity(live, reactor, "charmed") == mover_id:
+            continue
+        reactors.append(reactor_id)
+    return reactors
 
 
-def _roll_damage_expression(live: _LiveCombat, expr: str, *, crit: bool) -> int:
-    """Roll an ``XdY+Z`` damage expression with the live RNG.
+def _walk_must_stop(live: _LiveCombat, mover_id: str) -> bool:
+    """Whether a walk ends where its mover now stands: the mover left the
+    initiative order (a summon at 0 HP), died, dropped to 0 HP, or its
+    effective Speed fell to 0 (SRD 5.2 Unconscious, Grappled: "Speed 0")."""
+    mover = _find_combatant(live, mover_id)
+    return (
+        mover is None
+        or mover_id in live.dead_ids
+        or mover.hp_current <= 0
+        or _effective_speed(mover, live) == 0
+    )
 
-    Crit doubles dice (SRD §Critical Hits: *"roll all the attack's damage
-    dice twice"*); flat modifier is added once. Unparseable expressions
-    return 0 — the caller treats that as "no damage applied" rather than
-    propagating a parser error mid-turn.
+
+def _fire_opportunity_attacks_on_step(
+    live: _LiveCombat, *, mover_id: str, from_cell: str, to_cell: str
+) -> bool:
+    """Make every opportunity attack the step ``from_cell`` -> ``to_cell``
+    provokes (``_opportunity_attackers``) while the mover still stands in
+    ``from_cell``: SRD 5.2 "The attack occurs right before the creature leaves
+    your reach." Each reactor spends its Reaction, hit or miss. Every walk
+    calls this before each step (``_handle_move``, the closing walk, the flee
+    walk); forced movement never does (``push_combatant``).
+
+    Returns ``True`` when the walk must stop here (``_walk_must_stop``) or an
+    attack pushed the mover off ``from_cell``. The reactors after that one
+    attack nothing: the mover never leaves their reach.
     """
-    if not expr:
-        return 0
-    expr = expr.strip().lower().replace(" ", "")
-    # Strip a trailing +N / -N modifier.
-    modifier = 0
-    sign_idx = max(expr.rfind("+"), expr.rfind("-"))
-    if sign_idx > 0:  # >0: leading '-' would mean negative dice count
-        try:
-            modifier = int(expr[sign_idx:])
-            expr = expr[:sign_idx]
-        except ValueError:
-            return 0
-    if "d" not in expr:
-        return max(0, modifier)
-    count_s, sides_s = expr.split("d", 1)
-    try:
-        count = int(count_s) if count_s else 1
-        sides = int(sides_s)
-    except ValueError:
-        return 0
-    if count <= 0 or sides <= 0:
-        return max(0, modifier)
-    rolls = count * (2 if crit else 1)
-    total = sum(live.rng.randint(1, sides) for _ in range(rolls)) + modifier
-    return max(0, total)
+    for reactor_id in _opportunity_attackers(
+        live, mover_id=mover_id, from_cell=from_cell, to_cell=to_cell
+    ):
+        # Re-read both: an earlier attack this step can end a concentration
+        # and dismiss a summon, so the initiative order may have shifted.
+        reactor = _find_combatant(live, reactor_id)
+        mover = _find_combatant(live, mover_id)
+        if reactor is None or mover is None:
+            continue
+        _emit(
+            live,
+            IntentSubmitted(actor_id=reactor_id, intent_type="reaction", target_id=mover_id),
+        )
+        _update_combatant(live, reactor_id, reaction_available=False)
+        _resolve_opportunity_attack(live, reactor, mover)
+        # An attack's forced movement (the Push mastery) carried the mover
+        # off from_cell: the walk ends where it landed, and later reactors
+        # no longer see it leave their reach.
+        if _walk_must_stop(live, mover_id) or live.actor_zone.get(mover_id) != from_cell:
+            return True
+    return False
+
+
+@dataclass(frozen=True)
+class _OpportunityAttack:
+    """The one melee attack a creature makes as its opportunity attack (SRD
+    5.2: "one melee attack with a weapon or an Unarmed Strike"): the
+    activities it resolves, the character's weapon (``None`` for a stat-block
+    or legacy attack) and the reach it threatens with it."""
+
+    activities: tuple[Any, ...]
+    weapon: Weapon | None
+    reach_ft: int
+
+
+def _opportunity_attack_weapon_slug(pc: PartyMemberSpec) -> str | None:
+    """The weapon ``pc`` makes its opportunity attacks with: its
+    ``opportunity_attack_weapon_id``, else the first melee weapon in its
+    ``equipment``, else ``None`` — an Unarmed Strike.
+
+    Raises ``ValueError`` when ``opportunity_attack_weapon_id`` names no melee
+    weapon in the corpus: the attack must be a melee attack."""
+    loader = get_lib_loader()
+    if pc.opportunity_attack_weapon_id is not None:
+        weapon = loader.get_weapon(pc.opportunity_attack_weapon_id)
+        if weapon is None or weapon.range.kind != "melee":
+            raise ValueError(
+                f"start_combat: {pc.entity_id} opportunity_attack_weapon_id "
+                f"{pc.opportunity_attack_weapon_id!r} is not a melee weapon"
+            )
+        return weapon.slug
+    for slug in pc.equipment:
+        weapon = loader.get_weapon(slug)
+        if weapon is not None and weapon.range.kind == "melee":
+            return weapon.slug
+    return None
+
+
+def _stat_block_opportunity_attack(
+    monster: Monster, melee_reach_ft: int
+) -> _OpportunityAttack | None:
+    """The first action on ``monster``'s stat block whose attack is not ranged,
+    riders included (``expand_action_to_activities``), or ``None``. SRD 5.2
+    Reach: "Certain creatures have melee attacks with a reach greater than 5
+    feet" — a melee attack's explicit ft range is its reach (a Pike's 10 ft),
+    while a melee-or-thrown attack's ft range is its throw (a Spear's "reach
+    5 ft. or range 20/60 ft."), so that one reaches ``melee_reach_ft``."""
+    for action in monster.actions:
+        attack = next((a for a in action.activities if isinstance(a, AttackActivity)), None)
+        if attack is None or attack.attack.type.value == "ranged":
+            continue
+        reach = melee_reach_ft
+        value = attack.range.value or ""
+        if attack.attack.type.value == "melee" and attack.range.units == "ft" and value.isdigit():
+            reach = int(value) or melee_reach_ft
+        return _OpportunityAttack(
+            activities=tuple(expand_action_to_activities(monster, action)),
+            weapon=None,
+            reach_ft=reach,
+        )
+    return None
+
+
+def _opportunity_attack_of(live: _LiveCombat, creature: Combatant) -> _OpportunityAttack | None:
+    """The opportunity attack ``creature`` makes, or ``None`` when it has no
+    melee attack to make one with.
+
+    * A creature acting from a stat block — a monster's template, or the form a
+      transformed creature took — makes its first non-ranged stat-block attack
+      (``_stat_block_opportunity_attack``).
+    * A character swings ``live.opportunity_attack_weapons``' weapon at the
+      weapon's reach, or makes an Unarmed Strike at its ``melee_reach_ft``.
+    * Anyone else — a template-less foe, or a character when the asset
+      loader carries neither its weapon nor ``unarmed-strike`` — swings its
+      legacy ``attack_bonus`` / ``damage_dice``
+      (``_synthesize_attack_from_legacy_fields``) at its ``melee_reach_ft``.
+    """
+    slug = _current_stat_block_slug(live, creature.entity_id)
+    if slug is not None:
+        monster = get_lib_loader().get_monster(slug)
+        if monster is None:
+            return None
+        return _stat_block_opportunity_attack(monster, creature.melee_reach_ft)
+    weapon = (
+        get_lib_loader().get_weapon(
+            live.opportunity_attack_weapons.get(creature.entity_id, _UNARMED_STRIKE)
+        )
+        if creature.entity_type == "Character"
+        else None
+    )
+    if weapon is not None:
+        attack = next((a for a in weapon.activities if isinstance(a, AttackActivity)), None)
+        return _OpportunityAttack(
+            activities=(attack or _synthesize_attack_from_weapon(weapon),),
+            weapon=weapon,
+            reach_ft=(
+                creature.melee_reach_ft
+                if weapon.slug == _UNARMED_STRIKE
+                else _weapon_melee_reach_ft(weapon)
+            ),
+        )
+    synthesized = _synthesize_attack_from_legacy_fields(creature)
+    if synthesized is None:
+        return None
+    return _OpportunityAttack(
+        activities=(synthesized,), weapon=None, reach_ft=creature.melee_reach_ft
+    )
+
+
+def _resolve_opportunity_attack(live: _LiveCombat, reactor: Combatant, mover: Combatant) -> None:
+    """Resolve ``reactor``'s opportunity attack (``_opportunity_attack_of``)
+    on ``mover`` through the activity context its own turn's attack uses —
+    cover, Fighting Styles, Martial Arts, proficiency, enchantments, weapon
+    mastery, Sneak Attack and the target's readied Shield — flagged
+    ``is_opportunity_attack``. It is a Reaction, not the Attack action, so
+    none of that action's own bookkeeping applies: no Cleave, no Light
+    property extra attack, no Loading mark, no Bardic Inspiration die."""
+    attack = _opportunity_attack_of(live, reactor)
+    if attack is None:  # pragma: no cover - _opportunity_attackers skips it
+        return
+    if attack.weapon is None:
+        _resolve_monster_attack_activities(
+            live, reactor, [mover], attack.activities, is_opportunity_attack=True
+        )
+        return
+    targets = [mover]
+    weapon = _enchanted_weapon(live, reactor, attack.weapon)
+    # SRD Shield: "+5 bonus to AC, including against the triggering attack".
+    _drain_targeted_reactions(
+        live, trigger="hit_by_attack", triggering_actor_id=reactor.entity_id, targets=targets
+    )
+    payload = _build_hydration_payload(live, caster=reactor)
+    pre_event_count = len(live.event_log)
+    kwargs = _pc_attack_context_kwargs(
+        live, reactor, targets, base_weapon=attack.weapon, weapon=weapon, payload=payload
+    )
+    # A melee attack on a creature still inside its reach (``_opportunity_attackers``
+    # checked it) is never beyond a normal range, even an Unarmed Strike reaching
+    # ``reach_ft``.
+    kwargs["target_beyond_normal_range"] = {}
+    actx = build_activity_context(
+        reactor,
+        targets,
+        rng=live.rng,
+        event_emitter=lambda ev: _emit(live, ev),
+        slot_level=None,
+        base_spell_level=None,
+        spellcasting_ability=None,
+        concentration=False,
+        source_passive_effects=[],
+        spell_book={},
+        is_opportunity_attack=True,
+        **kwargs,
+    )
+    for activity in attack.activities:
+        resolve_activity(activity, actx, weapon=weapon)
+    _consume_attack_roll_grants(live, reactor, targets, pre_event_count)
+    _fold_mastery_procs(live, reactor.entity_id, actx)
+    _break_hide(live, reactor.entity_id)
+    _record_sneak_attack_spent(live, reactor, weapon, targets, actx, pre_event_count)
+    _fold_resolution_outcome(live, reactor, spell=None, actx=actx, pre_event_count=pre_event_count)
+    _sync_legendary_resistance(live, pre_event_count)
 
 
 async def advance_monster_turn(
@@ -13129,54 +13030,12 @@ async def advance_monster_turn(
                     ),
                 )
             # path[0] is attacker_zone; skip it. Walk forward step by step
-            # until either (a) we exhaust the budget, (b) the next edge
-            # doesn't fit, or (c) we end up within attack range.
+            # until either (a) a step can't be taken (budget, or an
+            # opportunity attack stopped the monster), or (b) we end up
+            # within attack range.
             for next_zone in path[1:]:
-                # Re-read the monster snapshot — it may have been mutated
-                # by a previous _emit(ActorMoved) loop iteration.
-                actor_snapshot = next(
-                    c for c in live.initiative if c.entity_id == current.entity_id
-                )
-                step_distance = live.topology.edge_distance(
-                    live.actor_zone[current.entity_id], next_zone
-                )
-                if step_distance is None or actor_snapshot.movement_remaining < step_distance:
+                if not _take_walk_step(live, current.entity_id, next_zone):
                     break
-                from_zone = live.actor_zone[current.entity_id]
-                # SRD §Opportunity Attacks — fire BEFORE the mover leaves
-                # reach. AoO interrupts the move: if the mover drops to 0
-                # HP from any reactor's attack, the remaining steps are
-                # cancelled and the move event for this step is suppressed
-                # (the mover never completed the step).
-                mover_died = _fire_pc_opportunity_attacks_on_move(
-                    live,
-                    mover_id=current.entity_id,
-                    from_zone=from_zone,
-                    to_zone=next_zone,
-                )
-                if mover_died:
-                    break
-                # Mutate budget + position via model_copy + slot-replace,
-                # matching the PC MOVE pattern.
-                for idx, c in enumerate(live.initiative):
-                    if c.entity_id == current.entity_id:
-                        live.initiative[idx] = c.model_copy(
-                            update={
-                                "movement_remaining": c.movement_remaining - step_distance,
-                            }
-                        )
-                        break
-                live.actor_zone[current.entity_id] = next_zone
-                _emit(
-                    live,
-                    ActorMoved(
-                        actor_id=current.entity_id,
-                        from_zone=from_zone,
-                        to_zone=next_zone,
-                        distance_ft=step_distance,
-                    ),
-                )
-                # Early-out once we're within attack range.
                 if _in_range_with_los(live.topology, next_zone, target_zone, monster_range_ft):
                     break
             # Re-check range after the (possibly partial) move.

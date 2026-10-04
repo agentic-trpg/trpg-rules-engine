@@ -161,12 +161,20 @@ class PartyMemberSpec(BaseModel):
     feats: tuple[str, ...] = ()
     # One Fighting Style feat for a hand-built spec; merged with any in ``feats``.
     fighting_style: FightingStyle | None = None
-    # SRD Weapons table, Reach property — melee reach in feet (e.g. a Glaive's
-    # Reach property adds 5 ft to the SRD baseline, landing at 10). Defaults to
-    # 5 (mirrors ``Combatant.melee_reach_ft``'s own default — the SRD baseline
-    # for a Medium creature's unarmed/short-weapon reach). Projected onto
-    # ``Combatant.melee_reach_ft`` at start_combat by ``_build_pc_combatants``.
+    # The reach this PC's opportunity attack threatens when it makes an Unarmed
+    # Strike, or the legacy swing (``_synthesize_attack_from_legacy_fields``); an
+    # opportunity attack with a weapon uses the weapon's own reach (10 ft with the
+    # Reach property), and an on-turn Unarmed Strike reaches 5 ft whatever this
+    # says. Defaults to 5 (mirrors ``Combatant.melee_reach_ft``'s own default — the
+    # SRD baseline). Projected onto ``Combatant.melee_reach_ft`` at start_combat by
+    # ``_build_pc_combatants``.
     reach_ft: int = 5
+    # SRD 5.2 Opportunity Attacks: "take a Reaction to make one melee attack
+    # with a weapon or an Unarmed Strike". The weapon slug this PC makes its
+    # opportunity attacks with. ``None`` (the default) picks the first melee
+    # weapon in ``equipment``, else an Unarmed Strike; ``start_combat`` raises
+    # ``ValueError`` for a slug that names no melee weapon.
+    opportunity_attack_weapon_id: str | None = None
     # SRD §Proficiency Bonus / §Saving Throws / §Skills — the PC's proficient
     # save abilities, proficient skills, skills with expertise (double
     # proficiency), and proficient weapon categories/slugs. Threaded onto the

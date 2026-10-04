@@ -184,8 +184,9 @@ class Combatant(BaseModel):
     # Defaults to 5ft (standard unarmed / 1-handed melee weapon). Polearms
     # with the reach property (glaive, halberd, pike, lance) project 10ft
     # here. Distinct from per-attack reach (carried on the weapon IR); this
-    # field is the AoO-trigger threshold and is the only reach value the
-    # opportunity-attack detection in advance_monster_turn reads.
+    # field is the reach of an opportunity attack whose weapon or stat-block
+    # attack sets none of its own: an Unarmed Strike, a natural attack
+    # (``orchestrator._opportunity_attack_of``).
     melee_reach_ft: int = 5
     # SRD §Classes — character class slug for PCs (e.g. "rogue", "barbarian").
     # With no ``classes`` map it is the one class, at ``character_level``; it
@@ -226,18 +227,17 @@ class Combatant(BaseModel):
     last_damaged_by: str | None = None
     # SRD §Actions in Combat, Disengage — "Your movement doesn't provoke
     # Opportunity Attacks for the rest of the turn." Set True by
-    # ``_handle_disengage`` (orchestrator.py, ; consulted by the
-    # monster-reactor opportunity-attack scan
-    # (``_fire_monster_opportunity_attacks_on_move``) to suppress AoOs for the
-    # remainder of the turn. Reset to False at the actor's own TurnStarted,
+    # ``_handle_disengage`` (orchestrator.py); ``_opportunity_attackers`` then
+    # lets no one, on either side, make an opportunity attack against this
+    # creature for the remainder of the turn. Reset to False at the actor's own TurnStarted,
     # alongside action_available/bonus_action_available/reaction_available.
     disengaging_this_turn: bool = False
     # SRD §Sneak Attack (Rogue), "Once per turn" — True once this combatant has
     # already dealt Sneak Attack damage during the current turn. Gates the
     # rider fold in ``activities/attack.py`` (projected per intent into
-    # ``ActivityResolutionContext.sneak_attack_spent``). Reset to False at the
-    # actor's own TurnStarted, alongside action_available / bonus_action_available
-    # / reaction_available / disengaging_this_turn. Defaults False (rider may
+    # ``ActivityResolutionContext.sneak_attack_spent``). Reset to False at
+    # every TurnStarted, any creature's (C24): an opportunity attack on another
+    # creature's turn can deal Sneak Attack again. Defaults False (rider may
     # fire) for every combatant.
     sneak_attack_spent_this_turn: bool = False
     # SRD §Extra Attack — "you can attack twice, instead of once, whenever

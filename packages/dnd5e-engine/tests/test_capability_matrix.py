@@ -199,31 +199,17 @@ _PROBES: dict[str, tuple[Any, str]] = {
         lambda: 'mode: AdvantageMode = "normal"' not in _src("activities/attack.py"),
         "Advantage/disadvantage is rolled on",
     ),
-    # C16b: opportunity attacks now honour the ``unseen`` advantage source
-    # and the Invisible carve-out via the shared per-side advantage-source
-    # helper both AoO directions call.
-    "Invisible-carve-out sources (C16b composite": (
-        lambda: (
-            "_opportunity_attack_advantage_sources(" in _src("orchestrator.py")
-            and "_pierces_invisibility(live, mover, reactor)" in _src("orchestrator.py")
-        ),
-        "Invisible-carve-out sources (C16b composite",
-    ),
     # C14 Task 3: Dodge sets a live ``dodging`` flag consumed by the attack
     # and save resolvers; the intent branch owns this exact literal.
     "Dodge": (
         lambda: 'if intent.intent_type == "dodge":' in _src("orchestrator.py"),
         "✅",
     ),
-    # C16b: Dodge's "if you can see the attacker" conjunct is applied both at
-    # the regular-attack context build sites (``_combatant_can_see(live, t,
-    # current)``) and on the AoO path (``_combatant_can_see(live, mover,
-    # reactor)``).
+    # C16b: Dodge's "if you can see the attacker" conjunct is applied at every
+    # attack context build site (``_combatant_can_see(live, t, current)``);
+    # since C24 an opportunity attack resolves through those sites too.
     'if you can see the attacker" is now enforced (C16b': (
-        lambda: (
-            "_combatant_can_see(live, t, current)" in _src("orchestrator.py")
-            and "_combatant_can_see(live, mover, reactor)" in _src("orchestrator.py")
-        ),
+        lambda: "_combatant_can_see(live, t, current)" in _src("orchestrator.py"),
         'if you can see the attacker" is now enforced (C16b',
     ),
     # C14 Task 4: Help (assist-an-attack-roll flavor) has a live handler —
@@ -395,18 +381,11 @@ _PROBES: dict[str, tuple[Any, str]] = {
         lambda: "seeded_incapacitated" in _src("orchestrator.py"),
         "closed via C14 Task 8",
     ),
-    # C14 Task 9 / C16b: opportunity attacks roll through the same d20-test
-    # primitive as every other attack, picking up condition/Exhaustion
-    # sources and now the visibility gate too — only cover is still missing.
+    # C24: an opportunity attack resolves through the activity context,
+    # flagged on its context.
     "| Opportunity attacks |": (
-        lambda: "roll_d20_test" in _src("orchestrator.py"),
+        lambda: "def _opportunity_attack_of(" in _src("orchestrator.py"),
         "✅",
-    ),
-    # C16b: the AoO's remaining gap is cover only — visibility now reaches
-    # the roll via ``_combatant_can_see``.
-    "cover on the AoO roll itself remains unmodelled": (
-        lambda: "_combatant_can_see(live, reactor, mover)" in _src("orchestrator.py"),
-        "cover on the AoO roll itself remains unmodelled",
     ),
     # C15 Tasks 2/3: the long-range disadvantage tier and the Ranged
     # Attacks in Close Combat gate both append their own AdvantageSource
@@ -691,9 +670,10 @@ _PROBES: dict[str, tuple[Any, str]] = {
         lambda: not re.search(r"^    size\b", _src("types/combat.py"), re.MULTILINE),
         "❌",
     ),
-    # A cheapest-route search needs a priority queue; the route is BFS.
+    # Every move's route is a fewest-squares BFS (``shortest_path``); only
+    # the flee planner's reachability search prices routes by cost.
     "Threat-aware or cost-aware pathfinding": (
-        lambda: "heapq" not in _src("spatial.py"),
+        lambda: "deque([a])" in _src("spatial.py"),
         "❌",
     ),
     "Spell attack rolls & save DCs": (
@@ -721,12 +701,14 @@ _PROBES: dict[str, tuple[Any, str]] = {
         lambda: "def _resolve_monster_cast(" in _src("orchestrator.py"),
         "✅",
     ),
+    # C24: the grid flee planner ranks the cells ``reachable_cells`` finds.
     "Flee / retreat behaviour": (
         lambda: (
-            "def _plan_flee_destination(" in _src("orchestrator.py")
+            "def _plan_flee_route(" in _src("orchestrator.py")
+            and "def reachable_cells(" in _src("spatial.py")
             and "has_fled" in _src("types/combat.py")
         ),
-        "⚠️ Partial",
+        "✅",
     ),
     "**Legendary actions**": (
         lambda: "LegendaryActionUsed(" in _src("orchestrator.py"),
@@ -766,17 +748,13 @@ _PROBES: dict[str, tuple[Any, str]] = {
         ),
         "✅",
     ),
-    # M2 (2026-09-27, C23 final review): both directions only when each side
-    # moves through its own path; ``_handle_move`` fires only the
-    # monster-reactor direction (the comment below), so a host-driven foe's
-    # move draws no character-reactor AoO (BACKLOG.md).
+    # C24: one step trigger serves every walk, whoever drives the mover.
     "| Opportunity attack |": (
         lambda: (
-            "def _fire_pc_opportunity_attacks_on_move(" in _src("orchestrator.py")
-            and "def _fire_monster_opportunity_attacks_on_move(" in _src("orchestrator.py")
-            and "monster-reactor / PC-mover direction" in _src("orchestrator.py")
+            "def _fire_opportunity_attacks_on_step(" in _src("orchestrator.py")
+            and "def _opportunity_attackers(" in _src("orchestrator.py")
         ),
-        "⚠️ Partial",
+        "✅",
     ),
     "Shield (incl. vs. Magic Missile)": (
         lambda: "def _apply_magic_missile_shield_carveout(" in _src("orchestrator.py"),

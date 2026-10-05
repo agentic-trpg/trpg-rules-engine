@@ -1,4 +1,4 @@
-"""Poisoned / Restrained attack migration parity and Poisoned check parity."""
+"""Shared condition attack migration parity and Poisoned check parity."""
 
 from __future__ import annotations
 
@@ -65,6 +65,32 @@ def _mirror_roll(rng: random.Random, mode: str) -> int:
         ),
         (["restrained", "frightened"], None, "disadvantage", ["condition:attacker"]),
         (["RESTRAINED", "restrained"], None, "disadvantage", ["condition:attacker"]),
+        (["blinded"], None, "disadvantage", ["condition:attacker"]),
+        (["blinded"], "flags.advantage.attack", "normal", ["flag", "condition:attacker"]),
+        (["blinded"], "flags.disadvantage.attack", "disadvantage", ["flag", "condition:attacker"]),
+        (["blinded", "frightened"], None, "disadvantage", ["condition:attacker"]),
+        (["blinded", "poisoned"], None, "disadvantage", ["condition:attacker"]),
+        (["blinded", "restrained"], None, "disadvantage", ["condition:attacker"]),
+        (["BLINDED", "blinded"], None, "disadvantage", ["condition:attacker"]),
+        (["prone"], None, "disadvantage", ["condition:attacker"]),
+        (["prone"], "flags.advantage.attack", "normal", ["flag", "condition:attacker"]),
+        (["prone"], "flags.disadvantage.attack", "disadvantage", ["flag", "condition:attacker"]),
+        (["prone", "frightened"], None, "disadvantage", ["condition:attacker"]),
+        (["prone", "poisoned"], None, "disadvantage", ["condition:attacker"]),
+        (["PRONE", "prone"], None, "disadvantage", ["condition:attacker"]),
+        (["unconscious"], None, "disadvantage", ["condition:attacker"]),
+        (
+            ["poisoned", "restrained", "blinded", "prone"],
+            None,
+            "disadvantage",
+            ["condition:attacker"],
+        ),
+        (
+            ["poisoned", "restrained", "blinded", "prone"],
+            "flags.advantage.attack",
+            "normal",
+            ["flag", "condition:attacker"],
+        ),
     ],
 )
 def test_attack_roll_and_rng_parity(
@@ -108,7 +134,21 @@ def test_attack_roll_and_rng_parity(
 
 
 @pytest.mark.parametrize("seed", [1, 7])
-def test_restrained_target_advantage_preserves_sources_and_rng(seed: int) -> None:
+@pytest.mark.parametrize(
+    ("condition", "distance_ft", "mode"),
+    [
+        ("restrained", None, "advantage"),
+        ("blinded", None, "advantage"),
+        ("prone", 0, "advantage"),
+        ("prone", 5, "advantage"),
+        ("prone", 6, "disadvantage"),
+        ("prone", 30, "disadvantage"),
+        ("prone", None, "normal"),
+    ],
+)
+def test_legacy_target_conditions_preserve_sources_and_rng(
+    seed: int, condition: str, distance_ft: int | None, mode: str
+) -> None:
     hero = Combatant(
         entity_id="char:hero",
         entity_type="Character",
@@ -128,7 +168,8 @@ def test_restrained_target_advantage_preserves_sources_and_rng(seed: int) -> Non
         event_emitter=events.append,
         caster_abilities={"str": 10},
         caster_proficiency_bonus=0,
-        target_conditions={foe.entity_id: ["restrained"]},
+        target_conditions={foe.entity_id: [condition]},
+        target_distance_ft={} if distance_ft is None else {foe.entity_id: distance_ft},
     )
 
     resolve_activity(AttackActivity(kind="attack", attack={"ability": "str"}), ctx)
@@ -136,10 +177,10 @@ def test_restrained_target_advantage_preserves_sources_and_rng(seed: int) -> Non
     assert len(events) == 1
     rolled = events[0]
     assert isinstance(rolled, AttackRolled)
-    assert rolled.natural == _mirror_roll(mirror, "advantage")
+    assert rolled.natural == _mirror_roll(mirror, mode)
     assert rolled.roll_total == rolled.natural
-    assert rolled.advantage == "advantage"
-    assert rolled.sources == ["condition:target"]
+    assert rolled.advantage == mode
+    assert rolled.sources == ([] if mode == "normal" else ["condition:target"])
     assert rng.getstate() == mirror.getstate()
 
 
@@ -267,10 +308,39 @@ def test_existing_standalone_check_advantage_cancels_poisoned(kind: str) -> None
             "disadvantage",
             ["flag", "condition:attacker"],
         ),
+        (("blinded",), None, "disadvantage", ["condition:attacker"]),
+        (("blinded",), "flags.advantage.attack", "normal", ["flag", "condition:attacker"]),
+        (("blinded",), "flags.disadvantage.attack", "disadvantage", ["flag", "condition:attacker"]),
+        (("blinded", "frightened"), None, "disadvantage", ["condition:attacker"]),
+        (("blinded", "poisoned"), None, "disadvantage", ["condition:attacker"]),
+        (("blinded", "restrained"), None, "disadvantage", ["condition:attacker"]),
+        (("BLINDED", "blinded"), None, "disadvantage", ["condition:attacker"]),
+        (("prone",), None, "disadvantage", ["condition:attacker"]),
+        (("prone",), "flags.advantage.attack", "normal", ["flag", "condition:attacker"]),
+        (("prone",), "flags.disadvantage.attack", "disadvantage", ["flag", "condition:attacker"]),
+        (("prone", "frightened"), None, "disadvantage", ["condition:attacker"]),
+        (("prone", "poisoned"), None, "disadvantage", ["condition:attacker"]),
+        (("PRONE", "prone"), None, "disadvantage", ["condition:attacker"]),
+        (
+            ("poisoned", "restrained", "blinded", "prone"),
+            None,
+            "disadvantage",
+            ["condition:attacker"],
+        ),
+        (
+            ("poisoned", "restrained", "blinded", "prone"),
+            "flags.advantage.attack",
+            "normal",
+            ["flag", "condition:attacker"],
+        ),
     ],
 )
 def test_player_intent_preserves_d20_bonus_damage_draw_order(
-    statuses: tuple[str, ...], flag: str | None, mode: str, sources: list[str]
+    statuses: tuple[str, ...],
+    flag: str | None,
+    mode: str,
+    sources: list[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     effect = _effect(statuses=statuses, flag=flag)
     effect.changes.append(ActiveEffectChange(key="attack.roll.bonus", mode="add", value="1d4"))
@@ -308,6 +378,14 @@ def test_player_intent_preserves_d20_bonus_damage_draw_order(
     mirror = random.Random()
     mirror.setstate(live.rng.getstate())
     event_count = len(live.event_log)
+    draws: list[tuple[int, int]] = []
+    randint = live.rng.randint
+
+    def record_draw(a: int, b: int) -> int:
+        draws.append((a, b))
+        return randint(a, b)
+
+    monkeypatch.setattr(live.rng, "randint", record_draw)
 
     run_async(
         submit_player_intent(
@@ -326,5 +404,21 @@ def test_player_intent_preserves_d20_bonus_damage_draw_order(
     assert attack.roll_total == attack.natural + attack.modifier + mirror.randint(1, 4)
     assert attack.advantage == mode
     assert attack.sources == sources
+    assert attack.attacker_id == "char:hero"
+    assert attack.target_id == "mon:foe"
+    assert attack.is_hit is True
+    assert attack.is_crit is False
+    assert attack.is_opportunity_attack is False
+    assert attack.advantage_sources == (["flag"] if flag == "flags.advantage.attack" else [])
+    assert attack.disadvantage_sources == (
+        (["flag"] if flag == "flags.disadvantage.attack" else [])
+        + (["condition:attacker"] if statuses else [])
+    )
     assert damage.amount == mirror.randint(1, 4)
+    assert damage.target_id == "mon:foe"
+    assert damage.damage_type == "piercing"
+    assert damage.source_id == "dagger"
+    assert damage.is_crit is False
+    assert damage.is_overkill is False
+    assert draws == [(1, 20)] * (1 if mode == "normal" else 2) + [(1, 4), (1, 4)]
     assert live.rng.getstate() == mirror.getstate()

@@ -39,17 +39,20 @@ class Condition(StrEnum):
 # Only supported clauses migrate; all other clauses keep legacy enforcement.
 _DECLARATIVE_CONDITION_EFFECTS: dict[str, tuple[ConditionEffect, ...]] = {
     slug: tuple(definition.effects)
-    for slug in ("poisoned", "restrained")
+    for slug in ("poisoned", "restrained", "blinded", "prone")
     if (definition := BundledAssetLoader().get_condition(slug)) is not None
 }
 
 
 def _project_condition_changes(conditions: list[str]) -> list[ActiveEffectChange]:
     """Collect migrated clauses in stable input order, ignoring duplicate names."""
+    names = dict.fromkeys(c.lower() for c in conditions)
+    # Preserve the same implied-condition semantics as the legacy predicates.
+    for condition, implied in CONDITION_IMPLIES.items():
+        if condition.value in names:
+            names.update(dict.fromkeys(c.value for c in implied))
     return project_condition_effects(
-        effect
-        for name in dict.fromkeys(c.lower() for c in conditions)
-        for effect in _DECLARATIVE_CONDITION_EFFECTS.get(name, ())
+        effect for name in names for effect in _DECLARATIVE_CONDITION_EFFECTS.get(name, ())
     )
 
 
@@ -360,8 +363,6 @@ def conditions_grant_advantage_on_attack(
         and not attacker_invisibility_pierced
     ):
         advantage = True
-    if is_condition_active(Condition.BLINDED, attacker_conditions):
-        disadvantage = True
     # SRD 5.2 glossary, Frightened: "Disadvantage on ... attack rolls while
     # the source of fear is within line of sight." (C16b: ``fear_source_in_sight``
     # defaults True — SRD-conservative — so pre-C16b callers are unaffected.)
@@ -395,9 +396,6 @@ def conditions_grant_advantage_on_attack(
     ):
         disadvantage = True
 
-    # SRD 5.2 glossary, Prone: "You have Disadvantage on attack rolls."
-    if is_condition_active(Condition.PRONE, attacker_conditions):
-        disadvantage = True
     # SRD 5.2 glossary, Prone: "An attack roll against you has Advantage if the
     # attacker is within 5 feet of you. Otherwise, that attack roll has
     # Disadvantage." Needs a distance; unknown distance → inert.

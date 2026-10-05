@@ -73,6 +73,8 @@ class ActiveEffectChange(BaseModel):
       attack.roll.bonus       — +N or formula on attack rolls
       damage.bonus            — +N or formula on damage rolls
       ac.bonus, ac.override   — AC modifications
+      speed.override         — scalar zero-speed override from condition
+                                projection, consumed by project_speed()
       save.<ability>.bonus    — saving-throw bonus (ability lowercase)
       check.<bucket>.bonus    — skill_check / ability_check bonus
       flags.advantage.<bucket>, flags.disadvantage.<bucket>
@@ -82,7 +84,7 @@ class ActiveEffectChange(BaseModel):
                                 full name (strength, dexterity, etc.). Condition
                                 projection consumes these into save sidecars.
 
-    Value polymorphism: int for scalar `add`/`multiply`; str for dice
+    Value polymorphism: int for scalar `add`/`multiply`/`override`; str for dice
     formulas ("1d4", "1d4+2"); bool for advantage flags via `override`.
     """
 

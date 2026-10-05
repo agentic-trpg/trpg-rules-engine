@@ -35,6 +35,7 @@ class Condition(StrEnum):
 
 # Migration selection only; mechanical meaning comes from the canonical data.
 _DECLARATIVE_CONDITION_MIGRATIONS: dict[str, frozenset[ConditionEffectKind]] = {
+    "grappled": frozenset({ConditionEffectKind.SPEED_ZERO}),
     "poisoned": frozenset(
         {
             ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS,
@@ -46,6 +47,7 @@ _DECLARATIVE_CONDITION_MIGRATIONS: dict[str, frozenset[ConditionEffectKind]] = {
             ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS,
             ConditionEffectKind.DISADVANTAGE_SAVE,
             ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST,
+            ConditionEffectKind.SPEED_ZERO,
         }
     ),
     "blinded": frozenset(
@@ -56,16 +58,28 @@ _DECLARATIVE_CONDITION_MIGRATIONS: dict[str, frozenset[ConditionEffectKind]] = {
     ),
     "prone": frozenset({ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS}),
     "paralyzed": frozenset(
-        {ConditionEffectKind.AUTO_FAIL_SAVE, ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST}
+        {
+            ConditionEffectKind.AUTO_FAIL_SAVE,
+            ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST,
+            ConditionEffectKind.SPEED_ZERO,
+        }
     ),
     "stunned": frozenset(
         {ConditionEffectKind.AUTO_FAIL_SAVE, ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST}
     ),
     "petrified": frozenset(
-        {ConditionEffectKind.AUTO_FAIL_SAVE, ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST}
+        {
+            ConditionEffectKind.AUTO_FAIL_SAVE,
+            ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST,
+            ConditionEffectKind.SPEED_ZERO,
+        }
     ),
     "unconscious": frozenset(
-        {ConditionEffectKind.AUTO_FAIL_SAVE, ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST}
+        {
+            ConditionEffectKind.AUTO_FAIL_SAVE,
+            ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST,
+            ConditionEffectKind.SPEED_ZERO,
+        }
     ),
 }
 
@@ -446,14 +460,6 @@ def conditions_grant_advantage_on_attack(
 
 # ── SRD 5.2 condition predicates and numeric projections (C12) ──────────────
 
-#: SRD 5.2 glossary, "Speed 0. Your Speed is 0 and can't increase." — Grappled,
-#: Restrained, Paralyzed, Petrified, Unconscious. Stunned carries no Speed
-#: clause in SRD 5.2 (the 2014 "can't move" text was dropped), Prone restricts
-#: the movement MODE (crawl / stand up) rather than the Speed.
-SPEED_ZERO_CONDITIONS: frozenset[str] = frozenset(
-    {"grappled", "restrained", "paralyzed", "petrified", "unconscious"}
-)
-
 #: SRD 5.2 glossary, Paralyzed / Unconscious: "Any attack roll that hits you is
 #: a Critical Hit if the attacker is within 5 feet of you."
 AUTO_CRIT_WITHIN_5FT_CONDITIONS: frozenset[str] = frozenset({"paralyzed", "unconscious"})
@@ -485,12 +491,17 @@ def d20_test_penalty(conditions: list[ActiveCondition]) -> int:
 def project_speed(base_speed: int, condition_names: list[str], exhaustion_level: int = 0) -> int:
     """The creature's effective walking Speed under its conditions.
 
-    A ``SPEED_ZERO_CONDITIONS`` member forces 0 ("and can't increase" — the
+    A projected zero-speed override forces 0 ("and can't increase" — the
     orchestrator's Dash adds THIS projection, not ``base_speed``); otherwise
     Exhaustion subtracts ``5 x level``, floored at 0.
     """
-    active = {c.lower() for c in condition_names}
-    if active & SPEED_ZERO_CONDITIONS:
+    if any(
+        change.key == "speed.override"
+        and change.mode == "override"
+        and type(change.value) is int
+        and change.value == 0
+        for change in _project_condition_changes(condition_names)
+    ):
         return 0
     return max(0, base_speed - EXHAUSTION_SPEED_PENALTY_PER_LEVEL * exhaustion_level)
 
@@ -603,7 +614,6 @@ __all__ = [
     "CONDITION_IMPLIES",
     "EXHAUSTION_D20_PENALTY_PER_LEVEL",
     "EXHAUSTION_SPEED_PENALTY_PER_LEVEL",
-    "SPEED_ZERO_CONDITIONS",
     "Condition",
     "active_condition_names",
     "apply_condition",

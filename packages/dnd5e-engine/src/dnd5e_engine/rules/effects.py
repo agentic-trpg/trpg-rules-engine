@@ -36,7 +36,7 @@ _SAVE_FLAG_KEYS: dict[ConditionEffectKind, dict[str, str]] = {
 
 
 def project_condition_effects(effects: Iterable[ConditionEffect]) -> list[ActiveEffectChange]:
-    """Translate supported typed clauses into the existing override flag vocabulary.
+    """Translate supported typed clauses into the active-effect override vocabulary.
 
     Pure projection: no condition-name rules, I/O, RNG, or input mutation.
     Selecting which conditions have migrated is the caller's responsibility;
@@ -51,6 +51,8 @@ def project_condition_effects(effects: Iterable[ConditionEffect]) -> list[Active
     for effect in effects:
         if key := flag_keys.get(effect.kind):
             changes.append(ActiveEffectChange(key=key, mode="override", value=True))
+        elif effect.kind == ConditionEffectKind.SPEED_ZERO:
+            changes.append(ActiveEffectChange(key="speed.override", mode="override", value=0))
         elif save_keys := _SAVE_FLAG_KEYS.get(effect.kind):
             # Canonical scopes are ability codes. Normalize case/whitespace,
             # preserve their declaration order, and ignore unknown/empty scopes

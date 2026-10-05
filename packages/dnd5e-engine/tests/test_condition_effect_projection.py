@@ -20,6 +20,7 @@ from dnd5e_engine.types.effects import ActiveEffectChange
 def test_migration_selection_is_an_explicit_clause_allowlist() -> None:
     migrations = condition_rules._DECLARATIVE_CONDITION_MIGRATIONS
     assert migrations == {
+        "grappled": frozenset({ConditionEffectKind.SPEED_ZERO}),
         "poisoned": frozenset(
             {
                 ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS,
@@ -31,6 +32,7 @@ def test_migration_selection_is_an_explicit_clause_allowlist() -> None:
                 ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS,
                 ConditionEffectKind.DISADVANTAGE_SAVE,
                 ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST,
+                ConditionEffectKind.SPEED_ZERO,
             }
         ),
         "blinded": frozenset(
@@ -41,37 +43,53 @@ def test_migration_selection_is_an_explicit_clause_allowlist() -> None:
         ),
         "prone": frozenset({ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS}),
         "paralyzed": frozenset(
-            {ConditionEffectKind.AUTO_FAIL_SAVE, ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST}
+            {
+                ConditionEffectKind.AUTO_FAIL_SAVE,
+                ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST,
+                ConditionEffectKind.SPEED_ZERO,
+            }
         ),
         "stunned": frozenset(
             {ConditionEffectKind.AUTO_FAIL_SAVE, ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST}
         ),
         "petrified": frozenset(
-            {ConditionEffectKind.AUTO_FAIL_SAVE, ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST}
+            {
+                ConditionEffectKind.AUTO_FAIL_SAVE,
+                ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST,
+                ConditionEffectKind.SPEED_ZERO,
+            }
         ),
         "unconscious": frozenset(
-            {ConditionEffectKind.AUTO_FAIL_SAVE, ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST}
+            {
+                ConditionEffectKind.AUTO_FAIL_SAVE,
+                ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST,
+                ConditionEffectKind.SPEED_ZERO,
+            }
         ),
     }
 
 
 @pytest.mark.parametrize(
-    ("kind", "key"),
+    ("kind", "key", "value"),
     [
-        (ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST, "flags.advantage.attack"),
-        (ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS, "flags.disadvantage.attack"),
-        (ConditionEffectKind.DISADVANTAGE_ABILITY_CHECKS, "flags.disadvantage.check"),
+        (ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST, "flags.advantage.attack", True),
+        (ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS, "flags.disadvantage.attack", True),
+        (ConditionEffectKind.DISADVANTAGE_ABILITY_CHECKS, "flags.disadvantage.check", True),
+        (ConditionEffectKind.SPEED_ZERO, "speed.override", 0),
     ],
 )
-def test_typed_clause_translates_to_existing_change(kind: ConditionEffectKind, key: str) -> None:
+def test_typed_clause_translates_to_active_effect_change(
+    kind: ConditionEffectKind, key: str, value: bool | int
+) -> None:
     assert project_condition_effects([ConditionEffect(kind=kind)]) == [
-        ActiveEffectChange(key=key, mode="override", value=True),
+        ActiveEffectChange(key=key, mode="override", value=value),
     ]
 
 
 @pytest.mark.parametrize(
     "slug",
     [
+        "grappled",
         "poisoned",
         "restrained",
         "blinded",
@@ -90,6 +108,7 @@ def test_projection_is_repeatable_pure_and_never_draws_dice(
     assert definition is not None
     before = definition.model_dump()
     expected_collected = _project_condition_changes([slug])
+    expected_speed = condition_rules.project_speed(35, [slug], exhaustion_level=2)
 
     def forbid_rng(*args: object) -> int:
         pytest.fail("Condition projection must not consume RNG")
@@ -108,20 +127,26 @@ def test_projection_is_repeatable_pure_and_never_draws_dice(
         first = project_condition_effects(iter(definition.effects))
         second = project_condition_effects(iter(definition.effects))
         collected = _project_condition_changes([slug.upper(), slug])
+        speed = condition_rules.project_speed(35, [slug.upper(), slug], exhaustion_level=2)
 
     assert first == second
     assert definition.model_dump() == before
     # Runtime changes belong to the caller; changing one result must not poison
     # the canonical definition or the next resolution's projection.
-    first[0].value = False
-    assert second[0].value is True
+    original_value = second[0].value
+    first[0].value = "changed"
+    assert second[0].value == original_value
     assert collected == expected_collected
+    assert speed == expected_speed
     assert definition.model_dump() == before
 
 
 def test_empty_and_unsupported_effect_kinds_are_inert() -> None:
     assert project_condition_effects([]) == []
-    assert project_condition_effects([ConditionEffect(kind=ConditionEffectKind.SPEED_ZERO)]) == []
+    assert (
+        project_condition_effects([ConditionEffect(kind=ConditionEffectKind.MOVABLE_BY_GRAPPLER)])
+        == []
+    )
 
 
 def test_other_conditions_are_not_migrated() -> None:
@@ -130,7 +155,6 @@ def test_other_conditions_are_not_migrated() -> None:
             [
                 "frightened",
                 "invisible",
-                "grappled",
                 "deafened",
                 "incapacitated",
             ]
@@ -260,6 +284,7 @@ def test_partial_migrations_project_only_opted_in_clauses(
             0, ActiveEffectChange(key="flags.advantage.attack", mode="override", value=True)
         )
     if slug == "restrained":
+        expected.insert(0, ActiveEffectChange(key="speed.override", mode="override", value=0))
         expected.append(
             ActiveEffectChange(key="flags.disadvantage.save.dexterity", mode="override", value=True)
         )
@@ -291,6 +316,7 @@ def test_removing_restrained_attack_clause_preserves_save_and_legacy_neighbours(
         ),
     )
     assert _project_condition_changes([definition.slug]) == [
+        ActiveEffectChange(key="speed.override", mode="override", value=0),
         ActiveEffectChange(key="flags.advantage.attack", mode="override", value=True),
         ActiveEffectChange(key="flags.disadvantage.save.dexterity", mode="override", value=True),
     ]
@@ -438,6 +464,7 @@ def test_unopted_clauses_do_not_reach_an_expanded_projector(
             for effect in clauses
             if effect.kind
             not in {
+                ConditionEffectKind.SPEED_ZERO,
                 ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST,
                 ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS,
                 ConditionEffectKind.DISADVANTAGE_ABILITY_CHECKS,

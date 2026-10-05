@@ -23,7 +23,6 @@ from dnd5e_engine.rules.conditions import (
     AUTO_CRIT_WITHIN_5FT_CONDITIONS,
     CONDITION_EFFECTS,
     CONDITION_IMPLIES,
-    SPEED_ZERO_CONDITIONS,
     Condition,
     active_condition_names,
     apply_condition,
@@ -473,7 +472,9 @@ def test_project_speed_subtracts_five_feet_per_exhaustion_level() -> None:
     assert project_speed(5, ["exhaustion"], 2) == 0  # never negative
 
 
-@pytest.mark.parametrize("name", sorted(SPEED_ZERO_CONDITIONS))
+@pytest.mark.parametrize(
+    "name", ["grappled", "restrained", "paralyzed", "petrified", "unconscious"]
+)
 def test_project_speed_is_zero_for_speed_zero_conditions(name: str) -> None:
     assert project_speed(30, [name], 0) == 0
 

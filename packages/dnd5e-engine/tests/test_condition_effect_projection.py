@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import builtins
+import io
 import random
 from collections.abc import Iterable
 
@@ -28,7 +30,7 @@ def test_typed_clause_translates_to_existing_change(kind: ConditionEffectKind, k
     ]
 
 
-@pytest.mark.parametrize("slug", ["poisoned", "restrained"])
+@pytest.mark.parametrize("slug", ["poisoned", "restrained", "blinded", "prone"])
 def test_projection_is_repeatable_pure_and_never_draws_dice(
     slug: str,
     monkeypatch: pytest.MonkeyPatch,
@@ -40,10 +42,20 @@ def test_projection_is_repeatable_pure_and_never_draws_dice(
     def forbid_rng(*args: object) -> int:
         pytest.fail("Condition projection must not consume RNG")
 
-    monkeypatch.setattr(random, "randint", forbid_rng)
-    monkeypatch.setattr(random.Random, "randint", forbid_rng)
-    first = project_condition_effects(iter(definition.effects))
-    second = project_condition_effects(iter(definition.effects))
+    def forbid_io(*args: object, **kwargs: object) -> None:
+        pytest.fail("Condition projection must not perform I/O")
+
+    with monkeypatch.context() as projection_patch:
+        projection_patch.setattr(random, "randint", forbid_rng)
+        projection_patch.setattr(random.Random, "randint", forbid_rng)
+        projection_patch.setattr(random.Random, "random", forbid_rng)
+        projection_patch.setattr(random.Random, "getrandbits", forbid_rng)
+        projection_patch.setattr(builtins, "open", forbid_io)
+        projection_patch.setattr(io, "open", forbid_io)
+        projection_patch.setattr(BundledAssetLoader, "get_condition", forbid_io)
+        first = project_condition_effects(iter(definition.effects))
+        second = project_condition_effects(iter(definition.effects))
+        collected = _project_condition_changes([slug.upper(), slug])
 
     assert first == second
     assert definition.model_dump() == before
@@ -51,7 +63,7 @@ def test_projection_is_repeatable_pure_and_never_draws_dice(
     # the canonical definition or the next resolution's projection.
     first[0].value = False
     assert second[0].value is True
-    assert _project_condition_changes([slug.upper(), slug]) == second
+    assert collected == second
     assert definition.model_dump() == before
 
 
@@ -66,7 +78,6 @@ def test_other_conditions_are_not_migrated() -> None:
             [
                 "frightened",
                 "invisible",
-                "prone",
                 "grappled",
                 "paralyzed",
                 "stunned",
@@ -118,7 +129,7 @@ def test_roll_helpers_follow_data_instead_of_the_condition_name(
     assert condition_rules.conditions_grant_disadvantage_on_ability_checks(["frightened"]) is True
 
 
-@pytest.mark.parametrize("slug", ["poisoned", "restrained"])
+@pytest.mark.parametrize("slug", ["poisoned", "restrained", "blinded", "prone"])
 def test_attack_clauses_share_the_same_generic_projector(
     slug: str,
     monkeypatch: pytest.MonkeyPatch,
@@ -145,17 +156,45 @@ def test_attack_clauses_share_the_same_generic_projector(
     ]
 
 
-def test_restrained_projects_only_own_attack_disadvantage() -> None:
-    definition = BundledAssetLoader().get_condition("restrained")
+@pytest.mark.parametrize(
+    ("slug", "expected_kinds"),
+    [
+        (
+            "restrained",
+            {
+                ConditionEffectKind.SPEED_ZERO,
+                ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST,
+                ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS,
+                ConditionEffectKind.DISADVANTAGE_SAVE,
+            },
+        ),
+        (
+            "blinded",
+            {
+                ConditionEffectKind.AUTO_FAIL_SIGHT_CHECKS,
+                ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST,
+                ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS,
+            },
+        ),
+        (
+            "prone",
+            {
+                ConditionEffectKind.RESTRICTED_MOVEMENT_CRAWL,
+                ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS,
+                ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST,
+                ConditionEffectKind.DISADVANTAGE_ATTACKS_AGAINST,
+            },
+        ),
+    ],
+)
+def test_partial_migrations_project_only_own_attack_disadvantage(
+    slug: str, expected_kinds: set[ConditionEffectKind]
+) -> None:
+    definition = BundledAssetLoader().get_condition(slug)
     assert definition is not None
     # Feed the entire canonical definition to the same translator: its other
-    # three clauses must remain unsupported and stay on the legacy paths.
-    assert {effect.kind for effect in definition.effects} == {
-        ConditionEffectKind.SPEED_ZERO,
-        ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST,
-        ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS,
-        ConditionEffectKind.DISADVANTAGE_SAVE,
-    }
+    # clauses must remain unsupported and stay on the legacy paths.
+    assert {effect.kind for effect in definition.effects} == expected_kinds
     expected = [ActiveEffectChange(key="flags.disadvantage.attack", mode="override", value=True)]
     assert project_condition_effects(definition.effects) == expected
     assert _project_condition_changes([definition.slug]) == expected
@@ -197,3 +236,79 @@ def test_removing_restrained_attack_clause_leaves_other_clauses_on_legacy_paths(
         "passive_check_adv": [],
         "passive_check_dis": [],
     }
+
+
+@pytest.mark.parametrize(
+    ("slug", "distance_ft", "expected_target"),
+    [
+        ("blinded", None, (True, False)),
+        ("prone", 0, (True, False)),
+        ("prone", 5, (True, False)),
+        ("prone", 6, (False, True)),
+        ("prone", 30, (False, True)),
+        ("prone", None, (False, False)),
+    ],
+)
+def test_removing_attack_clause_preserves_blinded_and_prone_legacy_neighbours(
+    slug: str,
+    distance_ft: int | None,
+    expected_target: tuple[bool, bool],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    definition = BundledAssetLoader().get_condition(slug)
+    assert definition is not None
+    monkeypatch.setitem(
+        condition_rules._DECLARATIVE_CONDITION_EFFECTS,
+        slug,
+        tuple(
+            effect
+            for effect in definition.effects
+            if effect.kind != ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS
+        ),
+    )
+
+    assert _project_condition_changes([slug]) == []
+    assert condition_rules.conditions_grant_advantage_on_attack([slug], []) == (False, False)
+    assert (
+        condition_rules.conditions_grant_advantage_on_attack([], [slug], distance_ft=distance_ft)
+        == expected_target
+    )
+    assert condition_rules.project_speed(30, [slug]) == 30
+    assert condition_rules.project_passive_check_modifiers([slug]) == {
+        "passive_check_adv": [],
+        "passive_check_dis": [],
+    }
+    assert condition_rules.project_passive_save_modifiers([slug]) == {
+        "passive_save_adv": [],
+        "passive_save_dis": [],
+        "passive_save_auto_fail": [],
+    }
+
+
+@pytest.mark.parametrize("conditions", [["unconscious"], ["UNCONSCIOUS", "prone", "PRONE"]])
+def test_implied_prone_uses_the_same_projector_and_canonical_attack_clause(
+    conditions: list[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    definition = BundledAssetLoader().get_condition("prone")
+    assert definition is not None
+    calls: list[tuple[ConditionEffect, ...]] = []
+
+    def record_projection(effects: Iterable[ConditionEffect]) -> list[ActiveEffectChange]:
+        clauses = tuple(effects)
+        calls.append(clauses)
+        return project_condition_effects(clauses)
+
+    monkeypatch.setattr(condition_rules, "project_condition_effects", record_projection)
+    assert condition_rules.conditions_grant_advantage_on_attack(conditions, []) == (False, True)
+    assert calls == [tuple(definition.effects)]
+
+    monkeypatch.setitem(
+        condition_rules._DECLARATIVE_CONDITION_EFFECTS,
+        "prone",
+        tuple(
+            effect
+            for effect in definition.effects
+            if effect.kind != ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS
+        ),
+    )
+    assert condition_rules.conditions_grant_advantage_on_attack(conditions, []) == (False, False)

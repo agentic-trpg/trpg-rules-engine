@@ -7,9 +7,10 @@ links in ``config.mjs`` — there is no structured mechanic upstream. The
 (``tools/translators/conditions.py``) from the SRD 5.2 sentences, one typed
 row per sentence, and this module only defines the closed vocabulary.
 
-The engine projects Poisoned's clauses and Restrained's own-attack disadvantage
-from this data into its existing ActiveEffectChange vocabulary. Other clauses retain enforcement in
-``dnd5e_engine.rules.conditions``; their data supports rendering and auditing.
+The engine projects Poisoned's clauses and the own-attack disadvantage of
+Restrained, Blinded, and Prone from this data into its existing ActiveEffectChange
+vocabulary. Other clauses retain enforcement in ``dnd5e_engine.rules.conditions``;
+their data supports rendering and auditing.
 """
 
 from __future__ import annotations

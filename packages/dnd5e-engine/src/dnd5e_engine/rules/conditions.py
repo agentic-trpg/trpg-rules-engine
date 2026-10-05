@@ -36,10 +36,10 @@ class Condition(StrEnum):
 # Migration selection only; mechanical meaning comes from the canonical data.
 # Load definitions once, outside resolution, so roll-time projection stays pure
 # and custom asset-loader configuration retains the legacy helpers' behaviour.
-# Other conditions intentionally keep their existing procedural enforcement.
+# Only supported clauses migrate; all other clauses keep legacy enforcement.
 _DECLARATIVE_CONDITION_EFFECTS: dict[str, tuple[ConditionEffect, ...]] = {
     slug: tuple(definition.effects)
-    for slug in ("poisoned",)
+    for slug in ("poisoned", "restrained")
     if (definition := BundledAssetLoader().get_condition(slug)) is not None
 }
 
@@ -367,9 +367,6 @@ def conditions_grant_advantage_on_attack(
     # defaults True — SRD-conservative — so pre-C16b callers are unaffected.)
     if is_condition_active(Condition.FRIGHTENED, attacker_conditions) and fear_source_in_sight:
         disadvantage = True
-    if is_condition_active(Condition.RESTRAINED, attacker_conditions):
-        disadvantage = True
-
     if is_condition_active(Condition.PARALYZED, target_conditions):
         advantage = True
     if is_condition_active(Condition.STUNNED, target_conditions):
@@ -508,8 +505,8 @@ def conditions_auto_crit_within_5ft(target_condition_names: list[str]) -> bool:
 #     (consumed by ``check.py``; ``"all"`` is the catch-all for conditions
 #     that impose dis/adv on *every* ability check — Frightened, Poisoned)
 #
-# This is the condition portion of the sidecar payload: Poisoned clauses
-# come from canonical data; the remaining conditions keep their legacy rules.
+# This is the condition portion of the sidecar payload: migrated clauses
+# come from canonical data; the remaining clauses keep their legacy rules.
 # Active-effect modifiers layer on top in the orchestrator, which owns the
 # transport-level merge.
 

@@ -1,4 +1,4 @@
-"""Poisoned migration parity: roll modes, source order, and exact RNG state."""
+"""Poisoned / Restrained attack migration parity and Poisoned check parity."""
 
 from __future__ import annotations
 
@@ -55,6 +55,16 @@ def _mirror_roll(rng: random.Random, mode: str) -> int:
         (["poisoned"], "flags.disadvantage.attack", "disadvantage", ["flag", "condition:attacker"]),
         (["poisoned", "restrained"], None, "disadvantage", ["condition:attacker"]),
         (["POISONED", "poisoned"], None, "disadvantage", ["condition:attacker"]),
+        (["restrained"], None, "disadvantage", ["condition:attacker"]),
+        (["restrained"], "flags.advantage.attack", "normal", ["flag", "condition:attacker"]),
+        (
+            ["restrained"],
+            "flags.disadvantage.attack",
+            "disadvantage",
+            ["flag", "condition:attacker"],
+        ),
+        (["restrained", "frightened"], None, "disadvantage", ["condition:attacker"]),
+        (["RESTRAINED", "restrained"], None, "disadvantage", ["condition:attacker"]),
     ],
 )
 def test_attack_roll_and_rng_parity(
@@ -94,6 +104,42 @@ def test_attack_roll_and_rng_parity(
     assert rolled.sources == sources
     assert rolled.is_hit is False
     assert rolled.is_crit is False
+    assert rng.getstate() == mirror.getstate()
+
+
+@pytest.mark.parametrize("seed", [1, 7])
+def test_restrained_target_advantage_preserves_sources_and_rng(seed: int) -> None:
+    hero = Combatant(
+        entity_id="char:hero",
+        entity_type="Character",
+        name="Hero",
+        initiative=10,
+        hp_current=20,
+        hp_max=20,
+    )
+    foe = hero.model_copy(update={"entity_id": "mon:foe", "ac": 100})
+    rng = random.Random(seed)
+    mirror = random.Random(seed)
+    events: list[CombatEvent] = []
+    ctx = ActivityResolutionContext(
+        rng=rng,
+        caster=hero,
+        targets=[foe],
+        event_emitter=events.append,
+        caster_abilities={"str": 10},
+        caster_proficiency_bonus=0,
+        target_conditions={foe.entity_id: ["restrained"]},
+    )
+
+    resolve_activity(AttackActivity(kind="attack", attack={"ability": "str"}), ctx)
+
+    assert len(events) == 1
+    rolled = events[0]
+    assert isinstance(rolled, AttackRolled)
+    assert rolled.natural == _mirror_roll(mirror, "advantage")
+    assert rolled.roll_total == rolled.natural
+    assert rolled.advantage == "advantage"
+    assert rolled.sources == ["condition:target"]
     assert rng.getstate() == mirror.getstate()
 
 
@@ -213,6 +259,14 @@ def test_existing_standalone_check_advantage_cancels_poisoned(kind: str) -> None
         (("poisoned",), None, "disadvantage", ["condition:attacker"]),
         (("poisoned",), "flags.advantage.attack", "normal", ["flag", "condition:attacker"]),
         (("poisoned", "restrained"), None, "disadvantage", ["condition:attacker"]),
+        (("restrained",), None, "disadvantage", ["condition:attacker"]),
+        (("restrained",), "flags.advantage.attack", "normal", ["flag", "condition:attacker"]),
+        (
+            ("restrained",),
+            "flags.disadvantage.attack",
+            "disadvantage",
+            ["flag", "condition:attacker"],
+        ),
     ],
 )
 def test_player_intent_preserves_d20_bonus_damage_draw_order(

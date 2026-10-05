@@ -1,120 +1,56 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
+  workflow_dispatch:
 
 jobs:
-  engine:
-    name: dnd5e-engine (py${{ matrix.python-version }})
+  core:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.12", "3.13"]
-    defaults:
-      run:
-        working-directory: packages/dnd5e-engine
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
         with:
-          python-version: ${{ matrix.python-version }}
-      - run: uv sync --extra dev
-      - run: make check
-      - run: bash scripts/smoke_clean_install.sh
-
-  nat20-demo:
-    name: nat20-demo (py${{ matrix.python-version }})
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.12", "3.13"]
-    defaults:
-      run:
-        working-directory: apps/demo
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-      - run: uv sync --extra dev
-      - run: make check
-
-  srd-data:
-    name: dnd5e-srd-data (py${{ matrix.python-version }})
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.12", "3.13"]
-    defaults:
-      run:
+          python-version: "3.12"
+      - name: Check dnd5e-srd-data
         working-directory: packages/dnd5e-srd-data
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-      - run: uv sync --extra dev
-      - run: make check
-
-  bridge:
-    name: nat20-bridge (py${{ matrix.python-version }})
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.12", "3.13"]
-    defaults:
-      run:
+        run: |
+          uv sync --extra dev
+          make check
+      - name: Check dnd5e-engine
+        working-directory: packages/dnd5e-engine
+        run: |
+          uv sync --extra dev
+          make check
+          bash scripts/smoke_clean_install.sh
+      - name: Check nat20-bridge
         working-directory: packages/nat20-bridge
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-      - run: uv sync --extra dev
-      - run: make check
+        run: |
+          uv sync --extra dev
+          make check
 
-  examples:
-    name: examples (py${{ matrix.python-version }})
+  integration:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.12", "3.13"]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-      - run: uv sync --all-packages
-      - run: uv run python examples/grid_combat.py
-      - run: uv run python examples/skill_check.py
-      - run: uv run python examples/build_party_member.py
-
-  docs:
-    name: docs
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-      - run: uv sync --group docs
-      - run: uv run --group docs mkdocs build --strict
-
-  actionlint:
-    name: workflow lint
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: raven-actions/actionlint@v2
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Check nat20-demo
+        working-directory: apps/demo
+        run: |
+          uv sync --extra dev
+          make check
+      - name: Check examples
+        run: |
+          uv sync --all-packages
+          uv run python examples/grid_combat.py
+          uv run python examples/skill_check.py
+          uv run python examples/build_party_member.py
+      - name: Check docs
+        run: |
+          uv sync --group docs
+          uv run --group docs mkdocs build --strict

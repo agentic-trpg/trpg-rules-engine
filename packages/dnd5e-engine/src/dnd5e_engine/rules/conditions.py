@@ -45,14 +45,28 @@ _DECLARATIVE_CONDITION_MIGRATIONS: dict[str, frozenset[ConditionEffectKind]] = {
         {
             ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS,
             ConditionEffectKind.DISADVANTAGE_SAVE,
+            ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST,
         }
     ),
-    "blinded": frozenset({ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS}),
+    "blinded": frozenset(
+        {
+            ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS,
+            ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST,
+        }
+    ),
     "prone": frozenset({ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS}),
-    "paralyzed": frozenset({ConditionEffectKind.AUTO_FAIL_SAVE}),
-    "stunned": frozenset({ConditionEffectKind.AUTO_FAIL_SAVE}),
-    "petrified": frozenset({ConditionEffectKind.AUTO_FAIL_SAVE}),
-    "unconscious": frozenset({ConditionEffectKind.AUTO_FAIL_SAVE}),
+    "paralyzed": frozenset(
+        {ConditionEffectKind.AUTO_FAIL_SAVE, ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST}
+    ),
+    "stunned": frozenset(
+        {ConditionEffectKind.AUTO_FAIL_SAVE, ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST}
+    ),
+    "petrified": frozenset(
+        {ConditionEffectKind.AUTO_FAIL_SAVE, ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST}
+    ),
+    "unconscious": frozenset(
+        {ConditionEffectKind.AUTO_FAIL_SAVE, ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST}
+    ),
 }
 
 # Load definitions once, outside resolution, so roll-time projection stays pure
@@ -376,7 +390,12 @@ def conditions_grant_advantage_on_attack(
       below still fires. Only an explicit ``False`` — a known, tracked
       source the Frightened attacker cannot currently see — drops it.
     """
-    advantage = False
+    # Consume the flags by side: target clauses grant advantage against that
+    # creature; its own-attack disadvantage (including implied Prone) does not.
+    advantage = any(
+        change.key == "flags.advantage.attack"
+        for change in _project_condition_changes(target_conditions)
+    )
     disadvantage = any(
         change.key == "flags.disadvantage.attack"
         for change in _project_condition_changes(attacker_conditions)
@@ -392,22 +411,6 @@ def conditions_grant_advantage_on_attack(
     # defaults True — SRD-conservative — so pre-C16b callers are unaffected.)
     if is_condition_active(Condition.FRIGHTENED, attacker_conditions) and fear_source_in_sight:
         disadvantage = True
-    if is_condition_active(Condition.PARALYZED, target_conditions):
-        advantage = True
-    if is_condition_active(Condition.STUNNED, target_conditions):
-        advantage = True
-    if is_condition_active(Condition.UNCONSCIOUS, target_conditions):
-        advantage = True
-    if is_condition_active(Condition.BLINDED, target_conditions):
-        advantage = True
-    # SRD 5.2 glossary, Restrained: "Attack rolls against you have Advantage,
-    # and your attack rolls have Disadvantage."
-    if is_condition_active(Condition.RESTRAINED, target_conditions):
-        advantage = True
-    # SRD 5.2 glossary, Petrified: "Attacks Affected. Attack rolls against you
-    # have Advantage."
-    if is_condition_active(Condition.PETRIFIED, target_conditions):
-        advantage = True
     # SRD 5.2 glossary, Invisible: "Attack rolls against you have Disadvantage,
     # and your attack rolls have Advantage. If a creature can somehow see you,
     # you don't gain this benefit against that creature." (C16b: the "can

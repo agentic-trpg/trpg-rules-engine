@@ -146,7 +146,7 @@ def test_attack_roll_and_rng_parity(
         ("prone", None, "normal"),
     ],
 )
-def test_legacy_target_conditions_preserve_sources_and_rng(
+def test_target_conditions_preserve_sources_and_rng(
     seed: int, condition: str, distance_ft: int | None, mode: str
 ) -> None:
     hero = Combatant(

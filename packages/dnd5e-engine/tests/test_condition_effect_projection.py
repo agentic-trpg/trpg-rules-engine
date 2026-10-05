@@ -30,20 +30,35 @@ def test_migration_selection_is_an_explicit_clause_allowlist() -> None:
             {
                 ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS,
                 ConditionEffectKind.DISADVANTAGE_SAVE,
+                ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST,
             }
         ),
-        "blinded": frozenset({ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS}),
+        "blinded": frozenset(
+            {
+                ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS,
+                ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST,
+            }
+        ),
         "prone": frozenset({ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS}),
-        "paralyzed": frozenset({ConditionEffectKind.AUTO_FAIL_SAVE}),
-        "stunned": frozenset({ConditionEffectKind.AUTO_FAIL_SAVE}),
-        "petrified": frozenset({ConditionEffectKind.AUTO_FAIL_SAVE}),
-        "unconscious": frozenset({ConditionEffectKind.AUTO_FAIL_SAVE}),
+        "paralyzed": frozenset(
+            {ConditionEffectKind.AUTO_FAIL_SAVE, ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST}
+        ),
+        "stunned": frozenset(
+            {ConditionEffectKind.AUTO_FAIL_SAVE, ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST}
+        ),
+        "petrified": frozenset(
+            {ConditionEffectKind.AUTO_FAIL_SAVE, ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST}
+        ),
+        "unconscious": frozenset(
+            {ConditionEffectKind.AUTO_FAIL_SAVE, ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST}
+        ),
     }
 
 
 @pytest.mark.parametrize(
     ("kind", "key"),
     [
+        (ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST, "flags.advantage.attack"),
         (ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS, "flags.disadvantage.attack"),
         (ConditionEffectKind.DISADVANTAGE_ABILITY_CHECKS, "flags.disadvantage.check"),
     ],
@@ -184,14 +199,15 @@ def test_attack_clauses_share_the_same_generic_projector(
 
     assert condition_rules.conditions_grant_advantage_on_attack([slug], []) == (False, True)
     assert calls == [
+        (),
         tuple(
             effect
             for effect in definition.effects
             if effect.kind in condition_rules._DECLARATIVE_CONDITION_MIGRATIONS[slug]
-        )
+        ),
     ]
     own_attacks = [
-        effect for effect in calls[0] if effect.kind == ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS
+        effect for effect in calls[1] if effect.kind == ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS
     ]
     assert len(own_attacks) == 1
     assert project_condition_effects(own_attacks) == [
@@ -235,15 +251,25 @@ def test_partial_migrations_project_only_opted_in_clauses(
 ) -> None:
     definition = BundledAssetLoader().get_condition(slug)
     assert definition is not None
-    # Feed the entire canonical definition to the same translator: its other
-    # clauses must remain unsupported and stay on the legacy paths.
+    # Generic support is broader than migration selection: Prone's target
+    # advantage kind is supported, but its distance clause is not opted in.
     assert {effect.kind for effect in definition.effects} == expected_kinds
     expected = [ActiveEffectChange(key="flags.disadvantage.attack", mode="override", value=True)]
+    if slug != "prone":
+        expected.insert(
+            0, ActiveEffectChange(key="flags.advantage.attack", mode="override", value=True)
+        )
     if slug == "restrained":
         expected.append(
             ActiveEffectChange(key="flags.disadvantage.save.dexterity", mode="override", value=True)
         )
-    assert project_condition_effects(definition.effects) == expected
+    if slug == "prone":
+        assert project_condition_effects(definition.effects) == [
+            *expected,
+            ActiveEffectChange(key="flags.advantage.attack", mode="override", value=True),
+        ]
+    else:
+        assert project_condition_effects(definition.effects) == expected
     assert _project_condition_changes([definition.slug]) == expected
     assert (
         condition_rules.conditions_grant_disadvantage_on_ability_checks([definition.slug]) is False
@@ -265,7 +291,8 @@ def test_removing_restrained_attack_clause_preserves_save_and_legacy_neighbours(
         ),
     )
     assert _project_condition_changes([definition.slug]) == [
-        ActiveEffectChange(key="flags.disadvantage.save.dexterity", mode="override", value=True)
+        ActiveEffectChange(key="flags.advantage.attack", mode="override", value=True),
+        ActiveEffectChange(key="flags.disadvantage.save.dexterity", mode="override", value=True),
     ]
     assert condition_rules.conditions_grant_advantage_on_attack([definition.slug], []) == (
         False,
@@ -298,7 +325,7 @@ def test_removing_restrained_attack_clause_preserves_save_and_legacy_neighbours(
         ("prone", None, (False, False)),
     ],
 )
-def test_removing_attack_clause_preserves_blinded_and_prone_legacy_neighbours(
+def test_removing_own_attack_clause_preserves_blinded_and_prone_target_neighbours(
     slug: str,
     distance_ft: int | None,
     expected_target: tuple[bool, bool],
@@ -316,7 +343,11 @@ def test_removing_attack_clause_preserves_blinded_and_prone_legacy_neighbours(
         ),
     )
 
-    assert _project_condition_changes([slug]) == []
+    assert _project_condition_changes([slug]) == (
+        [ActiveEffectChange(key="flags.advantage.attack", mode="override", value=True)]
+        if slug == "blinded"
+        else []
+    )
     assert condition_rules.conditions_grant_advantage_on_attack([slug], []) == (False, False)
     assert (
         condition_rules.conditions_grant_advantage_on_attack([], [slug], distance_ft=distance_ft)
@@ -352,16 +383,17 @@ def test_implied_prone_uses_the_same_projector_and_canonical_attack_clause(
     unconscious = BundledAssetLoader().get_condition("unconscious")
     assert unconscious is not None
     assert calls == [
+        (),
         tuple(
             effect
             for effect in unconscious.effects
-            if effect.kind == ConditionEffectKind.AUTO_FAIL_SAVE
+            if effect.kind in condition_rules._DECLARATIVE_CONDITION_MIGRATIONS["unconscious"]
         )
         + tuple(
             effect
             for effect in definition.effects
             if effect.kind == ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS
-        )
+        ),
     ]
 
     monkeypatch.setitem(
@@ -406,6 +438,7 @@ def test_unopted_clauses_do_not_reach_an_expanded_projector(
             for effect in clauses
             if effect.kind
             not in {
+                ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST,
                 ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS,
                 ConditionEffectKind.DISADVANTAGE_ABILITY_CHECKS,
                 ConditionEffectKind.DISADVANTAGE_SAVE,
@@ -436,7 +469,11 @@ def test_projector_support_alone_does_not_opt_in_a_condition_clause(
 
     # This kind already has generic projector support, but these conditions
     # have never opted in to it. Support must not silently enable a mechanic.
-    assert _project_condition_changes([slug]) == project_condition_effects(definition.effects)
+    assert _project_condition_changes([slug]) == project_condition_effects(
+        effect
+        for effect in definition.effects
+        if effect.kind in condition_rules._DECLARATIVE_CONDITION_MIGRATIONS[slug]
+    )
     assert condition_rules.conditions_grant_disadvantage_on_ability_checks([slug]) is False
 
 

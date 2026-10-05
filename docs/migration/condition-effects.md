@@ -9,13 +9,13 @@ documents the data contract and its sources.
 | Condition | Migrated clauses |
 |---|---|
 | Poisoned | `disadvantage_own_attacks`, `disadvantage_ability_checks` |
-| Restrained | `disadvantage_own_attacks`, `disadvantage_save` (DEX) |
-| Blinded | `disadvantage_own_attacks` |
+| Restrained | `disadvantage_own_attacks`, `disadvantage_save` (DEX), `advantage_attacks_against` |
+| Blinded | `disadvantage_own_attacks`, `advantage_attacks_against` |
 | Prone | `disadvantage_own_attacks` |
-| Paralyzed | `auto_fail_save` (STR, DEX) |
-| Stunned | `auto_fail_save` (STR, DEX) |
-| Petrified | `auto_fail_save` (STR, DEX) |
-| Unconscious | `auto_fail_save` (STR, DEX) |
+| Paralyzed | `auto_fail_save` (STR, DEX), `advantage_attacks_against` |
+| Stunned | `auto_fail_save` (STR, DEX), `advantage_attacks_against` |
+| Petrified | `auto_fail_save` (STR, DEX), `advantage_attacks_against` |
+| Unconscious | `auto_fail_save` (STR, DEX), `advantage_attacks_against` |
 
 ## Execution path
 
@@ -33,6 +33,7 @@ override flags, with `mode="override"` and `value=True`:
 
 | Clause kind | Change key |
 |---|---|
+| `ADVANTAGE_ATTACKS_AGAINST` | `flags.advantage.attack` |
 | `DISADVANTAGE_OWN_ATTACKS` | `flags.disadvantage.attack` |
 | `DISADVANTAGE_ABILITY_CHECKS` | `flags.disadvantage.check` |
 | `DISADVANTAGE_SAVE` | `flags.disadvantage.save.<ability>` |
@@ -69,20 +70,36 @@ projector. Adding generic support for another kind does not migrate it for a
 condition without a separate allowlist opt-in. The canonical clauses supply
 their mechanical meaning.
 
+The six migrated `ADVANTAGE_ATTACKS_AGAINST` clauses are unconditional. The
+attack helper consumes `flags.advantage.attack` from the target's projection
+and `flags.disadvantage.attack` from the attacker's projection, then feeds the
+existing attack resolver and `roll_d20_test()`. Sources remain
+`condition:target` and `condition:attacker`; multiple conditions never stack
+extra dice. Advantage alone draws two d20s and keeps the higher, disadvantage
+alone keeps the lower, and cancellation draws exactly one d20.
+
+Unconscious still implies Prone. As a target it grants unconditional advantage:
+unknown distance and distance within 5 ft roll with advantage, while beyond
+5 ft the legacy Prone disadvantage cancels it to a normal roll. The implied
+Prone own-attack disadvantage is consumed only when that creature attacks.
+
 ## Legacy boundary
 
 Clauses outside the migration table remain on their existing legacy paths. In
 particular:
 
-- Restrained: speed zero and advantage on attacks against the target.
-- Blinded: sight-check automatic failure and advantage on attacks against the
-  target.
+- Restrained: speed zero.
+- Blinded: sight-check automatic failure.
 - Prone: crawl movement restrictions, advantage on attacks against the target
   within 5 ft, and disadvantage on attacks against the target beyond 5 ft.
   Unknown distance leaves the target attack rule inert.
-- Paralyzed, Stunned, Petrified, and Unconscious: all non-save clauses, including
-  action restrictions, movement, target-side attack advantage, nearby automatic
-  critical hits, damage resistance, and immunity, keep their existing paths.
+- Invisible: target-side disadvantage and attacker-side advantage retain their
+  visibility gates. Frightened retains the attacker's fear-source line-of-sight
+  gate; Grappled retains the attacker-to-grappler identity check.
+- Paralyzed, Stunned, Petrified, and Unconscious: clauses outside saving throws
+  and unconditional target-side attack advantage, including action restrictions,
+  movement, nearby automatic critical hits, damage resistance, and immunity,
+  keep their existing paths.
   Unconscious still implies Prone, whose own-attack disadvantage was already
   migrated.
 

@@ -43,6 +43,7 @@ def project_condition_effects(effects: Iterable[ConditionEffect]) -> list[Active
     unsupported kinds stay on their legacy paths.
     """
     flag_keys = {
+        ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST: "flags.advantage.attack",
         ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS: "flags.disadvantage.attack",
         ConditionEffectKind.DISADVANTAGE_ABILITY_CHECKS: "flags.disadvantage.check",
     }

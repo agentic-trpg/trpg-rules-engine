@@ -18,7 +18,27 @@ from __future__ import annotations
 import random
 from collections.abc import Iterable
 
+from dnd5e_srd_data.schema.condition import ConditionEffect, ConditionEffectKind
+
 from dnd5e_engine.types.effects import ActiveEffect, ActiveEffectChange
+
+
+def project_condition_effects(effects: Iterable[ConditionEffect]) -> list[ActiveEffectChange]:
+    """Translate supported typed clauses into the existing override flag vocabulary.
+
+    Pure projection: no condition-name rules, I/O, RNG, or input mutation.
+    Selecting which conditions have migrated is the caller's responsibility;
+    unsupported kinds stay on their legacy paths.
+    """
+    flag_keys = {
+        ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS: "flags.disadvantage.attack",
+        ConditionEffectKind.DISADVANTAGE_ABILITY_CHECKS: "flags.disadvantage.check",
+    }
+    return [
+        ActiveEffectChange(key=flag_keys[effect.kind], mode="override", value=True)
+        for effect in effects
+        if effect.kind in flag_keys
+    ]
 
 
 def roll_dice_str(expr: str, rng: random.Random | None = None) -> int:

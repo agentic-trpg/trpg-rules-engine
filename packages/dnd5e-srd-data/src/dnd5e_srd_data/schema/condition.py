@@ -7,9 +7,9 @@ links in ``config.mjs`` — there is no structured mechanic upstream. The
 (``tools/translators/conditions.py``) from the SRD 5.2 sentences, one typed
 row per sentence, and this module only defines the closed vocabulary.
 
-The engine's ``dnd5e_engine.rules.conditions`` registry stays authoritative
-for enforcement (campaign design D3); this category mirrors it as data so a
-host can render, extend or audit conditions without reading Python.
+The engine projects Poisoned's clauses from this data into its existing
+ActiveEffectChange vocabulary. Other conditions retain enforcement in
+``dnd5e_engine.rules.conditions``; their data supports rendering and auditing.
 """
 
 from __future__ import annotations

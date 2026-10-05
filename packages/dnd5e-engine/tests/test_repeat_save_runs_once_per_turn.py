@@ -15,11 +15,14 @@ unable to reach it at all, because it never reaches ``_end_turn_and_advance``.
 from __future__ import annotations
 
 import asyncio
+import random
 
 import pytest
 from dnd5e_srd_data.loader import BundledAssetLoader
 
 from dnd5e_engine import PlayerIntent
+from dnd5e_engine.activities.actor_stats import save_modifier
+from dnd5e_engine.events import Ability, SaveRolled
 from dnd5e_engine.lib_loader import set_lib_loader_for_tests
 from dnd5e_engine.orchestrator import _get_live, start_combat, submit_player_intent
 from dnd5e_engine.specs import (
@@ -27,6 +30,7 @@ from dnd5e_engine.specs import (
     GridScene,
     PartyMemberSpec,
 )
+from dnd5e_engine.types.conditions import ActiveCondition
 from tests.e2e.harness import adjacent_cells, grid_scene
 
 _HOLD_IDENTITY = ("char:hero", "effect:hold_person", "cast:hold-person:mon:foe")
@@ -163,4 +167,83 @@ def test_repeat_save_lands_inside_the_turn_end_phase():
     )
     save = next(i for i, e in enumerate(tail) if e.type == "save_rolled" and e.dc == 30)
     ended = types.index("turn_ended")
+    assert marker < save < ended
+
+
+@pytest.mark.parametrize(
+    "condition", ["restrained", "paralyzed", "stunned", "petrified", "unconscious"]
+)
+@pytest.mark.parametrize("ability", ["str", "dex", "wis"])
+def test_repeat_save_uses_migrated_scopes_with_exact_rng_and_event_order(
+    condition: str, ability: Ability
+) -> None:
+    async def _go():
+        start = await start_combat(
+            session_id=f"repeat-save-migration-{condition}-{ability}",
+            party=_party(),
+            encounter=_encounter(),
+            grid_scene=_topology(),
+            rng_seed=7,
+        )
+        live = _get_live(start.handle)
+        for index, combatant in enumerate(live.initiative):
+            if combatant.entity_id == "char:hero":
+                target = combatant.model_copy(
+                    update={
+                        "conditions": [
+                            ActiveCondition(
+                                condition=name, source_entity_id="implied:scenario", scope="combat"
+                            )
+                            for name in (condition.upper(), condition)
+                        ]
+                    }
+                )
+                live.initiative[index] = target
+                break
+        _seed_pending_repeat_save(live)
+        live.repeat_save_on_turn_end[_HOLD_IDENTITY][0]["ability"] = ability
+        live.repeat_save_on_turn_end[_HOLD_IDENTITY][0]["condition"] = condition
+        reference = random.Random()
+        reference.setstate(live.rng.getstate())
+        auto_fail = condition != "restrained" and ability in {"str", "dex"}
+        disadvantaged = condition == "restrained" and ability == "dex"
+        natural = None if auto_fail else reference.randint(1, 20)
+        if disadvantaged:
+            assert natural is not None
+            natural = min(natural, reference.randint(1, 20))
+        modifier = 0 if auto_fail else save_modifier(target, ability).total
+        pre = len(live.event_log)
+
+        await submit_player_intent(
+            start.handle,
+            actor_id="char:hero",
+            intent=PlayerIntent(intent_type="pass"),
+        )
+        return live, pre, reference.getstate(), natural, modifier, disadvantaged
+
+    live, pre, expected_rng, natural, modifier, disadvantaged = asyncio.run(_go())
+    total = 0 if natural is None else natural + modifier
+    saves = _repeat_saves(live, pre)
+    assert saves == [
+        SaveRolled(
+            target_id="char:hero",
+            ability=ability,
+            dc=30,
+            roll_total=total,
+            succeeded=False,
+            advantage="disadvantage" if disadvantaged else "normal",
+            natural=natural,
+            modifier=modifier,
+            sources=["condition:target"] if disadvantaged else [],
+        )
+    ]
+    assert live.rng.getstate() == expected_rng
+    tail = live.event_log[pre:]
+    marker = next(
+        i
+        for i, event in enumerate(tail)
+        if event.type == "turn_phase" and event.phase == "turn_end"
+    )
+    save = tail.index(saves[0])
+    ended = next(i for i, event in enumerate(tail) if event.type == "turn_ended")
     assert marker < save < ended

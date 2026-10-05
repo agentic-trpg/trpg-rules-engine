@@ -23,6 +23,8 @@ Task 7 appends its own test classes (Shove / Stand Up) to this module.
 
 from __future__ import annotations
 
+import random
+
 import pytest
 
 from dnd5e_engine import PlayerIntent
@@ -153,6 +155,64 @@ class TestGrappleSave:
 
         assert _effective_speed(target) == 0
         assert live.current_actor_id != "char:brute"
+
+
+@pytest.mark.parametrize("intent_type", ["grapple", "shove"])
+@pytest.mark.parametrize(
+    "condition", ["restrained", "paralyzed", "stunned", "petrified", "unconscious"]
+)
+@pytest.mark.parametrize("ability", ["str", "dex"])
+def test_unarmed_save_uses_migrated_conditions_without_changing_events_or_rng(
+    intent_type: str, condition: str, ability: str
+) -> None:
+    async def _run():
+        start = await _start_grapple_combat(f"save-migration-{intent_type}-{condition}-{ability}")
+        live = _get_live(start.handle)
+        for index, combatant in enumerate(live.initiative):
+            if combatant.entity_id == "char:target":
+                live.initiative[index] = combatant.model_copy(
+                    update={
+                        "strength": 18 if ability == "str" else 10,
+                        "dexterity": 18 if ability == "dex" else 10,
+                        "conditions": [
+                            ActiveCondition(
+                                condition=name, source_entity_id="implied:scenario", scope="combat"
+                            )
+                            for name in (condition, condition.upper())
+                        ],
+                    }
+                )
+                break
+        reference = random.Random()
+        reference.setstate(live.rng.getstate())
+        auto_fail = condition != "restrained"
+        disadvantaged = condition == "restrained" and ability == "dex"
+        natural = None if auto_fail else reference.randint(1, 20)
+        if disadvantaged:
+            assert natural is not None
+            natural = min(natural, reference.randint(1, 20))
+        pre = len(live.event_log)
+
+        await submit_player_intent(
+            start.handle,
+            actor_id="char:brute",
+            intent=PlayerIntent(intent_type=intent_type, target_id="char:target"),
+        )
+        return live, pre, reference.getstate(), natural, auto_fail, disadvantaged
+
+    live, pre, expected_rng, natural, auto_fail, disadvantaged = run_async(_run())
+    saves = [event for event in live.event_log[pre:] if isinstance(event, SaveRolled)]
+    total = 0 if auto_fail else natural + 4
+    assert len(saves) == 1
+    assert saves[0].ability == ability
+    assert saves[0].dc == 15
+    assert saves[0].roll_total == total
+    assert saves[0].succeeded is (total >= 15)
+    assert saves[0].natural == natural
+    assert saves[0].modifier == (0 if auto_fail else 4)
+    assert saves[0].advantage == ("disadvantage" if disadvantaged else "normal")
+    assert saves[0].sources == (["condition:target"] if disadvantaged else [])
+    assert live.rng.getstate() == expected_rng
 
 
 class TestGrappleRange:

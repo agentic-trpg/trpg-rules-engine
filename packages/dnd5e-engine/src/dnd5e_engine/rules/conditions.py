@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from dnd5e_srd_data.loader import BundledAssetLoader
 from dnd5e_srd_data.schema.condition import ConditionEffect, ConditionEffectKind
 
-from dnd5e_engine.rules.effects import project_condition_effects
+from dnd5e_engine.rules.effects import project_condition_effects, save_flag_abilities
 from dnd5e_engine.types.effects import ActiveEffectChange
 
 if TYPE_CHECKING:
@@ -41,9 +41,18 @@ _DECLARATIVE_CONDITION_MIGRATIONS: dict[str, frozenset[ConditionEffectKind]] = {
             ConditionEffectKind.DISADVANTAGE_ABILITY_CHECKS,
         }
     ),
-    "restrained": frozenset({ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS}),
+    "restrained": frozenset(
+        {
+            ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS,
+            ConditionEffectKind.DISADVANTAGE_SAVE,
+        }
+    ),
     "blinded": frozenset({ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS}),
     "prone": frozenset({ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS}),
+    "paralyzed": frozenset({ConditionEffectKind.AUTO_FAIL_SAVE}),
+    "stunned": frozenset({ConditionEffectKind.AUTO_FAIL_SAVE}),
+    "petrified": frozenset({ConditionEffectKind.AUTO_FAIL_SAVE}),
+    "unconscious": frozenset({ConditionEffectKind.AUTO_FAIL_SAVE}),
 }
 
 # Load definitions once, outside resolution, so roll-time projection stays pure
@@ -542,7 +551,7 @@ def project_passive_damage_modifiers(conditions: list[str]) -> dict[str, list[st
 def project_passive_save_modifiers(conditions: list[str]) -> dict[str, list[str]]:
     """Return passive save adv / dis / auto-fail ability-code lists.
 
-    Per SRD 5.1 §Conditions:
+    Migrated canonical SRD 5.2 clauses supply the ability scopes:
 
     * Restrained → disadvantage on DEX saves.
     * Paralyzed / Stunned / Petrified / Unconscious → auto-fail STR + DEX
@@ -552,25 +561,16 @@ def project_passive_save_modifiers(conditions: list[str]) -> dict[str, list[str]
       belt-and-suspenders fallback so a save handler that doesn't yet
       honor auto-fail still resolves in the correct direction.
     """
-    out: dict[str, list[str]] = {
+    changes = _project_condition_changes(conditions)
+    disadvantage = save_flag_abilities(changes, ConditionEffectKind.DISADVANTAGE_SAVE)
+    auto_fail = save_flag_abilities(changes, ConditionEffectKind.AUTO_FAIL_SAVE)
+    return {
         "passive_save_adv": [],
-        "passive_save_dis": [],
-        "passive_save_auto_fail": [],
+        # Keep the existing defensive disadvantage fallback for auto-fail saves,
+        # after explicit disadvantage entries, without duplicating abilities.
+        "passive_save_dis": list(dict.fromkeys([*disadvantage, *auto_fail])),
+        "passive_save_auto_fail": auto_fail,
     }
-    active = {c.lower() for c in conditions}
-    if "restrained" in active:
-        out["passive_save_dis"].append("DEX")
-    auto_fail_str_dex = {"paralyzed", "stunned", "petrified", "unconscious"}
-    if active & auto_fail_str_dex:
-        out["passive_save_auto_fail"].extend(("STR", "DEX"))
-        # Defensive: keep the disadvantage entries so a save handler
-        # without the auto-fail short-circuit still resolves the save
-        # in the correct direction.
-        if "STR" not in out["passive_save_dis"]:
-            out["passive_save_dis"].append("STR")
-        if "DEX" not in out["passive_save_dis"]:
-            out["passive_save_dis"].append("DEX")
-    return out
 
 
 def project_passive_check_modifiers(conditions: list[str]) -> dict[str, list[str]]:

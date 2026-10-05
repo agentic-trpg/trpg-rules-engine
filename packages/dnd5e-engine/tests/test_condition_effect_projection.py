@@ -13,7 +13,7 @@ from dnd5e_srd_data.schema.condition import ConditionEffect, ConditionEffectKind
 
 from dnd5e_engine.rules import conditions as condition_rules
 from dnd5e_engine.rules.conditions import _project_condition_changes
-from dnd5e_engine.rules.effects import project_condition_effects
+from dnd5e_engine.rules.effects import project_condition_effects, save_flag_abilities
 from dnd5e_engine.types.effects import ActiveEffectChange
 
 
@@ -26,9 +26,18 @@ def test_migration_selection_is_an_explicit_clause_allowlist() -> None:
                 ConditionEffectKind.DISADVANTAGE_ABILITY_CHECKS,
             }
         ),
-        "restrained": frozenset({ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS}),
+        "restrained": frozenset(
+            {
+                ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS,
+                ConditionEffectKind.DISADVANTAGE_SAVE,
+            }
+        ),
         "blinded": frozenset({ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS}),
         "prone": frozenset({ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS}),
+        "paralyzed": frozenset({ConditionEffectKind.AUTO_FAIL_SAVE}),
+        "stunned": frozenset({ConditionEffectKind.AUTO_FAIL_SAVE}),
+        "petrified": frozenset({ConditionEffectKind.AUTO_FAIL_SAVE}),
+        "unconscious": frozenset({ConditionEffectKind.AUTO_FAIL_SAVE}),
     }
 
 
@@ -45,7 +54,19 @@ def test_typed_clause_translates_to_existing_change(kind: ConditionEffectKind, k
     ]
 
 
-@pytest.mark.parametrize("slug", ["poisoned", "restrained", "blinded", "prone"])
+@pytest.mark.parametrize(
+    "slug",
+    [
+        "poisoned",
+        "restrained",
+        "blinded",
+        "prone",
+        "paralyzed",
+        "stunned",
+        "petrified",
+        "unconscious",
+    ],
+)
 def test_projection_is_repeatable_pure_and_never_draws_dice(
     slug: str,
     monkeypatch: pytest.MonkeyPatch,
@@ -53,6 +74,7 @@ def test_projection_is_repeatable_pure_and_never_draws_dice(
     definition = BundledAssetLoader().get_condition(slug)
     assert definition is not None
     before = definition.model_dump()
+    expected_collected = _project_condition_changes([slug])
 
     def forbid_rng(*args: object) -> int:
         pytest.fail("Condition projection must not consume RNG")
@@ -78,7 +100,7 @@ def test_projection_is_repeatable_pure_and_never_draws_dice(
     # the canonical definition or the next resolution's projection.
     first[0].value = False
     assert second[0].value is True
-    assert collected == second
+    assert collected == expected_collected
     assert definition.model_dump() == before
 
 
@@ -94,8 +116,8 @@ def test_other_conditions_are_not_migrated() -> None:
                 "frightened",
                 "invisible",
                 "grappled",
-                "paralyzed",
-                "stunned",
+                "deafened",
+                "incapacitated",
             ]
         )
         == []
@@ -208,7 +230,7 @@ def test_attack_clauses_share_the_same_generic_projector(
         ),
     ],
 )
-def test_partial_migrations_project_only_own_attack_disadvantage(
+def test_partial_migrations_project_only_opted_in_clauses(
     slug: str, expected_kinds: set[ConditionEffectKind]
 ) -> None:
     definition = BundledAssetLoader().get_condition(slug)
@@ -217,6 +239,10 @@ def test_partial_migrations_project_only_own_attack_disadvantage(
     # clauses must remain unsupported and stay on the legacy paths.
     assert {effect.kind for effect in definition.effects} == expected_kinds
     expected = [ActiveEffectChange(key="flags.disadvantage.attack", mode="override", value=True)]
+    if slug == "restrained":
+        expected.append(
+            ActiveEffectChange(key="flags.disadvantage.save.dexterity", mode="override", value=True)
+        )
     assert project_condition_effects(definition.effects) == expected
     assert _project_condition_changes([definition.slug]) == expected
     assert (
@@ -224,7 +250,7 @@ def test_partial_migrations_project_only_own_attack_disadvantage(
     )
 
 
-def test_removing_restrained_attack_clause_leaves_other_clauses_on_legacy_paths(
+def test_removing_restrained_attack_clause_preserves_save_and_legacy_neighbours(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     definition = BundledAssetLoader().get_condition("restrained")
@@ -238,7 +264,9 @@ def test_removing_restrained_attack_clause_leaves_other_clauses_on_legacy_paths(
             if effect.kind != ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS
         ),
     )
-    assert _project_condition_changes([definition.slug]) == []
+    assert _project_condition_changes([definition.slug]) == [
+        ActiveEffectChange(key="flags.disadvantage.save.dexterity", mode="override", value=True)
+    ]
     assert condition_rules.conditions_grant_advantage_on_attack([definition.slug], []) == (
         False,
         False,
@@ -321,8 +349,15 @@ def test_implied_prone_uses_the_same_projector_and_canonical_attack_clause(
 
     monkeypatch.setattr(condition_rules, "project_condition_effects", record_projection)
     assert condition_rules.conditions_grant_advantage_on_attack(conditions, []) == (False, True)
+    unconscious = BundledAssetLoader().get_condition("unconscious")
+    assert unconscious is not None
     assert calls == [
         tuple(
+            effect
+            for effect in unconscious.effects
+            if effect.kind == ConditionEffectKind.AUTO_FAIL_SAVE
+        )
+        + tuple(
             effect
             for effect in definition.effects
             if effect.kind == ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS
@@ -349,16 +384,15 @@ def test_unopted_clauses_do_not_reach_an_expanded_projector(
     assert definition is not None
     # Also model a future canonical clause for conditions without a save clause.
     # The fixture changes the cached input, never the bundled canonical data.
-    canonical = (*definition.effects, ConditionEffect(kind=ConditionEffectKind.DISADVANTAGE_SAVE))
+    canonical = (
+        *definition.effects,
+        ConditionEffect(kind=ConditionEffectKind.AUTO_FAIL_SAVE, abilities=["wis"]),
+    )
     monkeypatch.setitem(condition_rules._DECLARATIVE_CONDITION_EFFECTS, slug, canonical)
     expected = tuple(
         effect
         for effect in definition.effects
-        if effect.kind
-        in {
-            ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS,
-            ConditionEffectKind.DISADVANTAGE_ABILITY_CHECKS,
-        }
+        if effect.kind in condition_rules._DECLARATIVE_CONDITION_MIGRATIONS[slug]
     )
     calls: list[tuple[ConditionEffect, ...]] = []
 
@@ -374,6 +408,8 @@ def test_unopted_clauses_do_not_reach_an_expanded_projector(
             not in {
                 ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS,
                 ConditionEffectKind.DISADVANTAGE_ABILITY_CHECKS,
+                ConditionEffectKind.DISADVANTAGE_SAVE,
+                ConditionEffectKind.AUTO_FAIL_SAVE,
             }
         )
         return projected
@@ -400,9 +436,7 @@ def test_projector_support_alone_does_not_opt_in_a_condition_clause(
 
     # This kind already has generic projector support, but these conditions
     # have never opted in to it. Support must not silently enable a mechanic.
-    assert _project_condition_changes([slug]) == [
-        ActiveEffectChange(key="flags.disadvantage.attack", mode="override", value=True)
-    ]
+    assert _project_condition_changes([slug]) == project_condition_effects(definition.effects)
     assert condition_rules.conditions_grant_disadvantage_on_ability_checks([slug]) is False
 
 
@@ -433,3 +467,157 @@ def test_removing_opt_in_disables_only_that_clause(
     assert condition_rules.conditions_grant_advantage_on_attack([slug], []) == (False, attack_dis)
     assert condition_rules.conditions_grant_disadvantage_on_ability_checks([slug]) is check_dis
     assert condition_rules._DECLARATIVE_CONDITION_EFFECTS[slug] == canonical
+
+
+@pytest.mark.parametrize(
+    ("kind", "prefix"),
+    [
+        (ConditionEffectKind.DISADVANTAGE_SAVE, "flags.disadvantage.save"),
+        (ConditionEffectKind.AUTO_FAIL_SAVE, "flags.auto_fail.save"),
+    ],
+)
+@pytest.mark.parametrize(
+    ("code", "name"),
+    [
+        ("str", "strength"),
+        ("dex", "dexterity"),
+        ("con", "constitution"),
+        ("int", "intelligence"),
+        ("wis", "wisdom"),
+        ("cha", "charisma"),
+    ],
+)
+def test_save_clauses_use_the_existing_full_name_flag_vocabulary(
+    kind: ConditionEffectKind, prefix: str, code: str, name: str
+) -> None:
+    effect = ConditionEffect(kind=kind, abilities=[f" {code.upper()} ", code])
+    changes = project_condition_effects([effect])
+    assert changes == [ActiveEffectChange(key=f"{prefix}.{name}", mode="override", value=True)]
+    assert save_flag_abilities(changes, kind) == [code.upper()]
+    assert effect.abilities == [f" {code.upper()} ", code]
+
+
+@pytest.mark.parametrize(
+    "kind", [ConditionEffectKind.DISADVANTAGE_SAVE, ConditionEffectKind.AUTO_FAIL_SAVE]
+)
+@pytest.mark.parametrize("abilities", [[], ["unknown", ""]])
+def test_unscoped_or_unknown_save_abilities_do_not_emit_broad_flags(
+    kind: ConditionEffectKind, abilities: list[str]
+) -> None:
+    assert project_condition_effects([ConditionEffect(kind=kind, abilities=abilities)]) == []
+
+
+@pytest.mark.parametrize(
+    "kind", [ConditionEffectKind.DISADVANTAGE_SAVE, ConditionEffectKind.AUTO_FAIL_SAVE]
+)
+def test_save_flag_consumption_accepts_only_true_override_flags(kind: ConditionEffectKind) -> None:
+    flag = project_condition_effects([ConditionEffect(kind=kind, abilities=["dex"])])[0]
+    changes = [
+        flag.model_copy(update={"mode": "add"}),
+        flag.model_copy(update={"value": False}),
+        flag.model_copy(update={"key": "flags.advantage.save.dexterity"}),
+        flag,
+        flag,
+    ]
+    assert save_flag_abilities(changes, kind) == ["DEX"]
+
+
+@pytest.mark.parametrize(
+    ("slug", "kind"),
+    [
+        ("restrained", ConditionEffectKind.DISADVANTAGE_SAVE),
+        ("paralyzed", ConditionEffectKind.AUTO_FAIL_SAVE),
+        ("stunned", ConditionEffectKind.AUTO_FAIL_SAVE),
+        ("petrified", ConditionEffectKind.AUTO_FAIL_SAVE),
+        ("unconscious", ConditionEffectKind.AUTO_FAIL_SAVE),
+    ],
+)
+def test_save_scopes_come_from_canonical_clauses_instead_of_names(
+    slug: str, kind: ConditionEffectKind, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    canonical = condition_rules._DECLARATIVE_CONDITION_EFFECTS[slug]
+    monkeypatch.setitem(
+        condition_rules._DECLARATIVE_CONDITION_EFFECTS,
+        slug,
+        tuple(
+            effect.model_copy(update={"abilities": ["wis", "cha"]})
+            if effect.kind == kind
+            else effect
+            for effect in canonical
+        ),
+    )
+    assert condition_rules.project_passive_save_modifiers([slug]) == {
+        "passive_save_adv": [],
+        "passive_save_dis": ["WIS", "CHA"],
+        "passive_save_auto_fail": ["WIS", "CHA"]
+        if kind == ConditionEffectKind.AUTO_FAIL_SAVE
+        else [],
+    }
+
+
+@pytest.mark.parametrize("slug", ["poisoned", "blinded", "prone", "frightened"])
+@pytest.mark.parametrize(
+    "kind", [ConditionEffectKind.DISADVANTAGE_SAVE, ConditionEffectKind.AUTO_FAIL_SAVE]
+)
+def test_generic_save_support_does_not_opt_in_an_unmigrated_condition_clause(
+    slug: str, kind: ConditionEffectKind, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clause = ConditionEffect(kind=kind, abilities=["dex"])
+    assert project_condition_effects([clause])
+    monkeypatch.setitem(
+        condition_rules._DECLARATIVE_CONDITION_EFFECTS,
+        slug,
+        (*condition_rules._DECLARATIVE_CONDITION_EFFECTS.get(slug, ()), clause),
+    )
+    assert condition_rules.project_passive_save_modifiers([slug]) == {
+        "passive_save_adv": [],
+        "passive_save_dis": [],
+        "passive_save_auto_fail": [],
+    }
+
+
+@pytest.mark.parametrize(
+    ("slug", "kind", "attack_dis"),
+    [
+        ("restrained", ConditionEffectKind.DISADVANTAGE_SAVE, True),
+        ("paralyzed", ConditionEffectKind.AUTO_FAIL_SAVE, False),
+        ("stunned", ConditionEffectKind.AUTO_FAIL_SAVE, False),
+        ("petrified", ConditionEffectKind.AUTO_FAIL_SAVE, False),
+        ("unconscious", ConditionEffectKind.AUTO_FAIL_SAVE, True),
+    ],
+)
+def test_removing_save_opt_in_disables_only_the_save_clause(
+    slug: str, kind: ConditionEffectKind, attack_dis: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    canonical = condition_rules._DECLARATIVE_CONDITION_EFFECTS[slug]
+    monkeypatch.setitem(
+        condition_rules._DECLARATIVE_CONDITION_MIGRATIONS,
+        slug,
+        condition_rules._DECLARATIVE_CONDITION_MIGRATIONS[slug] - {kind},
+    )
+    assert condition_rules.project_passive_save_modifiers([slug]) == {
+        "passive_save_adv": [],
+        "passive_save_dis": [],
+        "passive_save_auto_fail": [],
+    }
+    assert condition_rules.conditions_grant_advantage_on_attack([slug], []) == (False, attack_dis)
+    assert condition_rules.conditions_grant_advantage_on_attack([], [slug]) == (True, False)
+    assert condition_rules._DECLARATIVE_CONDITION_EFFECTS[slug] == canonical
+
+
+@pytest.mark.parametrize(
+    "conditions",
+    [
+        ["restrained", "paralyzed"],
+        ["PARALYZED", "Restrained", "paralyzed", "RESTRAINED", "stunned"],
+        ["STUNNED", "petrified", "unconscious", "restrained", "PARALYZED"],
+    ],
+)
+def test_save_projection_preserves_normalization_deduplication_and_fallback_order(
+    conditions: list[str],
+) -> None:
+    assert condition_rules.project_passive_save_modifiers(conditions) == {
+        "passive_save_adv": [],
+        "passive_save_dis": ["DEX", "STR"],
+        "passive_save_auto_fail": ["STR", "DEX"],
+    }

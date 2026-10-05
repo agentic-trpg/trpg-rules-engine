@@ -20,7 +20,19 @@ from collections.abc import Iterable
 
 from dnd5e_srd_data.schema.condition import ConditionEffect, ConditionEffectKind
 
+from dnd5e_engine.rules.character import ABILITY_NAME_BY_CODE
 from dnd5e_engine.types.effects import ActiveEffect, ActiveEffectChange
+
+# Reuse the existing full-name save flag suffixes (e.g. ``save.dexterity``).
+# Both projection and sidecar consumption share this vocabulary; no key parsing
+# or condition-specific ability scopes are needed at resolution time.
+_SAVE_FLAG_KEYS: dict[ConditionEffectKind, dict[str, str]] = {
+    kind: {code: f"{prefix}.{name}" for code, name in ABILITY_NAME_BY_CODE.items()}
+    for kind, prefix in (
+        (ConditionEffectKind.DISADVANTAGE_SAVE, "flags.disadvantage.save"),
+        (ConditionEffectKind.AUTO_FAIL_SAVE, "flags.auto_fail.save"),
+    )
+}
 
 
 def project_condition_effects(effects: Iterable[ConditionEffect]) -> list[ActiveEffectChange]:
@@ -34,11 +46,32 @@ def project_condition_effects(effects: Iterable[ConditionEffect]) -> list[Active
         ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS: "flags.disadvantage.attack",
         ConditionEffectKind.DISADVANTAGE_ABILITY_CHECKS: "flags.disadvantage.check",
     }
-    return [
-        ActiveEffectChange(key=flag_keys[effect.kind], mode="override", value=True)
-        for effect in effects
-        if effect.kind in flag_keys
-    ]
+    changes: list[ActiveEffectChange] = []
+    for effect in effects:
+        if key := flag_keys.get(effect.kind):
+            changes.append(ActiveEffectChange(key=key, mode="override", value=True))
+        elif save_keys := _SAVE_FLAG_KEYS.get(effect.kind):
+            # Canonical scopes are ability codes. Normalize case/whitespace,
+            # preserve their declaration order, and ignore unknown/empty scopes
+            # rather than accidentally emitting a flag for every save.
+            for ability in dict.fromkeys(a.strip().lower() for a in effect.abilities):
+                if key := save_keys.get(ability):
+                    changes.append(ActiveEffectChange(key=key, mode="override", value=True))
+    return changes
+
+
+def save_flag_abilities(
+    changes: Iterable[ActiveEffectChange], kind: ConditionEffectKind
+) -> list[str]:
+    """Read a save flag family into stable, unique UPPER-case sidecar codes."""
+    abilities_by_key = {key: code.upper() for code, key in _SAVE_FLAG_KEYS.get(kind, {}).items()}
+    return list(
+        dict.fromkeys(
+            abilities_by_key[change.key]
+            for change in changes
+            if change.mode == "override" and change.value is True and change.key in abilities_by_key
+        )
+    )
 
 
 def roll_dice_str(expr: str, rng: random.Random | None = None) -> int:

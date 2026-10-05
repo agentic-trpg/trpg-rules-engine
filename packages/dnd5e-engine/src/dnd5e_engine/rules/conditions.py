@@ -6,7 +6,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from dnd5e_srd_data.loader import BundledAssetLoader
-from dnd5e_srd_data.schema.condition import ConditionEffect
+from dnd5e_srd_data.schema.condition import ConditionEffect, ConditionEffectKind
 
 from dnd5e_engine.rules.effects import project_condition_effects
 from dnd5e_engine.types.effects import ActiveEffectChange
@@ -34,12 +34,24 @@ class Condition(StrEnum):
 
 
 # Migration selection only; mechanical meaning comes from the canonical data.
+_DECLARATIVE_CONDITION_MIGRATIONS: dict[str, frozenset[ConditionEffectKind]] = {
+    "poisoned": frozenset(
+        {
+            ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS,
+            ConditionEffectKind.DISADVANTAGE_ABILITY_CHECKS,
+        }
+    ),
+    "restrained": frozenset({ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS}),
+    "blinded": frozenset({ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS}),
+    "prone": frozenset({ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS}),
+}
+
 # Load definitions once, outside resolution, so roll-time projection stays pure
 # and custom asset-loader configuration retains the legacy helpers' behaviour.
-# Only supported clauses migrate; all other clauses keep legacy enforcement.
+# Cache canonical clauses; only explicitly opted-in kinds reach the projector.
 _DECLARATIVE_CONDITION_EFFECTS: dict[str, tuple[ConditionEffect, ...]] = {
     slug: tuple(definition.effects)
-    for slug in ("poisoned", "restrained", "blinded", "prone")
+    for slug in _DECLARATIVE_CONDITION_MIGRATIONS
     if (definition := BundledAssetLoader().get_condition(slug)) is not None
 }
 
@@ -52,7 +64,10 @@ def _project_condition_changes(conditions: list[str]) -> list[ActiveEffectChange
         if condition.value in names:
             names.update(dict.fromkeys(c.value for c in implied))
     return project_condition_effects(
-        effect for name in names for effect in _DECLARATIVE_CONDITION_EFFECTS.get(name, ())
+        effect
+        for name in names
+        for effect in _DECLARATIVE_CONDITION_EFFECTS.get(name, ())
+        if effect.kind in _DECLARATIVE_CONDITION_MIGRATIONS.get(name, frozenset())
     )
 
 

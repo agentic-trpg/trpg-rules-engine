@@ -34,8 +34,11 @@ override flags, with `mode="override"` and `value=True`:
 Poisoned, Restrained, Blinded, and Prone share the same projector for their
 own-attack disadvantage. Projection is deterministic, performs no I/O or RNG
 draws, and does not mutate the canonical input. The engine's temporary migration
-registry selects conditions; the canonical clauses supply their mechanical
-meaning.
+registry uses clause-level explicit opt-in: each condition has an allowlist of
+`ConditionEffectKind` values, and only those canonical clauses reach the
+projector. Adding generic support for another kind does not migrate it for a
+condition without a separate allowlist opt-in. The canonical clauses supply
+their mechanical meaning.
 
 ## Legacy boundary
 

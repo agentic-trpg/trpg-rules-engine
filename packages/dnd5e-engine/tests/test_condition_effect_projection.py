@@ -41,12 +41,19 @@ def test_migration_selection_is_an_explicit_clause_allowlist() -> None:
                 ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST,
             }
         ),
-        "prone": frozenset({ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS}),
+        "prone": frozenset(
+            {
+                ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS,
+                ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST,
+                ConditionEffectKind.DISADVANTAGE_ATTACKS_AGAINST,
+            }
+        ),
         "paralyzed": frozenset(
             {
                 ConditionEffectKind.AUTO_FAIL_SAVE,
                 ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST,
                 ConditionEffectKind.SPEED_ZERO,
+                ConditionEffectKind.AUTO_CRIT_WITHIN_5FT,
             }
         ),
         "stunned": frozenset(
@@ -64,6 +71,7 @@ def test_migration_selection_is_an_explicit_clause_allowlist() -> None:
                 ConditionEffectKind.AUTO_FAIL_SAVE,
                 ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST,
                 ConditionEffectKind.SPEED_ZERO,
+                ConditionEffectKind.AUTO_CRIT_WITHIN_5FT,
             }
         ),
     }
@@ -275,8 +283,7 @@ def test_partial_migrations_project_only_opted_in_clauses(
 ) -> None:
     definition = BundledAssetLoader().get_condition(slug)
     assert definition is not None
-    # Generic support is broader than migration selection: Prone's target
-    # advantage kind is supported, but its distance clause is not opted in.
+    # Sight failure and crawling remain outside the explicit migration selection.
     assert {effect.kind for effect in definition.effects} == expected_kinds
     expected = [ActiveEffectChange(key="flags.disadvantage.attack", mode="override", value=True)]
     if slug != "prone":
@@ -289,12 +296,17 @@ def test_partial_migrations_project_only_opted_in_clauses(
             ActiveEffectChange(key="flags.disadvantage.save.dexterity", mode="override", value=True)
         )
     if slug == "prone":
-        assert project_condition_effects(definition.effects) == [
-            *expected,
-            ActiveEffectChange(key="flags.advantage.attack", mode="override", value=True),
-        ]
-    else:
-        assert project_condition_effects(definition.effects) == expected
+        expected.extend(
+            [
+                ActiveEffectChange(
+                    key="flags.advantage.attack.within_ft", mode="override", value=5
+                ),
+                ActiveEffectChange(
+                    key="flags.disadvantage.attack.beyond_ft", mode="override", value=5
+                ),
+            ]
+        )
+    assert project_condition_effects(definition.effects) == expected
     assert _project_condition_changes([definition.slug]) == expected
     assert (
         condition_rules.conditions_grant_disadvantage_on_ability_checks([definition.slug]) is False
@@ -372,7 +384,10 @@ def test_removing_own_attack_clause_preserves_blinded_and_prone_target_neighbour
     assert _project_condition_changes([slug]) == (
         [ActiveEffectChange(key="flags.advantage.attack", mode="override", value=True)]
         if slug == "blinded"
-        else []
+        else [
+            ActiveEffectChange(key="flags.advantage.attack.within_ft", mode="override", value=5),
+            ActiveEffectChange(key="flags.disadvantage.attack.beyond_ft", mode="override", value=5),
+        ]
     )
     assert condition_rules.conditions_grant_advantage_on_attack([slug], []) == (False, False)
     assert (
@@ -418,7 +433,7 @@ def test_implied_prone_uses_the_same_projector_and_canonical_attack_clause(
         + tuple(
             effect
             for effect in definition.effects
-            if effect.kind == ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS
+            if effect.kind in condition_rules._DECLARATIVE_CONDITION_MIGRATIONS["prone"]
         ),
     ]
 
@@ -466,6 +481,8 @@ def test_unopted_clauses_do_not_reach_an_expanded_projector(
             not in {
                 ConditionEffectKind.SPEED_ZERO,
                 ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST,
+                ConditionEffectKind.DISADVANTAGE_ATTACKS_AGAINST,
+                ConditionEffectKind.AUTO_CRIT_WITHIN_5FT,
                 ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS,
                 ConditionEffectKind.DISADVANTAGE_ABILITY_CHECKS,
                 ConditionEffectKind.DISADVANTAGE_SAVE,

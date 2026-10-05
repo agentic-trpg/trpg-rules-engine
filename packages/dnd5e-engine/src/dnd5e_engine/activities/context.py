@@ -199,9 +199,9 @@ class ActivityResolutionContext:
     attacker_unseen_by: dict[str, bool] = field(default_factory=dict)
     # Per-TARGET attacker→target distance in feet (``SpatialTopology.distance_ft``),
     # computed once per resolution by the orchestrator (``_target_distance_map``).
-    # Consumed by ``attack.py`` for the SRD 5.2 Prone target row (advantage
-    # within 5 ft, disadvantage otherwise). Absent target -> unknown -> that row
-    # stays inert.
+    # Consumed by ``attack.py`` for projected target attack distance flags
+    # (advantage/disadvantage and automatic crits on hits). Absent target ->
+    # unknown -> scoped flags stay inert; unconditional advantage still applies.
     target_distance_ft: dict[str, int] = field(default_factory=dict)
     # SRD 5.2 §Range (C15 Task 2): "Your attack roll has Disadvantage when
     # your target is beyond normal range, and you can't attack a target

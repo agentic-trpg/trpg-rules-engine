@@ -9,6 +9,7 @@ natural 5).
 from __future__ import annotations
 
 import asyncio
+import random
 from typing import Any
 
 import pytest
@@ -26,6 +27,7 @@ from dnd5e_engine.orchestrator import (
     _get_live,
     _LiveCombat,
     _opportunity_attackers,
+    _resolve_opportunity_attack,
     _update_combatant,
     start_combat,
     submit_player_intent,
@@ -33,6 +35,71 @@ from dnd5e_engine.orchestrator import (
 from dnd5e_engine.spatial import cell_id
 from dnd5e_engine.specs import EncounterMemberSpec, GridScene, PartyMemberSpec
 from dnd5e_engine.types.conditions import ActiveCondition
+
+
+@pytest.mark.parametrize("reactor_kind", ["character", "monster"])
+@pytest.mark.parametrize(
+    ("condition", "distance", "mode", "crit"),
+    [
+        ("prone", 5, "advantage", False),
+        ("prone", 10, "disadvantage", False),
+        ("paralyzed", 5, "advantage", True),
+        ("paralyzed", 10, "advantage", False),
+        ("unconscious", 5, "advantage", True),
+        ("unconscious", 10, "normal", False),
+    ],
+)
+def test_opportunity_resolver_consumes_scoped_target_conditions(
+    reactor_kind: str, condition: str, distance: int, mode: str, crit: bool
+) -> None:
+    """Exercise the reaction resolver directly: a Speed-0 target cannot walk
+    to provoke one. Both PC weapons and typed monster attacks share this seam.
+    """
+    _handle, live = _start(
+        [_hero(equipment=("glaive",), ac=1)],
+        [_monster(monster_template_slug="centaur-trooper", zone_id=cell_id(distance // 5, 0))],
+    )
+    hero = _find_combatant(live, "char:hero")
+    foe = _find_combatant(live, "mon:foe")
+    assert hero is not None
+    assert foe is not None
+    reactor, target = (hero, foe) if reactor_kind == "character" else (foe, hero)
+    target.conditions.append(
+        ActiveCondition(condition=condition, source_entity_id="implied:effect", scope="combat")
+    )
+    # Seed 7 avoids a natural 20, distinguishing automatic crit from natural crit.
+    live.rng = random.Random(7)
+    mirror = random.Random(7)
+    first = mirror.randint(1, 20)
+    if mode == "normal":
+        natural = first
+    else:
+        second = mirror.randint(1, 20)
+        natural = max(first, second) if mode == "advantage" else min(first, second)
+    offset = len(live.event_log)
+    _resolve_opportunity_attack(live, reactor, target)
+    events = live.event_log[offset:]
+    attack = next(event for event in events if isinstance(event, AttackRolled))
+    damage = [event for event in events if isinstance(event, DamageApplied)]
+    assert attack.is_opportunity_attack
+    assert attack.target_id == target.entity_id
+    assert attack.natural == natural
+    assert attack.advantage == mode
+    assert attack.roll_total == natural + attack.modifier
+    assert attack.advantage_sources == (
+        ["condition:target"] if condition != "prone" or distance == 5 else []
+    )
+    assert attack.disadvantage_sources == (
+        ["condition:target"] if condition != "paralyzed" and distance == 10 else []
+    )
+    assert attack.is_hit
+    assert attack.is_crit is crit
+    assert damage
+    assert all(event.is_crit is crit for event in damage)
+    if reactor_kind == "character":
+        assert [event.type for event in events] == ["attack_rolled", "damage_applied"]
+        assert damage[0].amount == sum(mirror.randint(1, 10) for _ in range(2 if crit else 1)) + 2
+        assert live.rng.getstate() == mirror.getstate()
 
 
 def _hero(**fields: Any) -> PartyMemberSpec:

@@ -20,7 +20,6 @@ from __future__ import annotations
 import pytest
 
 from dnd5e_engine.rules.conditions import (
-    AUTO_CRIT_WITHIN_5FT_CONDITIONS,
     CONDITION_EFFECTS,
     CONDITION_IMPLIES,
     Condition,
@@ -503,7 +502,7 @@ def test_conditions_block_actions(names: list[str], blocked: bool) -> None:
     assert conditions_block_actions(names) is blocked
 
 
-@pytest.mark.parametrize("name", sorted(AUTO_CRIT_WITHIN_5FT_CONDITIONS))
+@pytest.mark.parametrize("name", ["paralyzed", "unconscious"])
 def test_auto_crit_conditions(name: str) -> None:
     assert conditions_auto_crit_within_5ft([name]) is True
 

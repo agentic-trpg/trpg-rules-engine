@@ -216,7 +216,7 @@ def test_target_advantage_requires_both_canonical_clause_and_explicit_opt_in(
     assert condition_rules.project_passive_save_modifiers([condition]) == saves_before
 
 
-@pytest.mark.parametrize("condition", ["poisoned", "prone"])
+@pytest.mark.parametrize("condition", ["poisoned", "grappled"])
 def test_generic_target_advantage_support_does_not_enable_unopted_clause(
     condition: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:

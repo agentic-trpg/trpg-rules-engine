@@ -12,11 +12,11 @@ documents the data contract and its sources.
 | Grappled | `speed_zero` |
 | Restrained | `disadvantage_own_attacks`, `disadvantage_save` (DEX), `advantage_attacks_against`, `speed_zero` |
 | Blinded | `disadvantage_own_attacks`, `advantage_attacks_against` |
-| Prone | `disadvantage_own_attacks` |
-| Paralyzed | `auto_fail_save` (STR, DEX), `advantage_attacks_against`, `speed_zero` |
+| Prone | `disadvantage_own_attacks`, `advantage_attacks_against` (within 5 ft), `disadvantage_attacks_against` (beyond 5 ft) |
+| Paralyzed | `auto_fail_save` (STR, DEX), `advantage_attacks_against`, `speed_zero`, `auto_crit_within_5ft` |
 | Stunned | `auto_fail_save` (STR, DEX), `advantage_attacks_against` |
 | Petrified | `auto_fail_save` (STR, DEX), `advantage_attacks_against`, `speed_zero` |
-| Unconscious | `auto_fail_save` (STR, DEX), `advantage_attacks_against`, `speed_zero` |
+| Unconscious | `auto_fail_save` (STR, DEX), `advantage_attacks_against`, `speed_zero`, `auto_crit_within_5ft` |
 
 ## Execution path
 
@@ -34,7 +34,10 @@ changes, all with `mode="override"`:
 
 | Clause kind | Change key | Value |
 |---|---|---|
-| `ADVANTAGE_ATTACKS_AGAINST` | `flags.advantage.attack` | `True` |
+| `ADVANTAGE_ATTACKS_AGAINST` (`value=None`) | `flags.advantage.attack` | `True` |
+| `ADVANTAGE_ATTACKS_AGAINST` (integer `value`) | `flags.advantage.attack.within_ft` | threshold in feet |
+| `DISADVANTAGE_ATTACKS_AGAINST` (integer `value`) | `flags.disadvantage.attack.beyond_ft` | threshold in feet |
+| `AUTO_CRIT_WITHIN_5FT` (integer `value`) | `flags.auto_crit.attack.within_ft` | threshold in feet |
 | `DISADVANTAGE_OWN_ATTACKS` | `flags.disadvantage.attack` | `True` |
 | `DISADVANTAGE_ABILITY_CHECKS` | `flags.disadvantage.check` | `True` |
 | `DISADVANTAGE_SAVE` | `flags.disadvantage.save.<ability>` | `True` |
@@ -72,7 +75,7 @@ projector. Adding generic support for another kind does not migrate it for a
 condition without a separate allowlist opt-in. The canonical clauses supply
 their mechanical meaning.
 
-The six migrated `ADVANTAGE_ATTACKS_AGAINST` clauses are unconditional. The
+The six previously migrated `ADVANTAGE_ATTACKS_AGAINST` clauses are unconditional. The
 attack helper consumes `flags.advantage.attack` from the target's projection
 and `flags.disadvantage.attack` from the attacker's projection, then feeds the
 existing attack resolver and `roll_d20_test()`. Sources remain
@@ -80,10 +83,36 @@ existing attack resolver and `roll_d20_test()`. Sources remain
 extra dice. Advantage alone draws two d20s and keeps the higher, disadvantage
 alone keeps the lower, and cancellation draws exactly one d20.
 
-Unconscious still implies Prone. As a target it grants unconditional advantage:
-unknown distance and distance within 5 ft roll with advantage, while beyond
-5 ft the legacy Prone disadvantage cancels it to a normal roll. The implied
-Prone own-attack disadvantage is consumed only when that creature attacks.
+Distance-qualified attack mechanics use `ConditionEffect.kind` plus its integer
+`value`; `qualifier` prose is never parsed. `attack_distance_flag_applies()`
+validates the exact key, override mode, and integer type (excluding booleans and
+strings), then compares the per-target `target_distance_ft` against that value.
+Unknown distance leaves scoped flags inert. Prone's target advantage applies at
+or below the threshold; its target disadvantage applies strictly above it.
+
+`conditions_auto_crit_within_5ft()` is retained as a public consumer seam. Its
+historical one-argument form queries at 5 ft; attack resolvers always supply the
+actual distance, including unknown distance. It consumes projected clauses,
+without a condition-name registry. Ordinary attacks and Cleave feed its boolean
+into the existing `_resolve_hit_outcome(auto_crit_on_hit=...)`; opportunity and
+monster attacks share that activity resolver. A miss or natural 1 stays a miss;
+only a hit receives the automatic crit. Natural 20 and the existing critical
+damage path are unchanged: dice double, flat modifiers and critical bonuses
+apply once, and condition projection adds no RNG draws.
+
+Unconscious still implies Prone. Its unconditional advantage remains independent
+of both the scoped Prone clauses and auto-crit:
+
+| Distance | Attack mode | D20 draws | Automatic crit on hit |
+|---|---|---|---|
+| Unknown | Advantage | 2 | No |
+| 0 or 5 ft | Advantage | 2 | Yes |
+| 6 or 30 ft | Normal (advantage and disadvantage cancel) | 1 | No |
+
+Multiple or duplicate conditions contribute booleans and never stack extra dice
+or crit multipliers. Paralyzed retains unconditional advantage at every distance,
+with automatic crit only on hits within its threshold. The implied Prone
+own-attack disadvantage is consumed only when that creature attacks.
 
 The five migrated `SPEED_ZERO` clauses are unconditional. `project_speed()`
 consumes the projected zero-speed scalar override instead of a condition-name
@@ -108,19 +137,18 @@ particular:
   the grappler, source identity, drag/carry clauses, escape, and grapple removal
   retain their existing paths and implementation boundaries.
 - Blinded: sight-check automatic failure.
-- Prone: crawl movement restrictions, advantage on attacks against the target
-  within 5 ft, and disadvantage on attacks against the target beyond 5 ft.
-  Unknown distance leaves the target attack rule inert.
+- Prone: crawl movement restrictions. Both target-side distance attack clauses
+  are migrated; unknown distance leaves those scoped clauses inert.
 - Invisible: target-side disadvantage and attacker-side advantage retain their
   visibility gates. Frightened retains the attacker's fear-source line-of-sight
   gate.
 - Exhaustion: speed and D20-test penalties remain on their existing level-based
   paths; neither penalty clause is migrated.
-- Paralyzed, Stunned, Petrified, and Unconscious: clauses outside saving throws
-  and unconditional target-side attack advantage (plus `speed_zero` for
-  Paralyzed, Petrified, and Unconscious), including action restrictions, nearby
-  automatic critical hits, damage resistance, and immunity, keep their existing
-  paths. Stunned has no SRD 5.2 speed-zero clause.
+- Paralyzed, Stunned, Petrified, and Unconscious: action restrictions and other
+  clauses outside the migration table keep their existing paths. Nearby
+  automatic critical hits for Paralyzed and Unconscious are now migrated;
+  Petrified's damage resistance and immunity remain legacy.
+  Stunned has no SRD 5.2 speed-zero clause.
   Unconscious still implies Prone, whose own-attack disadvantage was already
   migrated.
 

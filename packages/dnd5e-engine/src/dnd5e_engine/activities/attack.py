@@ -202,10 +202,8 @@ def resolve_attack(
             + cover_bonus(ctx.target_cover.get(target.entity_id, "none"))
             + ctx.passive_ac_bonus.get(target.entity_id, 0)
         )
-        auto_crit = (
-            distance_ft is not None
-            and distance_ft <= 5
-            and conditions_auto_crit_within_5ft(ctx.target_conditions.get(target.entity_id, []))
+        auto_crit = conditions_auto_crit_within_5ft(
+            ctx.target_conditions.get(target.entity_id, []), distance_ft=distance_ft
         )
         is_crit, is_hit = _resolve_hit_outcome(
             natural, total, effective_ac, activity, auto_crit_on_hit=auto_crit
@@ -362,11 +360,7 @@ def _resolve_cleave_chain(
         + cover_bonus(ctx.target_cover.get(cid, "none"))
         + ctx.passive_ac_bonus.get(cid, 0)
     )
-    auto_crit = (
-        distance_ft is not None
-        and distance_ft <= 5
-        and conditions_auto_crit_within_5ft(candidate_conditions)
-    )
+    auto_crit = conditions_auto_crit_within_5ft(candidate_conditions, distance_ft=distance_ft)
     is_crit, is_hit = _resolve_hit_outcome(
         roll.kept, total, effective_ac, activity, auto_crit_on_hit=auto_crit
     )

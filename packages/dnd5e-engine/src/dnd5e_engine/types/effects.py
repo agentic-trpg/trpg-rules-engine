@@ -79,6 +79,11 @@ class ActiveEffectChange(BaseModel):
       check.<bucket>.bonus    — skill_check / ability_check bonus
       flags.advantage.<bucket>, flags.disadvantage.<bucket>
                               — override-mode boolean adv/disadv
+      flags.advantage.attack.within_ft, flags.disadvantage.attack.beyond_ft,
+      flags.auto_crit.attack.within_ft
+                              — target attack distance thresholds in feet;
+                                override-mode integers, consumed by the
+                                distance-aware condition helpers
       flags.disadvantage.save.<ability>, flags.auto_fail.save.<ability>
                               — scoped save flags; ability is a lowercase
                                 full name (strength, dexterity, etc.). Condition

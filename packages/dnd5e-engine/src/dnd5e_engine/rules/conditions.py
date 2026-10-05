@@ -8,7 +8,11 @@ from typing import TYPE_CHECKING
 from dnd5e_srd_data.loader import BundledAssetLoader
 from dnd5e_srd_data.schema.condition import ConditionEffect, ConditionEffectKind
 
-from dnd5e_engine.rules.effects import project_condition_effects, save_flag_abilities
+from dnd5e_engine.rules.effects import (
+    attack_distance_flag_applies,
+    project_condition_effects,
+    save_flag_abilities,
+)
 from dnd5e_engine.types.effects import ActiveEffectChange
 
 if TYPE_CHECKING:
@@ -56,12 +60,19 @@ _DECLARATIVE_CONDITION_MIGRATIONS: dict[str, frozenset[ConditionEffectKind]] = {
             ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST,
         }
     ),
-    "prone": frozenset({ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS}),
+    "prone": frozenset(
+        {
+            ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS,
+            ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST,
+            ConditionEffectKind.DISADVANTAGE_ATTACKS_AGAINST,
+        }
+    ),
     "paralyzed": frozenset(
         {
             ConditionEffectKind.AUTO_FAIL_SAVE,
             ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST,
             ConditionEffectKind.SPEED_ZERO,
+            ConditionEffectKind.AUTO_CRIT_WITHIN_5FT,
         }
     ),
     "stunned": frozenset(
@@ -79,6 +90,7 @@ _DECLARATIVE_CONDITION_MIGRATIONS: dict[str, frozenset[ConditionEffectKind]] = {
             ConditionEffectKind.AUTO_FAIL_SAVE,
             ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST,
             ConditionEffectKind.SPEED_ZERO,
+            ConditionEffectKind.AUTO_CRIT_WITHIN_5FT,
         }
     ),
 }
@@ -406,13 +418,17 @@ def conditions_grant_advantage_on_attack(
     """
     # Consume the flags by side: target clauses grant advantage against that
     # creature; its own-attack disadvantage (including implied Prone) does not.
+    target_changes = _project_condition_changes(target_conditions)
     advantage = any(
-        change.key == "flags.advantage.attack"
-        for change in _project_condition_changes(target_conditions)
+        change.key == "flags.advantage.attack" for change in target_changes
+    ) or attack_distance_flag_applies(
+        target_changes, ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST, distance_ft
     )
     disadvantage = any(
         change.key == "flags.disadvantage.attack"
         for change in _project_condition_changes(attacker_conditions)
+    ) or attack_distance_flag_applies(
+        target_changes, ConditionEffectKind.DISADVANTAGE_ATTACKS_AGAINST, distance_ft
     )
 
     if (
@@ -437,14 +453,6 @@ def conditions_grant_advantage_on_attack(
     ):
         disadvantage = True
 
-    # SRD 5.2 glossary, Prone: "An attack roll against you has Advantage if the
-    # attacker is within 5 feet of you. Otherwise, that attack roll has
-    # Disadvantage." Needs a distance; unknown distance → inert.
-    if is_condition_active(Condition.PRONE, target_conditions) and distance_ft is not None:
-        if distance_ft <= 5:
-            advantage = True
-        else:
-            disadvantage = True
     # SRD 5.2 glossary, Grappled: "You have Disadvantage on attack rolls against
     # any target other than the grappler." Unknown grappler → inert (never
     # penalise a swing that might be at the grappler).
@@ -459,10 +467,6 @@ def conditions_grant_advantage_on_attack(
 
 
 # ── SRD 5.2 condition predicates and numeric projections (C12) ──────────────
-
-#: SRD 5.2 glossary, Paralyzed / Unconscious: "Any attack roll that hits you is
-#: a Critical Hit if the attacker is within 5 feet of you."
-AUTO_CRIT_WITHIN_5FT_CONDITIONS: frozenset[str] = frozenset({"paralyzed", "unconscious"})
 
 #: SRD 5.2 Exhaustion: "When you make a D20 Test, the roll is reduced by 2
 #: times your Exhaustion level." / "Your Speed is reduced by a number of feet
@@ -513,11 +517,19 @@ def conditions_block_actions(condition_names: list[str]) -> bool:
     return is_condition_active(Condition.INCAPACITATED, condition_names)
 
 
-def conditions_auto_crit_within_5ft(target_condition_names: list[str]) -> bool:
-    """True when a hit on this target from within 5 ft is automatically a
-    Critical Hit (SRD 5.2 Paralyzed / Unconscious)."""
-    active = {c.lower() for c in target_condition_names}
-    return bool(active & AUTO_CRIT_WITHIN_5FT_CONDITIONS)
+def conditions_auto_crit_within_5ft(
+    target_condition_names: list[str], *, distance_ft: int | None = 5
+) -> bool:
+    """Whether a hit at this distance receives a projected automatic crit.
+
+    The historical one-argument API queries at 5 ft. Resolvers always pass the
+    actual distance, including None for unknown; the threshold comes from data.
+    """
+    return attack_distance_flag_applies(
+        _project_condition_changes(target_condition_names),
+        ConditionEffectKind.AUTO_CRIT_WITHIN_5FT,
+        distance_ft,
+    )
 
 
 # ── Per-effect sidecar projection (combat orchestrator hydration) ────────────
@@ -609,7 +621,6 @@ def project_passive_check_modifiers(conditions: list[str]) -> dict[str, list[str
 
 
 __all__ = [
-    "AUTO_CRIT_WITHIN_5FT_CONDITIONS",
     "CONDITION_EFFECTS",
     "CONDITION_IMPLIES",
     "EXHAUSTION_D20_PENALTY_PER_LEVEL",

@@ -34,6 +34,12 @@ _SAVE_FLAG_KEYS: dict[ConditionEffectKind, dict[str, str]] = {
     )
 }
 
+_ATTACK_DISTANCE_FLAG_KEYS = {
+    ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST: "flags.advantage.attack.within_ft",
+    ConditionEffectKind.DISADVANTAGE_ATTACKS_AGAINST: "flags.disadvantage.attack.beyond_ft",
+    ConditionEffectKind.AUTO_CRIT_WITHIN_5FT: "flags.auto_crit.attack.within_ft",
+}
+
 
 def project_condition_effects(effects: Iterable[ConditionEffect]) -> list[ActiveEffectChange]:
     """Translate supported typed clauses into the active-effect override vocabulary.
@@ -43,13 +49,19 @@ def project_condition_effects(effects: Iterable[ConditionEffect]) -> list[Active
     unsupported kinds stay on their legacy paths.
     """
     flag_keys = {
-        ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST: "flags.advantage.attack",
         ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS: "flags.disadvantage.attack",
         ConditionEffectKind.DISADVANTAGE_ABILITY_CHECKS: "flags.disadvantage.check",
     }
     changes: list[ActiveEffectChange] = []
     for effect in effects:
-        if key := flag_keys.get(effect.kind):
+        if effect.kind == ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST and effect.value is None:
+            changes.append(
+                ActiveEffectChange(key="flags.advantage.attack", mode="override", value=True)
+            )
+        elif key := _ATTACK_DISTANCE_FLAG_KEYS.get(effect.kind):
+            if type(effect.value) is int:
+                changes.append(ActiveEffectChange(key=key, mode="override", value=effect.value))
+        elif key := flag_keys.get(effect.kind):
             changes.append(ActiveEffectChange(key=key, mode="override", value=True))
         elif effect.kind == ConditionEffectKind.SPEED_ZERO:
             changes.append(ActiveEffectChange(key="speed.override", mode="override", value=0))
@@ -61,6 +73,32 @@ def project_condition_effects(effects: Iterable[ConditionEffect]) -> list[Active
                 if key := save_keys.get(ability):
                     changes.append(ActiveEffectChange(key=key, mode="override", value=True))
     return changes
+
+
+def attack_distance_flag_applies(
+    changes: Iterable[ActiveEffectChange],
+    kind: ConditionEffectKind,
+    distance_ft: int | None,
+) -> bool:
+    """Consume one scoped attack flag family; unknown distance is inert.
+
+    Thresholds are integer overrides, never boolean flags or formula strings.
+    Multiple matching clauses contribute only a boolean, without stacking.
+    """
+    key = _ATTACK_DISTANCE_FLAG_KEYS.get(kind)
+    if key is None or distance_ft is None:
+        return False
+    return any(
+        change.key == key
+        and change.mode == "override"
+        and type(change.value) is int
+        and (
+            distance_ft > change.value
+            if kind == ConditionEffectKind.DISADVANTAGE_ATTACKS_AGAINST
+            else distance_ft <= change.value
+        )
+        for change in changes
+    )
 
 
 def save_flag_abilities(

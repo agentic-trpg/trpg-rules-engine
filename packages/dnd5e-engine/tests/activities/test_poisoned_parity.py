@@ -185,10 +185,21 @@ def test_legacy_target_conditions_preserve_sources_and_rng(
 
 
 @pytest.mark.parametrize("seed", [1, 7, 9])
-@pytest.mark.parametrize("conditions", [(), ("poisoned",), ("poisoned", "frightened")])
+@pytest.mark.parametrize(
+    ("conditions", "mode"),
+    [
+        ((), "normal"),
+        (("poisoned",), "disadvantage"),
+        (("poisoned", "frightened"), "disadvantage"),
+        (("restrained",), "normal"),
+        (("blinded",), "normal"),
+        (("prone",), "normal"),
+        (("poisoned", "restrained", "blinded", "prone"), "disadvantage"),
+    ],
+)
 @pytest.mark.parametrize("skill", [False, True])
 def test_check_projection_roll_and_rng_parity(
-    seed: int, conditions: tuple[str, ...], skill: bool
+    seed: int, conditions: tuple[str, ...], mode: str, skill: bool
 ) -> None:
     start = run_async(
         start_combat(
@@ -260,13 +271,12 @@ def test_check_projection_roll_and_rng_parity(
     assert len(events) == 1
     rolled = events[0]
     assert isinstance(rolled, CheckRolled)
-    mode = "disadvantage" if conditions else "normal"
     assert rolled.natural == _mirror_roll(mirror, mode)
     assert rolled.modifier == (4 if skill else 2)
     assert rolled.roll_total == rolled.natural + rolled.modifier
     assert rolled.succeeded == (rolled.roll_total >= 12)
     assert rolled.advantage == mode
-    assert rolled.sources == (["condition:attacker"] if conditions else [])
+    assert rolled.sources == (["condition:attacker"] if mode == "disadvantage" else [])
     assert rng.getstate() == mirror.getstate()
 
 

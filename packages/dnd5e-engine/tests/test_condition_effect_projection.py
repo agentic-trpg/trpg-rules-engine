@@ -17,6 +17,21 @@ from dnd5e_engine.rules.effects import project_condition_effects
 from dnd5e_engine.types.effects import ActiveEffectChange
 
 
+def test_migration_selection_is_an_explicit_clause_allowlist() -> None:
+    migrations = condition_rules._DECLARATIVE_CONDITION_MIGRATIONS
+    assert migrations == {
+        "poisoned": frozenset(
+            {
+                ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS,
+                ConditionEffectKind.DISADVANTAGE_ABILITY_CHECKS,
+            }
+        ),
+        "restrained": frozenset({ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS}),
+        "blinded": frozenset({ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS}),
+        "prone": frozenset({ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS}),
+    }
+
+
 @pytest.mark.parametrize(
     ("kind", "key"),
     [
@@ -146,7 +161,13 @@ def test_attack_clauses_share_the_same_generic_projector(
     monkeypatch.setattr(condition_rules, "project_condition_effects", record_projection)
 
     assert condition_rules.conditions_grant_advantage_on_attack([slug], []) == (False, True)
-    assert calls == [tuple(definition.effects)]
+    assert calls == [
+        tuple(
+            effect
+            for effect in definition.effects
+            if effect.kind in condition_rules._DECLARATIVE_CONDITION_MIGRATIONS[slug]
+        )
+    ]
     own_attacks = [
         effect for effect in calls[0] if effect.kind == ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS
     ]
@@ -300,7 +321,13 @@ def test_implied_prone_uses_the_same_projector_and_canonical_attack_clause(
 
     monkeypatch.setattr(condition_rules, "project_condition_effects", record_projection)
     assert condition_rules.conditions_grant_advantage_on_attack(conditions, []) == (False, True)
-    assert calls == [tuple(definition.effects)]
+    assert calls == [
+        tuple(
+            effect
+            for effect in definition.effects
+            if effect.kind == ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS
+        )
+    ]
 
     monkeypatch.setitem(
         condition_rules._DECLARATIVE_CONDITION_EFFECTS,
@@ -312,3 +339,97 @@ def test_implied_prone_uses_the_same_projector_and_canonical_attack_clause(
         ),
     )
     assert condition_rules.conditions_grant_advantage_on_attack(conditions, []) == (False, False)
+
+
+@pytest.mark.parametrize("slug", ["poisoned", "restrained", "blinded", "prone"])
+def test_unopted_clauses_do_not_reach_an_expanded_projector(
+    slug: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    definition = BundledAssetLoader().get_condition(slug)
+    assert definition is not None
+    # Also model a future canonical clause for conditions without a save clause.
+    # The fixture changes the cached input, never the bundled canonical data.
+    canonical = (*definition.effects, ConditionEffect(kind=ConditionEffectKind.DISADVANTAGE_SAVE))
+    monkeypatch.setitem(condition_rules._DECLARATIVE_CONDITION_EFFECTS, slug, canonical)
+    expected = tuple(
+        effect
+        for effect in definition.effects
+        if effect.kind
+        in {
+            ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS,
+            ConditionEffectKind.DISADVANTAGE_ABILITY_CHECKS,
+        }
+    )
+    calls: list[tuple[ConditionEffect, ...]] = []
+
+    def expanded_projector(effects: Iterable[ConditionEffect]) -> list[ActiveEffectChange]:
+        clauses = tuple(effects)
+        calls.append(clauses)
+        projected = project_condition_effects(clauses)
+        # Pretend the generic projector now supports every other canonical kind.
+        projected.extend(
+            ActiveEffectChange(key=f"future.{effect.kind.value}", mode="override", value=True)
+            for effect in clauses
+            if effect.kind
+            not in {
+                ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS,
+                ConditionEffectKind.DISADVANTAGE_ABILITY_CHECKS,
+            }
+        )
+        return projected
+
+    monkeypatch.setattr(condition_rules, "project_condition_effects", expanded_projector)
+    assert _project_condition_changes([slug.upper(), slug]) == project_condition_effects(expected)
+    assert calls == [expected]
+
+
+@pytest.mark.parametrize("slug", ["restrained", "blinded", "prone"])
+def test_projector_support_alone_does_not_opt_in_a_condition_clause(
+    slug: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    definition = BundledAssetLoader().get_condition(slug)
+    assert definition is not None
+    monkeypatch.setitem(
+        condition_rules._DECLARATIVE_CONDITION_EFFECTS,
+        slug,
+        (
+            *definition.effects,
+            ConditionEffect(kind=ConditionEffectKind.DISADVANTAGE_ABILITY_CHECKS),
+        ),
+    )
+
+    # This kind already has generic projector support, but these conditions
+    # have never opted in to it. Support must not silently enable a mechanic.
+    assert _project_condition_changes([slug]) == [
+        ActiveEffectChange(key="flags.disadvantage.attack", mode="override", value=True)
+    ]
+    assert condition_rules.conditions_grant_disadvantage_on_ability_checks([slug]) is False
+
+
+@pytest.mark.parametrize(
+    ("slug", "kind", "attack_dis", "check_dis"),
+    [
+        ("poisoned", ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS, False, True),
+        ("poisoned", ConditionEffectKind.DISADVANTAGE_ABILITY_CHECKS, True, False),
+        ("restrained", ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS, False, False),
+        ("blinded", ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS, False, False),
+        ("prone", ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS, False, False),
+    ],
+)
+def test_removing_opt_in_disables_only_that_clause(
+    slug: str,
+    kind: ConditionEffectKind,
+    attack_dis: bool,
+    check_dis: bool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    canonical = condition_rules._DECLARATIVE_CONDITION_EFFECTS[slug]
+    monkeypatch.setitem(
+        condition_rules._DECLARATIVE_CONDITION_MIGRATIONS,
+        slug,
+        condition_rules._DECLARATIVE_CONDITION_MIGRATIONS[slug] - {kind},
+    )
+
+    assert condition_rules.conditions_grant_advantage_on_attack([slug], []) == (False, attack_dis)
+    assert condition_rules.conditions_grant_disadvantage_on_ability_checks([slug]) is check_dis
+    assert condition_rules._DECLARATIVE_CONDITION_EFFECTS[slug] == canonical

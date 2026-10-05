@@ -5,6 +5,12 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
+from dnd5e_srd_data.loader import BundledAssetLoader
+from dnd5e_srd_data.schema.condition import ConditionEffect
+
+from dnd5e_engine.rules.effects import project_condition_effects
+from dnd5e_engine.types.effects import ActiveEffectChange
+
 if TYPE_CHECKING:
     from dnd5e_engine.types.conditions import ActiveCondition, ConditionScope
 
@@ -25,6 +31,26 @@ class Condition(StrEnum):
     RESTRAINED = "restrained"
     STUNNED = "stunned"
     UNCONSCIOUS = "unconscious"
+
+
+# Migration selection only; mechanical meaning comes from the canonical data.
+# Load definitions once, outside resolution, so roll-time projection stays pure
+# and custom asset-loader configuration retains the legacy helpers' behaviour.
+# Other conditions intentionally keep their existing procedural enforcement.
+_DECLARATIVE_CONDITION_EFFECTS: dict[str, tuple[ConditionEffect, ...]] = {
+    slug: tuple(definition.effects)
+    for slug in ("poisoned",)
+    if (definition := BundledAssetLoader().get_condition(slug)) is not None
+}
+
+
+def _project_condition_changes(conditions: list[str]) -> list[ActiveEffectChange]:
+    """Collect migrated clauses in stable input order, ignoring duplicate names."""
+    return project_condition_effects(
+        effect
+        for name in dict.fromkeys(c.lower() for c in conditions)
+        for effect in _DECLARATIVE_CONDITION_EFFECTS.get(name, ())
+    )
 
 
 # Conditions that automatically include other conditions
@@ -279,7 +305,10 @@ def conditions_grant_disadvantage_on_ability_checks(conditions: list[str]) -> bo
     (Behavioural change in 0.6.0; see docs/migration/v0.5-to-v0.6.md.)
     """
     active = {c.lower() for c in conditions}
-    return bool(active & {"poisoned", "frightened"})
+    return "frightened" in active or any(
+        change.key == "flags.disadvantage.check"
+        for change in _project_condition_changes(conditions)
+    )
 
 
 def conditions_grant_advantage_on_attack(
@@ -321,7 +350,10 @@ def conditions_grant_advantage_on_attack(
       source the Frightened attacker cannot currently see — drops it.
     """
     advantage = False
-    disadvantage = False
+    disadvantage = any(
+        change.key == "flags.disadvantage.attack"
+        for change in _project_condition_changes(attacker_conditions)
+    )
 
     if (
         is_condition_active(Condition.INVISIBLE, attacker_conditions)
@@ -329,8 +361,6 @@ def conditions_grant_advantage_on_attack(
     ):
         advantage = True
     if is_condition_active(Condition.BLINDED, attacker_conditions):
-        disadvantage = True
-    if is_condition_active(Condition.POISONED, attacker_conditions):
         disadvantage = True
     # SRD 5.2 glossary, Frightened: "Disadvantage on ... attack rolls while
     # the source of fear is within line of sight." (C16b: ``fear_source_in_sight``
@@ -476,13 +506,11 @@ def conditions_auto_crit_within_5ft(target_condition_names: list[str]) -> bool:
 #   * ``_check_modifiers[actor_id]`` →
 #       ``{"passive_check_adv": [...], "passive_check_dis": [...]}``
 #     (consumed by ``check.py``; ``"all"`` is the catch-all for conditions
-#     that impose dis/adv on *every* ability check — Frightened, Poisoned,
-#     Exhaustion ≥ 1)
+#     that impose dis/adv on *every* ability check — Frightened, Poisoned)
 #
-# This projection is the SRD-condition portion of the sidecar payload —
-# active-effect modifier projection (Bless, Bane, etc.) layers on top in
-# the orchestrator. Keeping the table here in ``rules/`` keeps the SRD
-# semantics in the pure rules engine; the orchestrator owns the
+# This is the condition portion of the sidecar payload: Poisoned clauses
+# come from canonical data; the remaining conditions keep their legacy rules.
+# Active-effect modifiers layer on top in the orchestrator, which owns the
 # transport-level merge.
 
 
@@ -545,13 +573,13 @@ def project_passive_check_modifiers(conditions: list[str]) -> dict[str, list[str
     * Frightened — "disadvantage on ability checks ... while source of fear
       is in line of sight" (we project as ``all`` — the line-of-sight gate
       isn't carried on the live state today)
-    * Poisoned — "disadvantage on attack rolls and ability checks"
+    * Migrated condition clauses — projected through ``ActiveEffectChange``
+      (currently Poisoned's canonical ``disadvantage_ability_checks`` row).
     * Exhaustion — NOT projected here (SRD 5.2: numeric ``-2 x level`` penalty
       on every D20 Test, see ``d20_test_penalty``).
     """
     out: dict[str, list[str]] = {"passive_check_adv": [], "passive_check_dis": []}
-    active = {c.lower() for c in conditions}
-    if active & {"frightened", "poisoned"}:
+    if conditions_grant_disadvantage_on_ability_checks(conditions):
         out["passive_check_dis"].append("all")
     return out
 

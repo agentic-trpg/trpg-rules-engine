@@ -202,6 +202,11 @@ from dnd5e_engine.rules.conditions import (
     Condition,
     active_condition_names,
     conditions_block_actions,
+    conditions_break_concentration,
+    conditions_cannot_attack_charmer,
+    conditions_cannot_move_toward_fear_source,
+    conditions_disadvantage_initiative,
+    conditions_unseen,
     d20_test_penalty,
     exhaustion_level_of,
     is_condition_active,
@@ -1428,7 +1433,7 @@ def _sneak_ally_adjacent_map(
         if c.entity_id in side
         and c.entity_id != caster.entity_id
         and c.is_alive
-        and not is_condition_active(Condition.INCAPACITATED, active_condition_names(c.conditions))
+        and not conditions_block_actions(active_condition_names(c.conditions))
     ]
     if not allies:
         return {}
@@ -1562,9 +1567,10 @@ def _combatant_can_see(live: _LiveCombat, viewer: Combatant, target: Combatant) 
         Condition.BLINDED, _condition_names(viewer)
     ) and not _blindsight_reaches_zone(live, viewer, target_zone):
         return False
-    if is_condition_active(
-        Condition.INVISIBLE, _condition_names(target)
-    ) and not _special_sense_reaches(live, viewer, target):
+    if conditions_unseen(
+        _condition_names(target),
+        observer_can_see_bearer=_special_sense_reaches(live, viewer, target),
+    ):
         return False
     return live.topology.can_see(viewer_zone, target_zone, viewer.senses)
 
@@ -1592,23 +1598,19 @@ def _fear_source_in_sight(live: _LiveCombat, combatant: Combatant) -> bool:
 
 def _frightened_approach_blocked(live: _LiveCombat, mover: Combatant, path: list[str]) -> bool:
     """SRD 5.2 Frightened: "You can't willingly move closer to the source of
-    fear." (C16b) True iff ``mover`` is Frightened of a known, LIVING,
-    tracked source it can currently see (``_fear_source_in_sight``, reused
-    for the "visible" half — R5's unknown/dead/untracked ⇒ no restriction
-    carries over identically here), AND some consecutive pair of cells in
+    fear." True iff a projected approach restriction has a known, LIVING,
+    tracked source, AND some consecutive pair of cells in
     ``path`` strictly reduces ``live.topology.distance_ft`` to that source's
     cell. An unresolvable pairwise distance (untracked/cross-topology) never
-    blocks.
+    blocks. This clause has no visibility gate.
     """
-    if not is_condition_active(Condition.FRIGHTENED, _condition_names(mover)):
+    if not conditions_cannot_move_toward_fear_source(_condition_names(mover)):
         return False
     source_id = _condition_source_entity(live, mover, "frightened")
     if source_id is None:
         return False
     source = next((c for c in live.initiative if c.entity_id == source_id), None)
     if source is None or not source.is_alive:
-        return False
-    if not _combatant_can_see(live, mover, source):
         return False
     source_cell = live.actor_zone.get(source_id)
     if source_cell is None:
@@ -2131,9 +2133,7 @@ def _charmed_target_violation(
     """The charmer's id when ``intent`` would attack / harmfully target the
     creature that charmed ``current``; ``None`` otherwise (not charmed, unknown
     charmer, other target, beneficial spell, non-targeting intent)."""
-    if intent.target_id is None or not is_condition_active(
-        Condition.CHARMED, _condition_names(current)
-    ):
+    if intent.target_id is None or not conditions_cannot_attack_charmer(_condition_names(current)):
         return None
     charmer = _condition_source_entity(live, current, "charmed")
     if charmer is None or charmer != intent.target_id:
@@ -2360,7 +2360,11 @@ def _select_monster_targets(live: _LiveCombat, current: Combatant) -> list[Comba
         for c in live.initiative
         if _is_enemy(live, current.entity_id, c.entity_id) and c.is_alive and c.hp_current > 0
     ]
-    charmer_id = _condition_source_entity(live, current, "charmed")
+    charmer_id = (
+        _condition_source_entity(live, current, "charmed")
+        if conditions_cannot_attack_charmer(_condition_names(current))
+        else None
+    )
     if charmer_id is not None:
         enemies = [c for c in enemies if c.entity_id != charmer_id]
     return enemies
@@ -3558,9 +3562,11 @@ def _fold_condition_onto_combatant(
 
 
 def _end_what_incapacitation_ends(live: _LiveCombat, entity_id: str, condition: str) -> None:
-    """What ``condition`` ends as it first lands on ``entity_id``, when it is
-    Incapacitated or implies it (Paralyzed / Petrified / Stunned / Unconscious
-    via ``CONDITION_IMPLIES``).
+    """Reconcile a landed condition's concentration and legacy lifecycles.
+
+    The canonical BREAKS_CONCENTRATION clause governs only concentration.
+    Grapple, Rage and Wild Shape retain their legacy Incapacitated implication
+    predicate independently of the projected action/concentration clauses.
 
     Keyed to the condition's first materialisation on ``Combatant.conditions``,
     not a raw HP threshold. Two folds write that store, and whichever writes
@@ -3570,10 +3576,11 @@ def _end_what_incapacitation_ends(live: _LiveCombat, entity_id: str, condition: 
     already there) and ``_fold_condition_onto_combatant`` for a bare
     ``ConditionApplied`` (0 HP's Unconscious).
     """
+    # SRD 5.2 Incapacitated — "No Concentration. Your Concentration is broken."
+    if conditions_break_concentration([condition]):
+        _drop_concentration(live, entity_id)
     if not is_condition_active(Condition.INCAPACITATED, [condition]):
         return
-    # SRD 5.2 Incapacitated — "No Concentration. Your Concentration is broken."
-    _drop_concentration(live, entity_id)
     # SRD 5.2 "Ending a Grapple" — "The condition also ends if the grappler has
     # the Incapacitated condition." Release every victim this newly
     # incapacitated combatant is grappling.
@@ -3797,6 +3804,9 @@ def _release_one_grapple_effect(live: _LiveCombat, victim_id: str, effect_id: st
     remaining = [e for e in effects if e.id != effect_id]
     if len(remaining) != len(effects):
         live.active_effects[victim_id] = remaining
+        for effect in effects:
+            if effect.id == effect_id:
+                live.conditions_by_effect.pop((victim_id, effect.id, effect.origin), None)
 
 
 def _release_grapple_victims_of(live: _LiveCombat, grappler_id: str) -> None:
@@ -5610,7 +5620,9 @@ def _project_target_modifiers(
     cond_names = [ac.condition for ac in c.conditions]
     damage_proj = project_passive_damage_modifiers(cond_names)
     save_proj = project_passive_save_modifiers(cond_names)
-    check_proj = project_passive_check_modifiers(cond_names)
+    check_proj = project_passive_check_modifiers(
+        cond_names, fear_source_in_sight=_fear_source_in_sight(live, c)
+    )
     # Merge per-creature damage_resistances / damage_immunities (from the
     # monster/character stat block) into the condition-derived projection.
     # SRD §Damage Resistance / §Damage Immunity — both sources are
@@ -7346,38 +7358,55 @@ def _seed_active_effects(live: _LiveCombat, active_effects: Sequence[ActiveEffec
         _attach_effect_statuses(live, eff)
 
 
-def _seeded_incapacitated_ids(active_effects: Sequence[ActiveEffect]) -> frozenset[str]:
-    """Entity ids whose SEEDED ``active_effects`` (passed into ``start_combat``,
-    before any ``Combatant`` exists) carry a status that is Incapacitated or
-    implies it (Paralyzed / Petrified / Stunned / Unconscious — SRD 5.2
-    ``CONDITION_IMPLIES``). Reuses the same implication chain
-    ``is_condition_active`` walks for the live-combat Incapacitated read
-    (``_sneak_ally_adjacent_map`` et al.), applied here to the pre-seat
-    effect statuses rather than ``Combatant.conditions``.
+def _reconcile_seeded_condition_lifecycle(live: _LiveCombat) -> None:
+    """Phase two of hydration: reconcile the final, actually attached conditions.
+
+    Every effect/chain is already seeded, so teardown cannot miss a later input
+    effect. Stable entity, condition and concentration-identity traversal makes
+    reconciliation independent of input order and string hash seeds. Reuse the
+    runtime teardown events without fabricating ConditionApplied transitions.
     """
-    ids: set[str] = set()
-    for eff in active_effects:
-        if is_condition_active(Condition.INCAPACITATED, list(eff.statuses)):
-            ids.add(eff.target_id)
-    return frozenset(ids)
+    for entity_id in sorted(c.entity_id for c in live.initiative):
+        combatant = _find_combatant(live, entity_id)
+        if combatant is None:
+            continue
+        conditions = sorted(set(active_condition_names(combatant.conditions)))
+        if conditions_break_concentration(conditions):
+            live.concentration_chain.get(entity_id, []).sort()
+        for condition in conditions:
+            _end_what_incapacitation_ends(live, entity_id, condition)
+
+
+def _seeded_initiative_disadvantage_ids(active_effects: Sequence[ActiveEffect]) -> frozenset[str]:
+    """Pre-seat initiative flags from canonical, explicitly opted-in clauses.
+
+    This still reads raw seeded statuses before Combatant/immunity construction.
+    Filtering suppressed statuses before initiative is a separate follow-up;
+    hydration reconciliation below consumes only actual attached conditions.
+    """
+    return frozenset(
+        eff.target_id
+        for eff in active_effects
+        if conditions_disadvantage_initiative(sorted(eff.statuses))
+    )
 
 
 def _resolve_initiative(
     spec: PartyMemberSpec | EncounterMemberSpec,
     rng: random.Random,
-    seeded_incapacitated: frozenset[str],
+    seeded_disadvantage: frozenset[str],
 ) -> int:
     """SRD 5.2 Initiative: "every participant rolls Initiative; they make a
     Dexterity check". ``spec.initiative`` being an explicit int always wins
     (zero RNG draws — the legacy / host-supplied path). ``None`` opts into an
     engine-rolled d20 + DEX modifier. Surprise (and Incapacitated at roll
-    time — both SRD-cited on the spec fields / ``_seeded_incapacitated_ids``)
+    time — both SRD-cited on the spec fields / ``_seeded_initiative_disadvantage_ids``)
     impose Disadvantage per SRD 5.2 Surprise / the Incapacitated glossary
     entry.
     """
     if spec.initiative is not None:
         return spec.initiative
-    disadvantage = spec.is_surprised or spec.entity_id in seeded_incapacitated
+    disadvantage = spec.is_surprised or spec.entity_id in seeded_disadvantage
     sources = AdvantageSources(disadvantage=("condition:attacker",) if disadvantage else ())
     return roll_d20_test(rng, ability_modifier(_initiative_dexterity(spec)), sources).total
 
@@ -7431,13 +7460,13 @@ async def start_combat(
     # RNG entirely (zero draws — every host-int-initiative caller keeps its
     # exact pre-C14 draw sequence). ``None`` entities roll in SPEC ORDER
     # (party first, then encounter) so results are reproducible per seed.
-    seeded_incapacitated = _seeded_incapacitated_ids(active_effects)
+    seeded_disadvantage = _seeded_initiative_disadvantage_ids(active_effects)
     party = [
-        p.model_copy(update={"initiative": _resolve_initiative(p, rng, seeded_incapacitated)})
+        p.model_copy(update={"initiative": _resolve_initiative(p, rng, seeded_disadvantage)})
         for p in party
     ]
     encounter = [
-        e.model_copy(update={"initiative": _resolve_initiative(e, rng, seeded_incapacitated)})
+        e.model_copy(update={"initiative": _resolve_initiative(e, rng, seeded_disadvantage)})
         for e in encounter
     ]
 
@@ -7555,6 +7584,10 @@ async def start_combat(
     for c in list(live.initiative):
         if c.entity_id in live.party_ids and c.is_alive and c.hp_current <= 0:
             _fold_condition_onto_combatant(live, c.entity_id, "unconscious")
+
+    # All seeded effects, concentration chains and 0-HP conditions now exist.
+    # Reconcile actual attachments only after phase-one hydration is complete.
+    _reconcile_seeded_condition_lifecycle(live)
 
     # C12 — the seeded conditions may already zero or reduce a Speed; project
     # every combatant's opening movement budget before the first turn opens.
@@ -12334,7 +12367,10 @@ def _opportunity_attackers(
             continue
         if not _combatant_can_see(live, reactor, mover):
             continue
-        if _condition_source_entity(live, reactor, "charmed") == mover_id:
+        if (
+            conditions_cannot_attack_charmer(_condition_names(reactor))
+            and _condition_source_entity(live, reactor, "charmed") == mover_id
+        ):
             continue
         reactors.append(reactor_id)
     return reactors

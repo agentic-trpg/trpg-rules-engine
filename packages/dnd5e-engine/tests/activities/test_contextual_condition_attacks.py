@@ -7,6 +7,7 @@ import random
 import pytest
 from dnd5e_srd_data.loader import BundledAssetLoader
 from dnd5e_srd_data.schema.common import AttackActivity
+from dnd5e_srd_data.schema.condition import ConditionEffectKind
 
 from dnd5e_engine import PlayerIntent
 from dnd5e_engine.activities import attack as attack_rules
@@ -429,7 +430,7 @@ def test_opportunity_attack_context_matches_pre_migration(reactor_kind, conditio
 
 
 @pytest.mark.parametrize("remove_from", ["allowlist", "canonical"])
-def test_frightened_attack_clause_removal_preserves_legacy_movement(remove_from, monkeypatch):
+def test_frightened_attack_clause_removal_preserves_checks_and_movement(remove_from, monkeypatch):
     _result, live, _rng = _start()
     hero = _find_combatant(live, "char:hero")
     assert hero is not None
@@ -437,9 +438,13 @@ def test_frightened_attack_clause_removal_preserves_legacy_movement(remove_from,
     path = [cell(0, 0), cell(0, 1)]
     assert _frightened_approach_blocked(live, hero, path)
     before = rules.project_passive_check_modifiers(["frightened"])
-    kind = next(k for k in rules._DECLARATIVE_CONDITION_MIGRATIONS["frightened"])
+    kind = ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS
     if remove_from == "allowlist":
-        monkeypatch.setitem(rules._DECLARATIVE_CONDITION_MIGRATIONS, "frightened", frozenset())
+        monkeypatch.setitem(
+            rules._DECLARATIVE_CONDITION_MIGRATIONS,
+            "frightened",
+            rules._DECLARATIVE_CONDITION_MIGRATIONS["frightened"] - {kind},
+        )
     else:
         monkeypatch.setitem(
             rules._DECLARATIVE_CONDITION_EFFECTS,

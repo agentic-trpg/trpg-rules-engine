@@ -570,9 +570,8 @@ def test_frightened_mover_cannot_approach_visible_source():
     assert live.actor_zone["char:hero"] == cell(0, 1)
 
 
-def test_frightened_mover_may_approach_source_it_cannot_see():
-    """Same as above but the foe stands in a dark cell → the approach is
-    legal."""
+def test_frightened_mover_cannot_approach_source_it_cannot_see():
+    """The no-approach clause has no LOS gate, even with a source in darkness."""
     grid = GridScene(width=10, height=10, lighting={cell(5, 0): "dark"})
     handle, live = _start(
         [_hero()],
@@ -588,10 +587,9 @@ def test_frightened_mover_may_approach_source_it_cannot_see():
             intent=PlayerIntent(intent_type="move", target_zone_id=cell(1, 0)),
         )
     )
-    assert not events_of(live, MoveFailed)
-    moved = events_of(live, ActorMoved)
-    assert moved
-    assert live.actor_zone["char:hero"] == cell(1, 0)
+    assert events_of(live, MoveFailed)[-1].reason == "frightened"
+    assert not events_of(live, ActorMoved)
+    assert live.actor_zone["char:hero"] == cell(0, 0)
 
 
 # ── Task 6: direction-split source lists ─────────────────────────────────

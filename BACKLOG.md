@@ -242,14 +242,15 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   `activity_id` when an item carries alternatives, as a feature already
   does.
   (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_resolve_intent_activities`)
-- **A seeded Incapacitated effect ends nothing (2026-09-27, C23).** SRD 5.2
-  Incapacitated: "Your Concentration is broken." `_seed_active_effects` writes
-  a seeded effect's statuses onto the combatant without
-  `_end_what_incapacitation_ends`, so a Paralyzed effect passed to
-  `start_combat(active_effects=...)` leaves a seeded Rage, concentration or
-  grapple in place, where the same effect applied during the combat ends
-  them (C20).
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_seed_active_effects`)
+- **Seeded initiative reads statuses before condition immunity filtering
+  (2026-10-06).** `_seeded_initiative_disadvantage_ids` projects canonical
+  initiative clauses from raw `ActiveEffect.statuses` before Combatants and
+  their immunities exist. A seeded Paralyzed status can impose initiative
+  disadvantage even when hydration later suppresses its attachment. Fixing
+  this needs a separate pre-seat immunity/build-order change. The subsequent
+  lifecycle reconciliation already uses actual attached conditions and does
+  not treat suppressed statuses as lifecycle owners.
+  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::start_combat`)
 - **Grapple's/Shove's size gate, free-hand gate, and distance-exceeded
   auto-release are not modelled** (2026-09-01). SRD 5.2 Grapple/Shove
   require "a hand free" (Grapple only) and cap the actor at one size larger
@@ -1505,23 +1506,14 @@ C12 gave all 15 conditions teeth on the live combat path (see
 `docs/capabilities.md`). These rows are what is left; each needs a seam another
 cluster owns.
 
-- **Frightened's ability-check half of the line-of-sight gate** (2026-09-02).
-  SRD 5.2 Frightened: "Disadvantage on ability checks and attack rolls while
-  the source of fear is within line of sight." C16b gated the attack-roll
-  half (`conditions_grant_advantage_on_attack`'s `fear_source_in_sight`
-  kwarg) and the "can't willingly move closer to the source of fear"
-  movement rule (`MoveFailed(reason="frightened")`); the ability-check half
-  still applies the disadvantage unconditionally.
-  (`packages/dnd5e-engine/src/dnd5e_engine/rules/conditions.py::conditions_grant_disadvantage_on_ability_checks`)
-- **Frightened's no-approach rule is additionally gated on line of sight to
-  the source (plan ruling R5); SRD 5.2 imposes it unconditionally**
-  (2026-09-03). SRD 5.2 Frightened's "You can't willingly move closer to the
-  source of fear." sentence carries no line-of-sight conjunct — only the
-  disadvantage sentence does — but the engine's `_frightened_approach_blocked`
-  reuses `_combatant_can_see` for both, a deliberate (kept) deviation: a
-  Frightened creature that cannot currently see its fear source may move
-  toward it unimpeded, where SRD 5.2 would still block the approach.
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_frightened_approach_blocked`)
+Resolved on 2026-10-06 by the source/context-relative condition migration:
+Frightened's ability-check LOS gap (recorded 2026-09-02) now consumes its
+canonical sight-gated clause with live fear-source visibility. The erroneous
+no-approach LOS gate (recorded 2026-09-03) is removed: a known, living, tracked
+source still blocks a distance-reducing path while unseen. Regression tests
+isolate both behaviors in the same wall/darkness/invisibility scenes.
+The separate monster AI movement follow-up above remains open.
+
 - **Blinded / Deafened "automatically fail ability checks that require
   sight/hearing".** There is no per-check sense vocabulary on `CheckSpec` /
   `CheckActivity`, so a check cannot declare it requires sight or hearing.

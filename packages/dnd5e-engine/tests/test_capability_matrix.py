@@ -15,8 +15,10 @@ from typing import Any
 
 import pytest
 from dnd5e_srd_data.loader import BundledAssetLoader
+from dnd5e_srd_data.schema.condition import ConditionEffectKind
 
 from dnd5e_engine.activities.conjuration import CONJURATION_ALLOWLIST
+from dnd5e_engine.rules.conditions import _DECLARATIVE_CONDITION_MIGRATIONS
 
 CAPABILITIES_MD = Path(__file__).resolve().parents[3] / "docs" / "capabilities.md"
 
@@ -243,29 +245,35 @@ _PROBES: dict[str, tuple[Any, str]] = {
         lambda: "ConcentrationCheck(" in _src("orchestrator.py"),
         "✅",
     ),
-    # C12 landed the enforced rows (the Incapacitated action gate is the
-    # cheapest witness), but three SRD rows are still unenforced (a fourth,
-    # Incapacitated's concentration break, closed with C13) — the
-    # Frightened line-of-sight gate is the one this probe watches, because
-    # ``rules/conditions.py`` names it explicitly as not modelled. While both
-    # halves hold, the row is ⚠️ Partial; implementing the gate (which means
-    # deleting that sentence) flips the probe and forces the row up to ✅.
+    # Frightened's check LOS gap is closed. Sense-required automatic check
+    # failure remains outside explicit opt-in, so the conditions row stays
+    # Partial; closing one gap must not imply every SRD row is implemented.
     "Conditions (the 15 SRD conditions)": (
         lambda: (
             '"actor_incapacitated"' in _src("orchestrator.py")
-            and "line-of-sight gate is not modelled" in _src("rules/conditions.py")
+            and ConditionEffectKind.AUTO_FAIL_SIGHT_CHECKS
+            not in _DECLARATIVE_CONDITION_MIGRATIONS["blinded"]
+            and ConditionEffectKind.AUTO_FAIL_HEARING_CHECKS
+            not in _DECLARATIVE_CONDITION_MIGRATIONS.get("deafened", frozenset())
         ),
         "⚠️ Partial",
     ),
-    # C16b: Frightened's attack-roll line-of-sight gate and the "can't
-    # willingly move closer" movement rule are now enforced (the residual
-    # unenforced half is the ability-check gate the probe above still pins).
+    # Frightened attack/check disadvantage uses LOS; approach is independent.
     "now gated on line of sight to a known, living, tracked fear source (C16b": (
         lambda: (
             "_fear_source_in_sight(" in _src("orchestrator.py")
             and '"frightened",' in _event_class_body("MoveFailed")
         ),
         "now gated on line of sight to a known, living, tracked fear source (C16b",
+    ),
+    "Frightened ability-check disadvantage consumes its canonical fear-source sight gate": (
+        lambda: (
+            "flags.disadvantage.check.gate.fear_source_in_sight" in _src("rules/effects.py")
+            and "fear_source_in_sight=_fear_source_in_sight(live, c)" in _src("orchestrator.py")
+            and ConditionEffectKind.DISADVANTAGE_ABILITY_CHECKS
+            in _DECLARATIVE_CONDITION_MIGRATIONS["frightened"]
+        ),
+        "Frightened ability-check disadvantage consumes its canonical fear-source sight gate",
     ),
     # C12: the SRD 5.2 exhaustion penalty is a real projection, not prose.
     "| Exhaustion |": (
@@ -378,8 +386,8 @@ _PROBES: dict[str, tuple[Any, str]] = {
     # C14 Task 8: a seeded incapacitated-implying status also imposes
     # Disadvantage on the engine-rolled Initiative roll.
     "Incapacitated's initiative disadvantage": (
-        lambda: "seeded_incapacitated" in _src("orchestrator.py"),
-        "closed via C14 Task 8",
+        lambda: "_seeded_initiative_disadvantage_ids" in _src("orchestrator.py"),
+        "now consume explicitly opted-in canonical clauses",
     ),
     # C24: an opportunity attack resolves through the activity context,
     # flagged on its context.

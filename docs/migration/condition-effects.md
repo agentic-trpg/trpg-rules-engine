@@ -8,10 +8,12 @@ documents the data contract and its sources.
 
 | Condition | Migrated clauses |
 |---|---|
+| Incapacitated | `cannot_take_actions`, `breaks_concentration`, `disadvantage_initiative` |
+| Charmed | `cant_attack_charmer` |
 | Poisoned | `disadvantage_own_attacks`, `disadvantage_ability_checks` |
 | Grappled | `speed_zero`, `disadvantage_attacks_except_grappler` |
-| Invisible | `advantage_own_attacks`, `disadvantage_attacks_against` (visibility gate) |
-| Frightened | `disadvantage_own_attacks` (fear-source sight gate) |
+| Invisible | `advantage_own_attacks`, `disadvantage_attacks_against`, `unseen` (observer-cannot-see-bearer gate) |
+| Frightened | `disadvantage_own_attacks`, `disadvantage_ability_checks` (fear-source sight gate), `cant_move_toward_fear_source` (no visibility gate) |
 | Exhaustion | `d20_test_penalty_per_level`, `speed_penalty_per_level` |
 | Restrained | `disadvantage_own_attacks`, `disadvantage_save` (DEX), `advantage_attacks_against`, `speed_zero` |
 | Blinded | `disadvantage_own_attacks`, `advantage_attacks_against` |
@@ -46,7 +48,11 @@ changes, all with `mode="override"`:
 | `ADVANTAGE_OWN_ATTACKS` (`OBSERVER_CANNOT_SEE_BEARER`) | `flags.advantage.attack.gate.observer_cannot_see_bearer` | `True` |
 | `DISADVANTAGE_ATTACKS_AGAINST` (`OBSERVER_CANNOT_SEE_BEARER`) | `flags.disadvantage.attack.gate.observer_cannot_see_bearer` | `True` |
 | `DISADVANTAGE_ATTACKS_EXCEPT_GRAPPLER` | `flags.disadvantage.attack.except_grappler` | `True` |
-| `DISADVANTAGE_ABILITY_CHECKS` | `flags.disadvantage.check` | `True` |
+| `DISADVANTAGE_ABILITY_CHECKS` (`gate=None`) | `flags.disadvantage.check` | `True` |
+| `DISADVANTAGE_ABILITY_CHECKS` (`FEAR_SOURCE_IN_SIGHT`) | `flags.disadvantage.check.gate.fear_source_in_sight` | `True` |
+| `CANT_ATTACK_CHARMER` (`gate=None`) | `targeting.cannot_attack_charmer` | `True` |
+| `CANT_MOVE_TOWARD_FEAR_SOURCE` (`gate=None`) | `movement.cannot_move_toward_fear_source` | `True` |
+| `UNSEEN` (`OBSERVER_CANNOT_SEE_BEARER`) | `visibility.unseen.gate.observer_cannot_see_bearer` | `True` |
 | `DISADVANTAGE_SAVE` | `flags.disadvantage.save.<ability>` | `True` |
 | `AUTO_FAIL_SAVE` | `flags.auto_fail.save.<ability>` | `True` |
 | `SPEED_ZERO` | `speed.override` | `0` (integer) |
@@ -54,6 +60,40 @@ changes, all with `mode="override"`:
 | `SPEED_PENALTY_PER_LEVEL` | `speed.penalty_per_level` | canonical integer multiplier |
 | `RESIST_ALL_DAMAGE` | `damage.resistance.all` | `True` |
 | `IMMUNE_TO_CONDITION` | `condition.immunity` | one string per typed condition scope |
+| `CANNOT_TAKE_ACTIONS` | `condition.cannot_take_actions` | `True` |
+| `BREAKS_CONCENTRATION` | `condition.breaks_concentration` | `True` |
+| `DISADVANTAGE_INITIATIVE` | `flags.disadvantage.initiative` | `True` |
+
+Incapacitated opts in only these three clauses. Paralyzed, Petrified, Stunned
+and Unconscious reach them through `CONDITION_IMPLIES`, rather than separate
+action, concentration or initiative opt-ins. The consumers accept only exact
+keys, `mode="override"`, and the boolean `True`; integer 1, strings, other keys
+and other modes are inert. Qualifier prose does not govern any of them.
+`conditions_block_actions()` remains the shared action/reaction eligibility
+predicate, with the existing pass, move and drop-concentration exceptions.
+
+`BREAKS_CONCENTRATION` controls only concentration teardown. Grapple release,
+Rage expiry (including Persistent Rage's Unconscious exception), and Wild Shape
+expiry still use their legacy Incapacitated implication semantics independently.
+Projection is pure; the existing runtime teardown functions own state and
+typed events. Effect-applied teardown retains its order between `EffectApplied`
+and the following `ConditionApplied`.
+
+Combat initialization hydrates every seed and concentration chain before
+reconciling actual attached conditions, after 0-HP condition hydration. Stable
+entity, condition and concentration-identity traversal makes lifecycle cleanup
+independent of effect input ordering. Suppressed statuses do not own conditions
+or trigger teardown. Reconciliation emits existing teardown events only for
+state it ends, without fabricating `ConditionApplied` transitions or adding RNG
+draws. Real Wild Shape forms still cannot be seeded across combats; that remains
+the existing transform-hydration follow-up.
+
+Initiative now consumes the projected initiative boolean. Fixed initiative,
+party/encounter spec traversal, Surprise OR condition disadvantage, die calls and
+tie-breaking are unchanged. It still reads raw seed statuses before Combatant
+immunity filtering, an explicitly deferred initialization issue in `BACKLOG.md`.
+`CANNOT_SPEAK` remains canonical metadata without opt-in or consumer; spell
+components remain metadata and this batch adds no spell-component legality.
 
 Petrified's damage defense follows `project_passive_damage_modifiers()` →
 hydration payload → `ActivityResolutionContext.passive_damage_modifiers` →
@@ -142,9 +182,71 @@ serves ordinary, Cleave, opportunity, monster and spell attacks; `condition:atta
 and `condition:target` remain separate from generic geometry's `unseen` source.
 Cancellation still draws one d20; duplicate conditions never stack extra dice.
 
-Canonical metadata also types Invisible's `unseen` and Frightened's ability-check
-clause, but neither gains runtime opt-in. Existing JSON without `gate` loads as
-`None`. Regeneration follows the existing serializer's explicit-null convention.
+### Source/context-relative consumers
+
+Charmed's `cant_attack_charmer` opts in independently of its social-check clause.
+`conditions_cannot_attack_charmer()` consumes the exact projected boolean override.
+Player attack and harmful spell rejection, monster target filtering (including
+legendary actions), and opportunity-attack filtering all consult this helper
+before using `_condition_source_entity(..., "charmed")` for identity. Unknown
+charmers impose no restriction. Utility/beneficial spells and the existing
+Grapple/Shove boundary are unchanged. Rejected actions keep their existing
+`target_is_charmer` failure, turn and action economy, with zero RNG draws.
+
+Frightened's ability-check clause projects a distinct contextual key; it never
+uses Poisoned's ungated `flags.disadvantage.check`. Both
+`conditions_grant_disadvantage_on_ability_checks()` and
+`project_passive_check_modifiers()` accept keyword `fear_source_in_sight=True`.
+That default preserves callers without context and the existing unknown-source
+convention. Live hydration supplies `_fear_source_in_sight(live, combatant)`.
+Its existing Frightened presence read selects lineage context only; projected
+check/attack flags still decide whether either disadvantage mechanic exists.
+Known living sources out of sight remove only Frightened's check disadvantage;
+Poisoned still imposes disadvantage in the same scene. The existing attack-roll
+gate is unchanged.
+
+Frightened's no-approach clause has **no visibility gate**. Its exact projected
+boolean authorizes the restriction, lineage identifies the source, and the
+existing spatial consumer tests each consecutive path step's distance. A known,
+living, tracked source still blocks approach through darkness, walls or Invisible,
+even when the check/attack disadvantage gate is false. Unknown/missing/dead
+sources, unknown source positions and unresolvable distance pairs stay inert.
+`MoveFailed(reason="frightened")` occurs before movement budget or opportunity
+attacks, without RNG draws or partial movement.
+
+Invisible's `unseen` flag is independent of its two attack flags.
+`conditions_unseen()` accepts the observer's runtime ability to see the bearer
+through the existing special-sense seam. `_combatant_can_see()` retains the
+untracked-position convention, Blinded viewer handling, Blindsight/Truesight
+reach, and final topology/cover/light test. Dodge, opportunity attacks, Hide,
+Frightened sight and ranged-in-melee consumers reuse this composite predicate.
+The generic geometry `unseen` attack source still uses its existing separate
+visibility maps. Blinded's legacy inability to see is not projected from its
+sight-check auto-failure clause.
+Hide's `ConditionApplied`/`ConditionRemoved` reads still name Invisible as the
+condition attached by that action; those lifecycle events do not authorize
+concealment without an opted-in `unseen` clause.
+
+All four consumers require exact keys, `mode="override"`, and `value is True`.
+Integer 1, strings, wrong modes and other keys stay inert. Unsupported gates
+and mixed numeric/context clauses project nothing; `UNSEEN` requires its exact
+observer gate, and the two source-restriction clauses reject visibility gates.
+Ungated ability-check disadvantage remains a supported typed clause for Poisoned.
+Projection reads no source, visibility, live state, RNG or I/O. Qualifier prose
+does not govern mechanics. Duplicate flags do not stack. Removing a canonical
+clause or condition/kind opt-in genuinely disables only that mechanic, without
+a condition-name fallback; removing Invisible's attack clauses leaves `unseen`
+active and vice versa. Existing JSON without `gate` loads as `None`.
+Regeneration follows the existing serializer's explicit-null convention.
+
+No RNG is added. Existing legal/rejected Charmed actions, visibility consumers,
+and visible-source Frightened checks retain their draw order and event behavior.
+The two intentional Frightened corrections change results for affected inputs:
+an out-of-sight source alone now produces a normal check (one d20 instead of
+two); an approach previously permitted through loss of sight is now rejected
+before any opportunity-attack draws. Advantage/disadvantage cancellation still
+uses one d20, and disadvantage from Poisoned still uses two. Same corrected
+initial state, intent sequence and seed remain deterministic.
 
 `conditions_auto_crit_within_5ft()` is retained as a public consumer seam. Its
 historical one-argument form queries at 5 ft; attack resolvers always supply the
@@ -223,18 +325,26 @@ particular:
 - Grappled: `speed_zero` and attack disadvantage except against the grappler are
   migrated. Source-identity tracking, drag/carry, escape and grapple removal
   retain their existing paths and implementation boundaries.
-- Blinded: sight-check automatic failure.
+- Blinded: the viewer's legacy inability to see remains in the composite
+  visibility predicate. `auto_fail_sight_checks` is not opted in and still
+  lacks a per-check sense requirement. Deafened's `auto_fail_hearing_checks`
+  likewise remains outside the migration and unimplemented.
 - Prone: crawl movement restrictions. Both target-side distance attack clauses
   are migrated; unknown distance leaves those scoped clauses inert.
-- Invisible: both attack clauses are migrated with a typed visibility gate;
-  `unseen` runtime behavior and initiative remain outside the migration.
-- Frightened: attack disadvantage is migrated with a typed fear-source sight
-  gate. Ability-check disadvantage still has its existing LOS gap, and movement
-  restriction retains its legacy path; typed check metadata does not opt it in.
+- Charmed: the attack/harmful-target restriction is migrated; charmer identity
+  remains runtime lineage. `charmer_social_advantage` remains unimplemented.
+- Invisible: both attack clauses and `unseen` are migrated with separate typed
+  observer gates. `advantage_initiative` remains outside the migration.
+- Frightened: attack/check disadvantage and no-approach are migrated; source
+  identity and spatial/visibility context remain runtime responsibilities.
+  Monster AI's deferred no-approach enforcement remains outside this batch.
 - Exhaustion: both numeric penalty clauses are migrated; `death_at_level`
   remains outside the migration and has no complete live execution path.
-- Paralyzed, Stunned, Petrified, and Unconscious: action restrictions and other
-  clauses outside the migration table keep their existing paths. Nearby
+- Incapacitated: `cannot_speak` remains unimplemented gameplay; verbal spell
+  components, Silence and other component gates are not enforced.
+- Paralyzed, Stunned, Petrified, and Unconscious: action, concentration and
+  initiative mechanics come from implied Incapacitated's canonical clauses;
+  other clauses outside the migration table keep their existing paths. Nearby
   automatic critical hits for Paralyzed and Unconscious are now migrated.
   Petrified's defensive clauses are migrated; poison condition immunity grants
   no poison damage immunity.

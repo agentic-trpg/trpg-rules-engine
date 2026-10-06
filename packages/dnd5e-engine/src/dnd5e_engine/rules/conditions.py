@@ -12,6 +12,7 @@ from dnd5e_engine.rules.effects import (
     attack_distance_flag_applies,
     condition_immunity_slugs,
     project_condition_effects,
+    projected_boolean_flag,
     projected_scalar_value,
     save_flag_abilities,
 )
@@ -41,6 +42,14 @@ class Condition(StrEnum):
 
 # Migration selection only; mechanical meaning comes from the canonical data.
 _DECLARATIVE_CONDITION_MIGRATIONS: dict[str, frozenset[ConditionEffectKind]] = {
+    "charmed": frozenset({ConditionEffectKind.CANT_ATTACK_CHARMER}),
+    "incapacitated": frozenset(
+        {
+            ConditionEffectKind.CANNOT_TAKE_ACTIONS,
+            ConditionEffectKind.BREAKS_CONCENTRATION,
+            ConditionEffectKind.DISADVANTAGE_INITIATIVE,
+        }
+    ),
     "exhaustion": frozenset(
         {
             ConditionEffectKind.D20_TEST_PENALTY_PER_LEVEL,
@@ -54,9 +63,16 @@ _DECLARATIVE_CONDITION_MIGRATIONS: dict[str, frozenset[ConditionEffectKind]] = {
         {
             ConditionEffectKind.ADVANTAGE_OWN_ATTACKS,
             ConditionEffectKind.DISADVANTAGE_ATTACKS_AGAINST,
+            ConditionEffectKind.UNSEEN,
         }
     ),
-    "frightened": frozenset({ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS}),
+    "frightened": frozenset(
+        {
+            ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS,
+            ConditionEffectKind.DISADVANTAGE_ABILITY_CHECKS,
+            ConditionEffectKind.CANT_MOVE_TOWARD_FEAR_SOURCE,
+        }
+    ),
     "poisoned": frozenset(
         {
             ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS,
@@ -383,24 +399,41 @@ def check_immunity(condition_name: str, immunities: list[str]) -> bool:
     return condition_name in immunities
 
 
-def conditions_grant_disadvantage_on_ability_checks(conditions: list[str]) -> bool:
-    """Return True if conditions impose disadvantage on ability checks.
+def conditions_grant_disadvantage_on_ability_checks(
+    conditions: list[str], *, fear_source_in_sight: bool = True
+) -> bool:
+    """Consume unconditional and fear-sight-gated ability-check flags.
 
-    SRD 5.2 glossary: Poisoned — "You have Disadvantage on attack rolls and
-    ability checks."; Frightened — "You have Disadvantage on ability checks and
-    attack rolls while the source of fear is within line of sight" (the
-    line-of-sight gate is not modelled here; C16b gated the attack-roll half
-    and the no-approach movement rule, but this ability-check half is a
-    residual — see BACKLOG.md "Conditions — SRD 5.2 rows not enforced").
-
-    Exhaustion is deliberately NOT here: SRD 5.2 replaced the 2014 ladder with a
-    numeric ``-2 x level`` penalty on every D20 Test — see ``d20_test_penalty``.
-    (Behavioural change in 0.6.0; see docs/migration/v0.5-to-v0.6.md.)
+    The default preserves callers without runtime context, including unknown
+    fear sources. Live consumers supply the existing visibility predicate.
+    Poisoned's ungated clause remains independent of fear-source visibility.
+    Exhaustion still supplies a numeric D20 penalty, not disadvantage.
     """
-    active = {c.lower() for c in conditions}
-    return "frightened" in active or any(
-        change.key == "flags.disadvantage.check"
-        for change in _project_condition_changes(conditions)
+    changes = _project_condition_changes(conditions)
+    return projected_boolean_flag(changes, "flags.disadvantage.check") or (
+        fear_source_in_sight
+        and projected_boolean_flag(changes, "flags.disadvantage.check.gate.fear_source_in_sight")
+    )
+
+
+def conditions_cannot_attack_charmer(conditions: list[str]) -> bool:
+    """Whether a migrated clause forbids attacking the runtime charmer."""
+    return projected_boolean_flag(
+        _project_condition_changes(conditions), "targeting.cannot_attack_charmer"
+    )
+
+
+def conditions_cannot_move_toward_fear_source(conditions: list[str]) -> bool:
+    """Whether approach is restricted, independently of source visibility."""
+    return projected_boolean_flag(
+        _project_condition_changes(conditions), "movement.cannot_move_toward_fear_source"
+    )
+
+
+def conditions_unseen(conditions: list[str], *, observer_can_see_bearer: bool) -> bool:
+    """Consume concealment with the observer's runtime special-sense context."""
+    return not observer_can_see_bearer and projected_boolean_flag(
+        _project_condition_changes(conditions), "visibility.unseen.gate.observer_cannot_see_bearer"
     )
 
 
@@ -543,9 +576,25 @@ def project_speed(base_speed: int, condition_names: list[str], exhaustion_level:
 
 def conditions_block_actions(condition_names: list[str]) -> bool:
     """SRD 5.2 Incapacitated: "You can't take any action, Bonus Action, or
-    Reaction." True when Incapacitated is active directly or via
-    ``CONDITION_IMPLIES`` (Paralyzed, Petrified, Stunned, Unconscious)."""
-    return is_condition_active(Condition.INCAPACITATED, condition_names)
+    Reaction." Canonical clauses supply the boolean, including Incapacitated
+    reached through the existing ``CONDITION_IMPLIES`` chain."""
+    return projected_boolean_flag(
+        _project_condition_changes(condition_names), "condition.cannot_take_actions"
+    )
+
+
+def conditions_break_concentration(condition_names: list[str]) -> bool:
+    """Project concentration break independently of other incapacitation lifecycles."""
+    return projected_boolean_flag(
+        _project_condition_changes(condition_names), "condition.breaks_concentration"
+    )
+
+
+def conditions_disadvantage_initiative(condition_names: list[str]) -> bool:
+    """Project the canonical initiative clause, including implied conditions."""
+    return projected_boolean_flag(
+        _project_condition_changes(condition_names), "flags.disadvantage.initiative"
+    )
 
 
 def conditions_auto_crit_within_5ft(
@@ -634,23 +683,24 @@ def project_passive_save_modifiers(conditions: list[str]) -> dict[str, list[str]
     }
 
 
-def project_passive_check_modifiers(conditions: list[str]) -> dict[str, list[str]]:
+def project_passive_check_modifiers(
+    conditions: list[str], *, fear_source_in_sight: bool = True
+) -> dict[str, list[str]]:
     """Return ``passive_check_adv`` / ``passive_check_dis`` lists.
 
     Conditions that impose disadvantage on *every* ability check use the
     ``"all"`` catch-all marker the ``check.py`` handler already recognizes
     (see ``_reconcile_adv_dis``):
 
-    * Frightened — "disadvantage on ability checks ... while source of fear
-      is in line of sight" (we project as ``all`` — the line-of-sight gate
-      isn't carried on the live state today)
-    * Migrated condition clauses — projected through ``ActiveEffectChange``
-      (currently Poisoned's canonical ``disadvantage_ability_checks`` row).
+    * Frightened — its projected flag requires runtime fear-source sight.
+    * Poisoned — its projected flag applies regardless of fear-source sight.
     * Exhaustion — NOT projected here (SRD 5.2: numeric ``-2 x level`` penalty
       on every D20 Test, see ``d20_test_penalty``).
     """
     out: dict[str, list[str]] = {"passive_check_adv": [], "passive_check_dis": []}
-    if conditions_grant_disadvantage_on_ability_checks(conditions):
+    if conditions_grant_disadvantage_on_ability_checks(
+        conditions, fear_source_in_sight=fear_source_in_sight
+    ):
         out["passive_check_dis"].append("all")
     return out
 
@@ -665,8 +715,13 @@ __all__ = [
     "check_immunity",
     "conditions_auto_crit_within_5ft",
     "conditions_block_actions",
+    "conditions_break_concentration",
+    "conditions_cannot_attack_charmer",
+    "conditions_cannot_move_toward_fear_source",
+    "conditions_disadvantage_initiative",
     "conditions_grant_advantage_on_attack",
     "conditions_grant_disadvantage_on_ability_checks",
+    "conditions_unseen",
     "d20_test_penalty",
     "exhaustion_level_of",
     "get_condition_effects",

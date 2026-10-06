@@ -78,8 +78,8 @@ def test_unknown_gate_never_falls_back_to_unconditional_or_distance(kind):
         (K.ADVANTAGE_OWN_ATTACKS, G.FEAR_SOURCE_IN_SIGHT),
         (K.DISADVANTAGE_ATTACKS_AGAINST, G.FEAR_SOURCE_IN_SIGHT),
         (K.DISADVANTAGE_ATTACKS_EXCEPT_GRAPPLER, G.FEAR_SOURCE_IN_SIGHT),
-        (K.DISADVANTAGE_ABILITY_CHECKS, G.FEAR_SOURCE_IN_SIGHT),
-        (K.UNSEEN, G.OBSERVER_CANNOT_SEE_BEARER),
+        (K.DISADVANTAGE_ABILITY_CHECKS, G.OBSERVER_CANNOT_SEE_BEARER),
+        (K.UNSEEN, G.FEAR_SOURCE_IN_SIGHT),
     ],
 )
 def test_unsupported_kind_gate_pairs_stay_inert(kind, gate):
@@ -215,14 +215,8 @@ def test_context_mechanics_do_not_call_condition_name_predicates(monkeypatch):
 
 
 def test_metadata_only_clauses_remain_outside_runtime_opt_in():
-    assert K.UNSEEN not in rules._DECLARATIVE_CONDITION_MIGRATIONS["invisible"]
     assert K.ADVANTAGE_INITIATIVE not in rules._DECLARATIVE_CONDITION_MIGRATIONS["invisible"]
-    assert (
-        K.DISADVANTAGE_ABILITY_CHECKS not in rules._DECLARATIVE_CONDITION_MIGRATIONS["frightened"]
-    )
-    assert (
-        K.CANT_MOVE_TOWARD_FEAR_SOURCE not in rules._DECLARATIVE_CONDITION_MIGRATIONS["frightened"]
-    )
+    assert K.CHARMER_SOCIAL_ADVANTAGE not in rules._DECLARATIVE_CONDITION_MIGRATIONS["charmed"]
     assert K.MOVABLE_BY_GRAPPLER not in rules._DECLARATIVE_CONDITION_MIGRATIONS["grappled"]
     assert rules.project_passive_check_modifiers(["frightened"]) == {
         "passive_check_adv": [],

@@ -20,6 +20,14 @@ from dnd5e_engine.types.effects import ActiveEffectChange
 def test_migration_selection_is_an_explicit_clause_allowlist() -> None:
     migrations = condition_rules._DECLARATIVE_CONDITION_MIGRATIONS
     assert migrations == {
+        "charmed": frozenset({ConditionEffectKind.CANT_ATTACK_CHARMER}),
+        "incapacitated": frozenset(
+            {
+                ConditionEffectKind.CANNOT_TAKE_ACTIONS,
+                ConditionEffectKind.BREAKS_CONCENTRATION,
+                ConditionEffectKind.DISADVANTAGE_INITIATIVE,
+            }
+        ),
         "exhaustion": frozenset(
             {
                 ConditionEffectKind.D20_TEST_PENALTY_PER_LEVEL,
@@ -36,9 +44,16 @@ def test_migration_selection_is_an_explicit_clause_allowlist() -> None:
             {
                 ConditionEffectKind.ADVANTAGE_OWN_ATTACKS,
                 ConditionEffectKind.DISADVANTAGE_ATTACKS_AGAINST,
+                ConditionEffectKind.UNSEEN,
             }
         ),
-        "frightened": frozenset({ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS}),
+        "frightened": frozenset(
+            {
+                ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS,
+                ConditionEffectKind.DISADVANTAGE_ABILITY_CHECKS,
+                ConditionEffectKind.CANT_MOVE_TOWARD_FEAR_SOURCE,
+            }
+        ),
         "poisoned": frozenset(
             {
                 ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS,
@@ -104,6 +119,9 @@ def test_migration_selection_is_an_explicit_clause_allowlist() -> None:
         (ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS, "flags.disadvantage.attack", True),
         (ConditionEffectKind.DISADVANTAGE_ABILITY_CHECKS, "flags.disadvantage.check", True),
         (ConditionEffectKind.SPEED_ZERO, "speed.override", 0),
+        (ConditionEffectKind.CANNOT_TAKE_ACTIONS, "condition.cannot_take_actions", True),
+        (ConditionEffectKind.BREAKS_CONCENTRATION, "condition.breaks_concentration", True),
+        (ConditionEffectKind.DISADVANTAGE_INITIATIVE, "flags.disadvantage.initiative", True),
     ],
 )
 def test_typed_clause_translates_to_active_effect_change(
@@ -117,6 +135,7 @@ def test_typed_clause_translates_to_active_effect_change(
 @pytest.mark.parametrize(
     "slug",
     [
+        "charmed",
         "exhaustion",
         "invisible",
         "frightened",
@@ -129,6 +148,7 @@ def test_typed_clause_translates_to_active_effect_change(
         "stunned",
         "petrified",
         "unconscious",
+        "incapacitated",
     ],
 )
 def test_projection_is_repeatable_pure_and_never_draws_dice(
@@ -142,6 +162,18 @@ def test_projection_is_repeatable_pure_and_never_draws_dice(
     expected_speed = condition_rules.project_speed(35, [slug], exhaustion_level=2)
     expected_immunities = condition_rules.project_condition_immunities([slug])
     expected_damage = condition_rules.project_passive_damage_modifiers([slug])
+    consumers = (
+        condition_rules.conditions_block_actions,
+        condition_rules.conditions_break_concentration,
+        condition_rules.conditions_disadvantage_initiative,
+        condition_rules.conditions_cannot_attack_charmer,
+        condition_rules.conditions_cannot_move_toward_fear_source,
+        condition_rules.conditions_grant_disadvantage_on_ability_checks,
+        lambda conditions: condition_rules.conditions_unseen(
+            conditions, observer_can_see_bearer=False
+        ),
+    )
+    expected_flags = tuple(consumer([slug]) for consumer in consumers)
 
     def forbid_rng(*args: object) -> int:
         pytest.fail("Condition projection must not consume RNG")
@@ -163,6 +195,7 @@ def test_projection_is_repeatable_pure_and_never_draws_dice(
         speed = condition_rules.project_speed(35, [slug.upper(), slug], exhaustion_level=2)
         immunities = condition_rules.project_condition_immunities([slug.upper(), slug])
         damage = condition_rules.project_passive_damage_modifiers([slug.upper(), slug])
+        flags = tuple(consumer([slug.upper(), slug]) for consumer in consumers)
 
     assert first == second
     assert definition.model_dump() == before
@@ -175,6 +208,7 @@ def test_projection_is_repeatable_pure_and_never_draws_dice(
     assert speed == expected_speed
     assert immunities == expected_immunities
     assert damage == expected_damage
+    assert flags == expected_flags
     assert definition.model_dump() == before
 
 
@@ -191,7 +225,6 @@ def test_other_conditions_are_not_migrated() -> None:
         _project_condition_changes(
             [
                 "deafened",
-                "incapacitated",
             ]
         )
         == []
@@ -433,9 +466,15 @@ def test_removing_own_attack_clause_preserves_blinded_and_prone_target_neighbour
     }
 
 
-@pytest.mark.parametrize("conditions", [["unconscious"], ["UNCONSCIOUS", "prone", "PRONE"]])
+@pytest.mark.parametrize(
+    ("conditions", "projection_order"),
+    [
+        (["unconscious"], ["unconscious", "incapacitated", "prone"]),
+        (["UNCONSCIOUS", "prone", "PRONE"], ["unconscious", "prone", "incapacitated"]),
+    ],
+)
 def test_implied_prone_uses_the_same_projector_and_canonical_attack_clause(
-    conditions: list[str], monkeypatch: pytest.MonkeyPatch
+    conditions: list[str], projection_order: list[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     definition = BundledAssetLoader().get_condition("prone")
     assert definition is not None
@@ -450,17 +489,16 @@ def test_implied_prone_uses_the_same_projector_and_canonical_attack_clause(
     assert condition_rules.conditions_grant_advantage_on_attack(conditions, []) == (False, True)
     unconscious = BundledAssetLoader().get_condition("unconscious")
     assert unconscious is not None
+    definitions = [BundledAssetLoader().get_condition(slug) for slug in projection_order]
+    assert all(d is not None for d in definitions)
     assert calls == [
         (),
         tuple(
             effect
-            for effect in unconscious.effects
-            if effect.kind in condition_rules._DECLARATIVE_CONDITION_MIGRATIONS["unconscious"]
-        )
-        + tuple(
-            effect
-            for effect in definition.effects
-            if effect.kind in condition_rules._DECLARATIVE_CONDITION_MIGRATIONS["prone"]
+            for d in definitions
+            if d is not None
+            for effect in d.effects
+            if effect.kind in condition_rules._DECLARATIVE_CONDITION_MIGRATIONS[d.slug]
         ),
     ]
 

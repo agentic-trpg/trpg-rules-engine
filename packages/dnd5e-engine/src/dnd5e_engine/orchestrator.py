@@ -142,6 +142,7 @@ from dnd5e_engine.activities.passive_stats import (
 from dnd5e_engine.activities.resolver import resolve_activity
 from dnd5e_engine.activities.scale import build_scale_values, feature_owners
 from dnd5e_engine.areas import (
+    AreaSelection,
     AreaTemplate,
     area_activity,
     area_cells,
@@ -2397,6 +2398,138 @@ def _lowest_hp_target(enemies: list[Combatant]) -> Combatant | None:
     return min(enemies, key=lambda c: c.hp_current) if enemies else None
 
 
+@dataclass(frozen=True)
+class _MonsterAreaPlacement:
+    template: AreaTemplate
+    origin: str
+    direction: tuple[int, int] | None
+    selection: AreaSelection
+    targets: tuple[Combatant, ...]
+
+
+# Cardinal directions first, then diagonals clockwise from north-east. Target
+# priority breaks ties before this order; aiming never draws from the RNG.
+_MONSTER_AREA_DIRECTIONS: Final = (
+    (0, -1),
+    (1, 0),
+    (0, 1),
+    (-1, 0),
+    (1, -1),
+    (1, 1),
+    (-1, 1),
+    (-1, -1),
+)
+
+
+def _monster_area_range_ft(activity: Activity, spell: Spell | None = None) -> int | None:
+    """Range to a burst's origin; a spell owns it unless the activity overrides."""
+    rng = spell.range if spell is not None and not activity.range.override else activity.range
+    if rng.units == "self":
+        return 0
+    if rng.units == "touch":
+        return 5
+    if rng.units == "ft":
+        try:
+            return max(0, int(rng.value)) if rng.value is not None else None
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def _monster_area_placement(
+    live: _LiveCombat,
+    actor: Combatant,
+    activities: Sequence[Activity],
+    *,
+    spell: Spell | None = None,
+) -> _MonsterAreaPlacement | None:
+    """Pure aiming over the existing area geometry and actual affects filter.
+
+    Try eight grid directions or enemy-centred bursts, require a legal enemy,
+    prefer zero actual friendly fire, then most enemies, lowest-HP target
+    priority (stable initiative ties), and finally the direction/origin order.
+    Unsupported templates have no placement and never spend an invocation.
+    """
+    activity = area_activity(activities)
+    if activity is None or (template := area_template(activity)) is None:
+        return None
+    actor_cell = live.actor_zone.get(actor.entity_id)
+    if actor_cell is None:
+        return None
+    enemies = sorted(_select_monster_targets(live, actor), key=lambda c: c.hp_current)
+    enemy_ids = {c.entity_id for c in enemies}
+    allies = _allied_ids(live, actor.entity_id)
+    alive = [c for c in live.initiative if c.is_alive and c.entity_id not in live.dead_ids]
+    candidates: list[tuple[str, tuple[int, int] | None]]
+    if template.anchor == "target":
+        reach = _monster_area_range_ft(activity, spell)
+        candidates = [
+            (cell, None)
+            for enemy in enemies
+            if (cell := live.actor_zone.get(enemy.entity_id)) is not None
+            and reach is not None
+            and _in_range_with_los(live.topology, actor_cell, cell, reach)
+        ]
+    else:
+        candidates = [
+            (actor_cell, direction)
+            for direction in (_MONSTER_AREA_DIRECTIONS if template.directional else (None,))
+        ]
+    best: _MonsterAreaPlacement | None = None
+    best_key: tuple[bool, int, tuple[int, ...]] | None = None
+    for origin, direction in candidates:
+        cells = area_cells(live.topology, template, origin, direction)
+        in_area = [c.entity_id for c in alive if live.actor_zone.get(c.entity_id) in cells]
+        selection = select_affected(
+            in_area,
+            affects_type=activity.target.affects.type,
+            choice=is_choice(activity),
+            count=creature_count(activity),
+            harmful=is_harmful([activity]),
+            excluded_ids=None,
+            is_enemy=enemy_ids.__contains__,
+            is_ally=allies.__contains__,
+        )
+        affected = set(selection.affected_ids)
+        priorities = tuple(i for i, enemy in enumerate(enemies) if enemy.entity_id in affected)
+        if not priorities:
+            continue
+        # Preserve the existing Charmed target prohibition for damaging areas.
+        if any(
+            _is_enemy(live, actor.entity_id, other) and other not in enemy_ids for other in affected
+        ):
+            continue
+        key = (bool(affected & allies), -len(priorities), priorities)
+        if best_key is None or key < best_key:
+            best_key = key
+            best = _MonsterAreaPlacement(
+                template,
+                origin,
+                direction,
+                selection,
+                tuple(c for c in alive if c.entity_id in affected),
+            )
+    return best
+
+
+def _emit_monster_area(
+    live: _LiveCombat, actor: Combatant, source_id: str, placement: _MonsterAreaPlacement
+) -> None:
+    _emit(
+        live,
+        AreaTargeted(
+            actor_id=actor.entity_id,
+            source_id=source_id,
+            shape=placement.template.shape,
+            size_ft=placement.template.size_ft,
+            origin=placement.origin,
+            direction=placement.direction,
+            affected_ids=list(placement.selection.affected_ids),
+            excluded_ids=list(placement.selection.spared_ids),
+        ),
+    )
+
+
 def _resolve_monster_activities(
     live: _LiveCombat,
     current: Combatant,
@@ -2572,14 +2705,17 @@ def _resolve_monster_cast(
     monster's own ``Combatant.spellcasting_ability`` (hydrated from
     ``Monster.spellcasting_ability`` in ``_build_foe_combatants``).
 
-    No AoE template expansion (single ``chosen_target`` only — out of
-    scope for this task) and no movement-closing gambit (the caller never
+    Areas share monster action placement and resolve every affected creature.
+    No movement-closing gambit (the caller never
     reads ``monster_activities`` for range on this path, so a cast always
     resolves from the monster's current position).
     """
     if not _monster_activity_available(live, current, action, activity):
         return
-    target_list = [chosen_target]
+    placement = _monster_area_placement(live, current, spell.activities, spell=spell)
+    if area_activity(spell.activities) is not None and placement is None:
+        return
+    target_list = list(placement.targets) if placement is not None else [chosen_target]
     slot_level = activity.spell.level if activity.spell.level is not None else spell.level
     spellcasting_ability = activity.spell.ability or current.spellcasting_ability
 
@@ -2598,7 +2734,16 @@ def _resolve_monster_cast(
         spell_book=_build_cast_spell_book(spell.activities),
         **_monster_context_kwargs(live, current, target_list, payload),
     )
+    if placement is not None:
+        actx = replace(
+            actx,
+            target_cover=_target_cover_map(
+                live, current.entity_id, target_list, origin_cell=placement.origin
+            ),
+        )
     _emit_spell_cast(live, current.entity_id, spell, slot_level)
+    if placement is not None:
+        _emit_monster_area(live, current, spell.slug, placement)
     for child_activity in spell.activities:
         resolve_activity(child_activity, actx)
 
@@ -2704,6 +2849,7 @@ def _resolve_monster_attack_activities(
     *,
     is_opportunity_attack: bool = False,
     execution_plan: MonsterActionPlan | None = None,
+    source_id: str = "",
 ) -> None:
     """Resolve a monster's own attack/save ``Activity`` list against
     ``target_list``: Shield drain, ``build_activity_context`` (via
@@ -2720,6 +2866,11 @@ def _resolve_monster_attack_activities(
     (``is_opportunity_attack``). Extracted (C18 Task 6 fix round 1) so a
     future hook added to one caller can't silently miss the other.
     """
+    if activities and all(
+        area_activity([a]) is not None and _monster_area_placement(live, actor, [a]) is None
+        for a in activities
+    ):
+        return
     # SRD §Reactions — drain the attacked PC's pending ``hit_by_attack``
     # reaction (Shield) BEFORE the sidecar projection below, so the
     # just-applied +5 AC effect folds into THIS attack's hydration
@@ -2766,7 +2917,10 @@ def _resolve_monster_attack_activities(
     )
     if execution_plan is None:
         for activity in activities:
-            resolve_activity(activity, actx, weapon=None)
+            if area_activity([activity]) is None:
+                resolve_activity(activity, actx, weapon=None)
+            else:
+                _resolve_monster_execution(live, actor, actx, [activity], source_id)
     else:
         _execute_monster_plan(live, actor, execution_plan, actx)
     # SRD 5.2 §Actions in Combat — Help; §Weapon Mastery — Vex / Sap
@@ -2818,12 +2972,13 @@ def _execute_monster_plan(
         )
         if not available:
             continue
-        if not _monster_execution_in_range(live, actor, actx.targets, available):
+        resolved = _resolve_monster_execution(
+            live, actor, actx, available, action.slug if action is not None else ""
+        )
+        if not resolved:
             continue
-        for activity in available:
-            resolve_activity(activity, actx, weapon=None)
         if action is not None:
-            _mark_monster_action_used(live, actor, action, available)
+            _mark_monster_action_used(live, actor, action, resolved)
         executed = True
     # A limited Multiattack wrapper owns a separate pool from its children.
     if (
@@ -2834,6 +2989,37 @@ def _execute_monster_plan(
         _mark_monster_action_used(live, actor, root)
 
 
+def _resolve_monster_execution(
+    live: _LiveCombat,
+    actor: Combatant,
+    actx: ActivityResolutionContext,
+    activities: Sequence[Activity],
+    source_id: str,
+) -> tuple[Activity, ...]:
+    """Resolve each area child with its own targets, retaining shared outcome state."""
+    resolved: list[Activity] = []
+    for activity in activities:
+        child_context = actx
+        if area_activity([activity]) is not None:
+            placement = _monster_area_placement(live, actor, [activity])
+            if placement is None:
+                continue
+            targets = list(placement.targets)
+            child_context = replace(
+                actx,
+                targets=targets,
+                target_cover=_target_cover_map(
+                    live, actor.entity_id, targets, origin_cell=placement.origin
+                ),
+            )
+            _emit_monster_area(live, actor, source_id, placement)
+        elif not _monster_execution_in_range(live, actor, actx.targets, [activity]):
+            continue
+        resolve_activity(activity, child_context, weapon=None)
+        resolved.append(activity)
+    return tuple(resolved)
+
+
 def _monster_execution_in_range(
     live: _LiveCombat,
     actor: Combatant,
@@ -2842,8 +3028,8 @@ def _monster_execution_in_range(
 ) -> bool:
     """Use the existing movement gate for each child before it spends uses.
 
-    Self/template saves keep their existing single-target resolution semantics.
-    No extra movement or substitute child is introduced here.
+    Areas use their placement gate instead. No extra movement or substitute
+    child is introduced here.
     """
     reach = _monster_attack_range_ft(activities, actor.melee_reach_ft)
     origin = live.actor_zone.get(actor.entity_id)
@@ -2899,6 +3085,11 @@ def _take_legendary_action(live: _LiveCombat, monster: Combatant) -> None:
             if candidate is None:
                 continue
             cast_activity, spell = candidate
+            if (
+                area_activity(spell.activities) is not None
+                and _monster_area_placement(live, monster, spell.activities, spell=spell) is None
+            ):
+                continue
             _spend_legendary_use(live, monster, action.slug)
             _resolve_monster_cast(live, monster, target, action, cast_activity, spell)
             return
@@ -2907,8 +3098,15 @@ def _take_legendary_action(live: _LiveCombat, monster: Combatant) -> None:
         )
         if not is_offensive:
             continue
+        if all(
+            area_activity([a]) is not None and _monster_area_placement(live, monster, [a]) is None
+            for a in activities
+        ):
+            continue
         _spend_legendary_use(live, monster, action.slug)
-        _resolve_monster_attack_activities(live, monster, [target], activities)
+        _resolve_monster_attack_activities(
+            live, monster, [target], activities, source_id=action.slug
+        )
         return
 
     raise IntentRejectedError(
@@ -12879,6 +13077,17 @@ async def advance_monster_turn(
     dashed_this_turn = False
     if has_action and chosen_target is not None:
         monster_range_ft = _monster_attack_range_ft(monster_activities, current.melee_reach_ft)
+        area = area_activity(monster_activities)
+        if area is not None and (template := area_template(area)) is not None:
+            # Stay put if any legal aim can hit an enemy, even when the lowest-HP
+            # chosen target is outside it. Otherwise reuse the approach gambit.
+            monster_range_ft = (
+                None
+                if _monster_area_placement(live, current, monster_activities) is not None
+                else (
+                    template.size_ft if template.anchor == "actor" else _monster_area_range_ft(area)
+                )
+            )
         attacker_zone = live.actor_zone.get(current.entity_id)
         target_zone = live.actor_zone.get(chosen_target.entity_id)
         if (

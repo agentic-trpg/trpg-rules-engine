@@ -442,11 +442,20 @@ def test_a_legendary_action_that_drops_the_current_summon_opens_no_window() -> N
         monster_template_slug="lich",
         zone_id=cell_id(2, 1),
     )
-    handle, live = start(
-        [summoner(hp_current=90, hp_max=90), pc("char:ally", initiative=15, zone_id=cell_id(0, 2))],
+    handle, live = _begin(
+        # Keep the owner outside the blast: this scenario specifically tests
+        # the spirit reaching 0 HP, rather than a concentration-drop dismissal.
+        party=[
+            summoner(hp_current=90, hp_max=90, zone_id=cell_id(0, 9)),
+            pc("char:ally", initiative=15, zone_id=cell_id(0, 2)),
+        ],
         seed=1,
         encounter=[lich],
-        active_effects=[anchor_effect(OWNER)],
+        grid_scene=GridScene(
+            width=10,
+            height=10,
+            wall_segments=[{"x1": 0, "y1": 5, "x2": 10, "y2": 5}],
+        ),
     )
     seat_summon(live, OWNER, zone_id=cell_id(1, 1), hp=3)
     act(handle, OWNER, intent_type="pass")
@@ -456,6 +465,11 @@ def test_a_legendary_action_that_drops_the_current_summon_opens_no_window() -> N
     tail = live.event_log[first:]
     started = tail.index(TurnStarted(actor_id="char:ally"))
     assert CombatantLeft(entity_id=SPIRIT, reason="zero_hp") in tail[:started]
+    assert {e.target_id for e in tail if isinstance(e, DamageApplied)} == {
+        SPIRIT,
+        "char:ally",
+        "mon:lich",
+    }
     assert [type(e) for e in tail[started:]] == [TurnStarted, TurnPhase]
     assert not [e for e in tail if isinstance(e, TurnEnded)]
     assert live.last_ended_turn == (1, OWNER)

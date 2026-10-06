@@ -403,26 +403,20 @@ def test_ranged_monster_in_band_attacks_without_moving():
     assert all(e.target_id == "char:hero" for e in attacks)
 
 
-def test_self_centered_breath_weapon_does_not_force_close_resolves_from_position():
-    """A self-centered AoE save (dragon breath) skips the range gate entirely.
+@pytest.mark.parametrize(("target_col", "final_col"), [(18, 0), (21, 3)])
+def test_self_centered_breath_uses_template_extent_without_melee_closing(target_col, final_col):
+    """A 90ft line stays put at 90ft and closes only 15ft at 105ft.
 
-    The breath weapon is a ``SaveActivity`` with ``range.units='self'`` and a
-    populated ``target.template`` (90ft line). Pre-cutover the loader wrapper
-    carried ``range_ft: 0``, so the monster never moved — the save resolved
-    from its current cell. Post-fix ``_monster_attack_range_ft`` returns
-    ``None`` for self-centered / template / non-AttackActivity offensive
-    activities, so the gate is skipped: no ``ActorMoved`` and the save fires.
+    The template's extent governs placement; the monster never treats this
+    self-range save as a melee weapon that requires closing to 5ft.
     """
     dragon = _monster("breather", [_breath_weapon()])
     set_lib_loader_for_tests(MemoryAssetLoader(monsters=[dragon]))
 
     async def _run():
-        # PC is 105ft (21 cells) away. A melee-reach reading would force a
-        # long walk across the grid; the self-centered breath must NOT
-        # trigger that.
         start = await start_combat(
             session_id="sess-breath-self",
-            party=_party(pc_zone=cell_id(21, 0)),
+            party=_party(pc_zone=cell_id(target_col, 0)),
             encounter=_encounter("breather", foe_zone=cell_id(0, 0)),
             grid_scene=_topology(),
             rng_seed=1,
@@ -434,9 +428,12 @@ def test_self_centered_breath_weapon_does_not_force_close_resolves_from_position
     live = asyncio.run(_run())
     moves = [e for e in live.event_log if isinstance(e, ActorMoved) and e.actor_id == "mon:foe"]
     saves = [e for e in live.event_log if isinstance(e, SaveRolled)]
-    assert not moves, "self-centered breath weapon must not force the monster to close"
-    assert live.actor_zone["mon:foe"] == cell_id(0, 0), "monster should not have moved"
+    assert len(moves) == final_col
+    assert live.actor_zone["mon:foe"] == cell_id(final_col, 0)
     assert saves, "the breath weapon save should have resolved from position"
+    assert [e.target_id for e in saves] == ["char:hero"]
+    [area] = [e for e in live.event_log if e.type == "area_targeted"]
+    assert (area.origin, area.direction, area.size_ft) == (cell_id(final_col, 0), (1, 0), 90)
 
 
 def test_ranged_save_monster_out_of_range_closes_distance():

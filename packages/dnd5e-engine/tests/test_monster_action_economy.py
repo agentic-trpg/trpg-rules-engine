@@ -438,7 +438,12 @@ def test_real_doppelganger_optional_child_spends_its_own_recharge_and_then_is_om
         assert not live.monster_action_uses_by_entity["mon:foe1"][
             "unsettling-visage"
         ].recharge_spent
-        assert len([e for e in live.event_log if isinstance(e, SaveRolled)]) == 1
+        # The visage affects each creature in its emanation, including its ally;
+        # both saves still spend only the acting doppelganger's Recharge pool.
+        assert [e.target_id for e in live.event_log if isinstance(e, SaveRolled)] == [
+            "mon:foe1",
+            "char:hero",
+        ]
         assert not [e for e in live.event_log if isinstance(e, RechargeRolled)]
         before = asdict(entry)
         shorter = plan(live, actor, monster, multiattack)

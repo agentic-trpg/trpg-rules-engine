@@ -8,8 +8,8 @@ a creature of your choice, you can choose yourself"; monster stat blocks name
 "which creatures make the save" ("each creature in a 60-foot Cone", "each enemy
 in a 20-foot-radius Sphere").
 
-S01–S04 stay strict-xfail until the monster-aiming cluster lands. S09 is now
-a regression for the completed Multiattack Recharge-child availability gate.
+S01–S04 cover monster area placement and friendly-fire-aware aiming. S09
+regresses the Multiattack Recharge-child availability gate.
 """
 
 from __future__ import annotations
@@ -36,9 +36,7 @@ from dnd5e_engine.orchestrator import (
     submit_player_intent,
 )
 from dnd5e_engine.specs import EncounterMemberSpec, GridScene, PartyMemberSpec
-from tests.e2e.harness import cell, events_of, grid_scene, run_async, xfail_cluster
-
-_MONSTER_AIMING = xfail_cluster(26, "area targeting: monster aiming")
+from tests.e2e.harness import cell, events_of, grid_scene, run_async
 
 
 def _pc(entity_id: str, at: str, **fields: Any) -> PartyMemberSpec:
@@ -136,10 +134,9 @@ def _combatant(live, entity_id: str):
     return next(c for c in live.initiative if c.entity_id == entity_id)
 
 
-# ── monster side (strict-xfail until monster aiming) ─────────────────────────
+# ── monster side ────────────────────────────────────────────────────────────
 
 
-@_MONSTER_AIMING
 def test_c26_s01_a_breath_hits_everyone_in_the_cone() -> None:
     dragon = _foe("mon:dragon", cell(5, 5), "adult-red-dragon", initiative=20, hp_current=256)
     party = [
@@ -167,7 +164,6 @@ def test_c26_s01_a_breath_hits_everyone_in_the_cone() -> None:
     assert set(area.affected_ids) == {"char:a", "char:b", "char:c"}
 
 
-@_MONSTER_AIMING
 def test_c26_s02_the_ai_breathes_away_from_its_ally() -> None:
     dragon = _foe("mon:dragon", cell(5, 5), "adult-red-dragon", initiative=20, hp_current=256)
     kobold = _foe("mon:kobold", cell(6, 7), "kobold-warrior", initiative=1)
@@ -185,7 +181,6 @@ def test_c26_s02_the_ai_breathes_away_from_its_ally() -> None:
     assert area.direction == (0, -1)
 
 
-@_MONSTER_AIMING
 def test_c26_s03_no_enemy_in_reach_means_no_breath() -> None:
     dragon = _foe("mon:dragon", cell(0, 5), "adult-red-dragon", initiative=20, hp_current=256)
     party = [_sturdy("char:a", cell(25, 5), 10), _sturdy("char:b", cell(25, 6), 9)]
@@ -199,7 +194,6 @@ def test_c26_s03_no_enemy_in_reach_means_no_breath() -> None:
     assert [e for e in events_of(live, RechargeRolled) if e.action_slug == "fire-breath"] == []
 
 
-@_MONSTER_AIMING
 def test_c26_s04_a_monster_fireball_catches_the_cluster() -> None:
     mage = _foe("mon:mage", cell(0, 5), "mage", initiative=20, hp_current=81)
     party = [
@@ -215,8 +209,7 @@ def test_c26_s04_a_monster_fireball_catches_the_cluster() -> None:
 
 
 def test_c26_s09_a_spent_recharge_action_sits_out_the_multiattack() -> None:
-    # Monster Action Economy closes this conditional-child backlog bug;
-    # area expansion (the other strict-xfail cases) remains deferred.
+    # Monster Action Economy closes this conditional-child backlog bug.
     doppelganger = _foe("mon:dop", cell(1, 0), "doppelganger", initiative=20, hp_current=52)
     handle, live = _start(
         [_sturdy("char:hero", cell(0, 0), 1)], [doppelganger], session="e2e-c26-s09"

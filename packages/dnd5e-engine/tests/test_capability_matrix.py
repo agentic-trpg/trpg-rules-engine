@@ -382,13 +382,24 @@ _PROBES: dict[str, tuple[Any, str]] = {
         ),
         "✅",
     ),
-    # C16: areas enumerate template cells; C26a: for every intent kind, with
-    # "of your choice" exclusions and a reported AreaTargeted.
-    "AoE templates (sphere / cone / line / cube / cylinder)": (
+    # C16/C26: shared geometry, including monster actions and casts.
+    "AoE templates (sphere / cone / line / cube / cylinder / emanation)": (
         lambda: (
             "cells_in_template(" in _src("areas.py")
             and "AreaTargeted(" in _src("orchestrator.py")
             and "excluded_target_ids" in _src("orchestrator.py")
+        ),
+        "✅",
+    ),
+    "Monster area execution and aiming": (
+        lambda: (
+            "def _monster_area_placement(" in _src("orchestrator.py")
+            and "_monster_area_placement(live, current, spell.activities, spell=spell)"
+            in _src("orchestrator.py")
+            and "_monster_area_placement(live, actor, [activity])" in _src("orchestrator.py")
+            and "_MONSTER_AREA_DIRECTIONS" in _src("orchestrator.py")
+            and "_mark_monster_action_used(live, actor, action, resolved)"
+            in _src("orchestrator.py")
         ),
         "✅",
     ),

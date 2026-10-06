@@ -80,18 +80,6 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   unconditional primary branch. Child fan-out still resolves one offensive
   activity per invocation, not arbitrary multi-activity riders.
   (`packages/dnd5e-engine/src/dnd5e_engine/activities/monster_actions.py::plan_monster_action`)
-- **A monster's own AoE (cone/sphere/etc.) still resolves against a single
-  chosen target, not the template** (2026-09-03, C18). Grid AoE template
-  expansion (C16) is wired for the PC cast path; a monster save/damage
-  action with an area shape resolves the same way every monster action
-  always has — one picked target — rather than enumerating
-  `cells_in_template` the way a PC's cast does.
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py`)
-- **Monster AI is friendly-fire unaware** (2026-09-03, C18). Nothing checks
-  whether an ally stands in a chosen action's blast/save area (or a
-  Multiattack's own reach) before the monster acts, unlike the PC-facing
-  `PlayerIntent.direction` aiming a host controls by hand.
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py`)
 - **A readied Shield fires on a monster's save action (2026-10-04, C26a).**
   `_resolve_monster_attack_activities` drains its targets' `hit_by_attack`
   reactions before any monster action resolves, so a Fire Breath pops a
@@ -539,12 +527,19 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   `orchestrator.py::_pierces_invisibility`; an effect-vocabulary carve-out is
   a future cluster's seam.
   (`packages/dnd5e-engine/src/dnd5e_engine/spatial.py::GridTopology.can_see`)
-- **An area the engine can't map onto the grid affects only its named target
-  (2026-10-03, C25; amended 2026-10-04, C26a).** A `wall` template (Blade
+- **Unsupported area geometry remains deferred
+  (2026-10-03, C25; amended 2026-10-07, Monster Spatial).** A `wall` template (Blade
   Barrier, Tsunami, Wall of Fire, Wall of Thorns, Wind Wall) or a size written
   as a formula (Confusion's `@item.level`) has no grid geometry, so the engine
-  logs `aoe_template_unsupported` and resolves it against the named target
-  alone (nobody, if the intent names none), with no `AreaTargeted`.
+  logs `aoe_template_unsupported` on the PC path and resolves it against the
+  named target alone (nobody, if the intent names none), with no `AreaTargeted`.
+  Monster actions and casts skip unmappable templates without spending
+  Recharge or daily uses. Supported monster cone, line, cube, sphere, cylinder
+  and emanation activities now share `areas.py`, select all affected creatures
+  and aim deterministically using actual `affects` filters to avoid friendly
+  fire when possible. Candidate burst origins remain enemy cells, and aims
+  remain the eight grid directions; empty-cell placement, persistent areas,
+  dynamic hazards and altitude / 3-D are still outside this execution seam.
   (`packages/dnd5e-engine/src/dnd5e_engine/areas.py::area_template`,
   `packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_area_targets`)
 - **A counted area's named creatures aren't checked against its template

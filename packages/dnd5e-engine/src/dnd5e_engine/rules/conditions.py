@@ -64,6 +64,7 @@ _DECLARATIVE_CONDITION_MIGRATIONS: dict[str, frozenset[ConditionEffectKind]] = {
             ConditionEffectKind.ADVANTAGE_OWN_ATTACKS,
             ConditionEffectKind.DISADVANTAGE_ATTACKS_AGAINST,
             ConditionEffectKind.UNSEEN,
+            ConditionEffectKind.ADVANTAGE_INITIATIVE,
         }
     ),
     "frightened": frozenset(
@@ -597,6 +598,13 @@ def conditions_disadvantage_initiative(condition_names: list[str]) -> bool:
     )
 
 
+def conditions_advantage_initiative(condition_names: list[str]) -> bool:
+    """Project ungated Initiative advantage independently of observer visibility."""
+    return projected_boolean_flag(
+        _project_condition_changes(condition_names), "flags.advantage.initiative"
+    )
+
+
 def conditions_auto_crit_within_5ft(
     target_condition_names: list[str], *, distance_ft: int | None = 5
 ) -> bool:
@@ -713,6 +721,7 @@ __all__ = [
     "apply_condition",
     "apply_condition_with_implies",
     "check_immunity",
+    "conditions_advantage_initiative",
     "conditions_auto_crit_within_5ft",
     "conditions_block_actions",
     "conditions_break_concentration",

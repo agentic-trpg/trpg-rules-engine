@@ -117,7 +117,11 @@ from dnd5e_engine.activities.conjuration import (
 from dnd5e_engine.activities.context import ActivityResolutionContext
 from dnd5e_engine.activities.d20 import AdvantageSources, roll_d20_test
 from dnd5e_engine.activities.dice import roll_damage_part
-from dnd5e_engine.activities.effects import applicable_effect_statuses, is_condition_immune
+from dnd5e_engine.activities.effects import (
+    applicable_condition_statuses,
+    applicable_effect_statuses,
+    is_condition_immune,
+)
 from dnd5e_engine.activities.forced_movement import FORCED_MOVEMENT_RIDERS
 from dnd5e_engine.activities.monster_actions import (
     expand_action_to_activities,
@@ -201,6 +205,7 @@ from dnd5e_engine.rules.character import (
 from dnd5e_engine.rules.conditions import (
     Condition,
     active_condition_names,
+    conditions_advantage_initiative,
     conditions_block_actions,
     conditions_break_concentration,
     conditions_cannot_attack_charmer,
@@ -7377,37 +7382,72 @@ def _reconcile_seeded_condition_lifecycle(live: _LiveCombat) -> None:
             _end_what_incapacitation_ends(live, entity_id, condition)
 
 
-def _seeded_initiative_disadvantage_ids(active_effects: Sequence[ActiveEffect]) -> frozenset[str]:
-    """Pre-seat initiative flags from canonical, explicitly opted-in clauses.
+def _seeded_initiative_sources(
+    party: Sequence[PartyMemberSpec],
+    encounter: Sequence[EncounterMemberSpec],
+    active_effects: Sequence[ActiveEffect],
+) -> dict[str, AdvantageSources]:
+    """Project both Initiative sides from the statuses seeding can actually attach.
 
-    This still reads raw seeded statuses before Combatant/immunity construction.
-    Filtering suppressed statuses before initiative is a separate follow-up;
-    hydration reconciliation below consumes only actual attached conditions.
+    Reuse the live attachment's pure immunity policy and existing PC immunity
+    build seam. Foes use only host-supplied spec immunities. Effects retain their
+    input order, as acquiring immunity does not remove an earlier condition.
+    This preview changes no spec, effect, condition store or RNG state.
     """
-    return frozenset(
-        eff.target_id
-        for eff in active_effects
-        if conditions_disadvantage_initiative(sorted(eff.statuses))
-    )
+    participants: list[PartyMemberSpec | EncounterMemberSpec] = [*party, *encounter]
+    immunities = {
+        spec.entity_id: (
+            _pc_condition_immunities(spec)
+            if isinstance(spec, PartyMemberSpec)
+            else list(spec.condition_immunities)
+        )
+        for spec in participants
+    }
+    names: dict[str, list[str]] = {entity_id: [] for entity_id in immunities}
+    for effect in active_effects:
+        if effect.target_id not in names:
+            continue
+        target_names = names[effect.target_id]
+        target_names.extend(
+            applicable_condition_statuses(
+                effect.statuses,
+                condition_immunities=immunities[effect.target_id],
+                condition_names=target_names,
+            )
+        )
+    return {
+        entity_id: AdvantageSources(
+            advantage=("condition:attacker",)
+            if conditions_advantage_initiative(conditions)
+            else (),
+            disadvantage=("condition:attacker",)
+            if conditions_disadvantage_initiative(conditions)
+            else (),
+        )
+        for entity_id, conditions in names.items()
+    }
 
 
 def _resolve_initiative(
     spec: PartyMemberSpec | EncounterMemberSpec,
     rng: random.Random,
-    seeded_disadvantage: frozenset[str],
+    seeded_sources: Mapping[str, AdvantageSources],
 ) -> int:
     """SRD 5.2 Initiative: "every participant rolls Initiative; they make a
     Dexterity check". ``spec.initiative`` being an explicit int always wins
     (zero RNG draws — the legacy / host-supplied path). ``None`` opts into an
-    engine-rolled d20 + DEX modifier. Surprise (and Incapacitated at roll
-    time — both SRD-cited on the spec fields / ``_seeded_initiative_disadvantage_ids``)
-    impose Disadvantage per SRD 5.2 Surprise / the Incapacitated glossary
-    entry.
+    engine-rolled d20 + DEX modifier. Applicable canonical conditions provide
+    both sides; Surprise adds independent disadvantage. The existing D20 Test
+    primitive owns cancellation and draw counts.
     """
     if spec.initiative is not None:
         return spec.initiative
-    disadvantage = spec.is_surprised or spec.entity_id in seeded_disadvantage
-    sources = AdvantageSources(disadvantage=("condition:attacker",) if disadvantage else ())
+    conditions = seeded_sources.get(spec.entity_id, AdvantageSources())
+    sources = AdvantageSources(
+        advantage=conditions.advantage,
+        disadvantage=conditions.disadvantage
+        + (("condition:attacker",) if spec.is_surprised else ()),
+    )
     return roll_d20_test(rng, ability_modifier(_initiative_dexterity(spec)), sources).total
 
 
@@ -7460,13 +7500,13 @@ async def start_combat(
     # RNG entirely (zero draws — every host-int-initiative caller keeps its
     # exact pre-C14 draw sequence). ``None`` entities roll in SPEC ORDER
     # (party first, then encounter) so results are reproducible per seed.
-    seeded_disadvantage = _seeded_initiative_disadvantage_ids(active_effects)
+    seeded_sources = _seeded_initiative_sources(party, encounter, active_effects)
     party = [
-        p.model_copy(update={"initiative": _resolve_initiative(p, rng, seeded_disadvantage)})
+        p.model_copy(update={"initiative": _resolve_initiative(p, rng, seeded_sources)})
         for p in party
     ]
     encounter = [
-        e.model_copy(update={"initiative": _resolve_initiative(e, rng, seeded_disadvantage)})
+        e.model_copy(update={"initiative": _resolve_initiative(e, rng, seeded_sources)})
         for e in encounter
     ]
 

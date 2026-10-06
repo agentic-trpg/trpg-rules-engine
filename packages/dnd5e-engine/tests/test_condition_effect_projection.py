@@ -42,6 +42,7 @@ def test_migration_selection_is_an_explicit_clause_allowlist() -> None:
         ),
         "invisible": frozenset(
             {
+                ConditionEffectKind.ADVANTAGE_INITIATIVE,
                 ConditionEffectKind.ADVANTAGE_OWN_ATTACKS,
                 ConditionEffectKind.DISADVANTAGE_ATTACKS_AGAINST,
                 ConditionEffectKind.UNSEEN,
@@ -122,6 +123,7 @@ def test_migration_selection_is_an_explicit_clause_allowlist() -> None:
         (ConditionEffectKind.CANNOT_TAKE_ACTIONS, "condition.cannot_take_actions", True),
         (ConditionEffectKind.BREAKS_CONCENTRATION, "condition.breaks_concentration", True),
         (ConditionEffectKind.DISADVANTAGE_INITIATIVE, "flags.disadvantage.initiative", True),
+        (ConditionEffectKind.ADVANTAGE_INITIATIVE, "flags.advantage.initiative", True),
     ],
 )
 def test_typed_clause_translates_to_active_effect_change(
@@ -166,6 +168,7 @@ def test_projection_is_repeatable_pure_and_never_draws_dice(
         condition_rules.conditions_block_actions,
         condition_rules.conditions_break_concentration,
         condition_rules.conditions_disadvantage_initiative,
+        condition_rules.conditions_advantage_initiative,
         condition_rules.conditions_cannot_attack_charmer,
         condition_rules.conditions_cannot_move_toward_fear_source,
         condition_rules.conditions_grant_disadvantage_on_ability_checks,

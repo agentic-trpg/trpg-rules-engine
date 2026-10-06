@@ -240,11 +240,12 @@ def test_wild_shape_form_hydration_remains_an_explicit_follow_up():
     assert not any(e.type in TEARDOWNS for e in live.event_log)
 
 
-def test_pre_seat_immunity_filtering_remains_out_of_scope():
+def test_pre_seat_immunity_filtering_agrees_with_attachment():
     seeds = _seeds(["paralyzed"])
     _result, live = _start(seeds, immunities=["paralyzed"], hero_initiative=None)
     expected_rng = _BASE_RANDOM(7)
-    expected = min(expected_rng.randint(1, 20), expected_rng.randint(1, 20))
+    # Rejected Paralyzed no longer imposes Incapacitated's disadvantage pre-seat.
+    expected = expected_rng.randint(1, 20)
     assert orch._find_combatant(live, HERO).initiative == expected
     assert live.rng.getstate() == expected_rng.getstate()
     assert orch._find_combatant(live, HERO).conditions == []

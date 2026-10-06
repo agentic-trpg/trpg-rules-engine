@@ -215,7 +215,8 @@ def test_context_mechanics_do_not_call_condition_name_predicates(monkeypatch):
 
 
 def test_metadata_only_clauses_remain_outside_runtime_opt_in():
-    assert K.ADVANTAGE_INITIATIVE not in rules._DECLARATIVE_CONDITION_MIGRATIONS["invisible"]
+    # Initiative is now explicitly opted in; these unrelated clauses remain metadata.
+    assert K.ADVANTAGE_INITIATIVE in rules._DECLARATIVE_CONDITION_MIGRATIONS["invisible"]
     assert K.CHARMER_SOCIAL_ADVANTAGE not in rules._DECLARATIVE_CONDITION_MIGRATIONS["charmed"]
     assert K.MOVABLE_BY_GRAPPLER not in rules._DECLARATIVE_CONDITION_MIGRATIONS["grappled"]
     assert rules.project_passive_check_modifiers(["frightened"]) == {

@@ -27,7 +27,6 @@ from dnd5e_engine.activities.formula import resolve_roll_data
 from dnd5e_engine.events import ConditionApplied, ConditionType, EffectApplied
 from dnd5e_engine.rules.conditions import active_condition_names, project_condition_immunities
 from dnd5e_engine.types.combat import Combatant
-from dnd5e_engine.types.conditions import ActiveCondition
 from dnd5e_engine.types.effects import (
     ActiveEffect,
     ActiveEffectChange,
@@ -78,40 +77,57 @@ def is_condition_immune(target: Combatant, condition: str) -> bool:
     ``ConditionApplied`` emit is gated by this check. Extracted so the two
     sites cannot drift on the immunity semantics.
     """
-    return condition in target.condition_immunities or condition in project_condition_immunities(
-        active_condition_names(target.conditions)
+    return _condition_is_immune(
+        condition, target.condition_immunities, active_condition_names(target.conditions)
     )
 
 
-def applicable_effect_statuses(target: Combatant | None, statuses: Collection[str]) -> list[str]:
-    """Select actual attachments without depending on a raw status set's order.
+def _condition_is_immune(
+    condition: str, condition_immunities: Collection[str], condition_names: list[str]
+) -> bool:
+    """Shared pure union of static and canonical condition-derived immunity."""
+    return condition in condition_immunities or condition in project_condition_immunities(
+        condition_names
+    )
+
+
+def applicable_condition_statuses(
+    statuses: Collection[str],
+    *,
+    condition_immunities: Collection[str],
+    condition_names: Collection[str] = (),
+) -> list[str]:
+    """Select attachments from names and immunities, including before seating.
 
     Immunity-granting conditions land first, then other statuses, with a stable
     slug order within each group. Each accepted status participates in the next
     shared immunity check; a rejected status never grants immunity. Existing
     conditions remain untouched (acquiring immunity is not condition removal).
-    The target snapshot and the effect's raw statuses are never mutated.
+    Caller-owned collections are never mutated; projection needs no Combatant.
     """
-    ordered = sorted(statuses, key=lambda s: (not bool(project_condition_immunities([s])), s))
-    if target is None:
-        return ordered
     accepted: list[str] = []
-    projected = target
-    for status in ordered:
-        if is_condition_immune(projected, status):
+    projected_names = list(condition_names)
+    for status in _ordered_condition_statuses(statuses):
+        if _condition_is_immune(status, condition_immunities, projected_names):
             continue
         accepted.append(status)
-        projected = projected.model_copy(
-            update={
-                "conditions": [
-                    *projected.conditions,
-                    ActiveCondition(
-                        condition=status, source_entity_id="implied:effect", scope="combat"
-                    ),
-                ]
-            }
-        )
+        projected_names.append(status)
     return accepted
+
+
+def _ordered_condition_statuses(statuses: Collection[str]) -> list[str]:
+    return sorted(statuses, key=lambda s: (not bool(project_condition_immunities([s])), s))
+
+
+def applicable_effect_statuses(target: Combatant | None, statuses: Collection[str]) -> list[str]:
+    """Use the same pure applicability policy on a live target snapshot."""
+    if target is None:
+        return _ordered_condition_statuses(statuses)
+    return applicable_condition_statuses(
+        statuses,
+        condition_immunities=target.condition_immunities,
+        condition_names=active_condition_names(target.conditions),
+    )
 
 
 def _name_slug(name: str) -> str:

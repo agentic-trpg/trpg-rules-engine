@@ -12,7 +12,7 @@ documents the data contract and its sources.
 | Charmed | `cant_attack_charmer` |
 | Poisoned | `disadvantage_own_attacks`, `disadvantage_ability_checks` |
 | Grappled | `speed_zero`, `disadvantage_attacks_except_grappler` |
-| Invisible | `advantage_own_attacks`, `disadvantage_attacks_against`, `unseen` (observer-cannot-see-bearer gate) |
+| Invisible | `advantage_own_attacks`, `disadvantage_attacks_against`, `unseen` (observer-cannot-see-bearer gate); `advantage_initiative` (ungated) |
 | Frightened | `disadvantage_own_attacks`, `disadvantage_ability_checks` (fear-source sight gate), `cant_move_toward_fear_source` (no visibility gate) |
 | Exhaustion | `d20_test_penalty_per_level`, `speed_penalty_per_level` |
 | Restrained | `disadvantage_own_attacks`, `disadvantage_save` (DEX), `advantage_attacks_against`, `speed_zero` |
@@ -63,6 +63,7 @@ changes, all with `mode="override"`:
 | `CANNOT_TAKE_ACTIONS` | `condition.cannot_take_actions` | `True` |
 | `BREAKS_CONCENTRATION` | `condition.breaks_concentration` | `True` |
 | `DISADVANTAGE_INITIATIVE` | `flags.disadvantage.initiative` | `True` |
+| `ADVANTAGE_INITIATIVE` (`gate=None`) | `flags.advantage.initiative` | `True` |
 
 Incapacitated opts in only these three clauses. Paralyzed, Petrified, Stunned
 and Unconscious reach them through `CONDITION_IMPLIES`, rather than separate
@@ -88,10 +89,38 @@ state it ends, without fabricating `ConditionApplied` transitions or adding RNG
 draws. Real Wild Shape forms still cannot be seeded across combats; that remains
 the existing transform-hydration follow-up.
 
-Initiative now consumes the projected initiative boolean. Fixed initiative,
-party/encounter spec traversal, Surprise OR condition disadvantage, die calls and
-tie-breaking are unchanged. It still reads raw seed statuses before Combatant
-immunity filtering, an explicitly deferred initialization issue in `BACKLOG.md`.
+Initiative reads independent strict boolean overrides through
+`conditions_advantage_initiative()` and `conditions_disadvantage_initiative()`.
+Invisible explicitly opts into `ADVANTAGE_INITIATIVE`; observer visibility affects
+its attack and concealment clauses only. Neither Initiative clause supports a
+gate or reads qualifier prose. Removing its canonical clause or allowlist opt-in
+disables that side without a condition-name fallback.
+
+Before seating, `_seeded_initiative_sources()` previews only applicable seed
+statuses through `applicable_condition_statuses()`, the pure policy also used by
+`applicable_effect_statuses()` during actual attachment. It unions authoritative
+spec immunities with accepted condition-derived immunity. PCs reuse their
+existing `_pc_condition_immunities()` combat-build seam (spec plus existing
+always-on feature immunity); foes use only `EncounterMemberSpec` immunities,
+without hydrating monster-template immunities. Within each status collection,
+immunity-granting statuses come first, then stable slug order. Across effects,
+input order is preserved: a later immunity does not remove an earlier condition.
+Rejected statuses grant neither immunity nor condition ownership, and caller
+specs and raw effects remain unchanged.
+
+`_resolve_initiative()` passes both condition sides and independent Surprise
+disadvantage to the existing `AdvantageSources` / `roll_d20_test` primitive.
+Invisible alone rolls two d20s and keeps high; Incapacitated (including its four
+implication entrances) or Surprise alone keeps low. Any Advantage plus any
+Disadvantage cancels to exactly one d20, regardless of duplicate sources.
+An explicit integer Initiative still wins and draws no dice. Engine rolls still
+traverse party specs first, then encounter specs, using the one RNG instance
+that becomes `live.rng`; DEX modifiers and initiative/DEX/entity-id tie-breaks
+are unchanged. Only newly supported Invisible advantage, immunity-suppressed
+conditions and Advantage/Disadvantage cancellation intentionally change dice
+counts and downstream RNG positions. Monster-specific Initiative modifiers and
+monster-senses hydration remain deferred in `BACKLOG.md`.
+
 `CANNOT_SPEAK` remains canonical metadata without opt-in or consumer; spell
 components remain metadata and this batch adds no spell-component legality.
 
@@ -334,7 +363,7 @@ particular:
 - Charmed: the attack/harmful-target restriction is migrated; charmer identity
   remains runtime lineage. `charmer_social_advantage` remains unimplemented.
 - Invisible: both attack clauses and `unseen` are migrated with separate typed
-  observer gates. `advantage_initiative` remains outside the migration.
+  observer gates. `advantage_initiative` is migrated without a visibility gate.
 - Frightened: attack/check disadvantage and no-approach are migrated; source
   identity and spatial/visibility context remain runtime responsibilities.
   Monster AI's deferred no-approach enforcement remains outside this batch.

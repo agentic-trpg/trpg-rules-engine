@@ -242,15 +242,6 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   `activity_id` when an item carries alternatives, as a feature already
   does.
   (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_resolve_intent_activities`)
-- **Seeded initiative reads statuses before condition immunity filtering
-  (2026-10-06).** `_seeded_initiative_disadvantage_ids` projects canonical
-  initiative clauses from raw `ActiveEffect.statuses` before Combatants and
-  their immunities exist. A seeded Paralyzed status can impose initiative
-  disadvantage even when hydration later suppresses its attachment. Fixing
-  this needs a separate pre-seat immunity/build-order change. The subsequent
-  lifecycle reconciliation already uses actual attached conditions and does
-  not treat suppressed statuses as lifecycle owners.
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::start_combat`)
 - **Grapple's/Shove's size gate, free-hand gate, and distance-exceeded
   auto-release are not modelled** (2026-09-01). SRD 5.2 Grapple/Shove
   require "a hand free" (Grapple only) and cap the actor at one size larger

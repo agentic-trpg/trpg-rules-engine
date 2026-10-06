@@ -386,7 +386,7 @@ _PROBES: dict[str, tuple[Any, str]] = {
     # C14 Task 8: a seeded incapacitated-implying status also imposes
     # Disadvantage on the engine-rolled Initiative roll.
     "Incapacitated's initiative disadvantage": (
-        lambda: "_seeded_initiative_disadvantage_ids" in _src("orchestrator.py"),
+        lambda: "_seeded_initiative_sources" in _src("orchestrator.py"),
         "now consume explicitly opted-in canonical clauses",
     ),
     # C24: an opportunity attack resolves through the activity context,

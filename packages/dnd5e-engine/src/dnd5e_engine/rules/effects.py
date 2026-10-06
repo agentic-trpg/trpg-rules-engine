@@ -99,6 +99,7 @@ def project_condition_effects(effects: Iterable[ConditionEffect]) -> list[Active
         ConditionEffectKind.CANNOT_TAKE_ACTIONS: "condition.cannot_take_actions",
         ConditionEffectKind.BREAKS_CONCENTRATION: "condition.breaks_concentration",
         ConditionEffectKind.DISADVANTAGE_INITIATIVE: "flags.disadvantage.initiative",
+        ConditionEffectKind.ADVANTAGE_INITIATIVE: "flags.advantage.initiative",
         ConditionEffectKind.DISADVANTAGE_ATTACKS_EXCEPT_GRAPPLER: (
             "flags.disadvantage.attack.except_grappler"
         ),

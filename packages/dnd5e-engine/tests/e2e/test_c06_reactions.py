@@ -355,7 +355,7 @@ def test_c06_s03_prearmed_shield_raises_ac_by_5_expires_next_turn():
     points per the catalog.
 
     rng_seed=7 both runs — verified empirically that this seed's
-    goblin-scimitar attack resolves to roll_total=11 deterministically
+    goblin-scimitar attack resolves to roll_total=12 deterministically
     regardless of which non-dice-consuming intent the hero submits first.
     """
 
@@ -408,7 +408,8 @@ def test_c06_s03_prearmed_shield_raises_ac_by_5_expires_next_turn():
     attacks_a = [e for e in events_of(live_a, AttackRolled) if e.target_id == "char:hero"]
     assert attacks_a
     rolled_a = attacks_a[0]
-    assert rolled_a.roll_total == 11
+    # Real template STR/PB gives +1; the old expectation pinned default +0.
+    assert rolled_a.roll_total == 12
     assert rolled_a.is_hit is True
     damage_a = [e for e in events_of(live_a, DamageApplied) if e.target_id == "char:hero"]
     assert damage_a
@@ -428,8 +429,9 @@ def test_c06_s03_prearmed_shield_raises_ac_by_5_expires_next_turn():
     attacks_b = [e for e in events_of(live_b, AttackRolled) if e.target_id == "char:hero"]
     assert attacks_b
     rolled_b = attacks_b[0]
-    assert rolled_b.roll_total == 11  # identical natural roll — Shield never touches it
-    assert rolled_b.is_hit is False  # 11 < 10 + 5
+    assert rolled_b.roll_total == 12
+    assert rolled_b.natural == rolled_a.natural == 11  # Shield never touches the die.
+    assert rolled_b.is_hit is False  # 12 < 10 + 5
     assert not [e for e in events_of(live_b, DamageApplied) if e.target_id == "char:hero"]
 
     reactions_b = [

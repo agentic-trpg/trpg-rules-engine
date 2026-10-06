@@ -272,6 +272,7 @@
   "description": "",
   "hp": 11,
   "hp_dice": "2d10",
+  "initiative_modifier": 2,
   "lair_actions": [],
   "languages": [],
   "legendary_action_uses": null,

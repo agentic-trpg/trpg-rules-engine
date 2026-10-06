@@ -223,6 +223,56 @@ def _monster_action_economy_resolves() -> bool:
     )
 
 
+def _monster_magnitudes_resolve() -> bool:
+    """Probe the ordinary template carrier and its shared formula resolver."""
+    import random
+    from types import SimpleNamespace
+
+    from dnd5e_engine import EncounterMemberSpec
+    from dnd5e_engine.activities.context import ActivityResolutionContext
+    from dnd5e_engine.activities.formula import resolve_roll_data
+    from dnd5e_engine.orchestrator import _build_foe_combatants, _stat_block_magnitudes_of
+
+    spec = EncounterMemberSpec(
+        entity_id="mon:probe",
+        entity_type="Monster",
+        name="Crocodile",
+        initiative=1,
+        hp_current=22,
+        hp_max=22,
+        zone_id="0,0",
+        monster_template_slug="crocodile",
+        dexterity=10,
+    )
+    combatants = []
+    _build_foe_combatants([spec], combatants, {}, {}, {}, {})
+    actor = combatants[0]
+    live = SimpleNamespace(
+        transforms={}, summons={}, monster_slug_by_entity={actor.entity_id: "crocodile"}
+    )
+    magnitudes = _stat_block_magnitudes_of(live, actor)
+    if magnitudes is None:
+        return False
+    ctx = ActivityResolutionContext(
+        rng=random.Random(1),
+        caster=actor,
+        targets=[],
+        event_emitter=lambda _: None,
+        caster_abilities=dict(magnitudes.ability_scores),
+        caster_proficiency_bonus=magnitudes.proficiency_bonus,
+        stat_block_magnitudes=magnitudes,
+    )
+    aboleth = BundledAssetLoader().get_monster("aboleth")
+    return (
+        actor.attack_bonus is None
+        and actor.dexterity == 10
+        and resolve_roll_data("@mod + @prof", ctx, ability="str") == "2 + 2"
+        and resolve_roll_data("@skills.ath.passive", ctx) == "12"
+        and aboleth is not None
+        and aboleth.initiative_modifier == 7
+    )
+
+
 _PROBES: dict[str, tuple[Any, str]] = {
     # F1c/F1d: every save path adds a real ability + proficiency modifier.
     "Saving throws, half-on-save": (
@@ -663,8 +713,8 @@ _PROBES: dict[str, tuple[Any, str]] = {
     ),
     # C21: one swing of an attack action on the actor's current stat block.
     "| Stat-block attack commands |": (
-        lambda: "def _stat_block_attack_failure(" in _src("orchestrator.py"),
-        "(C21)",
+        _monster_magnitudes_resolve,
+        "Ordinary resolvable templates now share `StatBlockMagnitudes`",
     ),
     # C23: every status row carries a probe (``test_every_status_row_has_a_probe``).
     # Each fact below is the cheapest witness of the row's claim; a ❌ row's

@@ -172,6 +172,9 @@ class Monster(BaseModel):
 
     cr: float
     proficiency_bonus: PositiveInt
+    initiative_modifier: int | None = None
+    """Total modifier added to the Initiative d20, including ability and any
+    structured Initiative bonus. ``None`` for older/unknown source data."""
     spellcasting_ability: Ability | None = None
     """The monster's innate spellcasting ability code (SRD save DC =
     8 + proficiency bonus + this ability's modifier), from Foundry's

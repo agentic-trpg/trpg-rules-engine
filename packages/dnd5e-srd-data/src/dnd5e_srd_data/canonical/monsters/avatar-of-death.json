@@ -256,6 +256,7 @@
   "description": "",
   "hp": 1,
   "hp_dice": "",
+  "initiative_modifier": 3,
   "lair_actions": [],
   "languages": [
     "All languages known to its summoner"

@@ -366,8 +366,10 @@ def test_a_broken_concentration_dismisses_the_spirit_on_seed_4() -> None:
     """S02's combat, seed 4. The cast and the spirit's Dodge draw nothing. The
     hill giant ``mon:breaker`` attacks the druid, the lowest-HP enemy at 15
     against the spirit's 50: d20 8 misses AC 10, d20 10 hits, and Tree Club's
-    3d8 is 2 + 7 + 8 = 17. SRD 5.2 Concentration: "The DC equals 10 or half the
-    damage taken (round down)" — DC 10; the save's d20 5 fails. The drop comes
+    3d8 + STR 5 is 2 + 7 + 8 + 5 = 22. The explicit to-hit override keeps
+    this lifecycle fixture's miss/hit sequence; the old damage omitted STR.
+    SRD 5.2 Concentration: "The DC equals 10 or half the
+    damage taken (round down)" — DC 11; the save's d20 5 fails. The drop comes
     before the 0-HP branch, so the spirit leaves with ``concentration_drop``
     and the druid then falls Unconscious."""
     druid = pc(
@@ -385,6 +387,7 @@ def test_a_broken_concentration_dismisses_the_spirit_on_seed_4() -> None:
         hp_current=100,
         hp_max=100,
         monster_template_slug="hill-giant",
+        attack_bonus=0,
     )
     distant = foe(zone_id=cell_id(2, 0), initiative=5, ac=15, hp_current=100, hp_max=100)
     handle, live = start([druid], seed=4, encounter=[distant, breaker])
@@ -408,11 +411,11 @@ def test_a_broken_concentration_dismisses_the_spirit_on_seed_4() -> None:
     [damage] = events(live, DamageApplied)
     assert (damage.target_id, damage.amount, damage.damage_type) == (
         "char:druid",
-        17,
+        22,
         "bludgeoning",
     )
     [check] = events(live, ConcentrationCheck)
-    assert (check.dc, check.natural, check.succeeded) == (10, 5, False)
+    assert (check.dc, check.natural, check.succeeded) == (11, 5, False)
     cascade = [
         e
         for e in live.event_log[first:]

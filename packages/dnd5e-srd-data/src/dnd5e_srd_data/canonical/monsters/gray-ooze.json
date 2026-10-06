@@ -150,6 +150,7 @@
   "description": "",
   "hp": 22,
   "hp_dice": "3d8 + 9",
+  "initiative_modifier": -2,
   "lair_actions": [],
   "languages": [],
   "legendary_action_uses": null,

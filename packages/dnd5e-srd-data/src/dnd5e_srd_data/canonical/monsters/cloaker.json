@@ -685,6 +685,7 @@
   "description": "",
   "hp": 91,
   "hp_dice": "14d10 + 14",
+  "initiative_modifier": 5,
   "lair_actions": [],
   "languages": [
     "Deep Speech",

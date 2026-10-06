@@ -361,6 +361,7 @@
   "description": "",
   "hp": 45,
   "hp_dice": "7d10 + 7",
+  "initiative_modifier": 3,
   "lair_actions": [],
   "languages": [],
   "legendary_action_uses": null,

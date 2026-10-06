@@ -379,6 +379,7 @@
   "description": "",
   "hp": 10,
   "hp_dice": "3d4 + 3",
+  "initiative_modifier": 2,
   "lair_actions": [],
   "languages": [
     "Understands Common and Draconic but can\u2019t speak"

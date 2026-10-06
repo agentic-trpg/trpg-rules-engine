@@ -301,5 +301,12 @@ def test_rolled_initiative_uses_the_template_dexterity() -> None:
 
 @pytest.mark.usefixtures("_bundled_loader")
 def test_rolled_initiative_keeps_a_host_dexterity() -> None:
-    """A Dexterity the host set (anything but the 10 default) still wins."""
-    assert _goblin_initiative(dexterity=18) == random.Random(3).randint(1, 20) + 4
+    """Canonical total Initiative wins over DEX; explicit modifier wins over it.
+
+    The host's DEX still controls its live score and tie-break. The old +4
+    expectation pinned the known DEX-only Initiative bug.
+    """
+    assert _goblin_initiative(dexterity=18) == random.Random(3).randint(1, 20) + 2
+    assert _goblin_initiative(dexterity=18, initiative_modifier=0) == random.Random(3).randint(
+        1, 20
+    )

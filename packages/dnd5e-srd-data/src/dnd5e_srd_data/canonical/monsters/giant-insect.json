@@ -504,6 +504,7 @@
   "description": "",
   "hp": 30,
   "hp_dice": "30",
+  "initiative_modifier": 1,
   "lair_actions": [],
   "languages": [
     "Understands the languages you know"

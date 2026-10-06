@@ -7272,12 +7272,8 @@ def _build_foe_combatants(
         immunities = list(foe.damage_immunities)
         nonmagical_only = foe.physical_resistances_nonmagical_only
         senses = foe.senses
-        # F1b (2026-08-26) — hydrate the five non-DEX ability scores,
-        # proficiency bonus, and save/skill proficiencies from the SRD
-        # monster template when one is set. Dexterity is spec-authoritative
-        # only when the host moved it away from the ``10`` default sentinel
-        # (an EncounterMemberSpec can't distinguish "left at 10" from
-        # "explicitly set to 10", so 10 always defers to the template).
+        # Hydrate the template's scores and PB. Explicit Dexterity, including
+        # 10, is authoritative; omission alone defers to the template.
         # Read by ``activities/actor_stats`` on every save/check path (F1c/F1d);
         # a foe with no ``monster_template_slug`` keeps the spec's values.
         template_kw: dict[str, Any] = {}
@@ -7313,6 +7309,14 @@ def _build_foe_combatants(
                     "skill_proficiencies": [
                         k for k, v in monster.skills.model_dump().items() if v is not None
                     ],
+                    "skill_expertise": [
+                        k
+                        for k, v in monster.skills.model_dump().items()
+                        if v is not None
+                        and (ability := skill_ability(k)) is not None
+                        and v
+                        == ability_modifier(getattr(sc, ability)) + 2 * monster.proficiency_bonus
+                    ],
                     "trait_mechanics": [
                         a.mechanic for a in monster.special_abilities if a.mechanic is not None
                     ],
@@ -7330,7 +7334,7 @@ def _build_foe_combatants(
                 if legendary_resistances_max:
                     template_kw["legendary_resistances_max"] = legendary_resistances_max
                     template_kw["legendary_resistances_remaining"] = legendary_resistances_max
-                if foe.dexterity == 10:
+                if "dexterity" not in foe.model_fields_set:
                     template_kw["dexterity"] = sc.dex
         combatants.append(
             Combatant(
@@ -7341,7 +7345,11 @@ def _build_foe_combatants(
                 hp_current=foe.hp_current,
                 hp_max=foe.hp_max,
                 ac=foe.ac,
-                attack_bonus=foe.attack_bonus,
+                attack_bonus=(
+                    None
+                    if foe.monster_template_slug and "attack_bonus" not in foe.model_fields_set
+                    else foe.attack_bonus
+                ),
                 damage_dice=foe.damage_dice,
                 damage_type=foe.damage_type,
                 behavior_profile=foe.behavior_profile,
@@ -7509,7 +7517,7 @@ def _resolve_initiative(
     """SRD 5.2 Initiative: "every participant rolls Initiative; they make a
     Dexterity check". ``spec.initiative`` being an explicit int always wins
     (zero RNG draws — the legacy / host-supplied path). ``None`` opts into an
-    engine-rolled d20 + DEX modifier. Applicable canonical conditions provide
+    engine-rolled d20 + Initiative modifier. Applicable canonical conditions provide
     both sides; Surprise adds independent disadvantage. The existing D20 Test
     primitive owns cancellation and draw counts.
     """
@@ -7521,17 +7529,26 @@ def _resolve_initiative(
         disadvantage=conditions.disadvantage
         + (("condition:attacker",) if spec.is_surprised else ()),
     )
-    return roll_d20_test(rng, ability_modifier(_initiative_dexterity(spec)), sources).total
+    return roll_d20_test(rng, _initiative_modifier(spec), sources).total
+
+
+def _initiative_modifier(spec: PartyMemberSpec | EncounterMemberSpec) -> int:
+    """Total d20 modifier: explicit encounter override, canonical, then DEX."""
+    if isinstance(spec, EncounterMemberSpec):
+        if spec.initiative_modifier is not None:
+            return spec.initiative_modifier
+        if spec.monster_template_slug:
+            monster = get_lib_loader().get_monster(spec.monster_template_slug)
+            if monster is not None and monster.initiative_modifier is not None:
+                return monster.initiative_modifier
+    return ability_modifier(_initiative_dexterity(spec))
 
 
 def _initiative_dexterity(spec: PartyMemberSpec | EncounterMemberSpec) -> int:
-    """The Dexterity score an engine-rolled Initiative adds. An encounter
-    member's ``10`` defers to its resolvable ``monster_template_slug``, exactly
-    as the combatant's own ``dexterity`` does (``_build_foe_combatants``), so
-    the roll and the tie-break read the same score."""
+    """The fallback/tie-break score, respecting explicitly supplied DEX."""
     if (
         isinstance(spec, EncounterMemberSpec)
-        and spec.dexterity == 10
+        and "dexterity" not in spec.model_fields_set
         and spec.monster_template_slug
     ):
         monster = get_lib_loader().get_monster(spec.monster_template_slug)
@@ -10117,11 +10134,16 @@ def _stat_block_magnitudes_of(live: _LiveCombat, current: Combatant) -> StatBloc
     form's physical ones; Wild Shape keeps its own INT / WIS / CHA) and the
     form's Proficiency Bonus, which its stat-block attacks use. A summon's are
     the ones fixed when it was seated, its summoner's to-hit and damage bonus
-    included. ``None`` for any other creature."""
+    included. An ordinary resolvable template uses its live scores and PB,
+    with only an explicitly supplied host to-hit overriding its attacks."""
     transform = live.transforms.get(current.entity_id)
     if transform is None:
         summon = live.summons.get(current.entity_id)
-        return summon.magnitudes if summon is not None else None
+        if summon is not None:
+            return summon.magnitudes
+        slug = live.monster_slug_by_entity.get(current.entity_id)
+        if slug is None or get_lib_loader().get_monster(slug) is None:
+            return None
     return StatBlockMagnitudes(
         ability_scores={
             "str": current.strength,
@@ -10131,7 +10153,12 @@ def _stat_block_magnitudes_of(live: _LiveCombat, current: Combatant) -> StatBloc
             "wis": current.wisdom,
             "cha": current.charisma,
         },
-        proficiency_bonus=transform.form_proficiency_bonus,
+        proficiency_bonus=(
+            transform.form_proficiency_bonus
+            if transform is not None
+            else proficiency_bonus_of(current)
+        ),
+        attack_bonus=current.attack_bonus if transform is None else None,
     )
 
 

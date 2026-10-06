@@ -151,6 +151,7 @@
   "description": "",
   "hp": 85,
   "hp_dice": "9d10 + 36",
+  "initiative_modifier": -2,
   "lair_actions": [],
   "languages": [
     "Understands Common and Giant but can\u2019t speak"

@@ -1063,6 +1063,7 @@
   "description": "",
   "hp": 697,
   "hp_dice": "34d20 + 340",
+  "initiative_modifier": 18,
   "lair_actions": [],
   "languages": [],
   "legendary_action_uses": 3,

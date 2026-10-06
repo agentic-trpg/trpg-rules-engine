@@ -151,6 +151,7 @@
   "description": "",
   "hp": 15,
   "hp_dice": "2d8 + 6",
+  "initiative_modifier": -2,
   "lair_actions": [],
   "languages": [
     "Understands Common plus one other language but can\u2019t speak"

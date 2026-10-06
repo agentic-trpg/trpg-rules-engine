@@ -1283,6 +1283,7 @@
   "description": "",
   "hp": 60,
   "hp_dice": "8d8 + 24",
+  "initiative_modifier": 5,
   "lair_actions": [],
   "languages": [
     "standard",

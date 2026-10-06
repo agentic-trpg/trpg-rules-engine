@@ -293,7 +293,8 @@ def test_foe_template_immunity_is_not_hydrated(fixed, recorded_rng):
     assert "paralyzed" in template.condition_immunities
     party, encounter = _specs(target=FOE, fixed=fixed)
     encounter[0].monster_template_slug = "ghost"
-    # Host DEX 14 is already authoritative; only host immunity participates.
+    # Host DEX 14 controls live DEX; canonical Initiative controls the roll.
+    # Only host immunity participates, as before.
     _result, live = _open(party, encounter, [_effect(["paralyzed"], target=FOE)])
     foe = orch._find_combatant(live, FOE)
     assert foe.condition_immunities == []
@@ -301,7 +302,8 @@ def test_foe_template_immunity_is_not_hydrated(fixed, recorded_rng):
     assert rules.conditions_disadvantage_initiative([c.condition for c in foe.conditions])
     mirror = _BASE_RANDOM(11)
     dice = [mirror.randint(1, 20) for _ in range(3 if fixed else 5)]
-    assert foe.initiative == (17 if fixed else min(dice[2:4]) + 2)
+    assert foe.dexterity == 14
+    assert foe.initiative == (17 if fixed else min(dice[2:4]) + template.initiative_modifier)
     assert live.rng.draws == [(1, 20, value) for value in dice]
     assert live.rng.getstate() == mirror.getstate()
 

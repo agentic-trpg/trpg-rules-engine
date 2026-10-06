@@ -606,6 +606,7 @@
   "description": "",
   "hp": 45,
   "hp_dice": "10d8",
+  "initiative_modifier": 1,
   "lair_actions": [],
   "languages": [
     "Common plus one other language"

@@ -204,12 +204,16 @@ def _build_encounter_specs(
             raise HTTPException(status_code=404, detail=f"unknown monster: {slug!r}")
         n = i + 1
         entity_id = f"mon:{slug}-{n}"
-        dex_mod = _ability_mod(monster.ability_scores.dex)
+        modifier = (
+            monster.initiative_modifier
+            if monster.initiative_modifier is not None
+            else _ability_mod(monster.ability_scores.dex)
+        )
         enc = EncounterMemberSpec(
             entity_id=entity_id,
             entity_type="Monster",
             name=_sanitize_name(f"{monster.name} {n}"),
-            initiative=rng.randint(1, 20) + dex_mod,
+            initiative=rng.randint(1, 20) + modifier,
             hp_current=monster.hp,
             hp_max=monster.hp,
             ac=monster.ac or 10,

@@ -484,6 +484,7 @@
   "description": "",
   "hp": 178,
   "hp_dice": "17d10 + 85",
+  "initiative_modifier": 6,
   "lair_actions": [],
   "languages": [
     "Common",

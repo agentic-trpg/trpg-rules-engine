@@ -418,6 +418,7 @@
   "description": "",
   "hp": 45,
   "hp_dice": "6d10 + 12",
+  "initiative_modifier": 0,
   "lair_actions": [],
   "languages": [
     "Understands Abyssal but can\u2019t speak"

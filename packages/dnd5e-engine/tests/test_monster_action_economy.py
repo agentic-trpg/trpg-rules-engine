@@ -14,6 +14,7 @@ from dnd5e_srd_data.schema.common import (
     RangeBlock,
     SaveActivity,
     SaveBlock,
+    SaveDcBlock,
     SummonBonusesBlock,
     SummonMatchBlock,
     UsesBlock,
@@ -305,7 +306,13 @@ def test_transformation_and_summon_lifecycles_get_fresh_independent_pools(loader
 def test_action_pool_is_authoritative_and_multiactivity_invocation_spends_once(loader):
     chosen = attack("burst", uses=2, maximum="2")
     chosen.activities.append(
-        SaveActivity(id="burst-save", uses=UsesBlock(max="2"), save=SaveBlock(ability=["con"]))
+        # The shared stat-block resolver reads an explicit typed DC instead
+        # of the old uniform attack-bonus approximation.
+        SaveActivity(
+            id="burst-save",
+            uses=UsesBlock(max="2"),
+            save=SaveBlock(ability=["con"], dc=SaveDcBlock(calculation="flat", formula="8")),
+        )
     )
     monster = synthetic(loader, chosen)
     chosen = action(monster, "burst")

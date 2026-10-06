@@ -391,6 +391,7 @@
   "description": "",
   "hp": 38,
   "hp_dice": "7d8 + 7",
+  "initiative_modifier": 3,
   "lair_actions": [],
   "languages": [
     "Draconic"

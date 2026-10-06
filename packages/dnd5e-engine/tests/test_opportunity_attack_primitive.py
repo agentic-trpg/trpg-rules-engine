@@ -162,8 +162,8 @@ def test_exhausted_reactor_d20_test_penalty_reaches_the_aoo_total():
 def test_condition_free_aoo_determinism_pin_matches_pre_change_natural():
     """(d) Determinism pin: a condition-free AoO at ``rng_seed=1`` still
     draws exactly ONE d20 in normal mode: the first draw of the seeded
-    stream, a natural 5 (the goblin's ``attack_bonus`` is 0, so the total is
-    5 too). The hero's move from 1,0 to 0,0 leaves the goblin's reach on
+    stream, a natural 5. Real template STR/PB adds +1 for a total of 6;
+    the die sequence is unchanged. The move from 1,0 to 0,0 leaves its reach on
     its only step."""
 
     async def _run():
@@ -183,7 +183,9 @@ def test_condition_free_aoo_determinism_pin_matches_pre_change_natural():
     )
     assert rolled.advantage == "normal"
     assert rolled.natural == 5
-    assert rolled.roll_total == 5
+    # The natural die stays 5. Real template STR/PB adds +1; the previous
+    # total of 5 pinned the default +0 monster magnitude bug.
+    assert rolled.roll_total == 6
 
 
 class _NatTwentyRng(random.Random):

@@ -385,6 +385,7 @@
   "description": "",
   "hp": 105,
   "hp_dice": "10d12 + 40",
+  "initiative_modifier": 2,
   "lair_actions": [],
   "languages": [
     "Giant"

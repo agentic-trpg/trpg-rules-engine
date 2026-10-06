@@ -385,6 +385,7 @@
   "description": "",
   "hp": 147,
   "hp_dice": "14d10 + 70",
+  "initiative_modifier": -1,
   "lair_actions": [],
   "languages": [
     "Terran"

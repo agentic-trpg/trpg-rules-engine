@@ -1760,6 +1760,7 @@
   "description": "",
   "hp": 218,
   "hp_dice": "19d10 + 114",
+  "initiative_modifier": 2,
   "lair_actions": [],
   "languages": [
     "Auran"

@@ -222,7 +222,9 @@ class StatBlockMagnitudes:
     Spirit, Rend: "Bonus equals your spell attack modifier"; "1d6 + 4 + the
     spell's level Piercing damage"): ``attack_bonus`` is a flat to-hit that
     replaces ability modifier + Proficiency Bonus, and ``attack_damage_bonus``
-    is added to each attack's damage. A transformed creature sets neither."""
+    is added to each attack's damage. A transformed creature sets neither.
+    An ordinary template sets ``attack_bonus`` only for an explicit host
+    override; its ability-based damage remains independent of that pin."""
 
     ability_scores: Mapping[str, int]
     proficiency_bonus: int

@@ -162,20 +162,17 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   the bearer's HP but together exceed it never triggers the save at all and
   the bearer drops without rolling.
   (`packages/dnd5e-engine/src/dnd5e_engine/activities/apply.py`)
-- **A template monster attacks at its spec's `attack_bonus`, +0 by default
-  (2026-09-25, C21a).** Its to-hit, every `@mod` it rolls, its passive skill
-  scores (`@skills.<code>.passive`: a template Crocodile's grapple escape DC is
-  `10 + attack_bonus`, where SRD 5.2 says 12) and its fallback save DC
-  (`8 + attack_bonus`) come from `EncounterMemberSpec.attack_bonus`, not its
-  stat block, and a natural weapon's base damage (folded into
-  `parts[0]` without Foundry's implicit `@mod`) adds no ability modifier: by
-  default a Tough's Mace rolls d20 + 0 for 1d6 where SRD 5.2 says +4 and
-  1d6 + 2. Only a transformed creature gets its stat block's real numbers
-  (`StatBlockMagnitudes`); giving them to every template monster re-pins
-  every template-monster fixture. The bridge's `/v1/combat` passes no
-  `attack_bonus`, so every foe it builds rolls at +0.
-  (`packages/dnd5e-engine/src/dnd5e_engine/activities/build_context.py::_attack_bonus_override`,
-  `packages/nat20-bridge/src/nat20_bridge/routes_combat.py::_build_encounter_specs`)
+
+- **Stat-block item properties do not reach attack ability selection
+  (2026-10-07).** Ordinary templates now use real scores/PB and the shared
+  activity resolver, but a stat-block item has no Weapon carrier. An empty
+  melee `attack.ability` therefore defaults to STR even when its original
+  Foundry item has Finesse: Goblin Warrior Scimitar has `properties: [fin, …]`,
+  STR 8 and DEX 14, so the activity default produces +1 rather than the
+  Finesse +4. The implicit damage modifier has the same missing-property
+  limitation. Preserve the structured item property/ability semantics in a
+  separate data-carrier change; do not infer them from action names or bonuses.
+  (`packages/dnd5e-engine/src/dnd5e_engine/activities/attack.py::_governing_ability`)
 
 ## Core combat rules not modelled (2026-08-22)
 
@@ -1327,18 +1324,6 @@ now calls the engine rather than standing in for it. Residual gaps:
   modelled; Keen Senses and Aggressive are absent from the SRD 5.2 corpus
   entirely.
   (`packages/dnd5e-engine/src/dnd5e_engine/activities/save_primitive.py`)
-- **An engine-rolled Initiative reads a monster's Dexterity modifier, never
-  its own Initiative modifier (2026-09-27, C23).** SRD 5.2: "A monster's
-  Initiative modifier is typically equal to its Dexterity modifier, but some
-  monsters have additional modifiers, such as Proficiency Bonus."
-  `_initiative_dexterity` (C23) reads only `Monster.ability_scores.dex`, and
-  the dataset carries no separate Initiative-modifier field to read
-  instead. Measured over the 329 SRD stat blocks, the true Initiative
-  modifier differs from the Dexterity modifier in 110 of them (e.g. the
-  Aboleth: DEX modifier +0, SRD Initiative modifier +3) — C23 moved the
-  rolled total closer to the SRD value for most of them, but not onto it.
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_initiative_dexterity`,
-  `packages/dnd5e-srd-data/src/dnd5e_srd_data/schema/monster.py::Monster`)
 - **Target selection is hard-coded lowest-HP living enemy** (a PC or a
   party-side summon since C21b), with no reach/LoS/threat
   consideration — the monster AI never consults
@@ -1379,14 +1364,6 @@ a cluster; they are consolidated here so they are not re-discovered.
   consistent rather than an omission. Revisit only if the whole event surface is
   re-exported. (`packages/dnd5e-engine/src/dnd5e_engine/__init__.py`,
   `packages/dnd5e-engine/src/dnd5e_engine/events.py`)
-- **`EncounterMemberSpec.dexterity: int = 10` is a lossy sentinel.** The monster
-  template hydration cannot distinguish "host left the default" from "host
-  explicitly set 10", so an explicit 10 always defers to the template's DEX.
-  Retyping to `int | None = None` changes results for a host that passes an
-  explicit 10 for a template whose Dexterity differs, so it waits for a minor
-  release with a migration note; an engine-rolled Initiative reads the same
-  sentinel since C23.
-  (`packages/dnd5e-engine/src/dnd5e_engine/specs.py`)
 - **Roll events cannot report bonus DICE.** `roll_total == natural + modifier`
   only when no Bless/Bane-style bonus die applied; `modifier` deliberately
   excludes them (they are rolled after the d20 to keep the seeded stream

@@ -804,6 +804,7 @@
   "description": "",
   "hp": 58,
   "hp_dice": "9d8 + 18",
+  "initiative_modifier": 3,
   "lair_actions": [],
   "languages": [],
   "legendary_action_uses": null,

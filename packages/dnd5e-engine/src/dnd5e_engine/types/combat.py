@@ -76,7 +76,7 @@ class Combatant(BaseModel):
     # falls through to the real governing-ability-mod + proficiency-bonus
     # computation (SRD §Weapon Proficiency gate) instead of being silently
     # pinned to a 0 to-hit bonus. A host-supplied value (including a
-    # real monster's, always threaded as a concrete int) is unaffected —
+    # template monster's explicit override) is unaffected —
     # byte-identical to every pre-C15 fixture. Every direct arithmetic reader
     # (``build_context._caster_mod`` / ``_save_dc``, the two opportunity-
     # attack fire sites in ``orchestrator.py``) guards with ``or 0``.

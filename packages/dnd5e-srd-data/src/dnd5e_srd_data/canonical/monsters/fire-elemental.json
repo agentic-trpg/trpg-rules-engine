@@ -266,6 +266,7 @@
   "description": "",
   "hp": 93,
   "hp_dice": "11d10 + 33",
+  "initiative_modifier": 3,
   "lair_actions": [],
   "languages": [
     "Ignan"

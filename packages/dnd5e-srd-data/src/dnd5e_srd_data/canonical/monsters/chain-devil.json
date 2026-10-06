@@ -589,6 +589,7 @@
   "description": "",
   "hp": 85,
   "hp_dice": "10d8 + 40",
+  "initiative_modifier": 5,
   "lair_actions": [],
   "languages": [
     "Infernal",

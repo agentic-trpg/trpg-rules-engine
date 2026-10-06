@@ -1985,6 +1985,7 @@
   "description": "",
   "hp": 315,
   "hp_dice": "42d8 + 126",
+  "initiative_modifier": 17,
   "lair_actions": [],
   "languages": [
     "ALL"

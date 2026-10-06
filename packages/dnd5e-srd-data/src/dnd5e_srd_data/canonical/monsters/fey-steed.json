@@ -250,6 +250,7 @@
   "description": "",
   "hp": 5,
   "hp_dice": "0d10 + 5",
+  "initiative_modifier": 1,
   "lair_actions": [],
   "languages": [
     "Telepathy 1 mile (works only with you)"

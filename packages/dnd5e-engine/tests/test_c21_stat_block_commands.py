@@ -267,17 +267,15 @@ def test_a_polymorphed_monster_attacks_with_its_form_on_its_turn() -> None:
     assert (damage.target_id, damage.amount, damage.damage_type) == ("char:hero", 7, "piercing")
 
 
-def test_an_untransformed_template_monster_keeps_the_legacy_magnitudes() -> None:
-    """Only a transformed creature gets its stat block's real magnitudes: a
-    template monster still rolls to hit at its spec's ``attack_bonus`` (+0 by
-    default) and adds no ability modifier to its damage (BACKLOG). Seed 11: the
-    Tough's Mace, d20 15 → 15 against AC 10; d6 5 → 5."""
+def test_an_untransformed_template_monster_uses_real_magnitudes() -> None:
+    """Ordinary Tough now shares the form path: +4 and 1d6 +2. The old
+    +0/1d6 expectation pinned the ordinary-template numeric bug."""
     handle, live = start([pc()], seed=11, encounter=[foe(monster_template_slug="tough")])
     act(handle, "char:hero", intent_type="pass")
     monster_turn(handle)
     (roll,) = events(live, AttackRolled)
     (damage,) = events(live, DamageApplied)
-    assert (roll.modifier, roll.roll_total, damage.amount) == (0, 15, 5)
+    assert (roll.modifier, roll.roll_total, damage.amount) == (4, 19, 7)
 
 
 def _beast_attacks() -> list[tuple[str, str]]:

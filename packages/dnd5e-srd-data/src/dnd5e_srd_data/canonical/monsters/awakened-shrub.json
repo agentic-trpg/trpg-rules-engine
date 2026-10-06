@@ -150,6 +150,7 @@
   "description": "",
   "hp": 10,
   "hp_dice": "3d6",
+  "initiative_modifier": -1,
   "lair_actions": [],
   "languages": [
     "Common",

@@ -155,6 +155,7 @@
   "description": "",
   "hp": 9,
   "hp_dice": "2d8",
+  "initiative_modifier": -3,
   "lair_actions": [],
   "languages": [
     "Understands Infernal but can\u2019t speak"

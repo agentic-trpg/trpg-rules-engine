@@ -301,6 +301,7 @@
   "description": "",
   "hp": 18,
   "hp_dice": "4d6 + 4",
+  "initiative_modifier": 1,
   "lair_actions": [],
   "languages": [
     "Ignan",

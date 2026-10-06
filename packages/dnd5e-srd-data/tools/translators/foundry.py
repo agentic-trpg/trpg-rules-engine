@@ -1082,6 +1082,57 @@ def _ability_mod(score: int) -> int:
     return (score - 10) // 2
 
 
+def _initiative_bonus(value: Any, scores: AbilityScores, prof: int) -> int | None:
+    """The closed, deterministic numeric bonus vocabulary in pinned actors24.
+
+    Unknown expressions stay unknown; this is not a dice/formula evaluator.
+    """
+    text = str(value or "").strip()
+    if not text:
+        return 0
+    if re.fullmatch(r"[+-]?\d+", text):
+        return int(text)
+    if match := re.fullmatch(r"@prof(?:\s*\*\s*(\d+))?", text):
+        return prof * int(match.group(1) or 1)
+    if match := re.fullmatch(r"@abilities\.(str|dex|con|int|wis|cha)\.mod", text):
+        return _ability_mod(getattr(scores, match.group(1)))
+    return None
+
+
+def _monster_initiative_modifier(
+    system: dict[str, Any], flags: dict[str, Any], scores: AbilityScores, prof: int
+) -> int | None:
+    """Foundry AttributesData.prepareInitiative: ability mod + numeric bonuses.
+
+    ``system.attributes.init.bonus`` is EXTRA to the governing ability (DEX
+    when empty), not a total. Pinned SRD actors have no check bonuses or
+    Initiative-proficiency flags; retain None for unsupported flag semantics.
+    """
+    attrs = system.get("attributes") or {}
+    init = attrs.get("init")
+    if not isinstance(init, dict):
+        return None
+    if any(flags.get(k) for k in ("initiativeAlert", "jackOfAllTrades", "remarkableAthlete")):
+        return None
+    ability = init.get("ability") or "dex"
+    if ability not in ("str", "dex", "con", "int", "wis", "cha"):
+        return None
+    ability_doc = (system.get("abilities") or {}).get(ability) or {}
+    values = (
+        init.get("bonus"),
+        (ability_doc.get("bonuses") or {}).get("check"),
+        ((system.get("bonuses") or {}).get("abilities") or {}).get("check"),
+        (attrs.get("quality") or {}).get("value"),
+    )
+    total = _ability_mod(getattr(scores, ability))
+    for value in values:
+        bonus = _initiative_bonus(value, scores, prof)
+        if bonus is None:
+            return None
+        total += bonus
+    return total
+
+
 # SRD 5.2 spellcasting is always Intelligence, Wisdom, Charisma, or (rarely —
 # Sea Hag, Stone Golem) Constitution. Foundry's top-level
 # ``system.attributes.spellcasting`` NPC field is a UI dropdown left at an
@@ -1920,6 +1971,9 @@ def translate_monster_yaml(
         senses=senses,
         cr=cr_value,
         proficiency_bonus=prof_bonus,
+        initiative_modifier=_monster_initiative_modifier(
+            system, (doc.get("flags") or {}).get("dnd5e") or {}, ability_scores, prof_bonus
+        ),
         spellcasting_ability=_spellcasting_ability(
             attrs, actions, legendary_actions, special_abilities
         ),

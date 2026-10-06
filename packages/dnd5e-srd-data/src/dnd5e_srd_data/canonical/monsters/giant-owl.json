@@ -444,6 +444,7 @@
   "description": "",
   "hp": 19,
   "hp_dice": "3d10 + 3",
+  "initiative_modifier": 2,
   "lair_actions": [],
   "languages": [
     "Common",

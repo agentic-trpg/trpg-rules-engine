@@ -42,8 +42,8 @@ def _caster_mod(caster: Combatant) -> int:
     """
     # C15: ``caster.attack_bonus`` is ``int | None`` (``None`` = host never
     # set ``PartyMemberSpec.attack_bonus``); ``or 0`` reproduces the old
-    # int-default behaviour exactly for that case. A monster's is always a
-    # concrete int (unaffected).
+    # int-default behaviour for the legacy fallback. Real template roll data
+    # comes from ``stat_block_magnitudes`` independently of this approximation.
     if caster.entity_type == "Monster":
         return caster.attack_bonus or 0
     return max(0, (caster.attack_bonus or 0) - 2)
@@ -70,8 +70,8 @@ def _save_dc(
     ``Monster.spellcasting_ability`` onto ``Combatant.spellcasting_ability``)
     uses the same honest formula against ITS OWN real ability score +
     proficiency bonus (``ability_modifier_of``/``proficiency_bonus_of``,
-    not the uniform ``caster_abilities`` fake this builder projects for a
-    mundane monster attack) — verified against the mage ("Intelligence as
+    with the same real stat-block magnitudes as its ordinary attacks)
+    — verified against the mage ("Intelligence as
     the spellcasting ability", int 17 -> mod +3, PB +3 -> DC 14) and the
     adult red dragon ("Charisma as the spellcasting ability", cha 23 ->
     mod +6, PB +6 -> DC 20) canonical stat blocks.
@@ -297,9 +297,8 @@ def build_activity_context(
     """
     mod = _caster_mod(caster)
     if stat_block_magnitudes is not None:
-        # A transformed creature rolls with its stat block's own numbers
-        # (D4 a): the entity-type branches below, and the fixed to-hit / save
-        # DC overrides they imply, do not apply.
+        # Templates, forms and summons share real stat-block roll data.
+        # Spell attacks/DCs retain their separate spellcasting ability.
         caster_abilities = dict(stat_block_magnitudes.ability_scores)
         caster_proficiency_bonus = stat_block_magnitudes.proficiency_bonus
     elif caster.entity_type == "Character":
@@ -418,6 +417,17 @@ def build_activity_context(
             if isinstance(codes, list) and codes:
                 dest[entity_id] = [str(c) for c in codes]
 
+    if caster.entity_type == "Monster" and base_spell_level is not None:
+        # Spellcasting stays separate from weapon/stat-block to-hit. An
+        # unresolved spellcasting ability retains the legacy flat fallback.
+        attack_override = _attack_bonus_override(caster, spellcasting_ability)
+        if attack_override is None:
+            attack_override = 0
+    elif stat_block_magnitudes is not None:
+        attack_override = stat_block_magnitudes.attack_bonus
+    else:
+        attack_override = _attack_bonus_override(caster, spellcasting_ability)
+
     return ActivityResolutionContext(
         rng=rng,
         caster=caster,
@@ -435,7 +445,8 @@ def build_activity_context(
         base_spell_level=base_spell_level,
         save_dc_override=(
             None
-            if is_feature_invocation or stat_block_magnitudes is not None
+            if is_feature_invocation
+            or (stat_block_magnitudes is not None and base_spell_level is None)
             else _save_dc(
                 caster,
                 mod,
@@ -453,11 +464,7 @@ def build_activity_context(
         # attack uses PB + its spellcasting modifier instead. Under a
         # stat-block carrier, a summon's flat to-hit is its summoner's spell
         # attack (C21); a transform's ``None`` computes the form's own.
-        attack_bonus_override=(
-            stat_block_magnitudes.attack_bonus
-            if stat_block_magnitudes is not None
-            else _attack_bonus_override(caster, spellcasting_ability)
-        ),
+        attack_bonus_override=attack_override,
         passive_damage_modifiers=passive_damage_modifiers,
         passive_save_modifiers=passive_save_modifiers,
         passive_save_bonus=passive_save_bonus,

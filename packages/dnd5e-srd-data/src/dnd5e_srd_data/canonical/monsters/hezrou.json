@@ -359,6 +359,7 @@
   "description": "",
   "hp": 157,
   "hp_dice": "15d10 + 75",
+  "initiative_modifier": 6,
   "lair_actions": [],
   "languages": [
     "Abyssal",

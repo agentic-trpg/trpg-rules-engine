@@ -20,6 +20,7 @@
   "description": "",
   "hp": 19,
   "hp_dice": "3d10 + 3",
+  "initiative_modifier": 1,
   "lair_actions": [],
   "languages": [],
   "legendary_action_uses": null,

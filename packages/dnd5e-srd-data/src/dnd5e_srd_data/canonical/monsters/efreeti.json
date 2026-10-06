@@ -1323,6 +1323,7 @@
   "description": "",
   "hp": 212,
   "hp_dice": "17d10 + 119",
+  "initiative_modifier": 1,
   "lair_actions": [],
   "languages": [
     "Ignan"

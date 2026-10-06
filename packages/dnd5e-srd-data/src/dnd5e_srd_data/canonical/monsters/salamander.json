@@ -495,6 +495,7 @@
   "description": "",
   "hp": 90,
   "hp_dice": "12d10 + 24",
+  "initiative_modifier": 2,
   "lair_actions": [],
   "languages": [
     "Ignan"

@@ -703,7 +703,7 @@ def _governing_ability(
         return activity.attack.ability
     if weapon is not None:
         return _weapon_default_ability(weapon, ctx)
-    if ctx.stat_block_magnitudes is not None:
+    if ctx.stat_block_magnitudes is not None and ctx.base_spell_level is None:
         # A stat-block natural weapon (C21: a transformed creature's form).
         # Foundry gives an attack with no ability of its own the weapon's
         # default: DEX for a ranged attack, STR otherwise.
@@ -1133,6 +1133,8 @@ def _implicit_mod_damage_parts(
     first = parts[0] if parts else None
     if (
         ctx.stat_block_magnitudes is None
+        or ctx.base_spell_level is not None
+        or activity.attack.type.classification == "spell"
         or weapon is not None
         or not activity.damage.include_base
         or first is None

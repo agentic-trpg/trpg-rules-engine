@@ -225,8 +225,11 @@ class EncounterMemberSpec(BaseModel):
     # SRD 5.2 Initiative — "every participant rolls Initiative; they make a
     # Dexterity check". A fixed int seats the combatant directly (legacy /
     # host-supplied path, zero RNG draws). ``None`` opts into an
-    # engine-rolled ``d20 + DEX modifier`` in ``start_combat`` instead.
+    # engine-rolled ``d20 + Initiative modifier`` in ``start_combat`` instead.
     initiative: int | None
+    # Total modifier for an engine-rolled Initiative; explicit zero is valid.
+    # A fixed ``initiative`` ignores this and consumes no Initiative draws.
+    initiative_modifier: int | None = None
     # SRD 5.2 Surprise — "that creature is surprised, which causes it to
     # have Disadvantage on its Initiative roll." Only consulted when
     # ``initiative`` is ``None`` (an explicit fixed initiative always wins).
@@ -234,10 +237,13 @@ class EncounterMemberSpec(BaseModel):
     hp_current: int
     hp_max: int
     ac: int = 10
+    # On a template, omission computes ability + PB. Explicit values,
+    # including zero, override only to-hit. Legacy foes keep default zero.
     attack_bonus: int = 0
     damage_dice: str = "1d4"
     damage_type: str = "bludgeoning"
     behavior_profile: str = "AGGRESSIVE"
+    # Explicit values, including 10, win; omission hydrates template DEX.
     dexterity: int = 10
     zone_id: str
     # SRD monster template slug — the orchestrator's monster-turn resolver uses

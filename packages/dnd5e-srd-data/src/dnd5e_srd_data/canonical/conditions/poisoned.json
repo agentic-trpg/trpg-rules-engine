@@ -3,12 +3,14 @@
   "effects": [
     {
       "abilities": [],
+      "gate": null,
       "kind": "disadvantage_own_attacks",
       "qualifier": "",
       "value": null
     },
     {
       "abilities": [],
+      "gate": null,
       "kind": "disadvantage_ability_checks",
       "qualifier": "",
       "value": null

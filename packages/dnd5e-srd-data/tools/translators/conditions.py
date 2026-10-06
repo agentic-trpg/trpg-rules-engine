@@ -22,7 +22,12 @@ from pathlib import Path
 import yaml
 
 from dnd5e_srd_data.schema.common import ReviewState
-from dnd5e_srd_data.schema.condition import Condition, ConditionEffect, ConditionEffectKind
+from dnd5e_srd_data.schema.condition import (
+    Condition,
+    ConditionEffect,
+    ConditionEffectGate,
+    ConditionEffectKind,
+)
 from tools.translators.foundry import _provenance
 from tools.translators.prose_cleanup import cleanup_prose
 
@@ -62,9 +67,12 @@ def _e(
     *,
     abilities: tuple[str, ...] = (),
     value: int | None = None,
+    gate: ConditionEffectGate | None = None,
     qualifier: str = "",
 ) -> ConditionEffect:
-    return ConditionEffect(kind=kind, abilities=list(abilities), value=value, qualifier=qualifier)
+    return ConditionEffect(
+        kind=kind, abilities=list(abilities), value=value, gate=gate, qualifier=qualifier
+    )
 
 
 #: slug → typed mechanics. Every ``srd_quote`` is the SRD 5.2 glossary text
@@ -112,10 +120,12 @@ CONDITION_MECHANICS: dict[str, ConditionMechanics] = {
         effects=(
             _e(
                 K.DISADVANTAGE_ABILITY_CHECKS,
+                gate=ConditionEffectGate.FEAR_SOURCE_IN_SIGHT,
                 qualifier="while the source of fear is within line of sight",
             ),
             _e(
                 K.DISADVANTAGE_OWN_ATTACKS,
+                gate=ConditionEffectGate.FEAR_SOURCE_IN_SIGHT,
                 qualifier="while the source of fear is within line of sight",
             ),
             _e(K.CANT_MOVE_TOWARD_FEAR_SOURCE),
@@ -160,9 +170,14 @@ CONDITION_MECHANICS: dict[str, ConditionMechanics] = {
                 K.ADVANTAGE_INITIATIVE,
                 qualifier="if you're Invisible when you roll Initiative",
             ),
-            _e(K.UNSEEN, qualifier="unless the effect's creator can somehow see you"),
+            _e(
+                K.UNSEEN,
+                gate=ConditionEffectGate.OBSERVER_CANNOT_SEE_BEARER,
+                qualifier="unless the effect's creator can somehow see you",
+            ),
             _e(
                 K.DISADVANTAGE_ATTACKS_AGAINST,
+                gate=ConditionEffectGate.OBSERVER_CANNOT_SEE_BEARER,
                 qualifier=(
                     "if a creature can somehow see you, you don't gain this benefit against "
                     "that creature"
@@ -170,6 +185,7 @@ CONDITION_MECHANICS: dict[str, ConditionMechanics] = {
             ),
             _e(
                 K.ADVANTAGE_OWN_ATTACKS,
+                gate=ConditionEffectGate.OBSERVER_CANNOT_SEE_BEARER,
                 qualifier=(
                     "if a creature can somehow see you, you don't gain this benefit against "
                     "that creature"

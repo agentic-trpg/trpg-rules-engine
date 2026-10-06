@@ -18,7 +18,11 @@ from __future__ import annotations
 import random
 from collections.abc import Iterable
 
-from dnd5e_srd_data.schema.condition import ConditionEffect, ConditionEffectKind
+from dnd5e_srd_data.schema.condition import (
+    ConditionEffect,
+    ConditionEffectGate,
+    ConditionEffectKind,
+)
 
 from dnd5e_engine.rules.character import ABILITY_NAME_BY_CODE
 from dnd5e_engine.types.effects import ActiveEffect, ActiveEffectChange
@@ -47,6 +51,32 @@ _CONDITION_SCALAR_KEYS = {
 }
 
 
+_GATED_ATTACK_FLAG_KEYS: dict[tuple[ConditionEffectKind, ConditionEffectGate | None], str] = {
+    (
+        ConditionEffectKind.ADVANTAGE_OWN_ATTACKS,
+        ConditionEffectGate.OBSERVER_CANNOT_SEE_BEARER,
+    ): "flags.advantage.attack.gate.observer_cannot_see_bearer",
+    (
+        ConditionEffectKind.DISADVANTAGE_ATTACKS_AGAINST,
+        ConditionEffectGate.OBSERVER_CANNOT_SEE_BEARER,
+    ): "flags.disadvantage.attack.gate.observer_cannot_see_bearer",
+    (
+        ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS,
+        ConditionEffectGate.FEAR_SOURCE_IN_SIGHT,
+    ): "flags.disadvantage.attack.gate.fear_source_in_sight",
+}
+
+
+def _project_gated_attack_effect(effect: ConditionEffect) -> list[ActiveEffectChange]:
+    """Unsupported gates and mixed distance/gate clauses stay inert."""
+    key = _GATED_ATTACK_FLAG_KEYS.get((effect.kind, effect.gate))
+    return (
+        [ActiveEffectChange(key=key, mode="override", value=True)]
+        if key is not None and effect.value is None
+        else []
+    )
+
+
 def project_condition_effects(effects: Iterable[ConditionEffect]) -> list[ActiveEffectChange]:
     """Translate supported typed clauses into the active-effect override vocabulary.
 
@@ -57,9 +87,15 @@ def project_condition_effects(effects: Iterable[ConditionEffect]) -> list[Active
     flag_keys = {
         ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS: "flags.disadvantage.attack",
         ConditionEffectKind.DISADVANTAGE_ABILITY_CHECKS: "flags.disadvantage.check",
+        ConditionEffectKind.DISADVANTAGE_ATTACKS_EXCEPT_GRAPPLER: (
+            "flags.disadvantage.attack.except_grappler"
+        ),
     }
     changes: list[ActiveEffectChange] = []
     for effect in effects:
+        if effect.gate is not None:
+            changes.extend(_project_gated_attack_effect(effect))
+            continue
         if effect.kind == ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST and effect.value is None:
             changes.append(
                 ActiveEffectChange(key="flags.advantage.attack", mode="override", value=True)

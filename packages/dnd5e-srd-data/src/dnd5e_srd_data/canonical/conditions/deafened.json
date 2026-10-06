@@ -3,6 +3,7 @@
   "effects": [
     {
       "abilities": [],
+      "gate": null,
       "kind": "auto_fail_hearing_checks",
       "qualifier": "",
       "value": null

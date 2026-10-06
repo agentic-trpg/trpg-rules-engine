@@ -7,7 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from dnd5e_srd_data.schema.condition import Condition, ConditionEffectKind
+from dnd5e_srd_data.loader import BundledAssetLoader
+from dnd5e_srd_data.schema.condition import Condition, ConditionEffectGate, ConditionEffectKind
 from tools.translators.conditions import (
     CONDITION_MECHANICS,
     SRD_CONDITION_SLUGS,
@@ -64,3 +65,27 @@ def test_missing_srd_condition_is_a_hard_failure_when_complete_is_required():
             ingest_date=date(2026, 8, 27),
             ingest_version="foundry-translator-v1",
         )
+
+
+@pytest.mark.parametrize("slug", sorted(SRD_CONDITION_SLUGS))
+def test_translator_and_shipped_canonical_have_the_same_typed_gates(slug):
+    expected = {
+        ("invisible", ConditionEffectKind.UNSEEN): ConditionEffectGate.OBSERVER_CANNOT_SEE_BEARER,
+        ("invisible", ConditionEffectKind.ADVANTAGE_OWN_ATTACKS): (
+            ConditionEffectGate.OBSERVER_CANNOT_SEE_BEARER
+        ),
+        ("invisible", ConditionEffectKind.DISADVANTAGE_ATTACKS_AGAINST): (
+            ConditionEffectGate.OBSERVER_CANNOT_SEE_BEARER
+        ),
+        ("frightened", ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS): (
+            ConditionEffectGate.FEAR_SOURCE_IN_SIGHT
+        ),
+        ("frightened", ConditionEffectKind.DISADVANTAGE_ABILITY_CHECKS): (
+            ConditionEffectGate.FEAR_SOURCE_IN_SIGHT
+        ),
+    }
+    canonical = BundledAssetLoader().get_condition(slug)
+    assert canonical is not None
+    assert tuple(canonical.effects) == CONDITION_MECHANICS[slug].effects
+    for clause in canonical.effects:
+        assert clause.gate == expected.get((slug, clause.kind))

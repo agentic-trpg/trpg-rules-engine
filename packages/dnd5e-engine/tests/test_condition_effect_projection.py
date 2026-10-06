@@ -26,7 +26,19 @@ def test_migration_selection_is_an_explicit_clause_allowlist() -> None:
                 ConditionEffectKind.SPEED_PENALTY_PER_LEVEL,
             }
         ),
-        "grappled": frozenset({ConditionEffectKind.SPEED_ZERO}),
+        "grappled": frozenset(
+            {
+                ConditionEffectKind.SPEED_ZERO,
+                ConditionEffectKind.DISADVANTAGE_ATTACKS_EXCEPT_GRAPPLER,
+            }
+        ),
+        "invisible": frozenset(
+            {
+                ConditionEffectKind.ADVANTAGE_OWN_ATTACKS,
+                ConditionEffectKind.DISADVANTAGE_ATTACKS_AGAINST,
+            }
+        ),
+        "frightened": frozenset({ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS}),
         "poisoned": frozenset(
             {
                 ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS,
@@ -104,6 +116,8 @@ def test_typed_clause_translates_to_active_effect_change(
     "slug",
     [
         "exhaustion",
+        "invisible",
+        "frightened",
         "grappled",
         "poisoned",
         "restrained",
@@ -168,8 +182,6 @@ def test_other_conditions_are_not_migrated() -> None:
     assert (
         _project_condition_changes(
             [
-                "frightened",
-                "invisible",
                 "deafened",
                 "incapacitated",
             ]
@@ -490,6 +502,8 @@ def test_unopted_clauses_do_not_reach_an_expanded_projector(
                 ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST,
                 ConditionEffectKind.DISADVANTAGE_ATTACKS_AGAINST,
                 ConditionEffectKind.AUTO_CRIT_WITHIN_5FT,
+                ConditionEffectKind.ADVANTAGE_OWN_ATTACKS,
+                ConditionEffectKind.DISADVANTAGE_ATTACKS_EXCEPT_GRAPPLER,
                 ConditionEffectKind.D20_TEST_PENALTY_PER_LEVEL,
                 ConditionEffectKind.SPEED_PENALTY_PER_LEVEL,
                 ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS,

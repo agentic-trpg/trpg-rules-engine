@@ -3,6 +3,7 @@
   "effects": [
     {
       "abilities": [],
+      "gate": null,
       "kind": "speed_zero",
       "qualifier": "",
       "value": null
@@ -12,18 +13,21 @@
         "str",
         "dex"
       ],
+      "gate": null,
       "kind": "auto_fail_save",
       "qualifier": "",
       "value": null
     },
     {
       "abilities": [],
+      "gate": null,
       "kind": "advantage_attacks_against",
       "qualifier": "",
       "value": null
     },
     {
       "abilities": [],
+      "gate": null,
       "kind": "auto_crit_within_5ft",
       "qualifier": "",
       "value": 5

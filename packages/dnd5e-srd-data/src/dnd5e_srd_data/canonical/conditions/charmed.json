@@ -3,12 +3,14 @@
   "effects": [
     {
       "abilities": [],
+      "gate": null,
       "kind": "cant_attack_charmer",
       "qualifier": "",
       "value": null
     },
     {
       "abilities": [],
+      "gate": null,
       "kind": "charmer_social_advantage",
       "qualifier": "",
       "value": null

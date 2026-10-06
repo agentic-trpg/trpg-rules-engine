@@ -97,7 +97,11 @@ def test_speed_zero_requires_canonical_clause_and_opt_in_without_losing_neighbou
     assert condition_rules.conditions_grant_advantage_on_attack([], [condition]) == target_attack
     assert condition_rules.project_passive_save_modifiers([condition]) == saves
     if condition == "grappled":
-        assert condition_rules._project_condition_changes([condition]) == []
+        assert condition_rules._project_condition_changes([condition]) == [
+            ActiveEffectChange(
+                key="flags.disadvantage.attack.except_grappler", mode="override", value=True
+            )
+        ]
         assert condition_rules.conditions_grant_advantage_on_attack(
             [condition], [], grappler_id="char:grappler", target_id="char:grappler"
         ) == (False, False)

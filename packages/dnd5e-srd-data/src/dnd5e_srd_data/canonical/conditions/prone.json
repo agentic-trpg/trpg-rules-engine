@@ -3,24 +3,28 @@
   "effects": [
     {
       "abilities": [],
+      "gate": null,
       "kind": "restricted_movement_crawl",
       "qualifier": "spend an amount of movement equal to half your Speed (round down) to right yourself",
       "value": null
     },
     {
       "abilities": [],
+      "gate": null,
       "kind": "disadvantage_own_attacks",
       "qualifier": "",
       "value": null
     },
     {
       "abilities": [],
+      "gate": null,
       "kind": "advantage_attacks_against",
       "qualifier": "if the attacker is within 5 feet of you",
       "value": 5
     },
     {
       "abilities": [],
+      "gate": null,
       "kind": "disadvantage_attacks_against",
       "qualifier": "otherwise (the attacker is more than 5 feet from you)",
       "value": 5

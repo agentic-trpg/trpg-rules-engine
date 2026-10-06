@@ -3,18 +3,21 @@
   "effects": [
     {
       "abilities": [],
+      "gate": null,
       "kind": "d20_test_penalty_per_level",
       "qualifier": "",
       "value": 2
     },
     {
       "abilities": [],
+      "gate": null,
       "kind": "speed_penalty_per_level",
       "qualifier": "",
       "value": 5
     },
     {
       "abilities": [],
+      "gate": null,
       "kind": "death_at_level",
       "qualifier": "",
       "value": 6

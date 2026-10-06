@@ -78,6 +78,11 @@ class ActiveEffectChange(BaseModel):
       d20_test.penalty_per_level, speed.penalty_per_level
                               — integer overrides from canonical condition
                                 clauses; consumers multiply by runtime level
+      flags.{advantage,disadvantage}.attack.gate.observer_cannot_see_bearer,
+      flags.disadvantage.attack.gate.fear_source_in_sight,
+      flags.disadvantage.attack.except_grappler
+                              — boolean overrides; condition consumers apply
+                                existing visibility, fear and identity context
       save.<ability>.bonus    — saving-throw bonus (ability lowercase)
       check.<bucket>.bonus    — skill_check / ability_check bonus
       flags.advantage.<bucket>, flags.disadvantage.<bucket>

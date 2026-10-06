@@ -3,24 +3,28 @@
   "effects": [
     {
       "abilities": [],
+      "gate": null,
       "kind": "advantage_initiative",
       "qualifier": "if you're Invisible when you roll Initiative",
       "value": null
     },
     {
       "abilities": [],
+      "gate": "observer_cannot_see_bearer",
       "kind": "unseen",
       "qualifier": "unless the effect's creator can somehow see you",
       "value": null
     },
     {
       "abilities": [],
+      "gate": "observer_cannot_see_bearer",
       "kind": "disadvantage_attacks_against",
       "qualifier": "if a creature can somehow see you, you don't gain this benefit against that creature",
       "value": null
     },
     {
       "abilities": [],
+      "gate": "observer_cannot_see_bearer",
       "kind": "advantage_own_attacks",
       "qualifier": "if a creature can somehow see you, you don't gain this benefit against that creature",
       "value": null

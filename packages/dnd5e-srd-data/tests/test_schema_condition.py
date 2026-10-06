@@ -8,7 +8,12 @@ import pytest
 from pydantic import ValidationError
 
 from dnd5e_srd_data.schema.common import Provenance, ReviewState
-from dnd5e_srd_data.schema.condition import Condition, ConditionEffect, ConditionEffectKind
+from dnd5e_srd_data.schema.condition import (
+    Condition,
+    ConditionEffect,
+    ConditionEffectGate,
+    ConditionEffectKind,
+)
 
 
 def _provenance() -> Provenance:
@@ -65,3 +70,22 @@ def test_implies_are_sibling_slugs():
         review=ReviewState(),
     )
     assert c.implies == ["incapacitated", "prone"]
+
+
+@pytest.mark.parametrize("gate", list(ConditionEffectGate))
+def test_condition_gate_round_trips_as_a_closed_enum(gate):
+    effect = ConditionEffect(kind=ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS, gate=gate)
+    data = effect.model_dump(mode="json")
+    assert data["gate"] == gate.value
+    assert ConditionEffect.model_validate_json(effect.model_dump_json()) == effect
+
+
+def test_old_condition_json_without_gate_still_loads():
+    effect = ConditionEffect.model_validate({"kind": "disadvantage_own_attacks"})
+    assert effect.gate is None
+    with pytest.raises(ValidationError):
+        ConditionEffect.model_validate({"kind": "disadvantage_own_attacks", "gate": "unknown"})
+    assert set(ConditionEffectGate) == {
+        ConditionEffectGate.OBSERVER_CANNOT_SEE_BEARER,
+        ConditionEffectGate.FEAR_SOURCE_IN_SIGHT,
+    }

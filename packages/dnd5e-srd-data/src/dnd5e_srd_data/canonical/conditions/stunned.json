@@ -6,12 +6,14 @@
         "str",
         "dex"
       ],
+      "gate": null,
       "kind": "auto_fail_save",
       "qualifier": "",
       "value": null
     },
     {
       "abilities": [],
+      "gate": null,
       "kind": "advantage_attacks_against",
       "qualifier": "",
       "value": null

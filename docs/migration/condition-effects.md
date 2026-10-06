@@ -9,7 +9,9 @@ documents the data contract and its sources.
 | Condition | Migrated clauses |
 |---|---|
 | Poisoned | `disadvantage_own_attacks`, `disadvantage_ability_checks` |
-| Grappled | `speed_zero` |
+| Grappled | `speed_zero`, `disadvantage_attacks_except_grappler` |
+| Invisible | `advantage_own_attacks`, `disadvantage_attacks_against` (visibility gate) |
+| Frightened | `disadvantage_own_attacks` (fear-source sight gate) |
 | Exhaustion | `d20_test_penalty_per_level`, `speed_penalty_per_level` |
 | Restrained | `disadvantage_own_attacks`, `disadvantage_save` (DEX), `advantage_attacks_against`, `speed_zero` |
 | Blinded | `disadvantage_own_attacks`, `advantage_attacks_against` |
@@ -39,7 +41,11 @@ changes, all with `mode="override"`:
 | `ADVANTAGE_ATTACKS_AGAINST` (integer `value`) | `flags.advantage.attack.within_ft` | threshold in feet |
 | `DISADVANTAGE_ATTACKS_AGAINST` (integer `value`) | `flags.disadvantage.attack.beyond_ft` | threshold in feet |
 | `AUTO_CRIT_WITHIN_5FT` (integer `value`) | `flags.auto_crit.attack.within_ft` | threshold in feet |
-| `DISADVANTAGE_OWN_ATTACKS` | `flags.disadvantage.attack` | `True` |
+| `DISADVANTAGE_OWN_ATTACKS` (`gate=None`) | `flags.disadvantage.attack` | `True` |
+| `DISADVANTAGE_OWN_ATTACKS` (`FEAR_SOURCE_IN_SIGHT`) | `flags.disadvantage.attack.gate.fear_source_in_sight` | `True` |
+| `ADVANTAGE_OWN_ATTACKS` (`OBSERVER_CANNOT_SEE_BEARER`) | `flags.advantage.attack.gate.observer_cannot_see_bearer` | `True` |
+| `DISADVANTAGE_ATTACKS_AGAINST` (`OBSERVER_CANNOT_SEE_BEARER`) | `flags.disadvantage.attack.gate.observer_cannot_see_bearer` | `True` |
+| `DISADVANTAGE_ATTACKS_EXCEPT_GRAPPLER` | `flags.disadvantage.attack.except_grappler` | `True` |
 | `DISADVANTAGE_ABILITY_CHECKS` | `flags.disadvantage.check` | `True` |
 | `DISADVANTAGE_SAVE` | `flags.disadvantage.save.<ability>` | `True` |
 | `AUTO_FAIL_SAVE` | `flags.auto_fail.save.<ability>` | `True` |
@@ -92,6 +98,29 @@ validates the exact key, override mode, and integer type (excluding booleans and
 strings), then compares the per-target `target_distance_ft` against that value.
 Unknown distance leaves scoped flags inert. Prone's target advantage applies at
 or below the threshold; its target disadvantage applies strictly above it.
+
+Context-qualified attacks use the optional, enum-backed `ConditionEffect.gate`.
+`OBSERVER_CANNOT_SEE_BEARER` observes the attacker from its target for own-attack
+advantage, and observes the target from the attacker for attacks-against
+disadvantage. `FEAR_SOURCE_IN_SIGHT` uses the bearer's existing fear-source
+context. Grappled's specific except-grappler kind supplies identity semantics;
+an unknown grappler stays inert. Consumers accept exact boolean override flags
+and reuse the existing pierced, fear-sight, grappler and target inputs. Their
+public signature is unchanged. Qualifier prose is explanatory and never parsed.
+Unknown/unsupported gates and mixed integer-distance/visibility clauses project
+nothing, without falling back to unconditional flags. Ungated own-attack
+disadvantage and Prone's integer distance projection retain their meanings.
+
+These four attack clauses have explicit condition/kind opt-ins. Removing either
+the canonical clause or its opt-in disables only that mechanic. Generic support
+does not opt in unrelated conditions. The same `_attack_roll_sources()` consumer
+serves ordinary, Cleave, opportunity, monster and spell attacks; `condition:attacker`
+and `condition:target` remain separate from generic geometry's `unseen` source.
+Cancellation still draws one d20; duplicate conditions never stack extra dice.
+
+Canonical metadata also types Invisible's `unseen` and Frightened's ability-check
+clause, but neither gains runtime opt-in. Existing JSON without `gate` loads as
+`None`. Regeneration follows the existing serializer's explicit-null convention.
 
 `conditions_auto_crit_within_5ft()` is retained as a public consumer seam. Its
 historical one-argument form queries at 5 ft; attack resolvers always supply the
@@ -167,15 +196,17 @@ no level-6 death behavior.
 Clauses outside the migration table remain on their existing legacy paths. In
 particular:
 
-- Grappled: only `speed_zero` is migrated. Attack disadvantage except against
-  the grappler, source identity, drag/carry clauses, escape, and grapple removal
+- Grappled: `speed_zero` and attack disadvantage except against the grappler are
+  migrated. Source-identity tracking, drag/carry, escape and grapple removal
   retain their existing paths and implementation boundaries.
 - Blinded: sight-check automatic failure.
 - Prone: crawl movement restrictions. Both target-side distance attack clauses
   are migrated; unknown distance leaves those scoped clauses inert.
-- Invisible: target-side disadvantage and attacker-side advantage retain their
-  visibility gates. Frightened retains the attacker's fear-source line-of-sight
-  gate.
+- Invisible: both attack clauses are migrated with a typed visibility gate;
+  `unseen` runtime behavior and initiative remain outside the migration.
+- Frightened: attack disadvantage is migrated with a typed fear-source sight
+  gate. Ability-check disadvantage still has its existing LOS gap, and movement
+  restriction retains its legacy path; typed check metadata does not opt it in.
 - Exhaustion: both numeric penalty clauses are migrated; `death_at_level`
   remains outside the migration and has no complete live execution path.
 - Paralyzed, Stunned, Petrified, and Unconscious: action restrictions and other

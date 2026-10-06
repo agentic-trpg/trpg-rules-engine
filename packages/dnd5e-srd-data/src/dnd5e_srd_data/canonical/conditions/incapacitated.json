@@ -3,24 +3,28 @@
   "effects": [
     {
       "abilities": [],
+      "gate": null,
       "kind": "cannot_take_actions",
       "qualifier": "",
       "value": null
     },
     {
       "abilities": [],
+      "gate": null,
       "kind": "breaks_concentration",
       "qualifier": "",
       "value": null
     },
     {
       "abilities": [],
+      "gate": null,
       "kind": "cannot_speak",
       "qualifier": "",
       "value": null
     },
     {
       "abilities": [],
+      "gate": null,
       "kind": "disadvantage_initiative",
       "qualifier": "if you're Incapacitated when you roll Initiative",
       "value": null

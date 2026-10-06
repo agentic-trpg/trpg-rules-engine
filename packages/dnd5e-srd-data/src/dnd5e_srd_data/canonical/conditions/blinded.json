@@ -3,18 +3,21 @@
   "effects": [
     {
       "abilities": [],
+      "gate": null,
       "kind": "auto_fail_sight_checks",
       "qualifier": "",
       "value": null
     },
     {
       "abilities": [],
+      "gate": null,
       "kind": "advantage_attacks_against",
       "qualifier": "",
       "value": null
     },
     {
       "abilities": [],
+      "gate": null,
       "kind": "disadvantage_own_attacks",
       "qualifier": "",
       "value": null

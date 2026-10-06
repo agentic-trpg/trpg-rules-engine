@@ -84,7 +84,12 @@ from dnd5e_srd_data.schema.common import (
     VisibilityBlock,
     VisibilityLevelBlock,
 )
-from dnd5e_srd_data.schema.condition import Condition, ConditionEffect, ConditionEffectKind
+from dnd5e_srd_data.schema.condition import (
+    Condition,
+    ConditionEffect,
+    ConditionEffectGate,
+    ConditionEffectKind,
+)
 from dnd5e_srd_data.schema.feat import Feat, FeatCategory, FeatPrerequisite
 from dnd5e_srd_data.schema.feature import (
     Feature,
@@ -159,6 +164,7 @@ __all__ = [
     "Class",
     "Condition",
     "ConditionEffect",
+    "ConditionEffectGate",
     "ConditionEffectKind",
     "ConsumptionBlock",
     "ConsumptionScalingBlock",

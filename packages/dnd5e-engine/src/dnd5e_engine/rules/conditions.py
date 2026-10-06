@@ -46,7 +46,16 @@ _DECLARATIVE_CONDITION_MIGRATIONS: dict[str, frozenset[ConditionEffectKind]] = {
             ConditionEffectKind.SPEED_PENALTY_PER_LEVEL,
         }
     ),
-    "grappled": frozenset({ConditionEffectKind.SPEED_ZERO}),
+    "grappled": frozenset(
+        {ConditionEffectKind.SPEED_ZERO, ConditionEffectKind.DISADVANTAGE_ATTACKS_EXCEPT_GRAPPLER}
+    ),
+    "invisible": frozenset(
+        {
+            ConditionEffectKind.ADVANTAGE_OWN_ATTACKS,
+            ConditionEffectKind.DISADVANTAGE_ATTACKS_AGAINST,
+        }
+    ),
+    "frightened": frozenset({ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS}),
     "poisoned": frozenset(
         {
             ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS,
@@ -385,6 +394,14 @@ def conditions_grant_disadvantage_on_ability_checks(conditions: list[str]) -> bo
     )
 
 
+def _attack_flag_present(changes: list[ActiveEffectChange], key: str) -> bool:
+    """Consume exact boolean overrides without stacking duplicate clauses."""
+    return any(
+        change.key == key and change.mode == "override" and change.value is True
+        for change in changes
+    )
+
+
 def conditions_grant_advantage_on_attack(
     attacker_conditions: list[str],
     target_conditions: list[str],
@@ -426,49 +443,42 @@ def conditions_grant_advantage_on_attack(
     # Consume the flags by side: target clauses grant advantage against that
     # creature; its own-attack disadvantage (including implied Prone) does not.
     target_changes = _project_condition_changes(target_conditions)
-    advantage = any(
-        change.key == "flags.advantage.attack" for change in target_changes
-    ) or attack_distance_flag_applies(
-        target_changes, ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST, distance_ft
+    attacker_changes = _project_condition_changes(attacker_conditions)
+    advantage = (
+        _attack_flag_present(target_changes, "flags.advantage.attack")
+        or attack_distance_flag_applies(
+            target_changes, ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST, distance_ft
+        )
+        or (
+            not attacker_invisibility_pierced
+            and _attack_flag_present(
+                attacker_changes, "flags.advantage.attack.gate.observer_cannot_see_bearer"
+            )
+        )
     )
-    disadvantage = any(
-        change.key == "flags.disadvantage.attack"
-        for change in _project_condition_changes(attacker_conditions)
-    ) or attack_distance_flag_applies(
-        target_changes, ConditionEffectKind.DISADVANTAGE_ATTACKS_AGAINST, distance_ft
+    disadvantage = (
+        _attack_flag_present(attacker_changes, "flags.disadvantage.attack")
+        or attack_distance_flag_applies(
+            target_changes, ConditionEffectKind.DISADVANTAGE_ATTACKS_AGAINST, distance_ft
+        )
+        or (
+            fear_source_in_sight
+            and _attack_flag_present(
+                attacker_changes, "flags.disadvantage.attack.gate.fear_source_in_sight"
+            )
+        )
+        or (
+            not target_invisibility_pierced
+            and _attack_flag_present(
+                target_changes, "flags.disadvantage.attack.gate.observer_cannot_see_bearer"
+            )
+        )
+        or (
+            grappler_id is not None
+            and target_id != grappler_id
+            and _attack_flag_present(attacker_changes, "flags.disadvantage.attack.except_grappler")
+        )
     )
-
-    if (
-        is_condition_active(Condition.INVISIBLE, attacker_conditions)
-        and not attacker_invisibility_pierced
-    ):
-        advantage = True
-    # SRD 5.2 glossary, Frightened: "Disadvantage on ... attack rolls while
-    # the source of fear is within line of sight." (C16b: ``fear_source_in_sight``
-    # defaults True — SRD-conservative — so pre-C16b callers are unaffected.)
-    if is_condition_active(Condition.FRIGHTENED, attacker_conditions) and fear_source_in_sight:
-        disadvantage = True
-    # SRD 5.2 glossary, Invisible: "Attack rolls against you have Disadvantage,
-    # and your attack rolls have Advantage. If a creature can somehow see you,
-    # you don't gain this benefit against that creature." (C16b: the "can
-    # somehow see you" exception is ``target_invisibility_pierced`` — the
-    # ATTACKER's Blindsight/Truesight reaching the Invisible target plus line
-    # of sight.)
-    if (
-        is_condition_active(Condition.INVISIBLE, target_conditions)
-        and not target_invisibility_pierced
-    ):
-        disadvantage = True
-
-    # SRD 5.2 glossary, Grappled: "You have Disadvantage on attack rolls against
-    # any target other than the grappler." Unknown grappler → inert (never
-    # penalise a swing that might be at the grappler).
-    if (
-        is_condition_active(Condition.GRAPPLED, attacker_conditions)
-        and grappler_id is not None
-        and target_id != grappler_id
-    ):
-        disadvantage = True
 
     return advantage, disadvantage
 

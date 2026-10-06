@@ -7,7 +7,8 @@ links in ``config.mjs`` — there is no structured mechanic upstream. The
 (``tools/translators/conditions.py``) from the SRD 5.2 sentences, one typed
 row per sentence, and this module only defines the closed vocabulary.
 
-``ConditionEffect`` stores a clause's kind, ability scope, value, and qualifier.
+``ConditionEffect`` stores a clause's kind, ability scope, value, typed gate,
+and human-readable qualifier.
 ``ConditionEffectKind`` defines the closed vocabulary of clause kinds.
 """
 
@@ -61,15 +62,23 @@ class ConditionEffectKind(StrEnum):
     DEATH_AT_LEVEL = "death_at_level"
 
 
+class ConditionEffectGate(StrEnum):
+    """Machine-readable context required for a condition clause to apply."""
+
+    OBSERVER_CANNOT_SEE_BEARER = "observer_cannot_see_bearer"
+    FEAR_SOURCE_IN_SIGHT = "fear_source_in_sight"
+
+
 class ConditionEffect(BaseModel, frozen=True):
     """One typed clause. ``abilities`` (lower-case codes) scopes the save
     kinds; ``value`` carries a number the kind needs (feet, level, per-level
-    multiplier); ``qualifier`` is the SRD clause that scopes when the effect
-    applies (rendering / host-side reasoning only)."""
+    multiplier); optional ``gate`` supplies typed context semantics.
+    ``qualifier`` is explanatory SRD prose and is never machine-parsed."""
 
     kind: ConditionEffectKind
     abilities: list[str] = Field(default_factory=list)
     value: int | None = None
+    gate: ConditionEffectGate | None = None
     qualifier: str = ""
 
 

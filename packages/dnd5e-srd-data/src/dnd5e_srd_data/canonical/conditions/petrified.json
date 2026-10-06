@@ -3,12 +3,14 @@
   "effects": [
     {
       "abilities": [],
+      "gate": null,
       "kind": "speed_zero",
       "qualifier": "",
       "value": null
     },
     {
       "abilities": [],
+      "gate": null,
       "kind": "advantage_attacks_against",
       "qualifier": "",
       "value": null
@@ -18,18 +20,21 @@
         "str",
         "dex"
       ],
+      "gate": null,
       "kind": "auto_fail_save",
       "qualifier": "",
       "value": null
     },
     {
       "abilities": [],
+      "gate": null,
       "kind": "resist_all_damage",
       "qualifier": "",
       "value": null
     },
     {
       "abilities": [],
+      "gate": null,
       "kind": "immune_to_condition",
       "qualifier": "poisoned",
       "value": null

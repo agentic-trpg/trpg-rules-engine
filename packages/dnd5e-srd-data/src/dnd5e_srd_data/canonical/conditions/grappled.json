@@ -3,18 +3,21 @@
   "effects": [
     {
       "abilities": [],
+      "gate": null,
       "kind": "speed_zero",
       "qualifier": "",
       "value": null
     },
     {
       "abilities": [],
+      "gate": null,
       "kind": "disadvantage_attacks_except_grappler",
       "qualifier": "",
       "value": null
     },
     {
       "abilities": [],
+      "gate": null,
       "kind": "movable_by_grappler",
       "qualifier": "",
       "value": null

@@ -183,14 +183,8 @@ def _melee_and_ranged_siblings() -> tuple[MonsterAction, MonsterAction]:
     return melee, ranged
 
 
-def test_multiattack_fallback_non_ranged_keeps_list_order_on_tie() -> None:
-    """C22: Scout's tokens now join precisely; this pins the labelless-fallback
-    tie-break with a synthetic monster.
-
-    Both siblings are in range but the profile is not RANGED, so the fallback
-    keeps list order (the first-listed sibling) on the tie — a bare, unjoinable
-    multiattack description ("makes two attacks") cannot take the precise path.
-    """
+def test_multiattack_without_references_does_not_guess_a_sibling() -> None:
+    """The Djinni fix forbids unrelated-sibling fallback for ambiguous prose."""
     base = BundledAssetLoader().get_monster("owlbear")
     assert base is not None
     melee, ranged = _melee_and_ranged_siblings()
@@ -207,7 +201,7 @@ def test_multiattack_fallback_non_ranged_keeps_list_order_on_tie() -> None:
         monster, multiattack, target_distance_ft=5, behavior_profile="AGGRESSIVE", melee_reach_ft=5
     )
 
-    assert all(isinstance(a, AttackActivity) and a.range.value == "5" for a in activities)
+    assert activities == []
 
 
 def test_multiattack_with_no_attack_sibling_logs_and_returns_empty(

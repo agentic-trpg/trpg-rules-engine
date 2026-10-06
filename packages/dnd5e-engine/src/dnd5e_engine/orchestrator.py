@@ -60,6 +60,7 @@ from typing import Any, Final, Literal
 
 from dnd5e_srd_data.schema.common import (
     ActivationBlock,
+    Activity,
     AttackActivity,
     AttackDamageBlock,
     CastActivity,
@@ -124,8 +125,13 @@ from dnd5e_engine.activities.effects import (
 )
 from dnd5e_engine.activities.forced_movement import FORCED_MOVEMENT_RIDERS
 from dnd5e_engine.activities.monster_actions import (
+    MonsterActionExecution,
+    MonsterActionPlan,
+    action_resources_available,
+    activity_resources_available,
     expand_action_to_activities,
     multiattack_count,
+    plan_monster_action,
     rank_monster_actions,
 )
 from dnd5e_engine.activities.passive_stats import (
@@ -673,17 +679,20 @@ def _hydrate_monster_action_uses(monster: Monster) -> dict[str, MonsterActionUse
     """Build the initial ``MonsterActionUses`` map for one monster template.
 
     One entry per action slug (in ``monster.actions`` / ``legendary_actions``)
-    that carries either a ``recharge`` notation or a typed N/Day activity
-    ``uses.max``. Actions with neither are omitted — nothing to track.
+    that carries recharge, action-level uses_per_day or integer activity
+    uses.max. A fresh map is built for each entity/stat-block lifecycle.
     """
     uses: dict[str, MonsterActionUses] = {}
     for action in (*monster.actions, *monster.legendary_actions):
-        entry = MonsterActionUses()
-        for activity in action.activities:
-            max_raw = activity.uses.max
-            if max_raw.strip().isdigit():
-                entry.uses_remaining[f"{action.slug}:{activity.id}"] = int(max_raw)
-        if action.recharge or entry.uses_remaining:
+        entry = MonsterActionUses(action_uses_remaining=action.uses_per_day)
+        # An action-wide cap is authoritative; duplicate activity limits do not
+        # create independent gates or add to the action's pool.
+        if action.uses_per_day is None:
+            for activity in action.activities:
+                max_raw = activity.uses.max
+                if max_raw.strip().isdigit():
+                    entry.uses_remaining[f"{action.slug}:{activity.id}"] = int(max_raw)
+        if action.recharge or action.uses_per_day is not None or entry.uses_remaining:
             uses[action.slug] = entry
     return uses
 
@@ -2262,6 +2271,8 @@ def _monster_cast_candidate(
     ``spell_slots_by_entity`` (PC-only).
     """
     entry = live.monster_action_uses_by_entity.get(current.entity_id, {}).get(action.slug)
+    if not action_resources_available(entry):
+        return None
     limited: list[CastActivity] = []
     at_will: list[CastActivity] = []
     for activity in action.activities:
@@ -2270,10 +2281,12 @@ def _monster_cast_candidate(
         remaining = (
             entry.uses_remaining.get(f"{action.slug}:{activity.id}") if entry is not None else None
         )
-        if remaining is None:
-            at_will.append(activity)
-        elif remaining > 0:
+        if not activity_resources_available(action, activity, entry):
+            continue
+        if remaining is not None or (entry is not None and entry.action_uses_remaining is not None):
             limited.append(activity)
+        else:
+            at_will.append(activity)
     for activity in (*limited, *at_will):
         uuid = activity.spell.uuid
         spell = _build_cast_spell_book([activity]).get(uuid)
@@ -2304,52 +2317,55 @@ def _monster_limited_cast_remaining(
     if candidate is None:
         return False
     entry = live.monster_action_uses_by_entity.get(current.entity_id, {}).get(action.slug)
-    return entry is not None and f"{action.slug}:{candidate[0].id}" in entry.uses_remaining
+    return entry is not None and (
+        entry.action_uses_remaining is not None
+        or f"{action.slug}:{candidate[0].id}" in entry.uses_remaining
+    )
+
+
+def _monster_activity_available(
+    live: _LiveCombat, current: Combatant, action: MonsterAction, activity: Activity
+) -> bool:
+    entry = live.monster_action_uses_by_entity.get(current.entity_id, {}).get(action.slug)
+    return activity_resources_available(action, activity, entry)
 
 
 def _monster_action_available(live: _LiveCombat, current: Combatant, action: MonsterAction) -> bool:
-    """Whether ``action`` can be chosen for ``current``'s turn right now.
-
-    ``False`` when: its tracked ``MonsterActionUses.recharge_spent`` is
-    True (SRD 5.2 "Recharge X-Y" — spent and not yet rolled back in); its
-    activities are ALL ``CastActivity`` and ``_monster_cast_candidate``
-    can't resolve one (every candidate exhausted/unresolvable/non-offensive);
-    or its limited-use activities are all exhausted (``uses_remaining``
-    tracked and all zero) with no unlimited activity on the same action to
-    fall back to. ``True`` otherwise, including for an action with no
-    tracked ``MonsterActionUses`` entry at all (nothing to gate).
-    """
+    """One live resource gate for ranking, planning and execution."""
     entry = live.monster_action_uses_by_entity.get(current.entity_id, {}).get(action.slug)
-    if entry is not None and entry.recharge_spent:
+    if not action_resources_available(entry):
         return False
-    activities = action.activities
-    if activities and all(isinstance(a, CastActivity) for a in activities):
+    if action.activities and all(isinstance(a, CastActivity) for a in action.activities):
         return _monster_cast_candidate(live, current, action) is not None
-    if entry is not None and entry.uses_remaining:
-        has_unlimited_activity = any(
-            not activity.uses.max.strip().isdigit() for activity in activities
-        )
-        if not has_unlimited_activity and all(v <= 0 for v in entry.uses_remaining.values()):
-            return False
-    return True
+    return not action.activities or any(
+        activity_resources_available(action, a, entry) for a in action.activities
+    )
 
 
-def _mark_monster_action_used(live: _LiveCombat, current: Combatant, action: MonsterAction) -> None:
-    """Record that ``action`` was chosen this turn — spends its tracked
-    ``MonsterActionUses`` state.
+def _mark_monster_action_used(
+    live: _LiveCombat,
+    current: Combatant,
+    action: MonsterAction,
+    activities: Sequence[Activity] = (),
+) -> None:
+    """Spend one actual invocation, using the same owner as availability.
 
-    Only the recharge half is handled here: a chosen recharge action is
-    marked spent (``_roll_recharges`` then rolls for it at the monster's
-    NEXT turn start). The per-day cast-activity ``uses_remaining`` decrement
-    happens in ``_resolve_monster_cast`` instead — this function only ever
-    sees the ``MonsterAction``, never the specific ``CastActivity``
-    ``_monster_cast_candidate`` chose off it.
+    Action-level uses decrement once regardless of activity/event count.
+    Otherwise each executed activity's pool decrements once. No recovery draws
+    occur here; recharge stays at the next own turn start.
     """
-    if not action.recharge:
-        return
     entry = live.monster_action_uses_by_entity.get(current.entity_id, {}).get(action.slug)
-    if entry is not None:
+    if entry is None:
+        return
+    if action.recharge:
         entry.recharge_spent = True
+    if entry.action_uses_remaining is not None:
+        entry.action_uses_remaining = max(0, entry.action_uses_remaining - 1)
+    else:
+        for activity_id in {a.id for a in activities}:
+            key = f"{action.slug}:{activity_id}"
+            if key in entry.uses_remaining:
+                entry.uses_remaining[key] = max(0, entry.uses_remaining[key] - 1)
 
 
 def _select_monster_targets(live: _LiveCombat, current: Combatant) -> list[Combatant]:
@@ -2387,28 +2403,17 @@ def _resolve_monster_activities(
     monster_slug: str | None,
     skip_to_record_pass: bool,
     chosen_target: Combatant | None,
-) -> tuple[list[Any], tuple[MonsterAction, CastActivity, Spell] | None]:
-    """Resolve monster activities: legacy-fallback when no template, or typed
-    activity selection from a ``Monster`` template.
-
-    Returns ``(activities, cast_selection)``. ``activities`` is a list of
-    ``Activity`` objects (typically empty or one element, expanded to
-    multiple on multiattack) — empty when the monster has no template and
-    ``damage_dice`` doesn't parse, when a slug is unresolvable from the
-    lib, or when the chosen action is a stat-block spellcast (its own
-    activities are ``CastActivity`` wrappers, never resolver-ready
-    directly). ``cast_selection`` is the ``(action, activity, spell)``
-    tuple ``_monster_cast_candidate`` resolved when the ranked pick is a
-    cast-only action, else ``None`` — mutually exclusive with a non-empty
-    ``activities`` list.
-    """
-    monster_activities: list[Any] = []
+) -> tuple[MonsterActionPlan, tuple[MonsterAction, CastActivity, Spell] | None]:
+    """Select a typed plan or cast candidate; inspection never spends uses."""
+    monster_plan = MonsterActionPlan()
     cast_selection: tuple[MonsterAction, CastActivity, Spell] | None = None
     if not skip_to_record_pass and monster_slug is None:
         # Legacy-fixture fallback — see _synthesize_attack_from_legacy_fields.
         synthesized = _synthesize_attack_from_legacy_fields(current)
         if synthesized is not None:
-            monster_activities = [synthesized]
+            monster_plan = MonsterActionPlan(
+                executions=(MonsterActionExecution(None, (synthesized,)),)
+            )
     if not skip_to_record_pass and monster_slug is not None:
         monster = get_lib_loader().get_monster(monster_slug)
         if monster is None:
@@ -2425,7 +2430,6 @@ def _resolve_monster_activities(
             )
             monster_action = ranked[0] if ranked else None
             if monster_action is not None:
-                _mark_monster_action_used(live, current, monster_action)
                 action_activities = monster_action.activities
                 if action_activities and all(
                     isinstance(a, CastActivity) for a in action_activities
@@ -2440,7 +2444,7 @@ def _resolve_monster_activities(
                     # already covers the target (scout → longbow at 100 ft) instead
                     # of the first-listed melee weapon. Distance is the same path
                     # cost the movement gate below reads, so the two agree.
-                    monster_activities = expand_action_to_activities(
+                    monster_plan = plan_monster_action(
                         monster,
                         monster_action,
                         target_distance_ft=_monster_target_distance_ft(
@@ -2448,8 +2452,12 @@ def _resolve_monster_activities(
                         ),
                         behavior_profile=current.behavior_profile,
                         melee_reach_ft=current.melee_reach_ft,
+                        is_available=lambda a: _monster_action_available(live, current, a),
+                        is_activity_available=lambda a, b: _monster_activity_available(
+                            live, current, a, b
+                        ),
                     )
-    return monster_activities, cast_selection
+    return monster_plan, cast_selection
 
 
 def _monster_context_kwargs(
@@ -2569,6 +2577,8 @@ def _resolve_monster_cast(
     reads ``monster_activities`` for range on this path, so a cast always
     resolves from the monster's current position).
     """
+    if not _monster_activity_available(live, current, action, activity):
+        return
     target_list = [chosen_target]
     slot_level = activity.spell.level if activity.spell.level is not None else spell.level
     spellcasting_ability = activity.spell.ability or current.spellcasting_ability
@@ -2606,15 +2616,7 @@ def _resolve_monster_cast(
     if any(isinstance(a, AttackActivity) for a in spell.activities):
         _consume_attack_roll_grants(live, current, target_list, pre_event_count)
 
-    # SRD §Innate/Prepared Spellcasting "N/Day" — spend the chosen
-    # activity's per-day use. A ``None`` lookup (no tracked entry — an
-    # at-will spell) is a no-op; guarded rather than asserted since
-    # ``_monster_cast_candidate`` already filtered to a use-bearing or
-    # unlimited activity, but this stays defensive against a future caller.
-    entry = live.monster_action_uses_by_entity.get(current.entity_id, {}).get(action.slug)
-    key = f"{action.slug}:{activity.id}"
-    if entry is not None and key in entry.uses_remaining:
-        entry.uses_remaining[key] = max(0, entry.uses_remaining[key] - 1)
+    _mark_monster_action_used(live, current, action, (activity,))
 
     # The PC path's fold; ``concentration_max_rounds`` stays on the default
     # here — the same recorded follow-up as the mundane monster-attack site.
@@ -2701,6 +2703,7 @@ def _resolve_monster_attack_activities(
     activities: Sequence[Any],
     *,
     is_opportunity_attack: bool = False,
+    execution_plan: MonsterActionPlan | None = None,
 ) -> None:
     """Resolve a monster's own attack/save ``Activity`` list against
     ``target_list``: Shield drain, ``build_activity_context`` (via
@@ -2761,10 +2764,11 @@ def _resolve_monster_attack_activities(
         is_opportunity_attack=is_opportunity_attack,
         **_monster_context_kwargs(live, actor, target_list, payload),
     )
-    for activity in activities:
-        # Monster attacks carry their damage on the AttackActivity itself,
-        # not a separate Weapon (unlike the PC weapon path).
-        resolve_activity(activity, actx, weapon=None)
+    if execution_plan is None:
+        for activity in activities:
+            resolve_activity(activity, actx, weapon=None)
+    else:
+        _execute_monster_plan(live, actor, execution_plan, actx)
     # SRD 5.2 §Actions in Combat — Help; §Weapon Mastery — Vex / Sap
     # (C15 Task 6): one-use pops, shared with the C18 monster-cast
     # attack-roll branch via ``_consume_attack_roll_grants``. A monster
@@ -2790,6 +2794,66 @@ def _resolve_monster_attack_activities(
     # no timed expiry — same as before this task.
     _record_effect_lifecycle_links(live, actor, pre_event_count)
     _sync_legendary_resistance(live, pre_event_count)
+
+
+def _execute_monster_plan(
+    live: _LiveCombat,
+    actor: Combatant,
+    plan: MonsterActionPlan,
+    actx: ActivityResolutionContext,
+) -> None:
+    """Recheck each invocation and spend only after its activities resolve."""
+    root = plan.source_action
+    if root is not None and not _monster_action_available(live, actor, root):
+        return
+    executed = False
+    for step in plan.executions:
+        action = step.source_action
+        if action is not None and not _monster_action_available(live, actor, action):
+            continue
+        available = tuple(
+            a
+            for a in step.activities
+            if action is None or _monster_activity_available(live, actor, action, a)
+        )
+        if not available:
+            continue
+        if not _monster_execution_in_range(live, actor, actx.targets, available):
+            continue
+        for activity in available:
+            resolve_activity(activity, actx, weapon=None)
+        if action is not None:
+            _mark_monster_action_used(live, actor, action, available)
+        executed = True
+    # A limited Multiattack wrapper owns a separate pool from its children.
+    if (
+        executed
+        and root is not None
+        and all(step.source_action is not root for step in plan.executions)
+    ):
+        _mark_monster_action_used(live, actor, root)
+
+
+def _monster_execution_in_range(
+    live: _LiveCombat,
+    actor: Combatant,
+    targets: Sequence[Combatant],
+    activities: Sequence[Activity],
+) -> bool:
+    """Use the existing movement gate for each child before it spends uses.
+
+    Self/template saves keep their existing single-target resolution semantics.
+    No extra movement or substitute child is introduced here.
+    """
+    reach = _monster_attack_range_ft(activities, actor.melee_reach_ft)
+    origin = live.actor_zone.get(actor.entity_id)
+    if reach is None or origin is None:
+        return True
+    return any(
+        (destination := live.actor_zone.get(target.entity_id)) is None
+        or _in_range_with_los(live.topology, origin, destination, reach)
+        for target in targets
+    )
 
 
 def _take_legendary_action(live: _LiveCombat, monster: Combatant) -> None:
@@ -12759,9 +12823,10 @@ async def advance_monster_turn(
     # out multiattack. This is the sole monster-turn path; the old the legacy evaluator IR
     # path was retired in .
     monster_slug = live.monster_slug_by_entity.get(current.entity_id)
-    monster_activities, cast_selection = _resolve_monster_activities(
+    monster_plan, cast_selection = _resolve_monster_activities(
         live, current, monster_slug, skip_to_record_pass, chosen_target
     )
+    monster_activities = monster_plan.activities
     has_action = bool(monster_activities) or cast_selection is not None
 
     # Monster gambit range awareness. When the chosen attack is
@@ -12891,7 +12956,9 @@ async def advance_monster_turn(
         current = next(c for c in live.initiative if c.entity_id == current.entity_id)
         assert chosen_target is not None  # mypy: narrowed by will_attack
         target_list = [chosen_target]
-        _resolve_monster_attack_activities(live, current, target_list, monster_activities)
+        _resolve_monster_attack_activities(
+            live, current, target_list, monster_activities, execution_plan=monster_plan
+        )
 
     # Advance the turn — the single shared path (F3a); this site used to carry
     # its own copy of the wrap-and-emit block.

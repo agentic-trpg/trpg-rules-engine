@@ -79,6 +79,7 @@ class MonsterActionUsesView:
 
     recharge_spent: bool
     uses_remaining: dict[str, int]
+    action_uses_remaining: int | None = None
 
 
 @dataclass(frozen=True)
@@ -162,6 +163,7 @@ class LiveCombatView:
                     slug: MonsterActionUsesView(
                         recharge_spent=uses.recharge_spent,
                         uses_remaining=dict(uses.uses_remaining),
+                        action_uses_remaining=uses.action_uses_remaining,
                     )
                     for slug, uses in by_slug.items()
                 }

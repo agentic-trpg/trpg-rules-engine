@@ -8,8 +8,8 @@ a creature of your choice, you can choose yourself"; monster stat blocks name
 "which creatures make the save" ("each creature in a 60-foot Cone", "each enemy
 in a 20-foot-radius Sphere").
 
-S01–S04 and S09 are the monster side of area targeting and stay strict-xfail
-until the monster-aiming cluster lands.
+S01–S04 stay strict-xfail until the monster-aiming cluster lands. S09 is now
+a regression for the completed Multiattack Recharge-child availability gate.
 """
 
 from __future__ import annotations
@@ -214,8 +214,9 @@ def test_c26_s04_a_monster_fireball_catches_the_cluster() -> None:
     assert sorted(_saved(live)) == ["char:a", "char:b", "char:c"]
 
 
-@_MONSTER_AIMING
 def test_c26_s09_a_spent_recharge_action_sits_out_the_multiattack() -> None:
+    # Monster Action Economy closes this conditional-child backlog bug;
+    # area expansion (the other strict-xfail cases) remains deferred.
     doppelganger = _foe("mon:dop", cell(1, 0), "doppelganger", initiative=20, hp_current=52)
     handle, live = _start(
         [_sturdy("char:hero", cell(0, 0), 1)], [doppelganger], session="e2e-c26-s09"

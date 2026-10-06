@@ -189,6 +189,40 @@ def _canonical_spell(slug: str) -> dict[str, Any]:
 
 #: row substring → (probe over the shipped source, substring the row must carry
 #: iff the probe is True).
+def _monster_action_economy_resolves() -> bool:
+    """Probe canonical resource identity and conditional/alternative planning."""
+    from dnd5e_engine.activities.monster_actions import (
+        action_resources_available,
+        plan_monster_action,
+    )
+    from dnd5e_engine.orchestrator import _hydrate_monster_action_uses
+
+    loader = BundledAssetLoader()
+    doppelganger = loader.get_monster("doppelganger")
+    djinni = loader.get_monster("djinni")
+    vrock = loader.get_monster("vrock")
+    assert doppelganger is not None
+    assert djinni is not None
+    assert vrock is not None
+    uses = _hydrate_monster_action_uses(doppelganger)
+    multiattack = next(a for a in doppelganger.actions if a.slug == "multiattack")
+    before = plan_monster_action(doppelganger, multiattack)
+    uses["unsettling-visage"].recharge_spent = True
+    after = plan_monster_action(
+        doppelganger,
+        multiattack,
+        is_available=lambda a: action_resources_available(uses.get(a.slug)),
+    )
+    storm = plan_monster_action(djinni, next(a for a in djinni.actions if a.slug == "multiattack"))
+    return (
+        [s.source_action.slug for s in before.executions] == ["slam", "slam", "unsettling-visage"]
+        and [s.source_action.slug for s in after.executions] == ["slam", "slam"]
+        and len(storm.executions) == 3
+        and {s.source_action.slug for s in storm.executions} <= {"storm-blade", "storm-bolt"}
+        and _hydrate_monster_action_uses(vrock)["stunning-screech"].action_uses_remaining == 1
+    )
+
+
 _PROBES: dict[str, tuple[Any, str]] = {
     # F1c/F1d: every save path adds a real ability + proficiency modifier.
     "Saving throws, half-on-save": (
@@ -713,7 +747,7 @@ _PROBES: dict[str, tuple[Any, str]] = {
         "✅",
     ),
     "| Multiattack fan-out |": (
-        lambda: "_ANY_COMBINATION_RE" in _src("activities/monster_actions.py"),
+        _monster_action_economy_resolves,
         "⚠️ Partial",
     ),
     "| Monster spellcasting |": (

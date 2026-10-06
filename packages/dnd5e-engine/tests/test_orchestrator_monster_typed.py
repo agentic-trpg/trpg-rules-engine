@@ -194,7 +194,9 @@ def _multiattack(count_word: str = "two") -> MonsterAction:
         slug="multiattack",
         name="Multiattack",
         kind=MonsterActionKind.ACTION,
-        description=f"The creature makes {count_word} attacks.",
+        # Unreferenced fallback was the Djinni backlog bug; name the intended
+        # sibling explicitly so this fixture exercises a valid Multiattack.
+        description=f"The creature makes {count_word} [[/item Rend]] attacks.",
         activities=[UtilityActivity(name="Multiattack")],
     )
 

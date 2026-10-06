@@ -69,40 +69,17 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   confirmed still open after C18 (2026-09-03) — out of that cluster's scope
   per its R10 ruling.
   (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py`)
-- **Multiattack conditional clauses are not modelled.** Since C22 every
-  multiattack token is labelled, so the five opaque-key monsters join
-  precisely; doppelganger and chain-devil now ALSO count their conditional
-  feat use ("uses Unsettling Visage if…") as one fixed use per turn. The
-  "if …" clause needs a carve-out in `_parse_item_counts`. (Recharge gating
-  for a recharge action chosen on its own closed 2026-09-03, C18, via
-  `rank_monster_actions` and the turn-start recharge roll; joined into a
-  Multiattack it is still ungated — see `_mark_monster_action_used` below.
-  Limited-use gating is only partial: see "Typed
-  `MonsterAction.uses_per_day` is never consulted" below.)
-  (`packages/dnd5e-engine/src/dnd5e_engine/activities/monster_actions.py`)
-- **Typed `MonsterAction.uses_per_day` is never consulted, and a non-cast
-  N/Day `uses.max` is never decremented** (2026-09-23).
-  `_hydrate_monster_action_uses` reads only activity-level `uses.max`, so the
-  24 bundled actions typed with `uses_per_day` (Aboleth Dominate Mind 2/Day,
-  Quasit Scare 1/Day, Vrock Stunning Screech 1/Day, Dretch Fetid Cloud,
-  Troll Loathsome Limbs 4/Day, …) are at will to the engine; and a
-  non-cast activity with an integer `uses.max` (Sphinx of Valor's Roar) is
-  hydrated into `uses_remaining` but only the cast path
-  (`_resolve_monster_cast`) ever decrements it. Not a regression —
-  Multiattack still outranks every such action — but none of them is
-  limited. Fix shape: seed `uses_remaining` from `uses_per_day` when no
-  activity carries a digit, and decrement non-cast uses on selection.
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_hydrate_monster_action_uses`)
-- **`_mark_monster_action_used` spends only the ranked action itself**
-  (2026-09-23). When the chosen action is a Multiattack whose join
-  substitutes a recharge sibling (a "uses X" clause resolving to a Recharge
-  action), only `ranked[0]` — the Multiattack — is marked; the substituted
-  recharge sibling is never marked spent, so it would fire every turn, and
-  the join never asks whether the sibling is available either. The
-  Doppelganger's does join one ("…and uses Unsettling Visage if available"):
-  once its Recharge 6 visage is spent, every later Multiattack still rolls the
-  visage's Wisdom save (amended 2026-10-04, C26a).
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_mark_monster_action_used`)
+- **Multiattack substitutions and turn-dependent conditionals remain unmodelled**
+  (narrowed 2026-10-07). Typed plans support fixed sequences, referenced
+  free combinations, `uses X if available` (Doppelganger) and
+  `uses either X or Y if available` (Aboleth). They omit unavailable
+  mandatory children without replacement and never select unreferenced
+  siblings. Later-sentence replacements (Chimera's Fire Breath, dragon
+  Spellcasting) and conditions such as Clay Golem's "if it used Hasten this
+  turn" remain deferred; unknown branches retain only the referenced
+  unconditional primary branch. Child fan-out still resolves one offensive
+  activity per invocation, not arbitrary multi-activity riders.
+  (`packages/dnd5e-engine/src/dnd5e_engine/activities/monster_actions.py::plan_monster_action`)
 - **A monster's own AoE (cone/sphere/etc.) still resolves against a single
   chosen target, not the template** (2026-09-03, C18). Grid AoE template
   expansion (C16) is wired for the PC cast path; a monster save/damage
@@ -122,11 +99,6 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   spending its Reaction and slot, though SRD 5.2 Shield answers "being hit by
   an attack roll".
   (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_resolve_monster_attack_activities`)
-- **The Djinni's Multiattack resolves Create Whirlwind three times
-  (2026-10-04, C26a).** "The djinni makes three attacks, using Storm Blade or
-  Storm Bolt in any combination": `_parse_item_counts` returns `None` on the
-  "or", and the fallback takes the first sibling, Create Whirlwind.
-  (`packages/dnd5e-engine/src/dnd5e_engine/activities/monster_actions.py::_parse_item_counts`)
 - **Utility-only and cost > 1 legendary actions are never selected by the
   built-in AI** (2026-09-03, C18). `_take_legendary_action` only considers
   entries whose `legendary_cost` is unset or `1` and that carry an

@@ -43,13 +43,16 @@ class MonsterActionUses:
 
     ``recharge_spent`` tracks a SRD 5.2 "Recharge X–Y" action that has been
     used and not yet rolled back in (``_roll_recharges`` in orchestrator.py).
-    ``uses_remaining`` tracks a "N/Day"-style limited-use activity, keyed
+    ``action_uses_remaining`` owns the whole action's typed ``uses_per_day``.
+    When present it is authoritative, including duplicate activity limits.
+    Otherwise ``uses_remaining`` tracks a limited-use activity, keyed
     ``f"{action.slug}:{activity.id}"`` so two activities sharing one action
     entry (rare, but the schema allows it) track independently.
     """
 
     recharge_spent: bool = False
     uses_remaining: dict[str, int] = dc_field(default_factory=dict)
+    action_uses_remaining: int | None = None
 
 
 class Combatant(BaseModel):

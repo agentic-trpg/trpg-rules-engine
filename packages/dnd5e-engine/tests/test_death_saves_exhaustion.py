@@ -10,8 +10,12 @@ from __future__ import annotations
 
 import random
 
+import pytest
+from dnd5e_srd_data.schema.condition import ConditionEffectKind
+
 from dnd5e_engine.death_saves import roll_death_save
 from dnd5e_engine.events import DeathSaveRolled
+from dnd5e_engine.rules import conditions as rules
 from dnd5e_engine.types.combat import Combatant
 from dnd5e_engine.types.conditions import ActiveCondition
 
@@ -52,3 +56,35 @@ def test_death_save_still_consumes_one_draw() -> None:
     rng = random.Random(3)
     roll_death_save(_dying(exhaustion_level=1), rng)
     assert rng.getstate() == (lambda r: (r.randint(1, 20), r.getstate())[1])(random.Random(3))
+
+
+@pytest.mark.parametrize("level", [0, 1, 2, 3])
+@pytest.mark.parametrize("multiplier", [2, 3])
+@pytest.mark.parametrize("seed", [3, 5, 31])
+def test_death_save_uses_canonical_multiplier_and_one_identical_d20_draw(
+    level: int, multiplier: int, seed: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setitem(
+        rules._DECLARATIVE_CONDITION_EFFECTS,
+        "exhaustion",
+        tuple(
+            clause.model_copy(update={"value": multiplier})
+            if clause.kind == ConditionEffectKind.D20_TEST_PENALTY_PER_LEVEL
+            else clause
+            for clause in rules._DECLARATIVE_CONDITION_EFFECTS["exhaustion"]
+        ),
+    )
+    baseline_rng = random.Random(seed)
+    tired_rng = random.Random(seed)
+    plain = roll_death_save(_dying(exhaustion_level=None), baseline_rng)
+    tired = roll_death_save(_dying(exhaustion_level=level), tired_rng)
+    p = next(event for event in plain.events if isinstance(event, DeathSaveRolled))
+    t = next(event for event in tired.events if isinstance(event, DeathSaveRolled))
+    mirror = random.Random(seed)
+    natural = mirror.randint(1, 20)
+    assert t.roll_total == p.roll_total - multiplier * level
+    assert tired_rng.getstate() == baseline_rng.getstate() == mirror.getstate()
+    if natural in {1, 20}:
+        assert tired.outcome == plain.outcome
+        assert tired.combatant.death_saves == plain.combatant.death_saves
+        assert tired.combatant.hp_current == plain.combatant.hp_current

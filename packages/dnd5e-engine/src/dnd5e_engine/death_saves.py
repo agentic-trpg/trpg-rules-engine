@@ -1,7 +1,7 @@
 """Death-save loop helper for the combat orchestrator.
 
-SRD 5.1 §Dying — when a PC drops to 0 HP, at the start of each of their turns
-they roll a d20 (no modifiers):
+SRD 5.2 §Dying — when a PC drops to 0 HP, at the start of each of their turns
+they roll a d20 with the projected Exhaustion penalty:
 - 10+ → 1 success; <10 → 1 failure
 - nat-20 → regain 1 HP (conscious), counters reset
 - nat-1  → 2 failures

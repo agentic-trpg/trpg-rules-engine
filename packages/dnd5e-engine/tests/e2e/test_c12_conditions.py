@@ -334,8 +334,8 @@ def test_c12_s05_exhaustion_applies_d20_and_speed_penalties():
     """C12-S05: SRD 5.2 Conditions, Exhaustion — D20 Tests are reduced by
     2 x Exhaustion level and Speed is reduced by 5 ft x Exhaustion level
     (packs/_source/content24/appendices/rules-glossary.yml:1169).
-    ``ActiveCondition.exhaustion_level`` is carried but read nowhere in the
-    projection functions.
+    Canonical per-level multipliers are projected separately from the runtime
+    ``ActiveCondition.exhaustion_level`` read by the D20 and Speed consumers.
     """
 
     def _run(exhausted: bool):

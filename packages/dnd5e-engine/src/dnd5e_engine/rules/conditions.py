@@ -11,6 +11,7 @@ from dnd5e_srd_data.schema.condition import ConditionEffect, ConditionEffectKind
 from dnd5e_engine.rules.effects import (
     attack_distance_flag_applies,
     project_condition_effects,
+    projected_scalar_value,
     save_flag_abilities,
 )
 from dnd5e_engine.types.effects import ActiveEffectChange
@@ -39,6 +40,12 @@ class Condition(StrEnum):
 
 # Migration selection only; mechanical meaning comes from the canonical data.
 _DECLARATIVE_CONDITION_MIGRATIONS: dict[str, frozenset[ConditionEffectKind]] = {
+    "exhaustion": frozenset(
+        {
+            ConditionEffectKind.D20_TEST_PENALTY_PER_LEVEL,
+            ConditionEffectKind.SPEED_PENALTY_PER_LEVEL,
+        }
+    ),
     "grappled": frozenset({ConditionEffectKind.SPEED_ZERO}),
     "poisoned": frozenset(
         {
@@ -152,8 +159,8 @@ CONDITION_EFFECTS: dict[Condition, list[str]] = {
         "Automatically fails ability checks requiring hearing",
     ],
     # SRD 5.2 replaced the 2014 six-tier ladder with two scaling penalties.
-    # NOT ENFORCED by the engine today: the level is tracked but applies no
-    # penalty (see BACKLOG.md).
+    # Both numeric penalties are enforced through canonical clause projection.
+    # The level-6 death clause remains descriptive; it has no live death path.
     Condition.EXHAUSTION: [
         "D20 Tests are reduced by 2 times the creature's Exhaustion level",
         "Speed is reduced by 5 feet times the creature's Exhaustion level",
@@ -468,13 +475,6 @@ def conditions_grant_advantage_on_attack(
 
 # ── SRD 5.2 condition predicates and numeric projections (C12) ──────────────
 
-#: SRD 5.2 Exhaustion: "When you make a D20 Test, the roll is reduced by 2
-#: times your Exhaustion level." / "Your Speed is reduced by a number of feet
-#: equal to 5 times your Exhaustion level." (Foundry ``config.mjs``
-#: ``conditionTypes.exhaustion.reduction = {rolls: 2, speed: 5}``.)
-EXHAUSTION_D20_PENALTY_PER_LEVEL = 2
-EXHAUSTION_SPEED_PENALTY_PER_LEVEL = 5
-
 
 def exhaustion_level_of(conditions: list[ActiveCondition]) -> int:
     """The creature's Exhaustion level: the highest ``exhaustion_level`` carried
@@ -487,9 +487,15 @@ def exhaustion_level_of(conditions: list[ActiveCondition]) -> int:
 
 def d20_test_penalty(conditions: list[ActiveCondition]) -> int:
     """The signed flat modifier SRD 5.2 Exhaustion applies to EVERY D20 Test
-    (attack rolls, saving throws — death saves included — and ability checks):
-    ``-2 x level``; ``0`` when not exhausted."""
-    return -EXHAUSTION_D20_PENALTY_PER_LEVEL * exhaustion_level_of(conditions)
+    (attack rolls, saving throws — death saves included — and ability checks).
+
+    The canonical per-level multiplier is applied to the highest runtime
+    Exhaustion level; absent clauses or no Exhaustion contribute zero.
+    """
+    multiplier = projected_scalar_value(
+        _project_condition_changes([Condition.EXHAUSTION.value]), "d20_test.penalty_per_level"
+    )
+    return -(multiplier or 0) * exhaustion_level_of(conditions)
 
 
 def project_speed(base_speed: int, condition_names: list[str], exhaustion_level: int = 0) -> int:
@@ -497,7 +503,9 @@ def project_speed(base_speed: int, condition_names: list[str], exhaustion_level:
 
     A projected zero-speed override forces 0 ("and can't increase" — the
     orchestrator's Dash adds THIS projection, not ``base_speed``); otherwise
-    Exhaustion subtracts ``5 x level``, floored at 0.
+    Exhaustion subtracts its canonical multiplier times the supplied runtime
+    level, floored at 0. The explicit level remains effective even if the caller
+    omits Exhaustion from condition_names (the historical helper contract).
     """
     if any(
         change.key == "speed.override"
@@ -507,7 +515,10 @@ def project_speed(base_speed: int, condition_names: list[str], exhaustion_level:
         for change in _project_condition_changes(condition_names)
     ):
         return 0
-    return max(0, base_speed - EXHAUSTION_SPEED_PENALTY_PER_LEVEL * exhaustion_level)
+    multiplier = projected_scalar_value(
+        _project_condition_changes([Condition.EXHAUSTION.value]), "speed.penalty_per_level"
+    )
+    return max(0, base_speed - (multiplier or 0) * exhaustion_level)
 
 
 def conditions_block_actions(condition_names: list[str]) -> bool:
@@ -623,8 +634,6 @@ def project_passive_check_modifiers(conditions: list[str]) -> dict[str, list[str
 __all__ = [
     "CONDITION_EFFECTS",
     "CONDITION_IMPLIES",
-    "EXHAUSTION_D20_PENALTY_PER_LEVEL",
-    "EXHAUSTION_SPEED_PENALTY_PER_LEVEL",
     "Condition",
     "active_condition_names",
     "apply_condition",

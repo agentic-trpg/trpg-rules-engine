@@ -10,6 +10,7 @@ documents the data contract and its sources.
 |---|---|
 | Poisoned | `disadvantage_own_attacks`, `disadvantage_ability_checks` |
 | Grappled | `speed_zero` |
+| Exhaustion | `d20_test_penalty_per_level`, `speed_penalty_per_level` |
 | Restrained | `disadvantage_own_attacks`, `disadvantage_save` (DEX), `advantage_attacks_against`, `speed_zero` |
 | Blinded | `disadvantage_own_attacks`, `advantage_attacks_against` |
 | Prone | `disadvantage_own_attacks`, `advantage_attacks_against` (within 5 ft), `disadvantage_attacks_against` (beyond 5 ft) |
@@ -43,6 +44,8 @@ changes, all with `mode="override"`:
 | `DISADVANTAGE_SAVE` | `flags.disadvantage.save.<ability>` | `True` |
 | `AUTO_FAIL_SAVE` | `flags.auto_fail.save.<ability>` | `True` |
 | `SPEED_ZERO` | `speed.override` | `0` (integer) |
+| `D20_TEST_PENALTY_PER_LEVEL` | `d20_test.penalty_per_level` | canonical integer multiplier |
+| `SPEED_PENALTY_PER_LEVEL` | `speed.penalty_per_level` | canonical integer multiplier |
 
 Save scopes come exclusively from `ConditionEffect.abilities`. The projector
 normalizes ability codes by trimming whitespace and lowercasing, then uses the
@@ -119,7 +122,7 @@ consumes the projected zero-speed scalar override instead of a condition-name
 set, then `_effective_speed()` feeds the existing movement budget, voluntary
 movement, player and monster Dash, stand-up, and Dodge consumers. A zero-speed
 override takes precedence over the unchanged Exhaustion penalty; otherwise
-speed remains `max(0, base_speed - 5 * exhaustion_level)`. Projection mutates
+speed remains `max(0, base_speed - projected_multiplier * exhaustion_level)`. Projection mutates
 no movement state and consumes no RNG.
 
 Forced movement keeps its separate existing path: `push_combatant()` can push a
@@ -127,6 +130,37 @@ Speed-0 creature without spending its movement budget or provoking opportunity
 attacks. Unconscious's Speed 0 comes from its own canonical clause; its implied
 Prone and Incapacitated conditions retain their existing semantics. Prone alone
 does not zero Speed, and SRD 5.2 Stunned has no `SPEED_ZERO` clause.
+
+Exhaustion's two numeric clauses use the same explicit allowlist and generic
+projector. The projector copies `ConditionEffect.value` into an integer override
+without reading runtime state or parsing `qualifier` prose. The small shared
+`projected_scalar_value()` consumer reads the first matching integer override
+in declaration order, rejects booleans, strings, wrong modes and other keys,
+and returns no value when the clause is absent. Duplicate clauses never stack.
+
+`exhaustion_level_of()` still reads the highest `ActiveCondition.exhaustion_level`
+among active Exhaustion entries, or zero when absent. `d20_test_penalty()` applies
+`-projected_multiplier * runtime_level`; the existing hydration sidecar and D20
+resolvers consume that flat penalty. Attack rolls, saves, ability/skill checks,
+death saves, and the existing grapple, Hide, concentration and repeat-save
+paths keep their draw counts, modes and source attribution. Auto-fail saves
+still draw no d20. Exhaustion does not impose ability-check disadvantage.
+The standalone out-of-combat `CheckSpec` has no condition/Exhaustion input;
+that existing API limitation is unchanged by this engine migration.
+
+`project_speed()` gives `speed.override=0` precedence, otherwise subtracts the
+projected Speed multiplier times the supplied level and floors at zero. Its
+historical explicit-level API also works when the condition-name list omits
+Exhaustion. The orchestrator supplies the level through `exhaustion_level_of()`;
+movement budgets, player/monster Dash and monster approach/flee reuse the
+existing `_effective_speed()` path. Missing canonical clauses or allowlist
+opt-ins remove only that clause's penalty; there is no constant fallback.
+
+Canonical values remain 2 for D20 Tests and 5 ft for Speed. The engine's duplicate
+`EXHAUSTION_*_PENALTY_PER_LEVEL` constants and exports have been removed.
+`DEATH_AT_LEVEL(value=6)` is not opted in or projected: no complete runtime
+Exhaustion-level death event/state transition exists, and this migration adds
+no level-6 death behavior.
 
 ## Legacy boundary
 
@@ -142,8 +176,8 @@ particular:
 - Invisible: target-side disadvantage and attacker-side advantage retain their
   visibility gates. Frightened retains the attacker's fear-source line-of-sight
   gate.
-- Exhaustion: speed and D20-test penalties remain on their existing level-based
-  paths; neither penalty clause is migrated.
+- Exhaustion: both numeric penalty clauses are migrated; `death_at_level`
+  remains outside the migration and has no complete live execution path.
 - Paralyzed, Stunned, Petrified, and Unconscious: action restrictions and other
   clauses outside the migration table keep their existing paths. Nearby
   automatic critical hits for Paralyzed and Unconscious are now migrated;

@@ -20,6 +20,12 @@ from dnd5e_engine.types.effects import ActiveEffectChange
 def test_migration_selection_is_an_explicit_clause_allowlist() -> None:
     migrations = condition_rules._DECLARATIVE_CONDITION_MIGRATIONS
     assert migrations == {
+        "exhaustion": frozenset(
+            {
+                ConditionEffectKind.D20_TEST_PENALTY_PER_LEVEL,
+                ConditionEffectKind.SPEED_PENALTY_PER_LEVEL,
+            }
+        ),
         "grappled": frozenset({ConditionEffectKind.SPEED_ZERO}),
         "poisoned": frozenset(
             {
@@ -97,6 +103,7 @@ def test_typed_clause_translates_to_active_effect_change(
 @pytest.mark.parametrize(
     "slug",
     [
+        "exhaustion",
         "grappled",
         "poisoned",
         "restrained",
@@ -483,6 +490,8 @@ def test_unopted_clauses_do_not_reach_an_expanded_projector(
                 ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST,
                 ConditionEffectKind.DISADVANTAGE_ATTACKS_AGAINST,
                 ConditionEffectKind.AUTO_CRIT_WITHIN_5FT,
+                ConditionEffectKind.D20_TEST_PENALTY_PER_LEVEL,
+                ConditionEffectKind.SPEED_PENALTY_PER_LEVEL,
                 ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS,
                 ConditionEffectKind.DISADVANTAGE_ABILITY_CHECKS,
                 ConditionEffectKind.DISADVANTAGE_SAVE,

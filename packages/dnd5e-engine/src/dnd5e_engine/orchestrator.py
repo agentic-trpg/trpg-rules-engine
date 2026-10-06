@@ -3337,7 +3337,7 @@ def _condition_names(c: Combatant) -> list[str]:
 def _effective_speed(c: Combatant, live: _LiveCombat | None = None) -> int:
     """SRD 5.2 walking Speed under the combatant's conditions
     (``rules.conditions.project_speed``): 0 under a Speed-0 condition, else
-    ``base_speed - 5 x exhaustion level``.
+    ``base_speed - projected_multiplier x exhaustion level``.
 
     C15 Task 7 — SRD 5.2 §Weapon Mastery, Slow: when ``live`` is supplied
     and ``c`` carries any outstanding ``live.slow_marks`` entry, a FLAT

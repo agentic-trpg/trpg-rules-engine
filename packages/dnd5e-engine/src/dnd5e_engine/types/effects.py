@@ -75,6 +75,9 @@ class ActiveEffectChange(BaseModel):
       ac.bonus, ac.override   — AC modifications
       speed.override         — scalar zero-speed override from condition
                                 projection, consumed by project_speed()
+      d20_test.penalty_per_level, speed.penalty_per_level
+                              — integer overrides from canonical condition
+                                clauses; consumers multiply by runtime level
       save.<ability>.bonus    — saving-throw bonus (ability lowercase)
       check.<bucket>.bonus    — skill_check / ability_check bonus
       flags.advantage.<bucket>, flags.disadvantage.<bucket>

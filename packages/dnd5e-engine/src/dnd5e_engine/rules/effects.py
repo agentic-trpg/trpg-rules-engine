@@ -40,6 +40,12 @@ _ATTACK_DISTANCE_FLAG_KEYS = {
     ConditionEffectKind.AUTO_CRIT_WITHIN_5FT: "flags.auto_crit.attack.within_ft",
 }
 
+_CONDITION_SCALAR_KEYS = {
+    **_ATTACK_DISTANCE_FLAG_KEYS,
+    ConditionEffectKind.D20_TEST_PENALTY_PER_LEVEL: "d20_test.penalty_per_level",
+    ConditionEffectKind.SPEED_PENALTY_PER_LEVEL: "speed.penalty_per_level",
+}
+
 
 def project_condition_effects(effects: Iterable[ConditionEffect]) -> list[ActiveEffectChange]:
     """Translate supported typed clauses into the active-effect override vocabulary.
@@ -58,7 +64,7 @@ def project_condition_effects(effects: Iterable[ConditionEffect]) -> list[Active
             changes.append(
                 ActiveEffectChange(key="flags.advantage.attack", mode="override", value=True)
             )
-        elif key := _ATTACK_DISTANCE_FLAG_KEYS.get(effect.kind):
+        elif key := _CONDITION_SCALAR_KEYS.get(effect.kind):
             if type(effect.value) is int:
                 changes.append(ActiveEffectChange(key=key, mode="override", value=effect.value))
         elif key := flag_keys.get(effect.kind):
@@ -73,6 +79,22 @@ def project_condition_effects(effects: Iterable[ConditionEffect]) -> list[Active
                 if key := save_keys.get(ability):
                     changes.append(ActiveEffectChange(key=key, mode="override", value=True))
     return changes
+
+
+def projected_scalar_value(changes: Iterable[ActiveEffectChange], key: str) -> int | None:
+    """Read the first integer override for an exact key, or None when absent.
+
+    Booleans, strings, and other modes are inert. Declaration order determines
+    the result, so duplicate clauses do not add or multiply their magnitudes.
+    """
+    return next(
+        (
+            change.value
+            for change in changes
+            if change.key == key and change.mode == "override" and type(change.value) is int
+        ),
+        None,
+    )
 
 
 def attack_distance_flag_applies(

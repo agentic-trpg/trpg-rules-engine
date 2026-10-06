@@ -160,5 +160,10 @@ def test_scalar_projection_retains_clause_order_and_integer_zero() -> None:
 def test_speed_consumer_accepts_the_zero_scalar_override(
     change: ActiveEffectChange, expected: int, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(condition_rules, "_project_condition_changes", lambda conditions: [change])
+    exhaustion_changes = condition_rules._project_condition_changes(["exhaustion"])
+    monkeypatch.setattr(
+        condition_rules,
+        "_project_condition_changes",
+        lambda conditions: exhaustion_changes if conditions == ["exhaustion"] else [change],
+    )
     assert condition_rules.project_speed(30, [], exhaustion_level=2) == expected

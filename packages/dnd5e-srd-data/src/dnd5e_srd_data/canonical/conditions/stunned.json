@@ -6,6 +6,7 @@
         "str",
         "dex"
       ],
+      "condition_slugs": [],
       "gate": null,
       "kind": "auto_fail_save",
       "qualifier": "",
@@ -13,6 +14,7 @@
     },
     {
       "abilities": [],
+      "condition_slugs": [],
       "gate": null,
       "kind": "advantage_attacks_against",
       "qualifier": "",

@@ -3,6 +3,7 @@
   "effects": [
     {
       "abilities": [],
+      "condition_slugs": [],
       "gate": null,
       "kind": "d20_test_penalty_per_level",
       "qualifier": "",
@@ -10,6 +11,7 @@
     },
     {
       "abilities": [],
+      "condition_slugs": [],
       "gate": null,
       "kind": "speed_penalty_per_level",
       "qualifier": "",
@@ -17,6 +19,7 @@
     },
     {
       "abilities": [],
+      "condition_slugs": [],
       "gate": null,
       "kind": "death_at_level",
       "qualifier": "",

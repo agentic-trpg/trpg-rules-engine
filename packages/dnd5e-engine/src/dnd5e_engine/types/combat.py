@@ -137,7 +137,8 @@ class Combatant(BaseModel):
     # ``PartyMemberSpec.condition_immunities`` and copied here at start_combat;
     # monster/NPC templates thread theirs through the spec. The condition-
     # application path (``activities/effects.py::apply_activity_effects``)
-    # suppresses a ``ConditionApplied`` whose condition is in this list
+    # unions this list with projected condition-derived immunities and
+    # suppresses a ``ConditionApplied`` whose condition is in that union
     # . Empty by default. NOTE: distinct from the dead, host-supplied
     # legacy dispatch surface's ``condition_immunities`` (removed in 0.5.0).
     condition_immunities: list[str] = Field(default_factory=list)

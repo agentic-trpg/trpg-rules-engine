@@ -18,7 +18,7 @@ documents the data contract and its sources.
 | Prone | `disadvantage_own_attacks`, `advantage_attacks_against` (within 5 ft), `disadvantage_attacks_against` (beyond 5 ft) |
 | Paralyzed | `auto_fail_save` (STR, DEX), `advantage_attacks_against`, `speed_zero`, `auto_crit_within_5ft` |
 | Stunned | `auto_fail_save` (STR, DEX), `advantage_attacks_against` |
-| Petrified | `auto_fail_save` (STR, DEX), `advantage_attacks_against`, `speed_zero` |
+| Petrified | `auto_fail_save` (STR, DEX), `advantage_attacks_against`, `speed_zero`, `resist_all_damage`, `immune_to_condition` (`poisoned`) |
 | Unconscious | `auto_fail_save` (STR, DEX), `advantage_attacks_against`, `speed_zero`, `auto_crit_within_5ft` |
 
 ## Execution path
@@ -52,6 +52,30 @@ changes, all with `mode="override"`:
 | `SPEED_ZERO` | `speed.override` | `0` (integer) |
 | `D20_TEST_PENALTY_PER_LEVEL` | `d20_test.penalty_per_level` | canonical integer multiplier |
 | `SPEED_PENALTY_PER_LEVEL` | `speed.penalty_per_level` | canonical integer multiplier |
+| `RESIST_ALL_DAMAGE` | `damage.resistance.all` | `True` |
+| `IMMUNE_TO_CONDITION` | `condition.immunity` | one string per typed condition scope |
+
+Petrified's damage defense follows `project_passive_damage_modifiers()` →
+hydration payload → `ActivityResolutionContext.passive_damage_modifiers` →
+the existing `apply_damage()` and `_apply_modifiers()` path. Its exact boolean
+override grants `resistances=["all"]`, without any damage immunity. Poison
+damage is halved, just like every other damage type; magic does not bypass the
+all-damage resistance. Duplicate clauses halve only once. Existing vulnerability
+×2 → resistance //2 → immunity 0 ordering and floor rounding are unchanged.
+
+Condition immunity uses `ConditionEffect.condition_slugs: list[str]`, defaulting
+to an empty list for old JSON. Qualifier prose is never parsed. The projector
+normalizes scope slugs and preserves declaration order; the consumer accepts
+only exact string overrides and returns stable unique scopes. The shared
+`is_condition_immune()` checks static `Combatant.condition_immunities` unioned
+with `project_condition_immunities()` from current conditions. Runtime effect
+statuses, direct condition events/folds, combat seeds and mastery riders reuse
+this check. An immune `ConditionApplied` is suppressed before observation;
+`EffectApplied` still survives with its other riders, while its immune status
+does not attach to either condition store. Acquiring Petrified does not remove
+Poisoned already present. Removing an opt-in or canonical clause disables only
+that defense, and changing typed scope changes immunity even when prose stays
+the same. Generic projection never opts in unrelated conditions.
 
 Save scopes come exclusively from `ConditionEffect.abilities`. The projector
 normalizes ability codes by trimming whitespace and lowercasing, then uses the
@@ -211,8 +235,9 @@ particular:
   remains outside the migration and has no complete live execution path.
 - Paralyzed, Stunned, Petrified, and Unconscious: action restrictions and other
   clauses outside the migration table keep their existing paths. Nearby
-  automatic critical hits for Paralyzed and Unconscious are now migrated;
-  Petrified's damage resistance and immunity remain legacy.
+  automatic critical hits for Paralyzed and Unconscious are now migrated.
+  Petrified's defensive clauses are migrated; poison condition immunity grants
+  no poison damage immunity.
   Stunned has no SRD 5.2 speed-zero clause.
   Unconscious still implies Prone, whose own-attack disadvantage was already
   migrated.

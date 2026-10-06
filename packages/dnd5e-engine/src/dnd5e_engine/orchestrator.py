@@ -117,6 +117,7 @@ from dnd5e_engine.activities.conjuration import (
 from dnd5e_engine.activities.context import ActivityResolutionContext
 from dnd5e_engine.activities.d20 import AdvantageSources, roll_d20_test
 from dnd5e_engine.activities.dice import roll_damage_part
+from dnd5e_engine.activities.effects import applicable_effect_statuses, is_condition_immune
 from dnd5e_engine.activities.forced_movement import FORCED_MOVEMENT_RIDERS
 from dnd5e_engine.activities.monster_actions import (
     expand_action_to_activities,
@@ -2955,12 +2956,10 @@ class _LiveCombat:
     concentration_rounds_remaining: dict[str, int] = field(default_factory=dict)
     # SRD §Conditions — per-effect condition lineage. Keyed by the
     # Foundry-shaped identity tuple ``(target_id, effect.id, effect.origin)``;
-    # value is the list of ConditionType values that the named
-    # effect-instance applied to that target. Walked on EffectExpired
-    # (concentration_drop) to synthesize the matching ConditionRemoved
-    # cascade. The session-side ``ActiveCondition.source_effect_id`` is
-    # the long-term home; the orchestrator's in-memory equivalent lives
-    # here until the cutover lands.
+    # value is the actual successfully attached statuses, written during the
+    # runtime/seed attachment fold. Suppressed statuses never enter this index.
+    # It is the ownership authority for expiry, including same-id effects with
+    # distinct origins (ActiveCondition.source_effect_id carries only the id).
     conditions_by_effect: dict[tuple[str, str, str], list[str]] = field(default_factory=dict)
     # SRD §Hold Person — end-of-turn repeat-save specs. Keyed by the
     # Foundry-shaped identity tuple ``(target_id, effect.id, effect.origin)``;
@@ -3518,8 +3517,9 @@ def _fold_condition_onto_combatant(
     exist to prevent. The ``active_conditions`` write is deliberately BEFORE the
     idempotence guard, so it still lands for a combatant that is unknown or
     already carries the typed entry — preserving the pre-existing
-    unconditional-write semantics of the ``ConditionApplied`` branch of
-    ``_emit``.
+    write semantics of the ``ConditionApplied`` branch of ``_emit`` for
+    conditions the target can acquire. Static and projected immunity gate
+    both stores before either is written.
 
     Idempotent per condition name; implied conditions are NOT materialised —
     ``is_condition_active`` resolves ``CONDITION_IMPLIES`` from the names.
@@ -3532,8 +3532,10 @@ def _fold_condition_onto_combatant(
     ``ConditionApplied`` fold in ``_emit``, ``start_combat``'s 0-HP hydration)
     leaves both at their ``None`` default — unchanged behavior.
     """
-    live.active_conditions.setdefault(entity_id, set()).add(condition)
     c = _find_combatant(live, entity_id)
+    if c is not None and is_condition_immune(c, condition):
+        return
+    live.active_conditions.setdefault(entity_id, set()).add(condition)
     if c is None or any(ac.condition == condition for ac in c.conditions):
         return
     new = [
@@ -3604,14 +3606,14 @@ def _strip_condition_from_combatant(live: _LiveCombat, entity_id: str, condition
         if ac.condition != condition
         or (ac.source_effect_id is not None and ac.source_effect_id in live_effect_ids)
     ]
+    if any(ac.condition == condition for ac in new):
+        live.active_conditions.setdefault(entity_id, set()).add(condition)
     if len(new) == len(c.conditions):
         return
     for idx, slot in enumerate(live.initiative):
         if slot.entity_id == entity_id:
             live.initiative[idx] = slot.model_copy(update={"conditions": new})
             break
-    if any(ac.condition == condition for ac in new):
-        live.active_conditions.setdefault(entity_id, set()).add(condition)
 
 
 def _drop_concentration(
@@ -3627,8 +3629,8 @@ def _drop_concentration(
 
     Reads the persistent ``live.concentration_chain[caster_id]`` (the
     caster's owned-effects-by-name map) and
-    ``live.conditions_by_effect[(target_id, effect_name)]`` (the
-    persistent effect→condition bijection the orchestrator maintains in
+    ``live.conditions_by_effect[(target_id, effect_id, origin)]`` (the
+    persistent actual effect→condition lineage the orchestrator maintains in
     lieu of the transient ``ctx.parent_chain``). Clears both on
     completion + removes any matching ``repeat_save_on_turn_end`` specs
     so a paralyzed target whose source effect is gone stops rolling
@@ -3641,6 +3643,8 @@ def _drop_concentration(
     if not entries:
         return
     for target_id, effect_id, origin in entries:
+        identity = (target_id, effect_id, origin)
+        conditions = list(live.conditions_by_effect.get(identity, []))
         # ``ConcentrationDropped.effect_name`` carries the effect *id*
         # (``effect:<slug>``) — the single representation the rest of the
         # lifecycle uses: ``concentration_chain`` / ``conditions_by_effect`` key
@@ -3662,9 +3666,9 @@ def _drop_concentration(
                 reason=reason,
             ),
         )
-        identity = (target_id, effect_id, origin)
-        conditions = live.conditions_by_effect.pop(identity, [])
         for cond in conditions:
+            if cond in live.active_conditions.get(target_id, set()):
+                continue
             # Cast back to the literal type expected by ConditionRemoved.
             _emit(
                 live,
@@ -4602,6 +4606,15 @@ def _emit(live: _LiveCombat, event: CombatEvent) -> None:
     legacy combat semantics — monsters die immediately at 0 HP (SRD §Damage
     at 0 Hit Points); only PCs route through death saves.
     """
+    if isinstance(event, ConditionApplied):
+        target = _find_combatant(live, event.target_id)
+        if target is not None and is_condition_immune(target, event.condition):
+            _LOGGER.info(
+                "condition_immune_suppressed status=%s target_id=%s",
+                event.condition,
+                event.target_id,
+            )
+            return
     live.event_log.append(event)
     live.event_queue.put_nowait(event)
     for listener in live.event_listeners:
@@ -5002,7 +5015,9 @@ def _emit_apply_healing(live: _LiveCombat, event: HealingApplied) -> None:
                 heal_update["death_saves"] = {}
                 # SRD 5.2 Unconscious: "When this condition ends, you remain Prone."
                 kept = [cond for cond in c.conditions if cond.condition != "unconscious"]
-                if not any(cond.condition == "prone" for cond in kept):
+                if not is_condition_immune(c, "prone") and not any(
+                    cond.condition == "prone" for cond in kept
+                ):
                     kept.append(
                         ActiveCondition(
                             condition="prone",
@@ -5036,62 +5051,56 @@ def _emit_apply_temp_hp(live: _LiveCombat, event: TempHpApplied) -> None:
             break
 
 
-def _emit_apply_effect_applied(live: _LiveCombat, event: EffectApplied) -> None:
-    """Fold an ``EffectApplied`` into running state: track the active effect,
-    union its imposed statuses into the target's conditions, and record
-    concentration spell-slot expenditure for PCs."""
-    applied = event.effect
-    live.active_effects.setdefault(applied.target_id, []).append(applied)
-    # Union the effect's imposed statuses into the combatant.conditions
-    # list so passive projections (advantage/disadvantage on attack,
-    # save, etc.) observe the new state immediately.
+def _attach_effect_statuses(live: _LiveCombat, applied: ActiveEffect) -> list[str]:
+    """Write accepted statuses to both stores and their actual effect lineage.
+
+    Keep one typed entry per (condition, effect id), while the full identity
+    index distinguishes origins. A new effect can share a condition with a
+    direct or another effect's source; immunity is checked before ownership
+    is recorded, even when the condition was already present.
+    Return only newly present condition names for incapacitation side effects.
+    """
     target_combatant = _find_combatant(live, applied.target_id)
+    statuses = applicable_effect_statuses(target_combatant, applied.statuses)
+    identity = (applied.target_id, applied.id, applied.origin)
+    lineage = live.conditions_by_effect.setdefault(identity, [])
+    for status in statuses:
+        if status not in lineage:
+            lineage.append(status)
+    live.active_conditions.setdefault(applied.target_id, set()).update(statuses)
     added: list[str] = []
-    if target_combatant is not None and applied.statuses:
+    if target_combatant is not None and statuses:
         existing_slugs = {ac.condition for ac in target_combatant.conditions}
+        existing_keys = {(ac.condition, ac.source_effect_id) for ac in target_combatant.conditions}
         new_conditions = list(target_combatant.conditions)
-        for status in applied.statuses:
-            if status in existing_slugs:
+        for status in statuses:
+            if (status, applied.id) in existing_keys:
                 continue
-            # SRD §Condition Immunity — an immune target never acquires the
-            # condition. ``activities/effects.py::apply_activity_effects``
-            # already SUPPRESSES the matching ``ConditionApplied``; without the
-            # same gate here the status would still land on
-            # ``Combatant.conditions`` and drive every C12 projection (the
-            # Incapacitated action block, ``project_speed``, the STR/DEX save
-            # auto-fail, the within-5-ft auto-crit) against a creature that
-            # cannot have the condition — and would diverge from
-            # ``live.active_conditions``, the store ``views.py`` shows the host.
-            # Compared as a bare slug, matching the emit-gate's convention
-            # (``passive_stats._CI_TOKEN_TO_CONDITION`` normalises the one
-            # irregular Foundry token at projection time).
-            if status in target_combatant.condition_immunities:
-                _LOGGER.info(
-                    "condition_immune_not_folded status=%s target_id=%s",
-                    status,
-                    applied.target_id,
-                )
-                continue
-            # Derive source_entity_id from the origin tag when it
-            # encodes one (e.g. "cast:bless:char:abc12"); otherwise
-            # default to the canonical implied-source marker.
-            source_entity_id = "implied:effect"
             new_conditions.append(
                 ActiveCondition(
                     condition=status,
-                    source_entity_id=source_entity_id,
+                    source_entity_id="implied:effect",
                     scope="combat",
                     source_effect_id=applied.id,
                 )
             )
-            added.append(status)
-        if added:
+            if status not in existing_slugs:
+                added.append(status)
+        if new_conditions != target_combatant.conditions:
             for idx, c in enumerate(live.initiative):
                 if c.entity_id == applied.target_id:
                     live.initiative[idx] = c.model_copy(update={"conditions": new_conditions})
                     break
-        # C12 — a newly applied Speed-0 / Exhaustion condition immediately
-        # caps whatever movement the target had left this turn.
+    return added
+
+
+def _emit_apply_effect_applied(live: _LiveCombat, event: EffectApplied) -> None:
+    """Track the unchanged effect, attach its permitted statuses, and record
+    concentration spell-slot expenditure for PCs."""
+    applied = event.effect
+    live.active_effects.setdefault(applied.target_id, []).append(applied)
+    added = _attach_effect_statuses(live, applied)
+    if applied.statuses:
         _clamp_movement_budget(live, applied.target_id)
     # SRD spell-slot consumption: spell effects with concentration imply
     # a slot was spent. The slot level is not on the event today (follow-up
@@ -5109,50 +5118,60 @@ def _emit_apply_effect_applied(live: _LiveCombat, event: EffectApplied) -> None:
 
 
 def _emit_apply_effect_expired(live: _LiveCombat, event: EffectExpired) -> None:
-    """Fold an ``EffectExpired`` into running state: pop the matching effect,
-    then clear each status it imposed from both ``live.active_conditions`` and
-    the target's conditions — but only if no OTHER active effect still imposes
-    that status."""
+    """Expire only conditions this exact effect successfully attached.
+
+    Raw statuses describe the observable effect, not condition ownership.
+    Preserve direct entries and other effects' actual sources, including
+    distinct origins sharing an effect id.
+    """
     target_effects = live.active_effects.get(event.target_id, [])
-    expired_effect: ActiveEffect | None = None
     for i, eff in enumerate(target_effects):
         if eff.id == event.effect_id and eff.origin == event.origin:
-            expired_effect = target_effects.pop(i)
+            target_effects.pop(i)
             break
-    if expired_effect is not None and expired_effect.statuses:
+    identity = (event.target_id, event.effect_id, event.origin)
+    identity_still_active = any(
+        eff.id == event.effect_id and eff.origin == event.origin for eff in target_effects
+    )
+    statuses = [] if identity_still_active else live.conditions_by_effect.pop(identity, [])
+    if statuses:
         combatant = _find_combatant(live, event.target_id)
-        remaining_effects = live.active_effects.get(event.target_id, [])
-        # also clear the status from
-        # live.active_conditions (orchestrator_bridge reads this when
-        # mirroring combatant conditions back to host storage). Without this,
-        # the projection re-attaches the expired status to session
-        # state on the next mirror tick.
-        active_cond_set = live.active_conditions.get(event.target_id)
-        for status in expired_effect.statuses:
-            # Only remove if no OTHER active effect still imposes the
-            # same status (multiple sources stacking case).
-            still_imposed = any(status in other.statuses for other in remaining_effects)
-            if still_imposed:
-                continue
-            if active_cond_set is not None:
-                active_cond_set.discard(status)
+        shared_id_statuses = {
+            status
+            for (target_id, effect_id, _origin), conditions in live.conditions_by_effect.items()
+            if target_id == event.target_id and effect_id == event.effect_id
+            for status in conditions
+        }
         if combatant is not None:
-            new_conditions = list(combatant.conditions)
-            dirty = False
-            for status in expired_effect.statuses:
-                still_imposed = any(status in other.statuses for other in remaining_effects)
-                if still_imposed:
-                    continue
-                for idx, ac in enumerate(new_conditions):
-                    if ac.condition == status:
-                        new_conditions.pop(idx)
-                        dirty = True
-                        break
-            if dirty:
+            new_conditions = [
+                ac
+                for ac in combatant.conditions
+                if not (
+                    ac.source_effect_id == event.effect_id
+                    and ac.condition in statuses
+                    and ac.condition not in shared_id_statuses
+                )
+            ]
+            if new_conditions != combatant.conditions:
                 for idx, c in enumerate(live.initiative):
                     if c.entity_id == event.target_id:
                         live.initiative[idx] = c.model_copy(update={"conditions": new_conditions})
                         break
+        remaining_names = (
+            {ac.condition for ac in new_conditions} if combatant is not None else set()
+        )
+        remaining_names.update(
+            status
+            for (target_id, _effect_id, _origin), conditions in live.conditions_by_effect.items()
+            if target_id == event.target_id
+            for status in conditions
+        )
+        active_cond_set = live.active_conditions.get(event.target_id, set())
+        for status in statuses:
+            if status in remaining_names:
+                active_cond_set.add(status)
+            else:
+                active_cond_set.discard(status)
     _end_anchor_dependents(live, event)
     _revert_transform_on_expiry(live, event)
 
@@ -6201,15 +6220,11 @@ def _record_effect_lifecycle_links(
       to decide whether to roll a save; ``_drop_concentration`` walks
       it to cascade EffectExpired across every target.
 
-    * ``conditions_by_effect[(target_id, effect_name)] = [conditions]``
-      — every ``ConditionApplied`` that lands on a target within the
-      same evaluator call as an ``EffectApplied`` for that target is
-      attributed to that effect. SRD §Hold Person installs the
-      paralyzed condition as a structured passive on the ieffect2 node,
-      so the canonical pairing in the event stream is *(EffectApplied,
-      ConditionApplied)* on the same target inside the save's fail
-      branch. The orchestrator does not need IR-level parent links to
-      observe this — the emit order is the load-bearing signal.
+    * ``conditions_by_effect[(target_id, effect_id, origin)]`` already
+      records actual status attachments from the synchronous effect fold.
+      The *(EffectApplied, ConditionApplied)* pairing associates repeat saves
+      only with conditions present in that lineage; it never guesses ownership
+      from raw statuses or unrelated direct condition events.
 
     * ``repeat_save_on_turn_end[target_id]`` — when a save just failed
       against the same target inside the same evaluator call and a
@@ -6275,7 +6290,8 @@ def _record_effect_lifecycle_links(
             if eff is None:
                 continue
             key = (ev.target_id, eff.id, eff.origin)
-            live.conditions_by_effect.setdefault(key, []).append(ev.condition)
+            if ev.condition not in live.conditions_by_effect.get(key, []):
+                continue
             failed_save = last_failed_save_by_target.get(ev.target_id)
             # Repeat-save lineage requires:
             #   - a same-evaluation failed save on this target (the
@@ -6966,14 +6982,14 @@ def _run_end_of_turn_saves(live: _LiveCombat, actor_id: str) -> None:
                     reason="duration",
                 ),
             )
-            _emit(
-                live,
-                ConditionRemoved(
-                    target_id=actor_id,
-                    condition=condition,
-                ),
-            )
-            live.conditions_by_effect.pop(identity, None)
+            if condition not in live.active_conditions.get(actor_id, set()):
+                _emit(
+                    live,
+                    ConditionRemoved(
+                        target_id=actor_id,
+                        condition=condition,
+                    ),
+                )
             chain = live.concentration_chain.get(caster_id)
             if chain is not None:
                 survivors = [entry for entry in chain if entry != (target_id, effect_id, origin)]
@@ -7325,62 +7341,9 @@ def _seed_active_effects(live: _LiveCombat, active_effects: Sequence[ActiveEffec
                         )
                     break
 
-        # SRD §Condition Immunity — the same gate the runtime
-        # ``EffectApplied`` fold and ``activities/effects.py`` apply: a status
-        # the target is immune to never attaches, on EITHER store. A seeded
-        # effect is the one path that writes ``live.active_conditions``
-        # directly, so without this the host-facing view (``views.py``) and
-        # ``Combatant.conditions`` would BOTH carry a condition the creature
-        # cannot suffer. The ActiveEffect itself is still seeded (its non-
-        # condition riders stay live), exactly as the emit-path keeps the
-        # ``EffectApplied`` and drops only the ``ConditionApplied``.
-        target_combatant = _find_combatant(live, eff.target_id)
-        immunities = set(target_combatant.condition_immunities) if target_combatant else set()
-        statuses = {s for s in eff.statuses if s not in immunities}
-
-        # Conditions-by-effect: every status the effect imposes is
-        # attributed to (target_id, id, origin), so expire/concentration
-        # cascade can find them.
-        if statuses:
-            key = (eff.target_id, eff.id, eff.origin)
-            existing = live.conditions_by_effect.get(key)
-            if existing is None:
-                live.conditions_by_effect[key] = list(statuses)
-            else:
-                for status in statuses:
-                    if status not in existing:
-                        existing.append(status)
-
-        if not statuses:
-            continue
-        # Also project into live.active_conditions so orchestrator_bridge's
-        # project_combat_state_to_redis sees the seeded statuses on the next
-        # mirror tick. Without this, statuses only land on initiative[*]
-        # .conditions (set below) and are silently dropped when the bridge
-        # rebuilds host storage conditions from active_conditions. # .
-        live.active_conditions.setdefault(eff.target_id, set()).update(statuses)
-        for idx, c in enumerate(live.initiative):
-            if c.entity_id != eff.target_id:
-                continue
-            current_conditions = c.conditions
-            existing_keys = {(ac.condition, ac.source_effect_id) for ac in current_conditions}
-            new_conditions = list(current_conditions)
-            dirty = False
-            for status in statuses:
-                if (status, eff.id) in existing_keys:
-                    continue
-                new_conditions.append(
-                    ActiveCondition(
-                        condition=status,
-                        source_entity_id="implied:effect",
-                        scope="combat",
-                        source_effect_id=eff.id,
-                    )
-                )
-                dirty = True
-            if dirty:
-                live.initiative[idx] = c.model_copy(update={"conditions": new_conditions})
-            break
+        # The same attachment fold as runtime: actual lineage and both stores
+        # agree, while the raw effect (including suppressed statuses) survives.
+        _attach_effect_statuses(live, eff)
 
 
 def _seeded_incapacitated_ids(active_effects: Sequence[ActiveEffect]) -> frozenset[str]:

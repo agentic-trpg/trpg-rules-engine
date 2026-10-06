@@ -3,6 +3,7 @@
   "effects": [
     {
       "abilities": [],
+      "condition_slugs": [],
       "gate": null,
       "kind": "speed_zero",
       "qualifier": "",
@@ -10,6 +11,7 @@
     },
     {
       "abilities": [],
+      "condition_slugs": [],
       "gate": null,
       "kind": "advantage_attacks_against",
       "qualifier": "",
@@ -17,6 +19,7 @@
     },
     {
       "abilities": [],
+      "condition_slugs": [],
       "gate": null,
       "kind": "disadvantage_own_attacks",
       "qualifier": "",
@@ -26,6 +29,7 @@
       "abilities": [
         "dex"
       ],
+      "condition_slugs": [],
       "gate": null,
       "kind": "disadvantage_save",
       "qualifier": "",

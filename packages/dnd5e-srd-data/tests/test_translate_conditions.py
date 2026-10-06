@@ -68,7 +68,7 @@ def test_missing_srd_condition_is_a_hard_failure_when_complete_is_required():
 
 
 @pytest.mark.parametrize("slug", sorted(SRD_CONDITION_SLUGS))
-def test_translator_and_shipped_canonical_have_the_same_typed_gates(slug):
+def test_translator_and_shipped_canonical_have_the_same_typed_scopes_and_gates(slug):
     expected = {
         ("invisible", ConditionEffectKind.UNSEEN): ConditionEffectGate.OBSERVER_CANNOT_SEE_BEARER,
         ("invisible", ConditionEffectKind.ADVANTAGE_OWN_ATTACKS): (
@@ -89,3 +89,8 @@ def test_translator_and_shipped_canonical_have_the_same_typed_gates(slug):
     assert tuple(canonical.effects) == CONDITION_MECHANICS[slug].effects
     for clause in canonical.effects:
         assert clause.gate == expected.get((slug, clause.kind))
+        assert clause.condition_slugs == (
+            ["poisoned"]
+            if slug == "petrified" and clause.kind == ConditionEffectKind.IMMUNE_TO_CONDITION
+            else []
+        )

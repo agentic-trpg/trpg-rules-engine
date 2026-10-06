@@ -3,6 +3,7 @@
   "effects": [
     {
       "abilities": [],
+      "condition_slugs": [],
       "gate": null,
       "kind": "speed_zero",
       "qualifier": "",
@@ -10,6 +11,7 @@
     },
     {
       "abilities": [],
+      "condition_slugs": [],
       "gate": null,
       "kind": "advantage_attacks_against",
       "qualifier": "",
@@ -20,6 +22,7 @@
         "str",
         "dex"
       ],
+      "condition_slugs": [],
       "gate": null,
       "kind": "auto_fail_save",
       "qualifier": "",
@@ -27,6 +30,7 @@
     },
     {
       "abilities": [],
+      "condition_slugs": [],
       "gate": null,
       "kind": "resist_all_damage",
       "qualifier": "",
@@ -34,6 +38,9 @@
     },
     {
       "abilities": [],
+      "condition_slugs": [
+        "poisoned"
+      ],
       "gate": null,
       "kind": "immune_to_condition",
       "qualifier": "poisoned",

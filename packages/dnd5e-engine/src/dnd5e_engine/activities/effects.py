@@ -20,12 +20,14 @@ from __future__ import annotations
 
 import logging
 import typing
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from typing import TYPE_CHECKING, Any, get_args
 
 from dnd5e_engine.activities.formula import resolve_roll_data
 from dnd5e_engine.events import ConditionApplied, ConditionType, EffectApplied
+from dnd5e_engine.rules.conditions import active_condition_names, project_condition_immunities
 from dnd5e_engine.types.combat import Combatant
+from dnd5e_engine.types.conditions import ActiveCondition
 from dnd5e_engine.types.effects import (
     ActiveEffect,
     ActiveEffectChange,
@@ -66,7 +68,8 @@ _DEFAULT_CHANGE_PRIORITY = 20
 
 def is_condition_immune(target: Combatant, condition: str) -> bool:
     """SRD 5.2 §Immunity: "Immunity to a condition means you aren't affected
-    by it." A target immune to ``condition`` never has it attach.
+    by it." Static Combatant immunities and projected condition clauses are
+    additive; neither store is mutated by this check.
 
     Shared gate for every ``ConditionApplied`` emit site: the effect-status
     path below (``passive_effect_to_active_effect`` riders) AND
@@ -75,7 +78,40 @@ def is_condition_immune(target: Combatant, condition: str) -> bool:
     ``ConditionApplied`` emit is gated by this check. Extracted so the two
     sites cannot drift on the immunity semantics.
     """
-    return condition in target.condition_immunities
+    return condition in target.condition_immunities or condition in project_condition_immunities(
+        active_condition_names(target.conditions)
+    )
+
+
+def applicable_effect_statuses(target: Combatant | None, statuses: Collection[str]) -> list[str]:
+    """Select actual attachments without depending on a raw status set's order.
+
+    Immunity-granting conditions land first, then other statuses, with a stable
+    slug order within each group. Each accepted status participates in the next
+    shared immunity check; a rejected status never grants immunity. Existing
+    conditions remain untouched (acquiring immunity is not condition removal).
+    The target snapshot and the effect's raw statuses are never mutated.
+    """
+    ordered = sorted(statuses, key=lambda s: (not bool(project_condition_immunities([s])), s))
+    if target is None:
+        return ordered
+    accepted: list[str] = []
+    projected = target
+    for status in ordered:
+        if is_condition_immune(projected, status):
+            continue
+        accepted.append(status)
+        projected = projected.model_copy(
+            update={
+                "conditions": [
+                    *projected.conditions,
+                    ActiveCondition(
+                        condition=status, source_entity_id="implied:effect", scope="combat"
+                    ),
+                ]
+            }
+        )
+    return accepted
 
 
 def _name_slug(name: str) -> str:
@@ -195,8 +231,8 @@ def apply_activity_effects(
     followed by one ``ConditionApplied`` per status that names a valid SRD
     condition.
 
-    The EffectApplied-then-ConditionApplied emit order is load-bearing: the
-    orchestrator (Piece 3) pairs each condition to its effect by emit order.
+    The EffectApplied-then-ConditionApplied emit order lets the orchestrator
+    associate repeat saves with the effect's actual condition lineage.
 
     ``save_succeeded`` is the target's save outcome for save activities (``None``
     for non-save kinds, which apply unconditionally). ``cast_level`` is the slot
@@ -242,27 +278,12 @@ def apply_activity_effects(
         )
         ctx.event_emitter(EffectApplied(effect=ae))
 
-        # Conditions land AFTER the EffectApplied (load-bearing order), in a
-        # deterministic (sorted) sequence. A status that isn't a valid SRD
+        # Conditions land AFTER the EffectApplied using the same deterministic
+        # immunity policy as the runtime and seeding folds. An unmapped status
         # ConditionType still rides on ae.statuses; only ConditionApplied is
         # gated on the mapping.
-        for status in sorted(pe.statuses):
+        for status in applicable_effect_statuses(target, ae.statuses):
             if status in _CONDITION_VALUES:
-                # condition-immunity gate (``is_condition_immune``, shared with
-                # ``mastery.py``'s Topple rider). A target immune to this
-                # condition (Nature's Ward → "poisoned") never has it attach —
-                # the ConditionApplied is SUPPRESSED outright (the EffectApplied
-                # rider above still fired narratively). Suppress, not
-                # emit-and-neutralize: a condition is binary present/absent with
-                # no amount to zero, so a ConditionApplied the engine treats as
-                # not-applied would mislead every condition-tick reader.
-                if is_condition_immune(target, status):
-                    _LOGGER.info(
-                        "condition_immune_suppressed status=%s target_id=%s",
-                        status,
-                        target.entity_id,
-                    )
-                    continue
                 ctx.event_emitter(
                     ConditionApplied(
                         target_id=target.entity_id,

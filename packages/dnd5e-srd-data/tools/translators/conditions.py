@@ -66,12 +66,18 @@ def _e(
     kind: K,
     *,
     abilities: tuple[str, ...] = (),
+    condition_slugs: tuple[str, ...] = (),
     value: int | None = None,
     gate: ConditionEffectGate | None = None,
     qualifier: str = "",
 ) -> ConditionEffect:
     return ConditionEffect(
-        kind=kind, abilities=list(abilities), value=value, gate=gate, qualifier=qualifier
+        kind=kind,
+        abilities=list(abilities),
+        condition_slugs=list(condition_slugs),
+        value=value,
+        gate=gate,
+        qualifier=qualifier,
     )
 
 
@@ -221,7 +227,7 @@ CONDITION_MECHANICS: dict[str, ConditionMechanics] = {
             _e(K.ADVANTAGE_ATTACKS_AGAINST),
             _e(K.AUTO_FAIL_SAVE, abilities=("str", "dex")),
             _e(K.RESIST_ALL_DAMAGE),
-            _e(K.IMMUNE_TO_CONDITION, qualifier="poisoned"),
+            _e(K.IMMUNE_TO_CONDITION, condition_slugs=("poisoned",), qualifier="poisoned"),
         ),
         implies=("incapacitated",),
         srd_quote=(

@@ -3,6 +3,7 @@
   "effects": [
     {
       "abilities": [],
+      "condition_slugs": [],
       "gate": null,
       "kind": "speed_zero",
       "qualifier": "",
@@ -10,6 +11,7 @@
     },
     {
       "abilities": [],
+      "condition_slugs": [],
       "gate": null,
       "kind": "disadvantage_attacks_except_grappler",
       "qualifier": "",
@@ -17,6 +19,7 @@
     },
     {
       "abilities": [],
+      "condition_slugs": [],
       "gate": null,
       "kind": "movable_by_grappler",
       "qualifier": "",

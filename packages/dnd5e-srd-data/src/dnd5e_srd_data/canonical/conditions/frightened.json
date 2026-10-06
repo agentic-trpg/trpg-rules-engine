@@ -3,6 +3,7 @@
   "effects": [
     {
       "abilities": [],
+      "condition_slugs": [],
       "gate": "fear_source_in_sight",
       "kind": "disadvantage_ability_checks",
       "qualifier": "while the source of fear is within line of sight",
@@ -10,6 +11,7 @@
     },
     {
       "abilities": [],
+      "condition_slugs": [],
       "gate": "fear_source_in_sight",
       "kind": "disadvantage_own_attacks",
       "qualifier": "while the source of fear is within line of sight",
@@ -17,6 +19,7 @@
     },
     {
       "abilities": [],
+      "condition_slugs": [],
       "gate": null,
       "kind": "cant_move_toward_fear_source",
       "qualifier": "",

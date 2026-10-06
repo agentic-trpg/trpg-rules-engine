@@ -7,8 +7,8 @@ links in ``config.mjs`` — there is no structured mechanic upstream. The
 (``tools/translators/conditions.py``) from the SRD 5.2 sentences, one typed
 row per sentence, and this module only defines the closed vocabulary.
 
-``ConditionEffect`` stores a clause's kind, ability scope, value, typed gate,
-and human-readable qualifier.
+``ConditionEffect`` stores a clause's kind, ability/condition scope, value,
+typed gate, and human-readable qualifier.
 ``ConditionEffectKind`` defines the closed vocabulary of clause kinds.
 """
 
@@ -54,7 +54,7 @@ class ConditionEffectKind(StrEnum):
     MOVABLE_BY_GRAPPLER = "movable_by_grappler"
     # Damage / immunity / visibility
     RESIST_ALL_DAMAGE = "resist_all_damage"
-    IMMUNE_TO_CONDITION = "immune_to_condition"  # ``qualifier`` names the condition slug
+    IMMUNE_TO_CONDITION = "immune_to_condition"  # carries ``condition_slugs``
     UNSEEN = "unseen"
     # Exhaustion (level-scaled; ``value`` is the per-level multiplier / the level)
     D20_TEST_PENALTY_PER_LEVEL = "d20_test_penalty_per_level"
@@ -72,11 +72,13 @@ class ConditionEffectGate(StrEnum):
 class ConditionEffect(BaseModel, frozen=True):
     """One typed clause. ``abilities`` (lower-case codes) scopes the save
     kinds; ``value`` carries a number the kind needs (feet, level, per-level
-    multiplier); optional ``gate`` supplies typed context semantics.
+    multiplier); ``condition_slugs`` scopes condition immunity; optional
+    ``gate`` supplies typed context semantics.
     ``qualifier`` is explanatory SRD prose and is never machine-parsed."""
 
     kind: ConditionEffectKind
     abilities: list[str] = Field(default_factory=list)
+    condition_slugs: list[str] = Field(default_factory=list)
     value: int | None = None
     gate: ConditionEffectGate | None = None
     qualifier: str = ""

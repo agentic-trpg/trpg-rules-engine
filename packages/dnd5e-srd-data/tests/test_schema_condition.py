@@ -89,3 +89,26 @@ def test_old_condition_json_without_gate_still_loads():
         ConditionEffectGate.OBSERVER_CANNOT_SEE_BEARER,
         ConditionEffectGate.FEAR_SOURCE_IN_SIGHT,
     }
+
+
+def test_condition_immunity_scope_round_trip_and_legacy_default():
+    effect = ConditionEffect(
+        kind=ConditionEffectKind.IMMUNE_TO_CONDITION,
+        condition_slugs=["poisoned", "prone"],
+        qualifier="explanation only",
+    )
+    assert effect.model_dump(mode="json")["condition_slugs"] == ["poisoned", "prone"]
+    assert ConditionEffect.model_validate_json(effect.model_dump_json()) == effect
+    old = ConditionEffect.model_validate({"kind": "immune_to_condition", "qualifier": "poisoned"})
+    assert old.condition_slugs == []
+    assert old.abilities == []
+    assert old.value is None
+    assert old.gate is None
+    effect.condition_slugs.append("charmed")
+    assert old.condition_slugs == []
+
+
+@pytest.mark.parametrize("scope", [None, "poisoned", 1, True, {}, [1], [True], [None]])
+def test_condition_immunity_scope_rejects_invalid_shapes(scope):
+    with pytest.raises(ValidationError):
+        ConditionEffect.model_validate({"kind": "immune_to_condition", "condition_slugs": scope})

@@ -82,6 +82,8 @@ def test_migration_selection_is_an_explicit_clause_allowlist() -> None:
                 ConditionEffectKind.AUTO_FAIL_SAVE,
                 ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST,
                 ConditionEffectKind.SPEED_ZERO,
+                ConditionEffectKind.RESIST_ALL_DAMAGE,
+                ConditionEffectKind.IMMUNE_TO_CONDITION,
             }
         ),
         "unconscious": frozenset(
@@ -138,6 +140,8 @@ def test_projection_is_repeatable_pure_and_never_draws_dice(
     before = definition.model_dump()
     expected_collected = _project_condition_changes([slug])
     expected_speed = condition_rules.project_speed(35, [slug], exhaustion_level=2)
+    expected_immunities = condition_rules.project_condition_immunities([slug])
+    expected_damage = condition_rules.project_passive_damage_modifiers([slug])
 
     def forbid_rng(*args: object) -> int:
         pytest.fail("Condition projection must not consume RNG")
@@ -157,6 +161,8 @@ def test_projection_is_repeatable_pure_and_never_draws_dice(
         second = project_condition_effects(iter(definition.effects))
         collected = _project_condition_changes([slug.upper(), slug])
         speed = condition_rules.project_speed(35, [slug.upper(), slug], exhaustion_level=2)
+        immunities = condition_rules.project_condition_immunities([slug.upper(), slug])
+        damage = condition_rules.project_passive_damage_modifiers([slug.upper(), slug])
 
     assert first == second
     assert definition.model_dump() == before
@@ -167,6 +173,8 @@ def test_projection_is_repeatable_pure_and_never_draws_dice(
     assert second[0].value == original_value
     assert collected == expected_collected
     assert speed == expected_speed
+    assert immunities == expected_immunities
+    assert damage == expected_damage
     assert definition.model_dump() == before
 
 
@@ -510,6 +518,8 @@ def test_unopted_clauses_do_not_reach_an_expanded_projector(
                 ConditionEffectKind.DISADVANTAGE_ABILITY_CHECKS,
                 ConditionEffectKind.DISADVANTAGE_SAVE,
                 ConditionEffectKind.AUTO_FAIL_SAVE,
+                ConditionEffectKind.RESIST_ALL_DAMAGE,
+                ConditionEffectKind.IMMUNE_TO_CONDITION,
             }
         )
         return projected

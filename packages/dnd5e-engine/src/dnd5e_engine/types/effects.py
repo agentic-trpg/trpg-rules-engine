@@ -72,6 +72,9 @@ class ActiveEffectChange(BaseModel):
     Key vocabulary (the host namespace):
       attack.roll.bonus       — +N or formula on attack rolls
       damage.bonus            — +N or formula on damage rolls
+      damage.resistance.all  — override-mode True grants all-damage resistance
+      condition.immunity     — override-mode string condition slug; consumers
+                                union scopes with static condition immunities
       ac.bonus, ac.override   — AC modifications
       speed.override         — scalar zero-speed override from condition
                                 projection, consumed by project_speed()

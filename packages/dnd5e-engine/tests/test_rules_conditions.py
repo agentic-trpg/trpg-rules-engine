@@ -363,11 +363,11 @@ def test_remove_with_implies_of_an_absent_condition_is_a_no_op() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_petrified_projects_blanket_resistance_and_poison_immunity() -> None:
+def test_petrified_projects_blanket_resistance_without_poison_damage_immunity() -> None:
     out = project_passive_damage_modifiers(["petrified"])
 
     assert out["resistances"] == ["all"]
-    assert out["immunities"] == ["poison"]
+    assert out["immunities"] == []
     assert out["vulnerabilities"] == []
 
 

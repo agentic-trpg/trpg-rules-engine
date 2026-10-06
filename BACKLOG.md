@@ -1531,11 +1531,6 @@ cluster owns.
   `influence` intent, no interaction DC), so the row is unrepresentable rather
   than merely unimplemented.
   (`packages/dnd5e-engine/src/dnd5e_engine/rules/conditions.py`)
-- **Petrified's "immunity to the Poisoned condition".** The shipped projection
-  gives poison *damage* immunity; SRD 5.2 grants immunity to poison damage AND
-  to the Poisoned condition, and condition immunity is keyed off
-  `Combatant.condition_immunities`, which no projection writes.
-  (`packages/dnd5e-engine/src/dnd5e_engine/rules/conditions.py`)
 
 ## C12 deferred minors (2026-08-27)
 

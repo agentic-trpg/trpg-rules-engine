@@ -3,6 +3,7 @@
   "effects": [
     {
       "abilities": [],
+      "condition_slugs": [],
       "gate": null,
       "kind": "cannot_take_actions",
       "qualifier": "",
@@ -10,6 +11,7 @@
     },
     {
       "abilities": [],
+      "condition_slugs": [],
       "gate": null,
       "kind": "breaks_concentration",
       "qualifier": "",
@@ -17,6 +19,7 @@
     },
     {
       "abilities": [],
+      "condition_slugs": [],
       "gate": null,
       "kind": "cannot_speak",
       "qualifier": "",
@@ -24,6 +27,7 @@
     },
     {
       "abilities": [],
+      "condition_slugs": [],
       "gate": null,
       "kind": "disadvantage_initiative",
       "qualifier": "if you're Incapacitated when you roll Initiative",

@@ -87,6 +87,7 @@ def project_condition_effects(effects: Iterable[ConditionEffect]) -> list[Active
     flag_keys = {
         ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS: "flags.disadvantage.attack",
         ConditionEffectKind.DISADVANTAGE_ABILITY_CHECKS: "flags.disadvantage.check",
+        ConditionEffectKind.RESIST_ALL_DAMAGE: "damage.resistance.all",
         ConditionEffectKind.DISADVANTAGE_ATTACKS_EXCEPT_GRAPPLER: (
             "flags.disadvantage.attack.except_grappler"
         ),
@@ -107,6 +108,12 @@ def project_condition_effects(effects: Iterable[ConditionEffect]) -> list[Active
             changes.append(ActiveEffectChange(key=key, mode="override", value=True))
         elif effect.kind == ConditionEffectKind.SPEED_ZERO:
             changes.append(ActiveEffectChange(key="speed.override", mode="override", value=0))
+        elif effect.kind == ConditionEffectKind.IMMUNE_TO_CONDITION:
+            for slug in dict.fromkeys(s.strip().lower() for s in effect.condition_slugs):
+                if slug:
+                    changes.append(
+                        ActiveEffectChange(key="condition.immunity", mode="override", value=slug)
+                    )
         elif save_keys := _SAVE_FLAG_KEYS.get(effect.kind):
             # Canonical scopes are ability codes. Normalize case/whitespace,
             # preserve their declaration order, and ignore unknown/empty scopes
@@ -115,6 +122,20 @@ def project_condition_effects(effects: Iterable[ConditionEffect]) -> list[Active
                 if key := save_keys.get(ability):
                     changes.append(ActiveEffectChange(key=key, mode="override", value=True))
     return changes
+
+
+def condition_immunity_slugs(changes: Iterable[ActiveEffectChange]) -> list[str]:
+    """Read exact string overrides into stable, unique condition scopes."""
+    return list(
+        dict.fromkeys(
+            change.value
+            for change in changes
+            if change.key == "condition.immunity"
+            and change.mode == "override"
+            and type(change.value) is str
+            and change.value
+        )
+    )
 
 
 def projected_scalar_value(changes: Iterable[ActiveEffectChange], key: str) -> int | None:

@@ -10,6 +10,7 @@ from dnd5e_srd_data.schema.condition import ConditionEffect, ConditionEffectKind
 
 from dnd5e_engine.rules.effects import (
     attack_distance_flag_applies,
+    condition_immunity_slugs,
     project_condition_effects,
     projected_scalar_value,
     save_flag_abilities,
@@ -99,6 +100,8 @@ _DECLARATIVE_CONDITION_MIGRATIONS: dict[str, frozenset[ConditionEffectKind]] = {
             ConditionEffectKind.AUTO_FAIL_SAVE,
             ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST,
             ConditionEffectKind.SPEED_ZERO,
+            ConditionEffectKind.RESIST_ALL_DAMAGE,
+            ConditionEffectKind.IMMUNE_TO_CONDITION,
         }
     ),
     "unconscious": frozenset(
@@ -258,7 +261,9 @@ def apply_condition(
     condition: Condition,
     current_conditions: list[str],
 ) -> list[str]:
-    """Add a condition (idempotent)."""
+    """Add a condition (idempotent), respecting projected condition immunity."""
+    if check_immunity(condition.value, project_condition_immunities(current_conditions)):
+        return current_conditions
     if condition.value not in current_conditions:
         return [*current_conditions, condition.value]
     return current_conditions
@@ -307,6 +312,11 @@ def apply_condition_with_implies(
     source_entity_id="implied:{condition}" with no effect link.
     """
     from dnd5e_engine.types.conditions import ActiveCondition
+
+    if check_immunity(
+        condition.value, project_condition_immunities(active_condition_names(current_conditions))
+    ):
+        return current_conditions
 
     existing_names = {c.condition for c in current_conditions}
     result = list(current_conditions)
@@ -580,18 +590,22 @@ def conditions_auto_crit_within_5ft(
 # transport-level merge.
 
 
-def project_passive_damage_modifiers(conditions: list[str]) -> dict[str, list[str]]:
-    """Return the resistance / vulnerability / immunity projection for ``conditions``.
+def project_condition_immunities(conditions: list[str]) -> list[str]:
+    """Project opted-in canonical clauses into stable, unique condition immunities."""
+    return condition_immunity_slugs(_project_condition_changes(conditions))
 
-    Only Petrified contributes here per SRD 5.1 §Conditions — "resistance
-    to all damage" + immune to poison + can't be poisoned (we surface the
-    poison damage immunity, not the condition-immunity which lives on
-    ``Combatant`` separately).
+
+def project_passive_damage_modifiers(conditions: list[str]) -> dict[str, list[str]]:
+    """Return the damage sidecar from opted-in canonical clause projection.
+
+    Condition immunity is separate: it never grants damage immunity.
     """
     out: dict[str, list[str]] = {"resistances": [], "vulnerabilities": [], "immunities": []}
-    if "petrified" in {c.lower() for c in conditions}:
+    if any(
+        change.key == "damage.resistance.all" and change.mode == "override" and change.value is True
+        for change in _project_condition_changes(conditions)
+    ):
         out["resistances"].append("all")
-        out["immunities"].append("poison")
     return out
 
 
@@ -657,6 +671,7 @@ __all__ = [
     "exhaustion_level_of",
     "get_condition_effects",
     "is_condition_active",
+    "project_condition_immunities",
     "project_passive_check_modifiers",
     "project_passive_damage_modifiers",
     "project_passive_save_modifiers",

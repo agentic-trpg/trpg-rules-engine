@@ -145,8 +145,8 @@ class Combatant(BaseModel):
     # SRD §Senses — special senses in feet (darkvision/blindsight/tremorsense/
     # truesight). Projected from PC species + always-on feature passive_effects
     # via ``build_party_member`` → ``PartyMemberSpec.senses`` and copied here at
-    # start_combat. Defaults to an empty ``CombatantSenses`` (no special senses)
-    # for monsters / fixtures until a sense projection lands.
+    # start_combat. Foes use explicit EncounterMemberSpec senses, else canonical
+    # template senses. Defaults to empty when neither source supplies senses.
     senses: CombatantSenses = Field(default_factory=CombatantSenses)
     # SRD §Concentration — the effect_id this combatant is concentrating on,
     # if any. ``None`` when not concentrating. Hydrated by the orchestrator

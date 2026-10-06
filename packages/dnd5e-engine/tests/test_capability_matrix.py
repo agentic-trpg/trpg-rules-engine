@@ -326,6 +326,17 @@ _PROBES: dict[str, tuple[Any, str]] = {
         lambda: "def _combatant_can_see(" in _src("orchestrator.py"),
         "composite `_combatant_can_see` predicate",
     ),
+    "Template monster senses": (
+        lambda: (
+            '"senses" not in foe.model_fields_set' in _src("orchestrator.py")
+            and "senses: CombatantSenses" in _src("specs.py")
+            and all(
+                f"{sense}=monster.senses.{sense}" in _src("orchestrator.py")
+                for sense in ("darkvision", "blindsight", "tremorsense", "truesight")
+            )
+        ),
+        "canonical Darkvision, Blindsight, Tremorsense and Truesight",
+    ),
     # C22: Magic Resistance is read from the hydrated trait list.
     "`special_abilities`": (
         lambda: (

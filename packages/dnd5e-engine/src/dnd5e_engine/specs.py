@@ -272,6 +272,12 @@ class EncounterMemberSpec(BaseModel):
     # Empty by default; populated from MonsterTemplate at the session layer.
     # Copied onto the live ``Combatant`` at start_combat.
     condition_immunities: list[str] = Field(default_factory=list)
+    # Special-sense distances in feet. Explicit values, including an empty
+    # object, are authoritative (``model_fields_set`` distinguishes omission).
+    # When omitted, a resolvable monster template supplies its canonical senses;
+    # no template / unresolved template retains the empty default. Passive
+    # perception is not part of this runtime carrier.
+    senses: CombatantSenses = Field(default_factory=CombatantSenses)
     # C22 — see ``Combatant.physical_resistances_nonmagical_only``. Leave True
     # for the common "resistant to nonmagical B/P/S" profile; set False for
     # a creature whose B/P/S resistance also applies to magical damage.

@@ -1,7 +1,11 @@
 from pathlib import Path
 
+import pytest
+from dnd5e_engine.activities.passive_stats import CombatantSenses
+from dnd5e_engine.orchestrator import _get_live
 from fastapi.testclient import TestClient
 
+from nat20_bridge import routes_combat
 from nat20_bridge.app import create_app
 from nat20_bridge.state import BridgeState
 
@@ -72,6 +76,41 @@ def test_same_seed_same_narration(client: TestClient) -> None:
     a, b = _start(client, seed=7), _start(client, seed=7)
     assert a["narration"] == b["narration"]
     assert a["events"] == b["events"]
+
+
+def test_bridge_template_slugs_hydrate_senses_in_live_engine(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state = BridgeState(homebrew_path=tmp_path / "homebrew.json")
+    slugs = ["goblin-warrior", "animated-armor", "earth-elemental", "avatar-of-death"]
+    expected = [
+        CombatantSenses(darkvision=60),
+        CombatantSenses(blindsight=60),
+        CombatantSenses(darkvision=60, tremorsense=60),
+        CombatantSenses(truesight=60),
+    ]
+    built_specs = []
+    original = routes_combat._build_encounter_specs
+
+    def record_specs(*args, **kwargs):
+        specs, names = original(*args, **kwargs)
+        built_specs.extend(specs)
+        return specs, names
+
+    monkeypatch.setattr(routes_combat, "_build_encounter_specs", record_specs)
+    with TestClient(create_app(state)) as client:
+        response = client.post("/v1/combat", json={"party": PARTY, "monsters": slugs, "seed": 7})
+        assert response.status_code == 200, response.text
+        cid = response.json()["combat_id"]
+        live = _get_live(state.combats[cid])
+        assert [spec.monster_template_slug for spec in built_specs] == slugs
+        # The bridge supplies slugs; the engine owns the sole template fallback.
+        assert all("senses" not in spec.model_fields_set for spec in built_specs)
+        for index, (slug, senses) in enumerate(zip(slugs, expected, strict=True), start=1):
+            monster = next(c for c in live.initiative if c.entity_id == f"mon:{slug}-{index}")
+            assert monster.senses == senses
+            assert "passive_perception" not in monster.senses.model_dump()
+        assert client.post(f"/v1/combat/{cid}/end", json={}).status_code == 200
 
 
 def test_wrong_turn_intent_is_409_unknown_combat_404(client: TestClient) -> None:

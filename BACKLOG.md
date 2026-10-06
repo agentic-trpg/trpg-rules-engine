@@ -1355,19 +1355,6 @@ now calls the engine rather than standing in for it. Residual gaps:
   modelled; Keen Senses and Aggressive are absent from the SRD 5.2 corpus
   entirely.
   (`packages/dnd5e-engine/src/dnd5e_engine/activities/save_primitive.py`)
-- **A templated monster's senses are never hydrated (2026-09-27, C23).**
-  `EncounterMemberSpec` has no `senses` field, and `_build_foe_combatants`
-  copies a template's ability scores, proficiency bonus, save/skill
-  proficiencies, trait mechanics and spellcasting ability onto the live
-  `Combatant` but never its Blindsight, Darkvision, Truesight or
-  Tremorsense — every templated foe keeps `Combatant.senses`'s all-`None`
-  default. So C23's Blindsight-through-Blinded rule, and every other
-  sense-gated consumer (Dodge, Ranged Attacks in Close Combat, Opportunity
-  Attacks, Hide, Frightened, the Invisible carve-out), never reaches a
-  templated monster. Hydrating it changes seeded results (a templated foe
-  that currently can't see in the dark or through Invisible would start
-  seeing), so the fix belongs in its own cluster.
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_build_foe_combatants`)
 - **An engine-rolled Initiative reads a monster's Dexterity modifier, never
   its own Initiative modifier (2026-09-27, C23).** SRD 5.2: "A monster's
   Initiative modifier is typically equal to its Dexterity modifier, but some

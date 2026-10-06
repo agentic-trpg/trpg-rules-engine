@@ -7207,6 +7207,7 @@ def _build_foe_combatants(
         resistances = list(foe.damage_resistances)
         immunities = list(foe.damage_immunities)
         nonmagical_only = foe.physical_resistances_nonmagical_only
+        senses = foe.senses
         # F1b (2026-08-26) — hydrate the five non-DEX ability scores,
         # proficiency bonus, and save/skill proficiencies from the SRD
         # monster template when one is set. Dexterity is spec-authoritative
@@ -7219,6 +7220,13 @@ def _build_foe_combatants(
         if foe.monster_template_slug:
             monster = get_lib_loader().get_monster(foe.monster_template_slug)
             if monster is not None:
+                if "senses" not in foe.model_fields_set:
+                    senses = CombatantSenses(
+                        darkvision=monster.senses.darkvision,
+                        blindsight=monster.senses.blindsight,
+                        tremorsense=monster.senses.tremorsense,
+                        truesight=monster.senses.truesight,
+                    )
                 if not vulnerabilities:
                     vulnerabilities = list(monster.damage_vulnerabilities)
                 if not resistances and not immunities:
@@ -7279,6 +7287,7 @@ def _build_foe_combatants(
                 damage_immunities=immunities,
                 damage_vulnerabilities=vulnerabilities,
                 condition_immunities=list(foe.condition_immunities),
+                senses=senses,
                 physical_resistances_nonmagical_only=nonmagical_only,
                 base_speed=foe.base_speed,
                 movement_remaining=foe.base_speed,

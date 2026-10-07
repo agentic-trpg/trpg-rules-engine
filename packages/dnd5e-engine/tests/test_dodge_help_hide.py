@@ -753,7 +753,8 @@ class TestHidePayment:
         checks = [e for e in events_of(live, CheckRolled) if e.actor_id == "char:hider"]
         assert len(checks) == 1
         hider = next(c for c in live.initiative if c.entity_id == "char:hider")
-        assert hider.hide_attempted_this_turn is True
+        assert not hider.action_available
+        assert hider.bonus_action_available
 
     def test_retry_next_turn_is_allowed(self):
         async def _run():

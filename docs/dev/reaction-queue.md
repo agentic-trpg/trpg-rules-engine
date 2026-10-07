@@ -110,11 +110,14 @@ Three call sites drain the queue, each for a different trigger:
 
 1. **`submit_player_intent`, `cast_spell` branch, BEFORE `_consume_spell_slot`**
    — `trigger="cast_spell"`, `triggering_actor_id` = the caster. This is
-   Counterspell's hook. Range, target and action-economy validation have
-   already passed, but the caster's slot and Action/Bonus Action/Reaction
-   payment have not run. Character Action Economy preserves those payments
-   and the current turn on a pre-resolution refusal; a Counterspell reactor
-   still pays its own slot and Reaction.
+   Counterspell's hook. Legality, range, target count, action economy and
+   slot availability have already passed, and the caster has paid its
+   casting-time Action, Bonus Action or Reaction. Its spell slot is still
+   unspent. Successful Counterspell wastes that casting-time payment while
+   preserving the slot; the shared continuation helper keeps any remaining
+   resources usable, including Action Surge's restricted extra Action.
+   True refused casts return before payment or draining any reaction, with
+   action budgets, slots, the pending queue and RNG unchanged.
 
 2. **`submit_player_intent`, `cast_spell`/`attack` branches, right after
    `_resolve_targets`** — `trigger="hit_by_attack"` for an `"attack"` intent,
@@ -172,29 +175,30 @@ resolver, with the interrupted caster as sole target.
    no reaction had fired.
 5. `succeeded=False` → emit `CastFailed(actor_id=<interrupted caster>,
    spell_id=<their spell>, reason="countered")` and return `True`. The caller
-   returns before the caster's spell-slot and action-budget payment, keeping
-   the current turn. This Character Action Economy pre-resolution contract
-   also preserves refused `no_slot`, ritual and invalid-target casts. It
-   intentionally preserves the caster's Action here despite the SRD's
-   "wasted" wording quoted above; the reactor's payment remains committed.
+   skips the caster's spell-slot spend and finishes the intent through
+   `_end_action`. The casting-time payment remains spent. Other resources
+   determine whether the caster stays on turn: a countered Magic Action
+   spends only the base Action, leaving an unused Action Surge extra Action
+   available for a legal non-Magic Action. The reactor's payment also remains
+   committed, regardless of the save's outcome.
 
 ### Slot-consumption redesign (closes the discovered "slots consumed at
 submission" entry)
 
-Two options were on the table (per the BACKLOG entry and this cluster's
-task brief): move `_consume_spell_slot`'s decrement to resolution-time, or
-add a refund path that undoes an already-applied decrement. **Chosen: a
-third option, already implied by a pinned scenario's own catalog entry — drain the
-reaction queue even earlier than `_consume_spell_slot`, so a countered cast
-never reaches the gate at all.** `_consume_spell_slot` itself is completely
-unmodified. Rationale: a refund path needs to reverse a decrement + risks
-double-refund bugs across `_advance_turn` call variations; moving the gate
-later would ripple through every other cast-time check that currently runs
-before it (out-of-range, Hellish Rebuke, action economy) for no benefit.
-Short-circuiting before the gate is the smallest, most surgical change —
-zero risk of the slot ever being touched for a countered cast, and zero
-new code paths for the *uncountered* case (which is byte-identical to
-today).
+The on-turn cast path separates three steps:
+
+1. Validate legality and slot availability without spending anything.
+   `_apply_pre_slot_cast_gates` checks rituals and target count, then
+   `_spell_slot_unavailable` checks both Spellcasting and Pact Magic pools.
+2. Pay the casting-time budget with `_consume_intent_budget`, then drain
+   Counterspell. A reaction cast emits `ReactionTriggered` when that payment
+   commits, even if Counterspell subsequently interrupts it.
+3. Only an uncountered cast reaches `_consume_spell_slot`, which spends one
+   slot from Spellcasting first, then Pact Magic. Cantrips spend no slot.
+
+No refund is needed. Refused casts do not trigger Counterspell or advance
+the rules RNG; a legal countered cast spends its casting time and the
+counterspeller's resources, with its own slot still available.
 
 ### Independently-verified gap already closed
 

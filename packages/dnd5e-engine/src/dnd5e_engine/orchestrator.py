@@ -3637,17 +3637,6 @@ def _set_dodging(live: _LiveCombat, actor_id: str) -> None:
             break
 
 
-def _set_hide_attempted(live: _LiveCombat, actor_id: str) -> None:
-    """SRD 5.2 §Actions in Combat — Hide (F3): flip ``actor_id``'s
-    ``hide_attempted_this_turn`` flag live, mirroring ``_set_dodging``. Called
-    once a Hide intent has cleared the cover/obscurement gate — a second
-    attempt this turn is rejected before any dice are drawn."""
-    for idx, c in enumerate(live.initiative):
-        if c.entity_id == actor_id:
-            live.initiative[idx] = c.model_copy(update={"hide_attempted_this_turn": True})
-            break
-
-
 def _help_target_invalid(live: _LiveCombat, actor_id: str, intent: PlayerIntent) -> bool:
     """SRD 5.2 §Actions in Combat — Help, Assist an Attack Roll: *"an enemy
     within 5 feet of you"*. True (reject) unless ``intent.target_id`` names a
@@ -4187,8 +4176,9 @@ def _handle_grapple(
     targets auto-fail with zero draws. On failure, applies the engine-owned
     Grappled condition with the escape DC + source effect stored on the
     ``ActiveCondition`` (see ``_emit_grapple_condition_applied``). The
-    Action is already spent (budget consumed by the caller); Grapple
-    resolves no other activities and ends the turn (``_end_action``)."""
+    classified Action, Bonus Action or Flurry strike is already spent by
+    the caller; Grapple resolves no other activities and uses the shared
+    turn-continuation decision (``_end_action``)."""
     assert intent.target_id is not None  # narrowed by the range gate above
     target_id = intent.target_id
     target = _find_combatant(live, target_id)
@@ -4235,8 +4225,9 @@ def _handle_shove(
     conditions + exhaustion penalty come free; no advantage source of its
     own — a plain D20 Test). On failure: Prone (default) or a 5-ft forced
     push away from the shover, per ``intent.shove_push``. No damage either
-    way. The Action is already spent (budget consumed by the caller); Shove
-    resolves no other activities and ends the turn (``_end_action``)."""
+    way. The classified Action, Bonus Action or Flurry strike is already
+    spent by the caller; Shove resolves no other activities and uses the
+    shared turn-continuation decision (``_end_action``)."""
     assert intent.target_id is not None  # narrowed by the range gate above
     target_id = intent.target_id
     target = _find_combatant(live, target_id)
@@ -4284,7 +4275,8 @@ def _handle_escape_grapple(live: _LiveCombat, current: Combatant, intent: Player
     ruling R3 picks Athletics vs Acrobatics by whichever check modifier is
     higher (tie -> Athletics/STR), via the same ``check_modifier`` primitive
     every other skill check on this seam uses. The Action is already spent
-    (budget consumed by the caller); escape ends the turn (``_end_action``)."""
+    (budget consumed by the caller); escape uses the shared turn-continuation
+    decision (``_end_action``)."""
     grappled_ac = next((ac for ac in current.conditions if ac.condition == "grappled"), None)
     assert grappled_ac is not None  # narrowed by the gate above
     assert grappled_ac.save_dc is not None  # every grapple emit stores one
@@ -4539,7 +4531,6 @@ def _handle_hide(live: _LiveCombat, current: Combatant, intent: PlayerIntent) ->
                 )
 
     _update_combatant(live, actor_id, **payment)
-    _set_hide_attempted(live, actor_id)
 
     _emit(
         live,
@@ -4984,10 +4975,6 @@ def _emit_apply_turn_started(live: _LiveCombat, event: TurnStarted) -> None:
                     # your next turn". The reset here, at the dodger's OWN
                     # turn start, is the exact SRD expiry point.
                     "dodging": False,
-                    # SRD 5.2 §Actions in Combat — Hide (F3): one attempt per
-                    # turn; the gate resets alongside Dodge at the actor's own
-                    # TurnStarted.
-                    "hide_attempted_this_turn": False,
                     # Loading starts a fresh per-Action allowance each turn.
                     "loading_weapon_fired_this_action": False,
                     # SRD 5.2 §Weapon Mastery — Cleave: "only once per turn";
@@ -11145,25 +11132,12 @@ def _reject_over_count_targets(
 def _apply_pre_slot_cast_gates(
     live: _LiveCombat, current: Combatant, actor_id: str, intent: PlayerIntent
 ) -> bool:
-    """Run every gate that MUST fire before ``_consume_spell_slot`` — the R8
-    in-combat-ritual rejection, a Counterspell interrupt
-    (``_drain_counterspell_reaction``) and the C17/R5 target-count validation
-    (``_reject_over_count_targets``) all need to reject (when applicable)
-    before the slot is ever touched, so neither an illegal ritual cast, a
-    countered cast, nor a rejected-target cast spends the caster's slot.
-    Merged into one early-return call site (rather than separate ``if``s in
-    ``submit_player_intent``) to keep that function's branch count down.
+    """Validate rituals, target count and slot availability before payment.
 
-    The ritual check runs FIRST and unconditionally: an in-combat
-    ``as_ritual=True`` cast is illegal regardless of anything else about the
-    intent, so it must never reach ``_drain_counterspell_reaction`` — an
-    armed Counterspell must not be triggered (or its slot spent) by a cast
-    that was never going to resolve. The remaining two checks are
-    independent and order-insensitive (each returns ``False`` fast when not
-    applicable to the intent).
-
-    Returns ``True`` iff a gate emitted ``CastFailed``; the caller returns
-    with the caster's budgets and turn preserved.
+    These refusals emit ``CastFailed`` without changing budgets, the pending
+    reaction queue or RNG. Counterspell runs separately, after casting-time
+    payment: it interrupts an otherwise legal cast, sparing only its slot.
+    Returns ``True`` iff the caller must return without committing the cast.
     """
     if (
         intent.intent_type == "cast_spell"
@@ -11180,27 +11154,16 @@ def _apply_pre_slot_cast_gates(
             ),
         )
         return True
-    if _drain_counterspell_reaction(live, current, actor_id, intent):
-        return True
-    return _reject_over_count_targets(live, current, actor_id, intent)
+    return _reject_over_count_targets(live, current, actor_id, intent) or _spell_slot_unavailable(
+        live, current, intent
+    )
 
 
-def _consume_spell_slot(
-    live: _LiveCombat, current: Combatant, actor_id: str, intent: PlayerIntent
-) -> bool:
-    """SRD §Spellcasting — Spell Slots: "Whenever a character casts a
-    spell, they expend a slot of that spell's level or higher." The
-    slot gate lives on the orchestrator: the typed resolver walks the
-    spell's own activities directly (no wrapping ``CastActivity``), so it
-    never reaches a slot-consuming handler — the orchestrator owns the
-    gate + decrement for this PC seam. The decrement is final here; the
-    typed resolver does not mutate any per-evaluation slot sidecar, so there
-    is no post-resolution slot writeback to reconcile with. Two independent
-    pools may hold a slot at the same level (Spellcasting + Pact Magic); R3
-    draws from Spellcasting first, then Pact — see ``_take_spell_slot``.
+def _spell_slot_unavailable(live: _LiveCombat, current: Combatant, intent: PlayerIntent) -> bool:
+    """Check both slot pools without spending anything or triggering reactions.
 
-    Returns ``True`` if the cast was REJECTED (a ``CastFailed`` was emitted
-    with budgets and turn preserved — the caller must return); ``False`` otherwise.
+    An unavailable slot or a slot requested for a cantrip emits ``no_slot``.
+    Actual slot consumption follows casting-time payment and Counterspell.
     """
     if not (intent.intent_type == "cast_spell" and intent.spell_id):
         return False
@@ -11226,10 +11189,7 @@ def _consume_spell_slot(
             ),
         )
         return True
-    # Consume the slot. The typed PC resolver does not touch
-    # ``_counter_state``, so this subtract is the authoritative
-    # decrement — no post-evaluation writeback overwrites it.
-    if base_level > 0 and not _take_spell_slot(live, current.entity_id, slot_level):
+    if base_level > 0 and not _slot_available(live, current.entity_id, slot_level):
         _emit(
             live,
             CastFailed(
@@ -11240,6 +11200,21 @@ def _consume_spell_slot(
         )
         return True
     return False
+
+
+def _consume_spell_slot(live: _LiveCombat, actor_id: str, intent: PlayerIntent) -> None:
+    """Commit an available slot only after the cast survives Counterspell.
+
+    Availability was checked before casting-time payment. Spellcasting slots
+    are spent before Pact Magic slots; the typed PC resolver never spends
+    either pool again or writes back a slot sidecar.
+    """
+    if intent.intent_type != "cast_spell" or not intent.spell_id:
+        return
+    spell = get_lib_loader().get_spell(intent.spell_id)
+    if spell is not None and spell.level > 0:
+        slot_level = intent.slot_level if intent.slot_level is not None else spell.level
+        _take_spell_slot(live, actor_id, slot_level)
 
 
 def _emit_spell_cast(
@@ -11888,10 +11863,9 @@ def _drain_counterspell_reaction(
     existing, unmodified ``activities/save.py`` resolver.
 
     Returns ``True`` iff the triggering cast was countered (``CastFailed``
-    emitted + the turn already advanced) — the caller must return
-    immediately, BEFORE ``_consume_spell_slot`` ever runs for the triggering
-    spell (this is what preserves the interrupted caster's slot — see
-    ``docs/dev/reaction-queue.md``, "Slot-consumption redesign"). ``False``
+    emitted). The caller has already paid the casting-time budget and must
+    now finish the intent through the shared turn-continuation helper,
+    BEFORE ``_consume_spell_slot`` runs for the triggering spell. ``False``
     means no reaction fired OR the save succeeded; either way the triggering
     cast proceeds exactly as if this function had never been called.
 
@@ -12363,15 +12337,28 @@ async def submit_player_intent(
         ),
     )
 
-    # Refused or countered casts preserve the caster's Action/Bonus/Reaction
-    # and any Action Surge slot. Slot payment succeeds before action payment.
+    # Refused casts preserve budgets and RNG. Once legality and slot
+    # availability pass, casting-time payment commits even if countered.
     if _apply_pre_slot_cast_gates(live, current, actor_id, intent):
-        return
-    if _consume_spell_slot(live, current, actor_id, intent):
         return
     current = _consume_intent_budget(
         live, actor_id, _current_actor(live), intent, action_cost, funding, attack_weapon
     )
+
+    if is_reaction_cast:
+        _emit(
+            live,
+            ReactionTriggered(
+                actor_id=actor_id,
+                reaction_name=intent.spell_id or "",
+                trigger_event_uuid="",
+            ),
+        )
+
+    if _drain_counterspell_reaction(live, current, actor_id, intent):
+        _end_action(live, actor_id, intent, allow_movement=is_bonus_action)
+        return
+    _consume_spell_slot(live, actor_id, intent)
 
     # SRD §Actions in Combat — Dodge / Help / Unarmed Strike Grapple/Shove /
     # "Ending a Grapple". Their classified payment is already spent above; each
@@ -12391,21 +12378,6 @@ async def submit_player_intent(
     # tail below advances the turn exactly as for any other Action. No-op
     # for every other intent type (guard inside the helper).
     _register_pending_reaction(live, actor_id, intent)
-
-    # SRD §Reactions — a 1-reaction-class cast consumes the actor's
-    # reaction. Emit ReactionTriggered so downstream consumers (UI,
-    # reaction-pool accounting, future off-turn polling) can observe the
-    # spend. ``trigger_event_uuid`` is empty until a proper trigger model
-    # threads the originating event UUID through.
-    if is_reaction_cast:
-        _emit(
-            live,
-            ReactionTriggered(
-                actor_id=actor_id,
-                reaction_name=intent.spell_id or "",
-                trigger_event_uuid="",
-            ),
-        )
 
     # C17 — ``SpellCast`` metadata event (component/material/ritual bookkeeping,
     # never enforced). Emitted right after the slot gate passes so it is

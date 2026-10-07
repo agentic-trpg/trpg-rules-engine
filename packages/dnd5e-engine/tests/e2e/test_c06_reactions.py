@@ -42,6 +42,7 @@ from dnd5e_engine.events import (
     IntentSubmitted,
     ReactionTriggered,
     SaveRolled,
+    TurnEnded,
     TurnStarted,
 )
 from dnd5e_engine.orchestrator import (
@@ -207,9 +208,9 @@ def test_c06_s01_prearmed_counterspell_forces_con_save_two_seeds():
     assert not events_of(live_b, DamageApplied)
 
 
-def test_c06_s02_countered_cast_preserves_slot_action_and_turn():
-    """C06-S02: Character Action Economy preserves the interrupted caster's
-    slot, Action and current turn on a pre-resolution Counterspell refusal.
+def test_c06_s02_countered_cast_preserves_slot_and_wastes_action():
+    """C06-S02: Counterspell preserves the interrupted caster's spell slot
+    but wastes the casting-time Action and ends an otherwise spent turn.
     The counterspeller still spends its own slot and Reaction. Seed 1 pins
     the failed-save branch; C06-S01 covers the successful-save branch.
     """
@@ -294,12 +295,14 @@ def test_c06_s02_countered_cast_preserves_slot_action_and_turn():
     assert failed[0].spell_id == "fireball"
     assert failed[0].reason == "countered"
 
-    # A pre-resolution refusal keeps the caster's payment and current turn.
+    # Counterspell interrupts a legal cast; its casting-time Action is wasted.
     caster = next(c for c in live.initiative if c.entity_id == "char:enemy_caster")
-    assert caster.action_available
-    assert live.current_actor_id == "char:enemy_caster"
+    assert not caster.action_available
+    assert live.current_actor_id == "mon:target"
     failed_idx = live.event_log.index(failed[0])
-    assert live.event_log[failed_idx + 1 :] == []
+    tail = live.event_log[failed_idx + 1 :]
+    assert [e.actor_id for e in tail if isinstance(e, TurnEnded)] == ["char:enemy_caster"]
+    assert [e.actor_id for e in tail if isinstance(e, TurnStarted)] == ["mon:target"]
 
 
 def test_c06_s03_prearmed_shield_raises_ac_by_5_expires_next_turn():

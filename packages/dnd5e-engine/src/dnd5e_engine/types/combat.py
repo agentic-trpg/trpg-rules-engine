@@ -279,10 +279,6 @@ class Combatant(BaseModel):
     # see ``_dodge_benefit_active`` in orchestrator.py). Reset to False at
     # the actor's own TurnStarted — the exact SRD expiry point.
     dodging: bool = False
-    # Records a paid Hide attempt (success or failure) this turn. Each repeat
-    # needs another Action or Cunning Action payment; this is bookkeeping,
-    # not a once-per-turn cap. Reset at the actor's own TurnStarted.
-    hide_attempted_this_turn: bool = False
     # C22: typed SRD 5.2 monster traits hydrated from the template's
     # ``special_abilities[].mechanic`` (Magic Resistance → advantage on saves
     # against spells in ``activities/save_primitive.py``; C18 consumes Pack

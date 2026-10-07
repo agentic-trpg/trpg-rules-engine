@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from copy import deepcopy
+from random import Random
 
 import pytest
 from dnd5e_srd_data.loader import BundledAssetLoader
@@ -15,6 +16,8 @@ from dnd5e_engine.events import (
     CastFailed,
     CheckRolled,
     IntentSubmitted,
+    ReactionTriggered,
+    SaveRolled,
     SpellCast,
     TurnEnded,
 )
@@ -359,13 +362,13 @@ def test_refused_intents_preserve_all_character_budgets_and_rng(intent, after_su
     assert len(events(live, AttackRolled)) == 1
 
 
-def test_countered_cast_preserves_base_and_extra_actions():
+def _counterspell_combat(**caster_kwargs):
     handle, live = start(
         [
-            pc(class_slug="fighter", character_level=2, spell_slots={1: 1}),
+            pc(**caster_kwargs),
             pc(
                 "char:counter",
-                initiative=15,
+                initiative=0,
                 zone_id="0,1",
                 class_slug="wizard",
                 character_level=5,
@@ -375,7 +378,6 @@ def test_countered_cast_preserves_base_and_extra_actions():
         ],
         seed=4,
     )
-    _surge(handle)
     _register_pending_reaction(
         live,
         "char:counter",
@@ -386,17 +388,175 @@ def test_countered_cast_preserves_base_and_extra_actions():
             reaction_trigger="cast_spell",
         ),
     )
+    return handle, live
+
+
+@pytest.mark.parametrize("pool", ["spell_slots", "pact_slots"])
+@pytest.mark.parametrize(
+    ("spell", "target", "budget"),
+    [
+        ("magic-missile", FOE, "action_available"),
+        ("fire-bolt", FOE, "action_available"),
+        ("healing-word", HERO, "bonus_action_available"),
+        ("shield", HERO, "reaction_available"),
+    ],
+)
+def test_countered_cast_spends_casting_time_but_preserves_slot(spell, target, budget, pool):
+    handle, live = _counterspell_combat(**{pool: {1: 1}})
     before = combatant(live)
-    act(handle, HERO, intent_type="cast_spell", spell_id="magic-missile", target_id=FOE)
+    slots = deepcopy(
+        (live.spell_slots_by_entity.get(HERO, {}), live.pact_slots_by_entity.get(HERO, {}))
+    )
+    expected_rng = Random()
+    expected_rng.setstate(live.rng.getstate())
+    natural = expected_rng.randint(1, 20)
+
+    act(handle, HERO, intent_type="cast_spell", spell_id=spell, target_id=target)
+
     assert [e.reason for e in events(live, CastFailed)] == ["countered"]
-    assert combatant(live) == before
-    assert live.current_actor_id == HERO
-    assert live.spell_slots_by_entity[HERO][1] == 1
+    assert combatant(live) == before.model_copy(update={budget: False})
+    assert (
+        live.spell_slots_by_entity.get(HERO, {}),
+        live.pact_slots_by_entity.get(HERO, {}),
+    ) == slots
     assert live.spell_slots_by_entity["char:counter"][3] == 0
     assert not combatant(live, "char:counter").reaction_available
+    assert not live.pending_reactions
+    assert [e.spell_id for e in events(live, SpellCast)] == ["counterspell"]
+    saves = events(live, SaveRolled)
+    assert len(saves) == 1
+    assert (saves[0].target_id, saves[0].roll_total, saves[0].succeeded) == (HERO, natural, False)
+    assert live.rng.getstate() == expected_rng.getstate()
+    assert [e.actor_id for e in events(live, ReactionTriggered)] == (
+        [HERO, "char:counter"] if budget == "reaction_available" else ["char:counter"]
+    )
+    assert live.current_actor_id == (FOE if budget == "action_available" else HERO)
+    if budget != "action_available":
+        after_counter = combatant(live)
+        act(handle, HERO, intent_type="cast_spell", spell_id=spell, target_id=target)
+        assert events(live, CastFailed)[-1].reason == "no_action_economy"
+        assert combatant(live) == after_counter
+        assert live.rng.getstate() == expected_rng.getstate()
+        assert len(events(live, ReactionTriggered)) == (2 if budget == "reaction_available" else 1)
+        # The countered Bonus Action/Reaction leaves the base Action usable.
+        _swing(handle)
+        assert len(events(live, AttackRolled)) == 1
+        assert live.current_actor_id == FOE
+
+
+@pytest.mark.parametrize("order", ["surge-cast-attack", "surge-attack-cast", "cast-surge-attack"])
+def test_countered_magic_spends_only_base_action_in_surge_orders(order):
+    handle, live = _counterspell_combat(class_slug="fighter", character_level=2, spell_slots={1: 1})
+    if order.startswith("surge"):
+        _surge(handle)
+    if order == "surge-attack-cast":
+        _swing(handle)
+
+    act(handle, HERO, intent_type="cast_spell", spell_id="magic-missile", target_id=FOE)
+
+    assert [e.reason for e in events(live, CastFailed)] == ["countered"]
+    assert live.spell_slots_by_entity[HERO][1] == 1
+    assert not combatant(live).action_available
+    assert combatant(live).bonus_action_available
+    assert combatant(live).reaction_available
+    assert combatant(live).extra_actions_remaining == (1 if order == "surge-cast-attack" else 0)
+    if order == "surge-attack-cast":
+        assert live.current_actor_id == FOE
+    else:
+        assert live.current_actor_id == HERO
+        if order == "cast-surge-attack":
+            _surge(handle)
+        before = combatant(live)
+        rng = live.rng.getstate()
+        _magic(handle)
+        assert events(live, CastFailed)[-1].reason == "no_action_economy"
+        assert combatant(live) == before
+        assert live.rng.getstate() == rng
+        _swing(handle)
+        assert live.current_actor_id == FOE
+    assert len(events(live, AttackRolled)) == 1
+    assert _spent(live, "action-surge") == 1
+    assert combatant(live).extra_actions_remaining == 0
+
+
+@pytest.mark.parametrize("after_surge", [False, True])
+@pytest.mark.parametrize(
+    ("intent", "reason"),
+    [
+        ({"spell_id": "magic-missile", "target_id": FOE, "slot_level": 2}, "no_slot"),
+        ({"spell_id": "healing-word", "target_id": HERO, "slot_level": 2}, "no_slot"),
+        ({"spell_id": "shield", "slot_level": 2}, "no_slot"),
+        ({"spell_id": "fire-bolt", "target_id": FOE, "slot_level": 1}, "no_slot"),
+        ({"spell_id": "detect-magic", "as_ritual": True}, "ritual_in_combat"),
+        ({"spell_id": "fire-bolt", "target_id": "missing"}, "target_invalid"),
+        ({"spell_id": "magic-missile", "target_ids": [FOE] * 4}, "target_invalid"),
+    ],
+)
+def test_refused_cast_does_not_trigger_armed_counterspell(intent, reason, after_surge):
+    handle, live = _counterspell_combat(class_slug="fighter", character_level=2, spell_slots={1: 1})
+    if after_surge:
+        _surge(handle)
+    before = deepcopy(
+        (
+            live.initiative,
+            live.spell_slots_by_entity,
+            live.pact_slots_by_entity,
+            live.custom_counters_by_entity,
+            live.pending_reactions,
+        )
+    )
+    rng = live.rng.getstate()
+
+    act(handle, HERO, intent_type="cast_spell", **intent)
+
+    assert [e.reason for e in events(live, CastFailed)] == [reason]
+    assert (
+        live.initiative,
+        live.spell_slots_by_entity,
+        live.pact_slots_by_entity,
+        live.custom_counters_by_entity,
+        live.pending_reactions,
+    ) == before
+    assert live.rng.getstate() == rng
+    assert live.current_actor_id == HERO
+    assert not events(live, ReactionTriggered)
+    assert not events(live, SaveRolled)
+    assert not events(live, SpellCast)
+
+
+def test_attack_then_surge_cannot_pay_magic_or_trigger_counterspell_with_extra_action():
+    handle, live = _counterspell_combat(class_slug="fighter", character_level=2, spell_slots={1: 1})
     _swing(handle)
-    _magic(handle)
-    assert live.current_actor_id == "char:counter"
+    _surge(handle)
+    before = deepcopy((live.initiative, live.spell_slots_by_entity, live.pending_reactions))
+    rng = live.rng.getstate()
+    act(handle, HERO, intent_type="cast_spell", spell_id="magic-missile", target_id=FOE)
+    assert [e.reason for e in events(live, CastFailed)] == ["no_action_economy"]
+    assert (live.initiative, live.spell_slots_by_entity, live.pending_reactions) == before
+    assert live.rng.getstate() == rng
+    assert not events(live, ReactionTriggered)
+    _swing(handle)
+    assert len(events(live, AttackRolled)) == 2
+    assert live.current_actor_id == FOE
+
+
+def test_countered_cast_sequence_is_deterministic():
+    def run():
+        handle, live = _counterspell_combat(
+            class_slug="fighter", character_level=2, spell_slots={1: 1}
+        )
+        _surge(handle)
+        act(handle, HERO, intent_type="cast_spell", spell_id="magic-missile", target_id=FOE)
+        _swing(handle)
+        return (
+            [e.model_dump(exclude={"uuid", "handle_id"}) for e in live.event_log],
+            live.initiative,
+            live.spell_slots_by_entity,
+            live.custom_counters_by_entity,
+            live.rng.getstate(),
+        )
+
+    assert run() == run()
 
 
 def test_rogue_attack_then_cunning_hide_spends_bonus_only():

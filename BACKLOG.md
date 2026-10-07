@@ -629,7 +629,10 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   `use_feature` and `use_item` conservatively counts as a Magic action.
   Character Action Economy now preserves refused casts and pays eligible
   non-Magic actions with the restricted extra slot first, allowing Attack
-  and Magic in either order; the classification gap remains.
+  and Magic in either order. Counterspell now spends the interrupted cast's
+  casting-time budget while preserving its spell slot and any unused extra
+  Action; true refused casts still preserve budgets and RNG. The
+  classification gap remains.
   (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_MAGIC_ACTION_INTENTS`)
 - **Brutal Strike isn't tied to a Reckless Attack hit (2026-09-25; predates
   C20).** SRD 5.2 Brutal Strike (Barbarian 9): "If you use Reckless Attack,

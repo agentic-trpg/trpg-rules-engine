@@ -481,8 +481,15 @@ _PROBES: dict[str, tuple[Any, str]] = {
         "in either order",
     ),
     "Refused casts preserve action budgets": (
-        lambda: "def _apply_pre_slot_cast_gates(" in _src("orchestrator.py"),
+        lambda: (
+            "def _apply_pre_slot_cast_gates(" in _src("orchestrator.py")
+            and "def _spell_slot_unavailable(" in _src("orchestrator.py")
+        ),
         "Refused casts preserve action budgets",
+    ),
+    "Countered casts spend their casting-time": (
+        lambda: "def _drain_counterspell_reaction(" in _src("orchestrator.py"),
+        "preserve the spell slot",
     ),
     "feature/item Magic-action classification": (
         lambda: "_MAGIC_ACTION_INTENTS" in _src("orchestrator.py"),

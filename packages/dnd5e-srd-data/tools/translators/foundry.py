@@ -89,6 +89,12 @@ from dnd5e_srd_data import (
     WeaponProperty,
 )
 from dnd5e_srd_data.schema.common import ReactionCondition, ReactionTriggerKind
+from tools.translators.feature_runtime import (
+    feature_runtime_activities,
+    feature_runtime_effects,
+    feature_runtime_operations,
+    feature_target_rules,
+)
 from tools.translators.persistent_areas import apply_persistent_areas
 from tools.translators.prose_cleanup import cleanup_prose
 from tools.translators.spell_timing import apply_spell_timing
@@ -3085,15 +3091,19 @@ def translate_feature_yaml(
     doc = _load_yaml(yaml_path)
     system = doc.get("system") or {}
     feature_type, source_slug = _feature_type_and_source(yaml_path)
+    slug = _feature_slug(doc, yaml_path)
+    activities = feature_runtime_activities(slug, _translate_activities(system))
     return Feature(
-        slug=_feature_slug(doc, yaml_path),
+        slug=slug,
         name=_name(doc),
         description=_description(doc),
         feature_type=feature_type,
         foundry_id=str(doc.get("_id") or ""),
         source_slug=source_slug,
-        activities=_translate_activities(system),
-        passive_effects=_passive_effects(doc),
+        activities=activities,
+        runtime_operations=feature_runtime_operations(slug, [a.id for a in activities]),
+        target_rules=feature_target_rules(slug, [a.id for a in activities]),
+        passive_effects=feature_runtime_effects(slug, _passive_effects(doc)),
         advancement=_advancement(system),
         uses=_feature_uses(system),
         provenance=_provenance(yaml_path, ingest_date, ingest_version),

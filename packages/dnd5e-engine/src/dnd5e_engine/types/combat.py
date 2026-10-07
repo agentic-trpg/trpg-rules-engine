@@ -96,6 +96,7 @@ class Combatant(BaseModel):
     save_proficiencies: list[str] = Field(default_factory=list)  # Ability codes
     skill_proficiencies: list[str] = Field(default_factory=list)  # skill slugs
     skill_expertise: list[str] = Field(default_factory=list)
+    skill_check_bonuses: dict[str, int] = Field(default_factory=dict)
     jack_of_all_trades: bool = False
     reliable_talent: bool = False
     stealth_disadvantage: bool = False
@@ -202,6 +203,8 @@ class Combatant(BaseModel):
     # features are gated by what each class grants at its own level, never by
     # this slug alone. ``None`` for monsters / NPCs / fixtures that do not
     # project class info.
+    # None: infer fixed grants for legacy hosts. Empty: explicitly no repertoire.
+    granted_features: tuple[str, ...] | None = None
     class_slug: str | None = None
     # Per-class levels (``PartyMemberSpec.classes``); empty for a single class,
     # a monster or a fixture.

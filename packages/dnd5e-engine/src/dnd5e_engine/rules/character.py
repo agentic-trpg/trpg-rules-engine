@@ -100,6 +100,42 @@ def leveled_feature_slugs(
     return list(leveled_feature_levels(sources))
 
 
+def validate_feature_picks(
+    sources: Sequence[tuple[Class | Subclass | Species | None, int]], picks: Sequence[str]
+) -> None:
+    """Assign distinct picks to reached typed pools without exceeding their slots.
+
+    Counts are new slots at each schedule level; replacement changes an existing
+    slot, never its capacity. Stable backtracking handles overlapping pools.
+    Prerequisites absent from canonical data cannot be inferred from prose.
+    """
+    pools = [
+        (
+            {ref.slug for ref in choice.pool if ref.level <= level},
+            sum(step.count for step in choice.schedule if step.level <= level),
+        )
+        for doc, level in sources
+        if doc is not None
+        for choice in doc.feature_choices
+    ]
+    selected = tuple(dict.fromkeys(picks))
+    capacities = [capacity for _, capacity in pools]
+
+    def assign(index: int) -> bool:
+        if index == len(selected):
+            return True
+        for pool_index, (options, _) in enumerate(pools):
+            if selected[index] in options and capacities[pool_index] > 0:
+                capacities[pool_index] -= 1
+                if assign(index + 1):
+                    return True
+                capacities[pool_index] += 1
+        return False
+
+    if len(selected) > sum(capacities) or not assign(0):
+        raise ValueError("selected feature choices exceed reached pool capacity or options")
+
+
 def granted_feature_slugs(
     sources: Sequence[Class | Subclass | Species | None], *, level: int
 ) -> list[str]:

@@ -10,6 +10,7 @@ from dnd5e_srd_data.loader import BundledAssetLoader
 
 from dnd5e_engine import get_live
 from dnd5e_engine.events import AttackFailed, AttackRolled, CastFailed, DamageApplied
+from dnd5e_engine.feature_runtime import FeaturePreflightError
 from dnd5e_engine.lib_loader import set_lib_loader_for_tests
 from dnd5e_engine.orchestrator import IntentRejectedError, _resolve_feature_invocation
 from tests.c20_support import act, combatant, events, monster_turn, pc, start
@@ -71,33 +72,34 @@ def test_action_surge_costs_no_action_and_keeps_the_turn() -> None:
 def test_a_special_activation_is_free_only_when_it_resolves_nothing(
     member: dict[str, Any], feature_id: str, free: bool
 ) -> None:
-    """The corpus's three ``special`` activations. Action Surge (utility) and
-    Sacred Weapon (enchant) resolve no roll or damage of their own, so they
-    cost nothing; Brutal Strike's damage activity costs the Action."""
+    """Special activation is executable only with the required semantic carrier."""
     _, live = start([pc(**member)], seed=1)
+    if feature_id != "action-surge":
+        with pytest.raises(FeaturePreflightError):
+            _resolve_feature_invocation(combatant(live), feature_id)
+        return
     invocation = _resolve_feature_invocation(combatant(live), feature_id)
     assert invocation is not None
     assert invocation.is_free_action is free
 
 
-def test_brutal_strike_through_use_feature_spends_the_action() -> None:
-    """SRD 5.2 Brutal Strike rides a Reckless Attack roll: "If the chosen attack
-    roll hits, the target takes an extra 1d10 damage". A ``use_feature`` has no
-    attack to ride, so it costs the Action like any feature use: it deals its
-    damage once, the turn ends, and a second use is refused."""
+def test_brutal_strike_without_a_bound_hit_spends_nothing() -> None:
+    """A standalone Brutal Strike cannot create damage without its Reckless hit."""
     handle, live = start([pc(class_slug="barbarian", character_level=9, strength=16)], seed=3)
-    brutal_strike = {
-        "intent_type": "use_feature",
-        "feature_id": "brutal-strike",
-        "target_id": "mon:foe",
-    }
-    act(handle, "char:hero", **brutal_strike)
-    assert combatant(live).action_available is False
-    assert live.current_actor_id == "mon:foe"
-    with pytest.raises(IntentRejectedError) as rejected:
-        act(handle, "char:hero", **brutal_strike)
-    assert rejected.value.reason == "not_actor_turn"
-    assert len(events(live, DamageApplied)) == 1
+    before = live.rng.getstate()
+    for _ in range(2):
+        act(
+            handle,
+            "char:hero",
+            intent_type="use_feature",
+            feature_id="brutal-strike",
+            target_id="mon:foe",
+        )
+    assert combatant(live).action_available
+    assert live.current_actor_id == "char:hero"
+    assert [e.reason for e in events(live, CastFailed)] == ["unsupported_feature"] * 2
+    assert events(live, DamageApplied) == []
+    assert live.rng.getstate() == before
 
 
 def test_surge_then_two_attack_actions() -> None:

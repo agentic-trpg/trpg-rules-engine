@@ -337,7 +337,7 @@ _PROBES: dict[str, tuple[Any, str]] = {
     ),
     # C14 Task 3: Dodge sets a live ``dodging`` flag consumed by the attack
     # and save resolvers; the intent branch owns this exact literal.
-    "Dodge": (
+    "| Dodge |": (
         lambda: 'if intent.intent_type == "dodge":' in _src("orchestrator.py"),
         "✅",
     ),
@@ -722,10 +722,10 @@ _PROBES: dict[str, tuple[Any, str]] = {
     # resolves for an amount-scaled feature activity (Lay on Hands' Heal).
     "Class/species feature activities": (
         lambda: (
-            "def evaluate_uses_formula(" in _src("rules/uses.py")
+            "def preflight_feature(" in _src("feature_runtime.py")
             and "scaling_value" in _src("activities/formula.py")
         ),
-        "(C20)",
+        "Draw-free preflight",
     ),
     # C20: the four SRD 5.2 Fighting Style feats, each at its own seam.
     "| Fighting Style feats |": (
@@ -751,7 +751,7 @@ _PROBES: dict[str, tuple[Any, str]] = {
             '"not_extended"' in _src("events.py")
             and "engine:rage-extension" in _src("orchestrator.py")
         ),
-        "(C20)",
+        "Incapacitated ends it",
     ),
     # C20: a Bardic Inspiration die is redeemed on a failed attack roll.
     "| Bardic Inspiration |": (

@@ -1,0 +1,1729 @@
+{
+  "counts": {
+    "fully_resolvable": 17,
+    "semantic_special_case": 130,
+    "unsupported_preflight": 44
+  },
+  "reachable_activities": 191,
+  "rows": [
+    {
+      "slug": "abjure-foes",
+      "activity_id": "coLSoQzZ6lGbXtIw",
+      "owner": "paladin",
+      "classification": "semantic_special_case",
+      "reason": "requires counted visible targets and break-on-damage conditions",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "action-surge",
+      "activity_id": "jtpVG47zPBUI0CZ5",
+      "owner": "fighter",
+      "classification": "fully_resolvable",
+      "reason": "typed activity and required carriers validated",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "adrenaline-rush",
+      "activity_id": "jN5Zo6mDXll3c4Cz",
+      "owner": "orc",
+      "classification": "fully_resolvable",
+      "reason": "typed activity and required carriers validated",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "arcane-recovery",
+      "activity_id": "eSo3M84A3t6rwozM",
+      "owner": "wizard",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": "Unsupported formula token at ' / 2)'",
+      "resource_error": null
+    },
+    {
+      "slug": "archdruid",
+      "activity_id": "dnd5eactivity000",
+      "owner": "druid",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": "amount cost has no scaling carrier"
+    },
+    {
+      "slug": "archdruid",
+      "activity_id": "xqLZdQ13RBZkeACB",
+      "owner": "druid",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": "resource recovery/zero costs need a separate semantic operation"
+    },
+    {
+      "slug": "armor-of-shadows",
+      "activity_id": "XKx7cpBQ8AvRs6Kl",
+      "owner": "warlock",
+      "classification": "unsupported_preflight",
+      "reason": "activity has no executable feature semantic carrier",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "ascendant-step",
+      "activity_id": "9TIykaE656Kb0blI",
+      "owner": "warlock",
+      "classification": "unsupported_preflight",
+      "reason": "activity has no executable feature semantic carrier",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "aura-of-courage",
+      "activity_id": "1z8NAZt2O22XPbGw",
+      "owner": "paladin",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "aura-of-protection",
+      "activity_id": "nwLsJcC3bXA6i7QZ",
+      "owner": "paladin",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "bardic-inspiration",
+      "activity_id": "dnd5eactivity000",
+      "owner": "bard",
+      "classification": "fully_resolvable",
+      "reason": "typed activity and required carriers validated",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "blessed-healer",
+      "activity_id": "65RBpJDqkywCR90I",
+      "owner": "life",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": "Unhandled roll-data token: '@scaling'",
+      "resource_error": null
+    },
+    {
+      "slug": "blessed-strikes-divine-strike",
+      "activity_id": "uYVz8MBW0EZ2X0zD",
+      "owner": "cleric",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "blessed-strikes-divine-strike",
+      "activity_id": "MbCGfaQAeW2rzNWb",
+      "owner": "cleric",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "blessed-strikes-potent-spellcasting",
+      "activity_id": "2ADklkzUUW3aAeOt",
+      "owner": "cleric",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "breath-weapon",
+      "activity_id": "dxCRYmNSSGp6L2yh",
+      "owner": "dragonborn",
+      "classification": "semantic_special_case",
+      "reason": "requires Attack replacement and an ancestry-bound damage type",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "breath-weapon",
+      "activity_id": "iyK44COq6gbdbkc2",
+      "owner": "dragonborn",
+      "classification": "semantic_special_case",
+      "reason": "requires Attack replacement and an ancestry-bound damage type",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "brutal-strike",
+      "activity_id": "nN5gsB6AcSQ4uQPN",
+      "owner": "barbarian",
+      "classification": "semantic_special_case",
+      "reason": "requires an authoritative hit/rider binding and its lifecycle",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "careful-spell",
+      "activity_id": "jD3THRjOL2ILRYuM",
+      "owner": "sorcerer",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "channel-divinity-cleric",
+      "activity_id": "UdbUwbvrWwgDuNy9",
+      "owner": "cleric",
+      "classification": "fully_resolvable",
+      "reason": "typed activity and required carriers validated",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "channel-divinity-cleric",
+      "activity_id": "OY9UrTXvlRL0JUoI",
+      "owner": "cleric",
+      "classification": "fully_resolvable",
+      "reason": "typed activity and required carriers validated",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "channel-divinity-cleric",
+      "activity_id": "aOptL5pMaj3WtR8S",
+      "owner": "cleric",
+      "classification": "semantic_special_case",
+      "reason": "Turn Undead requires undead targeting, flee and break-on-damage semantics",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "channel-divinity-paladin",
+      "activity_id": "kjHydAAcspH9wVPI",
+      "owner": "paladin",
+      "classification": "unsupported_preflight",
+      "reason": "activity has no executable feature semantic carrier",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "clouds-jaunt",
+      "activity_id": "t4npBWLqABsnPZwL",
+      "owner": "goliath",
+      "classification": "unsupported_preflight",
+      "reason": "activity has no executable feature semantic carrier",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "countercharm",
+      "activity_id": "dnd5eactivity000",
+      "owner": "bard",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "cunning-action",
+      "activity_id": "NtS3iThuWWwm8O62",
+      "owner": "rogue",
+      "classification": "semantic_special_case",
+      "reason": "use the dedicated dash/disengage/hide intent with use_bonus_action",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "cunning-action",
+      "activity_id": "AeCciDTvw3kS583a",
+      "owner": "rogue",
+      "classification": "semantic_special_case",
+      "reason": "use the dedicated dash/disengage/hide intent with use_bonus_action",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "cunning-action",
+      "activity_id": "NiI5qEhg9TepZxMh",
+      "owner": "rogue",
+      "classification": "semantic_special_case",
+      "reason": "use the dedicated dash/disengage/hide intent with use_bonus_action",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "cunning-strike",
+      "activity_id": "n64fvJMT9fPUy7DH",
+      "owner": "rogue",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "cunning-strike",
+      "activity_id": "dWcCw1vTWRMx4YzD",
+      "owner": "rogue",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "cunning-strike",
+      "activity_id": "jR7KqMuPOZYUCDyO",
+      "owner": "rogue",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": "Unhandled roll-data token: '@scaling'",
+      "resource_error": null
+    },
+    {
+      "slug": "cunning-strike",
+      "activity_id": "m2bRZ1YeD3yf9nV7",
+      "owner": "rogue",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "cutting-words",
+      "activity_id": "dnd5eactivity000",
+      "owner": "lore",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "dark-ones-blessing",
+      "activity_id": "p3YSnjGDlLIbiLpC",
+      "owner": "fiend",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "dark-ones-own-luck",
+      "activity_id": "4A1lkH3i3azHU1YQ",
+      "owner": "fiend",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "defensive-tactics",
+      "activity_id": "ioagLQG0o1axCBtr",
+      "owner": "hunter",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "deflect-attacks",
+      "activity_id": "rQwRKkuZ7WhnB7v7",
+      "owner": "monk",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "deflect-attacks",
+      "activity_id": "dJv36KHyIVsbD00p",
+      "owner": "monk",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "deflect-energy",
+      "activity_id": "F7NbTRmkUTDDZxj7",
+      "owner": "monk",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "deflect-energy",
+      "activity_id": "AnEiO80Ga3etD595",
+      "owner": "monk",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "devious-strikes",
+      "activity_id": "4TnBjQTJzt9UjUos",
+      "owner": "rogue",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "devious-strikes",
+      "activity_id": "3eq7lcmpkJJBU2KO",
+      "owner": "rogue",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "devious-strikes",
+      "activity_id": "ki4lIPVGNA0HjEzH",
+      "owner": "rogue",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "disciple-of-life",
+      "activity_id": "Dm91WPfNiRty1bXv",
+      "owner": "life",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": "Unhandled roll-data token: '@scaling'",
+      "resource_error": null
+    },
+    {
+      "slug": "disciplined-survivor",
+      "activity_id": "P38SXEOizo5QaG8h",
+      "owner": "monk",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "distant-spell",
+      "activity_id": "WMoNZCe0IyHlRLM4",
+      "owner": "sorcerer",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "divine-intervention",
+      "activity_id": "dnd5eactivity000",
+      "owner": "cleric",
+      "classification": "unsupported_preflight",
+      "reason": "activity has no executable feature semantic carrier",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "draconic-flight",
+      "activity_id": "FrsJbUcch66Cr7OZ",
+      "owner": "dragonborn",
+      "classification": "unsupported_preflight",
+      "reason": "activity has no executable feature semantic carrier",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "dragon-companion",
+      "activity_id": "8HTVZ32kirDLNqOu",
+      "owner": "draconic",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "dragon-wings",
+      "activity_id": "W3TaYUpTcgqAtLD7",
+      "owner": "draconic",
+      "classification": "unsupported_preflight",
+      "reason": "activity has no executable feature semantic carrier",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "dragon-wings",
+      "activity_id": "j52NY9ULfqEFdnDm",
+      "owner": "draconic",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": "resource recovery/zero costs need a separate semantic operation"
+    },
+    {
+      "slug": "eldritch-master",
+      "activity_id": "ySE8596WjBPyBt2W",
+      "owner": "warlock",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": "unsupported consumption type: attribute"
+    },
+    {
+      "slug": "eldritch-smite",
+      "activity_id": "CXJlzDUkMYU9w9i9",
+      "owner": "warlock",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": "Unhandled roll-data token: '@spells.pact.level'",
+      "resource_error": "unsupported consumption type: attribute"
+    },
+    {
+      "slug": "eldritch-spear",
+      "activity_id": "8MSXmrGSgc6xHotB",
+      "owner": "warlock",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "elemental-affinity",
+      "activity_id": "RDl054AHObOn4Lf9",
+      "owner": "draconic",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "elemental-affinity",
+      "activity_id": "8c416jhRGbwBaFtn",
+      "owner": "draconic",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "elemental-affinity",
+      "activity_id": "QtWZ4Z7tGn9FhBMI",
+      "owner": "draconic",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "elemental-affinity",
+      "activity_id": "HIZjwCtrr9r9EDet",
+      "owner": "draconic",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "elemental-affinity",
+      "activity_id": "SV6ewryKJ1bBxeyD",
+      "owner": "draconic",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "elemental-fury-primal-strike",
+      "activity_id": "lHdiTksQmeJBFrf7",
+      "owner": "druid",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "empowered-evocation",
+      "activity_id": "24lZHflqzcwoBev5",
+      "owner": "evoker",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "empowered-spell",
+      "activity_id": "NkEwJOEFigqsdbZy",
+      "owner": "sorcerer",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "empowered-strikes",
+      "activity_id": "fBW26ceybofkx8Ua",
+      "owner": "monk",
+      "classification": "unsupported_preflight",
+      "reason": "activity has no executable feature semantic carrier",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "extended-spell",
+      "activity_id": "WGQHGHweOlSpZDHp",
+      "owner": "sorcerer",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "fast-hands",
+      "activity_id": "G2QVu7o56FSQvuhy",
+      "owner": "thief",
+      "classification": "fully_resolvable",
+      "reason": "typed activity and required carriers validated",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "fast-hands",
+      "activity_id": "g6OUYMMm32iPjgCB",
+      "owner": "thief",
+      "classification": "fully_resolvable",
+      "reason": "typed activity and required carriers validated",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "fast-hands",
+      "activity_id": "5pHgM0ZQStN6rIGE",
+      "owner": "thief",
+      "classification": "unsupported_preflight",
+      "reason": "activity has no executable feature semantic carrier",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "favored-enemy",
+      "activity_id": "18OW4UKZ5cSPPLhC",
+      "owner": "ranger",
+      "classification": "unsupported_preflight",
+      "reason": "activity has no executable feature semantic carrier",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "fiendish-vigor",
+      "activity_id": "fORgQlbeidLbJ4lv",
+      "owner": "warlock",
+      "classification": "fully_resolvable",
+      "reason": "typed activity and required carriers validated",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "fires-burn",
+      "activity_id": "002cv19dj8WGzSl2",
+      "owner": "goliath",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "foe-slayer",
+      "activity_id": "GG4mc3Bw4ArJEUJY",
+      "owner": "ranger",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "font-of-inspiration",
+      "activity_id": "MTIru0Pv58RveWan",
+      "owner": "bard",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": "resource recovery/zero costs need a separate semantic operation"
+    },
+    {
+      "slug": "font-of-magic",
+      "activity_id": "rYDgagyWjp6f3jtO",
+      "owner": "sorcerer",
+      "classification": "unsupported_preflight",
+      "reason": "activity has no executable feature semantic carrier",
+      "formula_error": null,
+      "resource_error": "Unhandled roll-data token: '@scaling'"
+    },
+    {
+      "slug": "font-of-magic",
+      "activity_id": "qAphJay1yKd7VWxH",
+      "owner": "sorcerer",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": "unsupported consumption type: spellSlots"
+    },
+    {
+      "slug": "frenzy",
+      "activity_id": "myPBq8xozti108Mc",
+      "owner": "berserker",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "frosts-chill",
+      "activity_id": "6goWQaWLexUqgig8",
+      "owner": "goliath",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "gaze-of-two-minds",
+      "activity_id": "TqjZeWzJpT25ZX8s",
+      "owner": "warlock",
+      "classification": "unsupported_preflight",
+      "reason": "activity has no executable feature semantic carrier",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "gift-of-the-depths",
+      "activity_id": "cfps5v1q7nFqc2EO",
+      "owner": "warlock",
+      "classification": "unsupported_preflight",
+      "reason": "activity has no executable feature semantic carrier",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "gift-of-the-protectors",
+      "activity_id": "HAifNbM6tCWfgkgk",
+      "owner": "warlock",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": "unsupported consumption type: activityUses"
+    },
+    {
+      "slug": "gift-of-the-protectors",
+      "activity_id": "OpTVpSocFQtVBROc",
+      "owner": "warlock",
+      "classification": "unsupported_preflight",
+      "reason": "activity has no executable feature semantic carrier",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "gift-of-the-protectors",
+      "activity_id": "cRjGFIPOcDcUcsjl",
+      "owner": "warlock",
+      "classification": "unsupported_preflight",
+      "reason": "activity has no executable feature semantic carrier",
+      "formula_error": null,
+      "resource_error": "resource recovery/zero costs need a separate semantic operation"
+    },
+    {
+      "slug": "greater-divine-intervention",
+      "activity_id": "QF0ngRPf1dAyycw1",
+      "owner": "cleric",
+      "classification": "unsupported_preflight",
+      "reason": "activity has no executable feature semantic carrier",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "heightened-focus",
+      "activity_id": "XLma1NEOJNEBD6mH",
+      "owner": "monk",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "heightened-focus",
+      "activity_id": "x5fBC7ybAnr79AxK",
+      "owner": "monk",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "heightened-spell",
+      "activity_id": "uHwIuPfMDD9sxVa9",
+      "owner": "sorcerer",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "hills-tumble",
+      "activity_id": "I2wKOUDxhIb5hHb7",
+      "owner": "goliath",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "holy-nimbus",
+      "activity_id": "k6gGbWQBoLTgqbSG",
+      "owner": "devotion",
+      "classification": "unsupported_preflight",
+      "reason": "activity has no executable feature semantic carrier",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "holy-nimbus",
+      "activity_id": "V0uofujMuoG0bIfp",
+      "owner": "devotion",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": "resource recovery/zero costs need a separate semantic operation"
+    },
+    {
+      "slug": "hunters-prey",
+      "activity_id": "Ek6m8ZY5Df7Mp6DO",
+      "owner": "hunter",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "hurl-through-hell",
+      "activity_id": "vIY5Deb2vCh5POdP",
+      "owner": "fiend",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "hurl-through-hell",
+      "activity_id": "0e3VQjiAyCisCoxN",
+      "owner": "fiend",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": "resource recovery/zero costs need a separate semantic operation"
+    },
+    {
+      "slug": "improved-blessed-strikes",
+      "activity_id": "Uy2oHO5lqVlXgVaE",
+      "owner": "cleric",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "improved-brutal-strike",
+      "activity_id": "UmRlsf4QWW98I4FS",
+      "owner": "barbarian",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "improved-brutal-strike",
+      "activity_id": "I30qGlPDcyKwz65H",
+      "owner": "barbarian",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "indomitable",
+      "activity_id": "84EBzlT1nDmNqhqM",
+      "owner": "fighter",
+      "classification": "semantic_special_case",
+      "reason": "requires a damage, failed-test, initiative or rest trigger",
+      "formula_error": null,
+      "resource_error": "limited-use activity has no declared cost"
+    },
+    {
+      "slug": "innate-sorcery",
+      "activity_id": "mh49lCJGuCDeiyB8",
+      "owner": "sorcerer",
+      "classification": "unsupported_preflight",
+      "reason": "activity has no executable feature semantic carrier",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "intimidating-presence",
+      "activity_id": "ZRHT8mOlea6T8XpP",
+      "owner": "berserker",
+      "classification": "semantic_special_case",
+      "reason": "requires a one-minute condition and repeated end-of-turn saves",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "intimidating-presence",
+      "activity_id": "Qr0vi4CEDfbdMNMa",
+      "owner": "berserker",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": "resource recovery/zero costs need a separate semantic operation"
+    },
+    {
+      "slug": "investment-of-the-chain-master",
+      "activity_id": "wk5D1U5DnMRJ40KK",
+      "owner": "warlock",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": "unsupported consumption type: attribute"
+    },
+    {
+      "slug": "investment-of-the-chain-master",
+      "activity_id": "uehA2kfgOCKRIqAs",
+      "owner": "warlock",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": "unsupported consumption type: attribute"
+    },
+    {
+      "slug": "investment-of-the-chain-master",
+      "activity_id": "fHEY2QcPTBaT4lBF",
+      "owner": "warlock",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "lands-aid",
+      "activity_id": "dnd5eactivity000",
+      "owner": "land",
+      "classification": "semantic_special_case",
+      "reason": "requires linked damage area and selected healing target",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "lands-aid",
+      "activity_id": "LI4RB1gsoHK0bS5n",
+      "owner": "land",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "large-form",
+      "activity_id": "5jJ0wfYo2b4k26Em",
+      "owner": "goliath",
+      "classification": "unsupported_preflight",
+      "reason": "activity has no executable feature semantic carrier",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "lay-on-hands",
+      "activity_id": "gXZh9aGHcywV9huC",
+      "owner": "paladin",
+      "classification": "fully_resolvable",
+      "reason": "typed activity and required carriers validated",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "lay-on-hands",
+      "activity_id": "K6UeXQwTyDHWvis8",
+      "owner": "paladin",
+      "classification": "fully_resolvable",
+      "reason": "typed activity and required carriers validated",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "lifedrinker",
+      "activity_id": "LDIKT3JVs25qBVuL",
+      "owner": "warlock",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "lifedrinker",
+      "activity_id": "emx17h6kO4xmSqC6",
+      "owner": "warlock",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": "Unhandled roll-data token: '@attributes.hd.largestAvailable'",
+      "resource_error": "unsupported consumption type: hitDice"
+    },
+    {
+      "slug": "lifedrinker",
+      "activity_id": "oMHxbcnQh38wZEKU",
+      "owner": "warlock",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": "Unhandled roll-data token: '@attributes.hd.smallestAvailable'",
+      "resource_error": "unsupported consumption type: hitDice"
+    },
+    {
+      "slug": "magical-cunning",
+      "activity_id": "EK3yOTVml5LbmpmQ",
+      "owner": "warlock",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": "unsupported consumption type: attribute"
+    },
+    {
+      "slug": "martial-arts",
+      "activity_id": "x7fKZy0kgRTMACTa",
+      "owner": "monk",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": "@mod requires a governing ability but none was supplied for '@mod'",
+      "resource_error": null
+    },
+    {
+      "slug": "martial-arts",
+      "activity_id": "uCIVkZurvxHYJ0h0",
+      "owner": "monk",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": "@mod requires a governing ability but none was supplied for '@mod'",
+      "resource_error": null
+    },
+    {
+      "slug": "mask-of-many-faces",
+      "activity_id": "RgprqPZmHBQwULjl",
+      "owner": "warlock",
+      "classification": "unsupported_preflight",
+      "reason": "activity has no executable feature semantic carrier",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "master-of-myriad-forms",
+      "activity_id": "dnd5eactivity000",
+      "owner": "warlock",
+      "classification": "unsupported_preflight",
+      "reason": "activity has no executable feature semantic carrier",
+      "formula_error": "Unhandled roll-data token: '@attributes.movement.walk'",
+      "resource_error": null
+    },
+    {
+      "slug": "master-of-myriad-forms",
+      "activity_id": "wQGpfux8qzcvwsDo",
+      "owner": "warlock",
+      "classification": "unsupported_preflight",
+      "reason": "activity has no executable feature semantic carrier",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "master-of-myriad-forms",
+      "activity_id": "dQnMvyjoGqhgl9wP",
+      "owner": "warlock",
+      "classification": "unsupported_preflight",
+      "reason": "activity has no executable feature semantic carrier",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "master-of-myriad-forms",
+      "activity_id": "SEwXqOHdPCyejSYR",
+      "owner": "warlock",
+      "classification": "unsupported_preflight",
+      "reason": "activity has no executable feature semantic carrier",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "master-of-myriad-forms",
+      "activity_id": "osceJQzUOQPJ9CLn",
+      "owner": "warlock",
+      "classification": "unsupported_preflight",
+      "reason": "activity has no executable feature semantic carrier",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "master-of-myriad-forms",
+      "activity_id": "eHtpASAnamFUc69H",
+      "owner": "warlock",
+      "classification": "unsupported_preflight",
+      "reason": "activity has no executable feature semantic carrier",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "misty-visions",
+      "activity_id": "dnd5eactivity000",
+      "owner": "warlock",
+      "classification": "unsupported_preflight",
+      "reason": "activity has no executable feature semantic carrier",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "monks-focus",
+      "activity_id": "2ghJTBhilLrFn9xT",
+      "owner": "monk",
+      "classification": "fully_resolvable",
+      "reason": "typed activity and required carriers validated",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "monks-focus",
+      "activity_id": "7xj7b6e8tDznDSrE",
+      "owner": "monk",
+      "classification": "fully_resolvable",
+      "reason": "typed activity and required carriers validated",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "monks-focus",
+      "activity_id": "EFzidO6yAapw8d60",
+      "owner": "monk",
+      "classification": "fully_resolvable",
+      "reason": "typed activity and required carriers validated",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "monks-focus",
+      "activity_id": "0MuRZ0Ur95xQTKFq",
+      "owner": "monk",
+      "classification": "semantic_special_case",
+      "reason": "Step of the Wind requires Dash/Disengage and doubled jump distance",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "natural-recovery",
+      "activity_id": "dnd5eactivity000",
+      "owner": "land",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": "unsupported consumption type: activityUses"
+    },
+    {
+      "slug": "natural-recovery",
+      "activity_id": "u0UF6WePUutyp6e6",
+      "owner": "land",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": "unsupported consumption type: activityUses"
+    },
+    {
+      "slug": "natures-sanctuary",
+      "activity_id": "dnd5eactivity000",
+      "owner": "land",
+      "classification": "unsupported_preflight",
+      "reason": "activity has no executable feature semantic carrier",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "natures-sanctuary",
+      "activity_id": "oV51RLBkYFH4MPrS",
+      "owner": "land",
+      "classification": "unsupported_preflight",
+      "reason": "activity has no executable feature semantic carrier",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "natures-veil",
+      "activity_id": "E54BKGckr7WLLLqf",
+      "owner": "ranger",
+      "classification": "unsupported_preflight",
+      "reason": "activity has no executable feature semantic carrier",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "one-with-shadows",
+      "activity_id": "dnd5eactivity000",
+      "owner": "warlock",
+      "classification": "unsupported_preflight",
+      "reason": "activity has no executable feature semantic carrier",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "open-hand-technique",
+      "activity_id": "1jdSaWanuRrdkVs3",
+      "owner": "hand",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "open-hand-technique",
+      "activity_id": "XoaS0RtDCGAqrQsf",
+      "owner": "hand",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "open-hand-technique",
+      "activity_id": "5Qgc0K3TfuonkPIG",
+      "owner": "hand",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "otherworldly-leap",
+      "activity_id": "dnd5eactivity000",
+      "owner": "warlock",
+      "classification": "unsupported_preflight",
+      "reason": "activity has no executable feature semantic carrier",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "overchannel",
+      "activity_id": "yPyi96Y94w5DannJ",
+      "owner": "evoker",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "overchannel",
+      "activity_id": "w09009Qtx2IuGeS9",
+      "owner": "evoker",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": "untyped damage/healing part",
+      "resource_error": "resource recovery/zero costs need a separate semantic operation"
+    },
+    {
+      "slug": "pact-of-the-blade",
+      "activity_id": "8MSXmrGSgc6xHotB",
+      "owner": "warlock",
+      "classification": "unsupported_preflight",
+      "reason": "activity has no executable feature semantic carrier",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "pact-of-the-blade",
+      "activity_id": "UTEfakL3rBtTIu1K",
+      "owner": "warlock",
+      "classification": "unsupported_preflight",
+      "reason": "activity has no executable feature semantic carrier",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "pact-of-the-chain",
+      "activity_id": "uehA2kfgOCKRIqAs",
+      "owner": "warlock",
+      "classification": "unsupported_preflight",
+      "reason": "activity has no executable feature semantic carrier",
+      "formula_error": null,
+      "resource_error": "unsupported consumption type: attribute"
+    },
+    {
+      "slug": "pact-of-the-chain",
+      "activity_id": "5W78W2Opzhax0Jcf",
+      "owner": "warlock",
+      "classification": "unsupported_preflight",
+      "reason": "activity has no executable feature semantic carrier",
+      "formula_error": null,
+      "resource_error": "unsupported consumption type: attribute"
+    },
+    {
+      "slug": "peerless-skill",
+      "activity_id": "dnd5eactivity000",
+      "owner": "lore",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "persistent-rage",
+      "activity_id": "dnd5eactivity000",
+      "owner": "barbarian",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": "Unresolved @scale token (absent from carrier): '@scale.barbarian.rage'"
+    },
+    {
+      "slug": "preserve-life",
+      "activity_id": "dnd5eactivity000",
+      "owner": "life",
+      "classification": "semantic_special_case",
+      "reason": "requires divided healing, self inclusion and half-maximum HP cap",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "quickened-spell",
+      "activity_id": "leFbHb9SZwDix2TU",
+      "owner": "sorcerer",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "quivering-palm",
+      "activity_id": "lBn87Q4yyJXWzLqg",
+      "owner": "hand",
+      "classification": "semantic_special_case",
+      "reason": "requires an authoritative hit/rider binding and its lifecycle",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "quivering-palm",
+      "activity_id": "O1mQr2rPpzRpB3yJ",
+      "owner": "hand",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "rage",
+      "activity_id": "dnd5eactivity000",
+      "owner": "barbarian",
+      "classification": "fully_resolvable",
+      "reason": "typed activity and required carriers validated",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "relentless-endurance",
+      "activity_id": "DULUqgjDy0u99UKM",
+      "owner": "orc",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "relentless-rage",
+      "activity_id": "dnd5eactivity100",
+      "owner": "barbarian",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "relentless-rage",
+      "activity_id": "Y2xWUsWmpklWLtVT",
+      "owner": "barbarian",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "repelling-blast",
+      "activity_id": "OXhI1TDQxORrGAgc",
+      "owner": "warlock",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "restoring-touch",
+      "activity_id": "PgTPWedvQHDlQ7LQ",
+      "owner": "paladin",
+      "classification": "unsupported_preflight",
+      "reason": "activity has no executable feature semantic carrier",
+      "formula_error": null,
+      "resource_error": "Unhandled roll-data token: '@scaling'"
+    },
+    {
+      "slug": "retaliation",
+      "activity_id": "dnd5eactivity000",
+      "owner": "berserker",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "sacred-weapon",
+      "activity_id": "Ew70lNTD8dR3vREt",
+      "owner": "devotion",
+      "classification": "semantic_special_case",
+      "reason": "activation requires an unmodeled trigger/reaction/rest",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "sear-undead",
+      "activity_id": "fW3U8L8Ca9a6O9Wx",
+      "owner": "cleric",
+      "classification": "semantic_special_case",
+      "reason": "requires Turn Undead eligibility and combined turn/damage semantics",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "second-wind",
+      "activity_id": "zumaUC11cpntqme1",
+      "owner": "fighter",
+      "classification": "fully_resolvable",
+      "reason": "typed activity and required carriers validated",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "seeking-spell",
+      "activity_id": "vudKvHh2PbAiDXSE",
+      "owner": "sorcerer",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "signature-spells",
+      "activity_id": "XFWgZtgTNIvimlWz",
+      "owner": "wizard",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "signature-spells",
+      "activity_id": "wdegZibcbQM4SzRI",
+      "owner": "wizard",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": "unsupported consumption type: activityUses"
+    },
+    {
+      "slug": "signature-spells",
+      "activity_id": "LKpjpqgxudgXOIIZ",
+      "owner": "wizard",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": "unsupported consumption type: activityUses"
+    },
+    {
+      "slug": "slow-fall",
+      "activity_id": "cWpSb7kUmzdpFoc4",
+      "owner": "monk",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "sneak-attack",
+      "activity_id": "a1T6nHaqmvbLpyJr",
+      "owner": "rogue",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "sorcerous-restoration",
+      "activity_id": "H8hZYUmd4BHU3mek",
+      "owner": "sorcerer",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": "Unsupported formula token at ' / 2))'"
+    },
+    {
+      "slug": "sorcery-incarnate",
+      "activity_id": "qSLk2DaH21SNZxve",
+      "owner": "sorcerer",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": "resource recovery/zero costs need a separate semantic operation"
+    },
+    {
+      "slug": "spell-mastery",
+      "activity_id": "bT2LjQRvFei2uzIl",
+      "owner": "wizard",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "steady-aim",
+      "activity_id": "VGVYnecMRcu0f5Sq",
+      "owner": "rogue",
+      "classification": "unsupported_preflight",
+      "reason": "activity has no executable feature semantic carrier",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "stonecunning",
+      "activity_id": "NTjnXm1AYqdOUJOB",
+      "owner": "dwarf",
+      "classification": "unsupported_preflight",
+      "reason": "activity has no executable feature semantic carrier",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "stones-endurance",
+      "activity_id": "vrWhAQ6Bj4gznxHq",
+      "owner": "goliath",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "storms-thunder",
+      "activity_id": "3eWfDnXfYJVJqT1z",
+      "owner": "goliath",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "stroke-of-luck",
+      "activity_id": "y4PG8Ow1eNEle580",
+      "owner": "rogue",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "stunning-strike",
+      "activity_id": "Xto99a8Zt46VLwaR",
+      "owner": "monk",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "subtle-spell",
+      "activity_id": "9jWUnfRzs0TqKWC2",
+      "owner": "sorcerer",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "superior-defense",
+      "activity_id": "tED3Z5V5ZlCkyzWU",
+      "owner": "monk",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "superior-hunters-defense",
+      "activity_id": "KAgnJeRtqjDeYJ2S",
+      "owner": "hunter",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "superior-hunters-prey",
+      "activity_id": "yqOAxbsX16RkOx06",
+      "owner": "hunter",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "survivor",
+      "activity_id": "5Fo0QwzexIPyLP3W",
+      "owner": "champion",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "tactical-mind",
+      "activity_id": "VVEGPoQePVprCF9A",
+      "owner": "fighter",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "tireless",
+      "activity_id": "T17ZXCxvxeDwPoz5",
+      "owner": "ranger",
+      "classification": "unsupported_preflight",
+      "reason": "activity-local use pools have no runtime carrier",
+      "formula_error": null,
+      "resource_error": "unsupported consumption type: activityUses"
+    },
+    {
+      "slug": "tireless",
+      "activity_id": "y2cSZJxteG7Yew0u",
+      "owner": "ranger",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": "unsupported consumption type: attribute"
+    },
+    {
+      "slug": "transmuted-spell",
+      "activity_id": "FT1V43gRA47fCA51",
+      "owner": "sorcerer",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "twinned-spell",
+      "activity_id": "WsG9JmGU7gRGiTRq",
+      "owner": "sorcerer",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "uncanny-dodge",
+      "activity_id": "7krJIcGhZl9RqzYl",
+      "owner": "rogue",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "uncanny-metabolism",
+      "activity_id": "RfyAj9VDmzAJkTL3",
+      "owner": "monk",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": "resource recovery/zero costs need a separate semantic operation"
+    },
+    {
+      "slug": "visions-of-distant-realms",
+      "activity_id": "dnd5eactivity000",
+      "owner": "warlock",
+      "classification": "unsupported_preflight",
+      "reason": "activity has no executable feature semantic carrier",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "whispers-of-the-grave",
+      "activity_id": "dnd5eactivity000",
+      "owner": "warlock",
+      "classification": "unsupported_preflight",
+      "reason": "activity has no executable feature semantic carrier",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "wholeness-of-body",
+      "activity_id": "CoatPmjognJHbfZ6",
+      "owner": "hand",
+      "classification": "fully_resolvable",
+      "reason": "typed activity and required carriers validated",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "wild-companion",
+      "activity_id": "dnd5eactivity000",
+      "owner": "druid",
+      "classification": "unsupported_preflight",
+      "reason": "activity has no executable feature semantic carrier",
+      "formula_error": null,
+      "resource_error": "unsupported consumption type: spellSlots"
+    },
+    {
+      "slug": "wild-companion",
+      "activity_id": "jKEcwnfOpZdxX2JV",
+      "owner": "druid",
+      "classification": "unsupported_preflight",
+      "reason": "activity has no executable feature semantic carrier",
+      "formula_error": null,
+      "resource_error": null
+    },
+    {
+      "slug": "wild-resurgence",
+      "activity_id": "dnd5eactivity000",
+      "owner": "druid",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": "unsupported consumption type: spellSlots"
+    },
+    {
+      "slug": "wild-resurgence",
+      "activity_id": "7nAgPNN2dth7SR0D",
+      "owner": "druid",
+      "classification": "semantic_special_case",
+      "reason": "unsupported activation/payment category",
+      "formula_error": null,
+      "resource_error": "resource recovery/zero costs need a separate semantic operation"
+    },
+    {
+      "slug": "wild-shape",
+      "activity_id": "FsDnynyqno8XNHgf",
+      "owner": "druid",
+      "classification": "fully_resolvable",
+      "reason": "typed activity and required carriers validated",
+      "formula_error": null,
+      "resource_error": null
+    }
+  ]
+}

@@ -63,7 +63,7 @@
       "range": {
         "override": false,
         "special": "",
-        "units": "self",
+        "units": "touch",
         "value": null
       },
       "sort": 0,
@@ -149,7 +149,7 @@
       "range": {
         "override": false,
         "special": "",
-        "units": "self",
+        "units": "touch",
         "value": null
       },
       "roll": {
@@ -216,6 +216,9 @@
   "review": {
     "known_divergence": null,
     "requires_user_decision": false
+  },
+  "runtime_operations": {
+    "K6UeXQwTyDHWvis8": "remove_poison"
   },
   "slug": "lay-on-hands",
   "source_slug": "paladin",

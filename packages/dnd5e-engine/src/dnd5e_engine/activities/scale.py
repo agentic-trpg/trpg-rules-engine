@@ -193,6 +193,7 @@ def build_scale_values(
     level: int,
     loader: AssetLoader,
     classes: Mapping[str, int] | None = None,
+    granted_feature_levels: Mapping[str, int] | None = None,
 ) -> dict[str, int | str]:
     """Pre-resolve every ScaleValue on the caster's owner docs at ``level``.
 
@@ -230,6 +231,8 @@ def build_scale_values(
     for slug, doc, owner_level in owners:
         _walk_owner_scales(slug, doc, owner_level, out)
     granted = leveled_feature_levels([(doc, owner_level) for _, doc, owner_level in owners])
+    if granted_feature_levels is not None:
+        granted = dict(granted_feature_levels)
     for feature_slug, feature_level in granted.items():
         feature_doc = loader.get_feature(feature_slug)
         if feature_doc is not None:

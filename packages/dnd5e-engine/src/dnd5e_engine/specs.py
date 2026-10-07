@@ -129,6 +129,8 @@ class PartyMemberSpec(BaseModel):
     # Rogue levels grant Cunning Action whatever its primary ``class_slug``.
     # ``None`` for non-classed entities and fixtures that don't project class
     # info.
+    # None: infer fixed grants for legacy hosts. Empty: explicitly no repertoire.
+    granted_features: tuple[str, ...] | None = None
     class_slug: str | None = None
     # SRD 5.2 Multiclassing — ``{class_slug: level}`` in the order the classes
     # were taken ("When you gain a new level in a class, you get its features for
@@ -193,6 +195,7 @@ class PartyMemberSpec(BaseModel):
     save_proficiencies: tuple[str, ...] = ()
     skill_proficiencies: tuple[str, ...] = ()
     skill_expertise: tuple[str, ...] = ()
+    skill_check_bonuses: dict[str, int] = Field(default_factory=dict)
     jack_of_all_trades: bool = False
     reliable_talent: bool = False
     stealth_disadvantage: bool = False

@@ -67,8 +67,8 @@ def test_a_fighter_1_wizard_4_has_no_extra_attack_or_action_surge() -> None:
     at Fighter 1; the Wizard's level-1 feature is in."""
     handle, live = start([pc(**FIGHTER_1_WIZARD_4)], seed=1)
     slugs = _granted_feature_slugs(combatant(live))
-    assert {"second-wind", "arcane-recovery"} <= slugs
-    assert slugs.isdisjoint({"extra-attack", "action-surge"})
+    assert {"second-wind", "arcane-recovery"} <= set(slugs)
+    assert set(slugs).isdisjoint({"extra-attack", "action-surge"})
     assert get_live(handle).turn.attacks_remaining == 1
 
 

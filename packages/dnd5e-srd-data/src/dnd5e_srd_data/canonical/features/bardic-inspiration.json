@@ -137,8 +137,14 @@
     "known_divergence": null,
     "requires_user_decision": false
   },
+  "runtime_operations": {
+    "dnd5eactivity000": "native"
+  },
   "slug": "bardic-inspiration",
   "source_slug": "bard",
+  "target_rules": {
+    "dnd5eactivity000": "perceives_caster"
+  },
   "uses": {
     "max": "max(1, @abilities.cha.mod)",
     "recovery": [

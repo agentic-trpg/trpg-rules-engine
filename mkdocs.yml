@@ -50,6 +50,7 @@ nav:
       - Spell timed activities: dev/spell-timed-activities.md
       - Persistent area lifecycle: dev/persistent-areas.md
       - Typed ability checks: dev/typed-ability-checks.md
+      - Feature runtime safety: dev/feature-runtime.md
   - Migration guide (0.1→0.2): migration/v0.1-to-v0.2.md
   - Migration guide (0.2→0.3): migration/v0.2-to-v0.3.md
   - Migration guide (0.3→0.4): migration/v0.3-to-v0.4.md

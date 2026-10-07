@@ -85,7 +85,11 @@ def _encounter() -> list[EncounterMemberSpec]:
 
 
 def _run_use_feature(
-    party: list[PartyMemberSpec], feature_id: str, monkeypatch=None, activity_id=None
+    party: list[PartyMemberSpec],
+    feature_id: str,
+    monkeypatch=None,
+    activity_id=None,
+    target_id=None,
 ):
     """Drive a USE_FEATURE intent. When ``monkeypatch`` is supplied, the
     activities the orchestrator routes into ``resolve_activity`` are captured
@@ -116,7 +120,10 @@ def _run_use_feature(
             start.handle,
             actor_id="char:hero",
             intent=PlayerIntent(
-                intent_type="use_feature", feature_id=feature_id, activity_id=activity_id
+                intent_type="use_feature",
+                feature_id=feature_id,
+                activity_id=activity_id,
+                target_id=target_id,
             ),
         )
         return live, pre
@@ -214,6 +221,7 @@ def test_multi_activity_feature_with_selection_resolves_that_activity(caplog, mo
             "channel-divinity-cleric",
             monkeypatch=monkeypatch,
             activity_id="UdbUwbvrWwgDuNy9",
+            target_id="mon:foe",
         )
 
     assert len(routed) == 1, f"a selected activity must route exactly itself, got {routed!r}"

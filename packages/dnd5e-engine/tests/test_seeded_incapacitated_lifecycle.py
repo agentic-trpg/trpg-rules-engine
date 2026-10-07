@@ -174,16 +174,30 @@ def test_all_seed_permutations_have_identical_reconciled_state_and_events(status
 
 @pytest.mark.parametrize("status", CONDITIONS)
 @pytest.mark.parametrize("reverse", [False, True])
-def test_suppressed_status_never_owns_or_triggers_lifecycle(status, reverse):
+@pytest.mark.parametrize("include_rage", [False, True])
+def test_suppressed_status_never_owns_or_triggers_lifecycle(status, reverse, include_rage):
     seeds = _seeds([status])
+    if not include_rage:
+        seeds = tuple(e for e in seeds if e.id != "effect:rage")
     _result, live = _start(tuple(reversed(seeds)) if reverse else seeds, immunities=[status])
     assert orch._find_combatant(live, HERO).conditions == []
     assert live.active_conditions[HERO] == set()
     assert live.conditions_by_effect[(HERO, "effect:disabled", "test:seed")] == []
-    assert {e.id for e in live.active_effects[HERO]} == {"effect:disabled", "effect:rage"}
-    assert len(live.concentration_chain[HERO]) == 2
-    assert live.active_conditions[FOE] == {"grappled", "blinded"}
-    assert not any(e.type in TEARDOWNS for e in live.event_log)
+    assert {e.id for e in live.active_effects[HERO]} == (
+        {"effect:disabled", "effect:rage"} if include_rage else {"effect:disabled"}
+    )
+    if include_rage:
+        # Rage independently drops Concentration even when the condition is
+        # suppressed; the grapple and Rage must remain.
+        assert not live.concentration_chain
+        assert live.active_conditions[FOE] == {"grappled"}
+        assert all(
+            e.effect_id == "effect:bless" for e in live.event_log if e.type == "effect_expired"
+        )
+    else:
+        assert len(live.concentration_chain[HERO]) == 2
+        assert live.active_conditions[FOE] == {"grappled", "blinded"}
+        assert not any(e.type in TEARDOWNS for e in live.event_log)
     assert live.rng.getstate() == _BASE_RANDOM(7).getstate()
 
 
@@ -241,7 +255,7 @@ def test_wild_shape_form_hydration_remains_an_explicit_follow_up():
 
 
 def test_pre_seat_immunity_filtering_agrees_with_attachment():
-    seeds = _seeds(["paralyzed"])
+    seeds = tuple(e for e in _seeds(["paralyzed"]) if e.id != "effect:rage")
     _result, live = _start(seeds, immunities=["paralyzed"], hero_initiative=None)
     expected_rng = _BASE_RANDOM(7)
     # Rejected Paralyzed no longer imposes Incapacitated's disadvantage pre-seat.

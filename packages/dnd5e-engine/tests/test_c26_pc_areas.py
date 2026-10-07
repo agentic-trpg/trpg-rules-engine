@@ -271,7 +271,7 @@ def test_an_unaimed_breath_weapon_is_refused_before_its_use_is_spent() -> None:
         feature_id="breath-weapon",
         activity_id="dxCRYmNSSGp6L2yh",
     )
-    assert [e.reason for e in events(live, CastFailed)] == ["target_invalid"]
+    assert [e.reason for e in events(live, CastFailed)] == ["unsupported_feature"]
     assert live.custom_counters_by_entity.get("char:drake", {}) == {}
     assert combatant(live, "char:drake").action_available is True
 

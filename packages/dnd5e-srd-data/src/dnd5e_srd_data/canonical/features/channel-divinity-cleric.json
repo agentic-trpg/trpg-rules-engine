@@ -405,6 +405,10 @@
   },
   "slug": "channel-divinity-cleric",
   "source_slug": "cleric",
+  "target_rules": {
+    "OY9UrTXvlRL0JUoI": "other_visible_creature",
+    "UdbUwbvrWwgDuNy9": "other_visible_creature"
+  },
   "uses": {
     "max": "@scale.cleric.channel-divinity",
     "recovery": [

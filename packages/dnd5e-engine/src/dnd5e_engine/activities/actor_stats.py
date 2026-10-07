@@ -67,7 +67,8 @@ def check_modifier(c: Combatant, ability: Ability, skill: str | None = None) -> 
         prof = proficiency_bonus_of(c) * (2 if expertise else 1)
     elif skill in SKILL_ABILITIES and c.jack_of_all_trades:
         prof = proficiency_bonus_of(c) // 2
-    return D20Modifier(ability, mod, prof, expertise, mod + prof)
+    bonus = c.skill_check_bonuses.get(skill, 0) if skill and skill_ability(skill) == ability else 0
+    return D20Modifier(ability, mod, prof, expertise, mod + prof + bonus)
 
 
 def skill_ability(skill: str) -> Ability | None:

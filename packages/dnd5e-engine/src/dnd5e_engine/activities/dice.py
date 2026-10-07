@@ -2,13 +2,12 @@
 
 MIRRORS, does not import from, the existing ``effects/`` dice code:
 
-* ``roll_expr`` mirrors ``effects/attack.py:_eval_node_via_rng`` — walk a parsed
-  ``d20`` AST and draw each die from the *passed-in* ``random.Random`` so every
-  roll lands in the same seed stream. ``d20.roll()`` is never used; it draws from
-  d20's global RNG and is not seedable.
+* ``roll_expr`` parses a closed integer/dice grammar, then draws each die from
+  the *passed-in* ``random.Random`` in declaration order. Validation is draw-free;
+  neither Python eval nor a global RNG is used.
 * ``roll_damage_part`` mirrors ``effects/damage.py:_roll_damage`` — apply scaling
   (cantrip / upcast) BEFORE crit doubling, then walk via the seeded rng. The crit
-  doubler mirrors ``_apply_crit_doubling``: double ``d20.ast.Dice.num`` only,
+  doubler mirrors ``_apply_crit_doubling``: double each dice node's count only,
   never numeric modifiers (SRD §Critical Hits — dice twice, modifier once).
 
 Damage-part → expression mirrors Foundry's ``shared/damage-field.mjs``
@@ -24,7 +23,7 @@ import random
 import re
 from typing import TYPE_CHECKING
 
-import d20
+from .arithmetic import evaluate, parse_expression
 
 if TYPE_CHECKING:
     from dnd5e_srd_data.schema.common import DamagePart, DamagePartBlock
@@ -78,65 +77,14 @@ def _bump_first_die_count(formula: str, die_increase: int) -> str:
     return re.sub(r"^(\d+)d", _bump, formula, count=1)
 
 
-def _parse(expr: str) -> d20.Expression:
-    """Parse ``expr``, re-raising d20 parse failures as ``ValueError``.
-
-    Mirrors ``effects/damage.py:225`` — an empty or malformed expression (e.g. a
-    ``DamagePartBlock`` whose ``_block_to_expr`` yields ``""``) raises
-    ``d20.RollSyntaxError``, which is not a ``ValueError`` subclass. Callers that
-    wire these rolls in catch the stdlib class, so wrap at the single parse site.
-    """
-    try:
-        return d20.parse(expr)
-    except d20.RollError as exc:
-        raise ValueError(f"Unparseable dice expression: {expr!r}") from exc
+def validate_expression(expr: str, *, allow_dice: bool = True) -> None:
+    """Validate the complete evaluator grammar without drawing any dice."""
+    parse_expression(expr, allow_dice=allow_dice)
 
 
 def roll_expr(expr: str, rng: random.Random, *, crit: bool = False) -> int:
-    """Parse ``expr`` and evaluate it against ``rng`` for deterministic dice.
-
-    Mirrors ``effects/attack.py:_eval_node_via_rng`` — each ``Dice`` node draws
-    ``num`` faces via ``rng.randint(1, size)``; literals and +/- operators fold
-    as written. Deterministic for a fixed seed.
-
-    ``crit=True`` applies SRD §Critical Hits doubling through the SAME
-    ``_double_dice`` idiom ``roll_damage_part`` uses (each ``Dice.num`` doubles —
-    ``3d6`` rolls as six sequential d6 draws; literal modifiers untouched), so a
-    crit-doubled sidecar expression (the Sneak Attack rider) lands in the seeded
-    stream exactly like a crit-doubled damage part.
-    """
-    ast = _parse(expr)
-    if crit:
-        ast = _double_dice(ast)
-    return _eval_node(ast.roll, rng)
-
-
-def _eval_node(node: d20.ast.Node, rng: random.Random, die_floor: int | None = None) -> int:
-    if isinstance(node, d20.ast.Literal):
-        return int(node.value)
-    if isinstance(node, d20.ast.Dice):
-        faces = [rng.randint(1, int(node.size)) for _ in range(int(node.num))]
-        # A floor (SRD 5.2 Great Weapon Fighting) changes faces, never the number
-        # of draws, so the seeded stream is the same with or without it.
-        return sum(faces if die_floor is None else (max(face, die_floor) for face in faces))
-    if isinstance(node, d20.ast.UnOp):
-        inner = _eval_node(node.value, rng, die_floor)
-        if node.op == "+":
-            return inner
-        if node.op == "-":
-            return -inner
-        raise ValueError(f"Unsupported unary op in dice expression: {node.op!r}")
-    if isinstance(node, d20.ast.BinOp):
-        left = _eval_node(node.left, rng, die_floor)
-        right = _eval_node(node.right, rng, die_floor)
-        if node.op == "+":
-            return left + right
-        if node.op == "-":
-            return left - right
-        raise ValueError(f"Unsupported binary op in dice expression: {node.op!r}")
-    if isinstance(node, d20.ast.Parenthetical):
-        return _eval_node(node.value, rng, die_floor)
-    raise ValueError(f"Unsupported node in dice expression: {type(node).__name__}")
+    """Validate the whole expression, then draw dice in declaration order."""
+    return evaluate(parse_expression(expr), rng, crit=crit)
 
 
 def roll_damage_part(
@@ -187,10 +135,11 @@ def roll_damage_part(
         else str(part.dice)  # type: ignore[union-attr]
     )
 
-    ast = _parse(expr)
-    if crit:
-        ast = _double_dice(ast)
-    total = _eval_node(ast.roll, rng, die_floor)
+    node = parse_expression(expr)
+    scaling = getattr(part, "scaling", None)
+    if scaling is not None and steps and scaling.formula:
+        validate_expression(scaling.formula)
+    total = evaluate(node, rng, crit=crit, die_floor=die_floor)
     return total + _scaling_formula_bonus(part, steps, rng)
 
 
@@ -303,20 +252,3 @@ def _cantrip_dice_count(character_level: int) -> int:
     if character_level < 17:
         return 3
     return 4
-
-
-def _double_dice(ast: d20.ast.Node) -> d20.ast.Node:
-    """SRD §Critical Hits — double every ``Dice.num``, leave literals alone.
-
-    Mirrors ``effects/damage.py:_apply_crit_doubling`` (the legacy default
-    ``crit_mapper``): ``d20.utils.tree_map`` rebuilds each ``Dice(num, size)``
-    as ``Dice(num*2, size)``; numeric modifiers are untouched.
-    """
-
-    def _double(node: d20.ast.Node) -> d20.ast.Node:
-        if isinstance(node, d20.ast.Dice):
-            return d20.ast.Dice(node.num * 2, node.size)
-        return node
-
-    result: d20.ast.Node = d20.utils.tree_map(_double, ast)
-    return result

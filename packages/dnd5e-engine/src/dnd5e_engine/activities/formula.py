@@ -158,9 +158,22 @@ def _resolve_token(token: str, ctx: ActivityResolutionContext, ability: str | No
     if token == _TOKEN_SPELL_DC:
         return 8 + ctx.caster_proficiency_bonus + ctx.ability_mod(_spellcasting_ability(ctx, token))
 
+    if token in ("@item.uses.spent", "@item.uses.value", "@item.uses.max"):
+        uses = ctx.source_uses
+        if uses is None:
+            raise ValueError(f"{token!r} requires a source-use carrier")
+        return {
+            "@item.uses.spent": uses.spent,
+            "@item.uses.value": uses.current,
+            "@item.uses.max": uses.maximum,
+        }[token]
+
     ability_match = _ABILITY_MOD_RE.match(token)
     if ability_match is not None:
-        return ctx.ability_mod(ability_match.group(1))
+        code = ability_match.group(1)
+        if code not in ("str", "dex", "con", "int", "wis", "cha"):
+            raise ValueError(f"Unknown ability token: {token!r}")
+        return ctx.ability_mod(code)
 
     if token.startswith(_SCALE_PREFIX):
         # Pre-resolved carrier lookup (no loader I/O here — purity). The key is

@@ -24,7 +24,8 @@ from dnd5e_engine.types.checks import CheckActorState, CheckRequest
 if TYPE_CHECKING:
     from dnd5e_srd_data.schema.common import Activity
 
-    from dnd5e_engine.orchestrator import PlayerIntent, _FeatureInvocation, _LiveCombat
+    from dnd5e_engine.feature_runtime import FeatureInvocation as _FeatureInvocation
+    from dnd5e_engine.orchestrator import PlayerIntent, _LiveCombat
     from dnd5e_engine.types.combat import Combatant
 
 

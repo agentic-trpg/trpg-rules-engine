@@ -43,7 +43,7 @@
         "bonus": "",
         "custom": {
           "enabled": true,
-          "formula": "@scale.monk.die + @abilities.wis.mod"
+          "formula": "max(1, @scale.monk.die + @abilities.wis.mod)"
         },
         "denomination": 0,
         "number": null,

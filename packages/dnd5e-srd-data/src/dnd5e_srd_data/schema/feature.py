@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SerializerFunctionWrapHandler, model_serializer
 
 from dnd5e_srd_data.schema.advancement import AdvancementEntry
 from dnd5e_srd_data.schema.common import Activity, PassiveEffect, Provenance, ReviewState
 
 FeatureType = Literal["class_feature", "subclass_feature", "species_trait"]
+FeatureRuntimeOperation = Literal[
+    "native", "flurry", "remove_poison", "disengage", "dodge_disengage", "dash_heal"
+]
+FeatureTargetRule = Literal["other_visible_creature", "perceives_caster"]
 
 # SRD 5.2 rest / recharge periods a limited-use feature recovers on. Foundry's
 # ``uses.recovery[].period`` vocabulary observed across the SRD feature corpus;
@@ -70,7 +74,20 @@ class Feature(BaseModel):
     # no meaningful cap (no ``max`` and no ``recovery``). Mirrors the ``advancement``
     # precedent: additive, populated by the translator, byte-stable regen.
     uses: FeatureUses | None = None
+    # Audited activity-id bindings for semantics absent from Foundry's utility
+    # payload. Ingestion owns the exact identities; runtime consumes this type.
+    runtime_operations: dict[str, FeatureRuntimeOperation] = Field(default_factory=dict)
+    target_rules: dict[str, FeatureTargetRule] = Field(default_factory=dict)
     provenance: Provenance
     review: ReviewState = Field(default_factory=ReviewState)
 
     entry_kind: Literal["feature"] = "feature"
+
+    @model_serializer(mode="wrap")
+    def _serialize_feature(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        if not self.runtime_operations:
+            data.pop("runtime_operations", None)
+        if not self.target_rules:
+            data.pop("target_rules", None)
+        return data

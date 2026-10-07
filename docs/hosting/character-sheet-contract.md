@@ -48,7 +48,11 @@ multiclass slot table"; pass a non-empty map to pin one.
 ## What reaches combat
 
 `build_party_member` also forwards the build's `feats` and `classes` to
-`PartyMemberSpec`. The four SRD 5.2 Fighting Style feats therefore apply in
+`PartyMemberSpec`, and forwards `DerivedSheet.features` through the validated
+`granted_features` carrier into combat. Legal choice picks can reach `use_feature`;
+unsupported semantics still refuse before spending. `None` retains legacy fixed
+grants, while `()` is explicitly empty. Typed feature-pool capacities are checked.
+The four SRD 5.2 Fighting Style feats therefore apply in
 combat (Defense is already in the derived `ac`, and only while Light, Medium
 or Heavy armor is worn), and each class's features and scale values are read
 at that class's own level.
@@ -58,12 +62,11 @@ at that class's own level.
 Magic items' own passive effects (pass them as `active_effects`), languages,
 tool proficiencies, the background's Origin feat, ability increases from feats
 other than the Ability Score Improvement feat, level-20 capstone increases,
-multiclass ability prerequisites, how many picks a choice allows, and penalties
+multiclass ability prerequisites, missing skill-choice grants, and penalties
 for armor worn without training (`armor_training` is reported so a host can
-apply them). Feature-choice picks other than the Fighting Styles (Eldritch
-Invocations, Metamagic, Blessed Warrior, …) are recorded on
-`DerivedSheet.features` / `feats`, but their effects are not applied and they
-never reach the in-combat feature gate. Fast Movement still adds its speed
+apply them). Feature-choice effects require supported typed activities or
+passive consumers. Thaumaturge/Magician skill bonuses reach shared live checks;
+Primal Knowledge's conditional ability substitution remains deferred. Fast Movement still adds its speed
 bonus while wearing Heavy armor (SRD 5.2 requires none). A variant crafting
 template such as `shield-1-2-or-3` derives AC from the dataset's placeholder
 base value, not the real item. A class granted specific weapon slugs rather

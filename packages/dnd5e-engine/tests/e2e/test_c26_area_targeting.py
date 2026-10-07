@@ -464,7 +464,7 @@ def test_c26_s14_slow_affects_six_enemies_in_its_cube() -> None:
     assert area.excluded_ids == ["char:ally", "mon:g7"]
 
 
-def test_c26_s15_a_breath_weapon_feature_is_an_area() -> None:
+def test_c26_s15_breath_weapon_defers_until_attack_replacement_is_modeled() -> None:
     drake = _pc(
         "char:drake", cell(0, 5), species_slug="dragonborn", character_level=5, constitution=14
     )
@@ -477,6 +477,7 @@ def test_c26_s15_a_breath_weapon_feature_is_an_area() -> None:
         ],
         session="e2e-c26-s15",
     )
+    before = live.rng.getstate()
     _act(
         handle,
         "char:drake",
@@ -485,15 +486,11 @@ def test_c26_s15_a_breath_weapon_feature_is_an_area() -> None:
         activity_id="dxCRYmNSSGp6L2yh",
         target_id="mon:a",
     )
-    assert _saved(live) == ["mon:a", "mon:b"]
-    [area] = _areas(live)
-    assert (area.source_id, area.shape, area.size_ft, area.origin, area.direction) == (
-        "breath-weapon",
-        "cone",
-        15,
-        cell(0, 5),
-        (1, 0),
-    )
+    assert _saved(live) == []
+    assert _areas(live) == []
+    assert events_of(live, CastFailed)[-1].reason == "unsupported_feature"
+    assert live.custom_counters_by_entity.get("char:drake", {}) == {}
+    assert live.rng.getstate() == before
 
 
 def test_c26_s16_the_pipes_of_haunting_frighten_only_enemies_by_default() -> None:

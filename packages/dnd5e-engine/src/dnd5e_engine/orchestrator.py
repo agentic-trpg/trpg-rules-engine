@@ -49,6 +49,7 @@ resolved today.
 from __future__ import annotations
 
 import asyncio
+import copy
 import itertools
 import logging
 import random
@@ -197,6 +198,15 @@ from dnd5e_engine.events import (
     TurnStarted,
     Unconscious,
 )
+from dnd5e_engine.feature_repertoire import feature_repertoire
+from dnd5e_engine.feature_runtime import (
+    DrawFreeRandom,
+    FeaturePreflightError,
+    preflight_feature,
+)
+from dnd5e_engine.feature_runtime import (
+    FeatureInvocation as _FeatureInvocation,
+)
 from dnd5e_engine.lib_loader import get_lib_loader
 from dnd5e_engine.live_checks import (
     observe_check,
@@ -204,6 +214,16 @@ from dnd5e_engine.live_checks import (
     project_check_states,
     resolve_live_check,
     validate_check_surface,
+)
+from dnd5e_engine.live_features import (
+    commit_feature_operation as _commit_feature_operation,
+)
+from dnd5e_engine.live_features import (
+    feature_state_failure,
+    validate_feature_sidecars,
+)
+from dnd5e_engine.live_features import (
+    feature_target_failure as _feature_target_failure,
 )
 from dnd5e_engine.outcome import (
     CombatOutcome,
@@ -3913,7 +3933,9 @@ def _end_what_incapacitation_ends(live: _LiveCombat, entity_id: str, condition: 
     _end_wild_shape(live, entity_id, "incapacitated")
 
 
-def _strip_condition_from_combatant(live: _LiveCombat, entity_id: str, condition: str) -> None:
+def _strip_condition_from_combatant(
+    live: _LiveCombat, entity_id: str, condition: str, *, all_sources: bool = False
+) -> None:
     """Drop the ``Combatant.conditions`` entries named ``condition`` after a
     ``ConditionRemoved``.
 
@@ -3933,7 +3955,11 @@ def _strip_condition_from_combatant(live: _LiveCombat, entity_id: str, condition
         ac
         for ac in c.conditions
         if ac.condition != condition
-        or (ac.source_effect_id is not None and ac.source_effect_id in live_effect_ids)
+        or (
+            not all_sources
+            and ac.source_effect_id is not None
+            and ac.source_effect_id in live_effect_ids
+        )
     ]
     if any(ac.condition == condition for ac in new):
         live.active_conditions.setdefault(entity_id, set()).add(condition)
@@ -4432,14 +4458,18 @@ def _require_cunning_action(
         )
 
 
+def _set_disengaging(live: _LiveCombat, actor_id: str) -> None:
+    """Shared paid Disengage operation, also used by feature delegation."""
+    _update_combatant(live, actor_id, disengaging_this_turn=True)
+
+
 def _disengage_as_bonus_action(live: _LiveCombat, current: Combatant) -> None:
     """Cunning Action's Disengage: the Bonus Action instead of the Action, with
     the same effect — movement provokes no Opportunity Attacks for the rest of
     the turn."""
     _require_cunning_action(current, "Disengage")
-    _update_combatant(
-        live, current.entity_id, bonus_action_available=False, disengaging_this_turn=True
-    )
+    _update_combatant(live, current.entity_id, bonus_action_available=False)
+    _set_disengaging(live, current.entity_id)
     _emit(live, IntentSubmitted(actor_id=current.entity_id, intent_type="disengage"))
 
 
@@ -4469,24 +4499,28 @@ def _handle_dash(live: _LiveCombat, current: Combatant, intent: PlayerIntent) ->
     else:
         budget_consumed = "action"
 
-    # SRD 5.2 Dash adds the creature's (current) Speed; a Speed of 0 "can't increase".
-    new_movement = current.movement_remaining + _effective_speed(current, live)
     payment: dict[str, Any] = (
         {"bonus_action_available": False}
         if budget_consumed == "bonus_action"
         else _action_payment(current, "dash")
     )
-    for idx, c in enumerate(live.initiative):
-        if c.entity_id == actor_id:
-            live.initiative[idx] = c.model_copy(
-                update={**payment, "movement_remaining": new_movement}
-            )
-            break
+    _update_combatant(live, actor_id, **payment)
+    _apply_dash(live, _find_combatant(live, actor_id) or current, budget_consumed)
+
+
+def _apply_dash(
+    live: _LiveCombat,
+    current: Combatant,
+    budget_consumed: Literal["action", "bonus_action"],
+) -> None:
+    """The shared paid Dash operation; delegation never pays a second action."""
+    movement = current.movement_remaining + _effective_speed(current, live)
+    _update_combatant(live, current.entity_id, movement_remaining=movement)
     _emit(
         live,
         DashTaken(
-            actor_id=actor_id,
-            doubled_movement_remaining=new_movement,
+            actor_id=current.entity_id,
+            doubled_movement_remaining=movement,
             budget_consumed=budget_consumed,
         ),
     )
@@ -4711,8 +4745,9 @@ def _handle_disengage(live: _LiveCombat, current: Combatant, intent: PlayerInten
         )
     for idx, c in enumerate(live.initiative):
         if c.entity_id == actor_id:
-            live.initiative[idx] = c.model_copy(update={**payment, "disengaging_this_turn": True})
+            live.initiative[idx] = c.model_copy(update=payment)
             break
+    _set_disengaging(live, actor_id)
     _emit(live, IntentSubmitted(actor_id=actor_id, intent_type="disengage"))
 
 
@@ -4965,8 +5000,12 @@ def _emit(live: _LiveCombat, event: CombatEvent) -> None:
         return
 
     if isinstance(event, ConditionRemoved):
+        if event.all_sources:
+            _remove_condition_sources(live, event.target_id, event.condition)
         live.active_conditions.get(event.target_id, set()).discard(event.condition)
-        _strip_condition_from_combatant(live, event.target_id, event.condition)
+        _strip_condition_from_combatant(
+            live, event.target_id, event.condition, all_sources=event.all_sources
+        )
         return
 
     if isinstance(event, EffectApplied):
@@ -5414,6 +5453,18 @@ def _attach_effect_statuses(live: _LiveCombat, applied: ActiveEffect) -> list[st
     return added
 
 
+def _remove_condition_sources(live: _LiveCombat, target_id: str, condition: str) -> None:
+    """An explicit cure clears only this status, retaining other effect content."""
+    for index, effect in enumerate(live.active_effects.get(target_id, [])):
+        if condition in effect.statuses:
+            live.active_effects[target_id][index] = effect.model_copy(
+                update={"statuses": effect.statuses - {condition}}
+            )
+    for identity, conditions in live.conditions_by_effect.items():
+        if identity[0] == target_id and condition in conditions:
+            live.conditions_by_effect[identity] = [c for c in conditions if c != condition]
+
+
 def _emit_apply_effect_applied(live: _LiveCombat, event: EffectApplied) -> None:
     """Track the unchanged effect, attach its permitted statuses, and record
     concentration spell-slot expenditure for PCs."""
@@ -5435,6 +5486,8 @@ def _emit_apply_effect_applied(live: _LiveCombat, event: EffectApplied) -> None:
     # first.
     for status in added:
         _end_what_incapacitation_ends(live, applied.target_id, status)
+    if applied.id == _RAGE_EFFECT_ID:
+        _reconcile_rage_state(live, applied.target_id)
 
 
 def _emit_apply_effect_expired(live: _LiveCombat, event: EffectExpired) -> None:
@@ -6866,6 +6919,18 @@ def _end_rage(live: _LiveCombat, entity_id: str, reason: EffectExpiryReason) -> 
         )
 
 
+def _reconcile_rage_state(live: _LiveCombat, entity_id: str) -> None:
+    """Reconcile entry, seeded state and armor changes through existing lifecycle."""
+    if _rage_effect(live, entity_id) is None:
+        return
+    actor = _find_combatant(live, entity_id)
+    if actor is not None and actor.worn_armor == "heavy":
+        _end_rage(live, entity_id, "heavy_armor")
+    else:
+        live.concentration_chain.get(entity_id, []).sort()
+        _drop_concentration(live, entity_id)
+
+
 def _has_persistent_rage(live: _LiveCombat, entity_id: str) -> bool:
     """SRD 5.2 Persistent Rage (Barbarian 15): "your Rage is so fierce that it
     now lasts for 10 minutes without you needing to do anything to extend it
@@ -7508,6 +7573,7 @@ def _build_pc_combatants(
                 melee_reach_ft=pc.reach_ft,
                 class_slug=pc.class_slug,
                 classes=dict(pc.classes),
+                granted_features=pc.granted_features,
                 fighting_styles=styles_from_feats(pc.feats, pc.fighting_style),
                 worn_armor=worn_armor,
                 shield_equipped=shield_equipped,
@@ -7516,6 +7582,7 @@ def _build_pc_combatants(
                 save_proficiencies=list(pc.save_proficiencies),
                 skill_proficiencies=list(pc.skill_proficiencies),
                 skill_expertise=list(pc.skill_expertise),
+                skill_check_bonuses=dict(pc.skill_check_bonuses),
                 jack_of_all_trades=pc.jack_of_all_trades,
                 reliable_talent=pc.reliable_talent,
                 stealth_disadvantage=pc.stealth_disadvantage,
@@ -8022,6 +8089,8 @@ async def start_combat(
     # All seeded effects, concentration chains and 0-HP conditions now exist.
     # Reconcile actual attachments only after phase-one hydration is complete.
     _reconcile_seeded_condition_lifecycle(live)
+    for combatant in tuple(live.initiative):
+        _reconcile_rage_state(live, combatant.entity_id)
 
     # C12 — the seeded conditions may already zero or reduce a Speed; project
     # every combatant's opening movement budget before the first turn opens.
@@ -8157,10 +8226,11 @@ def _scale_values_of(c: Combatant) -> dict[str, int | str]:
         level=c.character_level,
         loader=get_lib_loader(),
         classes=_class_levels(c),
+        granted_feature_levels={o.slug: o.level for o in feature_repertoire(c, get_lib_loader())},
     )
 
 
-def _granted_feature_slugs(caster: Combatant) -> frozenset[str]:
+def _granted_feature_slugs(caster: Combatant) -> tuple[str, ...]:
     """Feature slugs the caster's class(es) (+ subclass) + species grants at/below
     each source's own level.
 
@@ -8173,64 +8243,7 @@ def _granted_feature_slugs(caster: Combatant) -> frozenset[str]:
     ``species_slug`` grant nothing (empty set ⇒ every USE_FEATURE rejected,
     the correct default).
     """
-    owners = feature_owners(
-        classes=_class_levels(caster),
-        subclass_slug=caster.subclass_slug,
-        species_slug=caster.species_slug,
-        level=caster.character_level,
-        loader=get_lib_loader(),
-    )
-    return frozenset(leveled_feature_slugs([(doc, level) for _, doc, level in owners]))
-
-
-# The kinds of a ``special``-activation activity that costs nothing: it only
-# marks or grants (Action Surge's extra action, Sacred Weapon's enchantment).
-# Brutal Strike's ``special`` damage rides a Reckless Attack hit; invoked on its
-# own it has no attack to ride, so it keeps the Action a feature use costs
-# rather than dealing its 1d10 for free, again and again.
-_FREE_SPECIAL_ACTIVITY_KINDS: Final[frozenset[str]] = frozenset({"utility", "enchant"})
-
-
-@dataclass(frozen=True)
-class _FeatureInvocation:
-    """A USE_FEATURE intent resolved to ONE concrete activity, after the
-    repertoire gate + single-activity validation pass.
-
-    ``is_bonus_action`` is read by the action-economy block to decide whether
-    the invocation spends the Bonus Action (Rage, Second Wind) or the Action.
-    Resolving this BEFORE consuming any budget is the fix for the economy
-    ordering bug: a gate-rejected or multi-activity-no-op feature returns
-    ``None`` from ``_resolve_feature_invocation`` and spends nothing.
-    """
-
-    activities: list[Any]
-    passive_effects: list[Any]
-    is_bonus_action: bool
-    # SRD 5.2 — an activity used as part of something else
-    # (``activation.type == "special"``) that resolves nothing by itself
-    # (``_FREE_SPECIAL_ACTIVITY_KINDS``: Action Surge, Sacred Weapon) takes no
-    # Action, Bonus Action or Reaction and keeps the turn.
-    is_free_action: bool = False
-    # SRD 5.2 Rage — a ``rage`` invocation by a creature already raging is the
-    # Bonus-Action extension, not a new Rage: it applies nothing
-    # (``_resolve_intent_activities``) and spends no use (``use_cost`` 0).
-    extends_rage: bool = False
-    # SRD 5.2 Wild Shape — "You can also leave the form early as a Bonus
-    # Action." A ``wild-shape`` invocation without ``form_id`` by a creature in
-    # a Wild Shape form: it applies nothing (``_resolve_intent_activities``),
-    # spends no use (``use_cost`` 0), and ``_leave_wild_shape`` ends the form.
-    leaves_form: bool = False
-    # SRD 5.2 §Limited-Use Features — the per-rest use cap resolved
-    # from the feature's typed ``uses`` block (a literal or a ``@scale.*`` max
-    # resolved against the caster's ScaleValue map), or ``None`` when the feature
-    # is uncapped: no ``uses`` block, empty ``max``, or a symbolic ``max`` that
-    # cannot be resolved. See ``_feature_use_cap``.
-    use_cap: int | None = None
-    # Uses this invocation spends — ``_feature_activity_cost``.
-    use_cost: int = 1
-    # ``@scaling`` for this invocation: the pool points drawn, when the
-    # activity scales by amount.
-    scaling_value: int | None = None
+    return tuple(owner.slug for owner in feature_repertoire(caster, get_lib_loader()))
 
 
 def _uses_roll_data(caster: Combatant, scale_values: Mapping[str, int | str]) -> UsesRollData:
@@ -8307,9 +8320,9 @@ def _feature_uses_exhausted(
     reject shape, extended from a per-turn budget to a per-rest one. Uncapped
     features (``use_cap is None``) never gate.
     """
-    cost = feature_invocation.use_cost
-    if cost == 0 or _feature_spend_fits_cap(
-        live, actor_id, feature_id, cap=feature_invocation.use_cap, cost=cost
+    if all(
+        _feature_spend_fits_cap(live, actor_id, p.feature_slug, cap=p.maximum, cost=p.cost)
+        for p in feature_invocation.payments
     ):
         return False
     _emit(live, CastFailed(actor_id=actor_id, spell_id="", reason="no_uses_remaining"))
@@ -8330,13 +8343,9 @@ def _record_capped_feature_use(
     within-cap, cost-bearing invocation reaches here past the early exhaustion
     gate.
     """
-    if (
-        feature_id is not None
-        and feature_invocation is not None
-        and feature_invocation.use_cap is not None
-        and feature_invocation.use_cost > 0
-    ):
-        _increment_feature_use(live, actor_id, feature_id, feature_invocation.use_cost)
+    if feature_invocation is not None:
+        for payment in feature_invocation.payments:
+            _increment_feature_use(live, actor_id, payment.feature_slug, payment.cost)
 
 
 def _record_rage_extension(
@@ -8461,7 +8470,14 @@ def _feature_pool_request_failure(
         cap=feature_invocation.use_cap,
         cost=feature_invocation.use_cost,
     )
-    if feature_invocation.scaling_value is not None and fits:
+    if (
+        feature_invocation.scaling_value is not None
+        and fits
+        and (
+            feature_invocation.scaling_maximum is None
+            or feature_invocation.scaling_value <= feature_invocation.scaling_maximum
+        )
+    ):
         return False
     _emit(live, CastFailed(actor_id=actor_id, spell_id="", reason="invalid_charge_spend"))
     return True
@@ -8700,6 +8716,7 @@ def _resolve_feature_invocation(
     pool_points: int | None = None,
     raging: bool = False,
     leaving_form: bool = False,
+    spent: Mapping[str, int] | None = None,
 ) -> _FeatureInvocation | None:
     """Resolve a USE_FEATURE intent to its single concrete activity, or ``None``.
 
@@ -8737,7 +8754,7 @@ def _resolve_feature_invocation(
         _LOGGER.warning("class_feature_no_typed_activities feature_id=%s", feature_id)
         return None
     selected = all_activities[0]
-    if len(all_activities) > 1:
+    if len(all_activities) > 1 or activity_id is not None:
         # Repertoire of ALTERNATIVES — resolve the caller-selected activity, or
         # defer with a loud, tracked no-op when no valid selection is supplied
         # (firing all of them is wrong; guessing one is worse).
@@ -8764,19 +8781,46 @@ def _resolve_feature_invocation(
         # to a runtime ActiveEffect.
         passive_effects=list(feature.passive_effects) if feature else [],
         is_bonus_action=activation == "bonus",
-        is_free_action=activation == "special" and selected.kind in _FREE_SPECIAL_ACTIVITY_KINDS,
-        use_cap=_feature_use_cap(feature, _uses_roll_data(caster, scale_values)),
-        use_cost=_feature_activity_cost(all_activities, selected, scaling_value=scaling_value),
+        is_free_action=activation == "special" and selected.kind in ("utility", "enchant"),
         scaling_value=scaling_value,
     )
     if raging and feature_id == _RAGE_FEATURE:
         # SRD 5.2 Rage: "Take a Bonus Action to extend your Rage." Already
         # raging, the invocation extends it: the Bonus Action, no use, nothing
         # applied.
-        return replace(invocation, use_cost=0, extends_rage=True)
+        invocation = replace(invocation, use_cost=0, extends_rage=True)
     if leaving_form and feature_id == _WILD_SHAPE_FEATURE:
-        return replace(invocation, use_cost=0, leaves_form=True)
-    return invocation
+        invocation = replace(invocation, use_cost=0, leaves_form=True)
+    assert feature is not None
+    owner = next(o for o in feature_repertoire(caster, get_lib_loader()) if o.slug == feature_id)
+    ctx = ActivityResolutionContext(
+        rng=DrawFreeRandom(0),
+        caster=caster,
+        targets=[],
+        event_emitter=lambda _: None,
+        caster_abilities={
+            code: getattr(caster, attr)
+            for code, attr in zip(
+                ("str", "dex", "con", "int", "wis", "cha"),
+                ("strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"),
+                strict=True,
+            )
+        },
+        caster_proficiency_bonus=proficiency_bonus_of(caster),
+        caster_level=caster.character_level,
+        spellcasting_ability=owner.spellcasting_ability or None,
+        scale_values=scale_values,
+        class_levels=_class_levels(caster),
+        scaling_value=scaling_value,
+    )
+    return preflight_feature(
+        feature,
+        invocation,
+        ctx,
+        loader=get_lib_loader(),
+        repertoire=_granted_feature_slugs(caster),
+        spent=spent or {},
+    )
 
 
 # SRD 5.2 Bardic Inspiration. The die a creature holds is the "Inspired" effect
@@ -8845,8 +8889,8 @@ def _bardic_inspiration_target_failure(
     """``CastFailed(reason="target_invalid")`` for a Bardic Inspiration with no
     creature to inspire — SRD 5.2: "you can inspire another creature … A
     creature can have only one Bardic Inspiration die at a time": no target in
-    this combat, the bard itself, or a creature already holding a die. Range
-    and sight are not modelled. ``None`` otherwise."""
+    this combat, the bard itself, or a creature already holding a die. The
+    recipient must see or hear the bard; feature targeting checks range."""
     if intent.feature_id != _BARDIC_INSPIRATION:
         return None
     target = _find_combatant(live, intent.target_id) if intent.target_id else None
@@ -11032,6 +11076,8 @@ def _update_combatant(live: _LiveCombat, entity_id: str, **fields: Any) -> None:
     for idx, c in enumerate(live.initiative):
         if c.entity_id == entity_id:
             live.initiative[idx] = c.model_copy(update=fields)
+            if "worn_armor" in fields:
+                _reconcile_rage_state(live, entity_id)
             return
 
 
@@ -11517,10 +11563,13 @@ def _resolve_intent_activities(
         # extends is already on the caster, and the form's end is committed.
         activities = (
             []
-            if feature_invocation.extends_rage or feature_invocation.leaves_form
+            if feature_invocation.extends_rage
+            or feature_invocation.leaves_form
+            or feature_invocation.operation in ("remove_poison", "disengage", "dodge_disengage")
             else feature_invocation.activities
         )
         feature_passive_effects = feature_invocation.passive_effects
+        spellcasting_ability = feature_invocation.spellcasting_ability
     return _ResolvedActivities(
         activities=activities,
         cast_spell=cast_spell,
@@ -11838,7 +11887,10 @@ def _pop_pending_reaction(
         # release, and a shape-shifted creature "can't cast spells" (SRD 5.2
         # Wild Shape, Polymorph). The spell stays armed: shapeshifting "doesn't
         # break your Concentration", which holds a readied spell (SRD 5.2 Ready).
-        if reactor.entity_id in live.transforms:
+        if (
+            reactor.entity_id in live.transforms
+            or _rage_effect(live, reactor.entity_id) is not None
+        ):
             continue
         if not reactor.reaction_available:
             continue
@@ -12309,7 +12361,95 @@ def _pc_attack_context_kwargs(
     }
 
 
+def _prepare_feature_invocation(
+    live: _LiveCombat,
+    current: Combatant,
+    intent: PlayerIntent,
+) -> tuple[_FeatureInvocation | None, bool]:
+    actor_id = current.entity_id
+    feature_invocation: _FeatureInvocation | None = None
+    if intent.intent_type == "use_feature" or intent.feature_id:
+        if intent.intent_type != "use_feature" or not intent.feature_id:
+            _emit(live, CastFailed(actor_id=actor_id, spell_id="", reason="unsupported_feature"))
+            return None, True
+        try:
+            validate_feature_sidecars(live, current)
+            feature_invocation = _resolve_feature_invocation(
+                current,
+                intent.feature_id,
+                intent.activity_id,
+                pool_points=intent.pool_points,
+                raging=_rage_effect(live, actor_id) is not None,
+                leaving_form=intent.form_id is None and _is_wild_shaped(live, actor_id),
+                spent={
+                    key.removeprefix(FEATURE_USE_COUNTER_PREFIX): value.get("spent", 0)
+                    for key, value in live.custom_counters_by_entity.get(actor_id, {}).items()
+                    if key.startswith(FEATURE_USE_COUNTER_PREFIX)
+                },
+            )
+        except FeaturePreflightError as error:
+            _LOGGER.warning(
+                "feature_preflight_rejected feature=%s activity=%s reason=%s",
+                intent.feature_id,
+                intent.activity_id,
+                error,
+            )
+            _emit(live, CastFailed(actor_id=actor_id, spell_id="", reason="unsupported_feature"))
+            return None, True
+        if feature_invocation is None:
+            _emit(live, CastFailed(actor_id=actor_id, spell_id="", reason="unsupported_feature"))
+            return None, True
+        failure = _feature_target_failure(live, current, intent, feature_invocation)
+        if failure is not None:
+            _emit(live, failure)
+            return None, True
+
+    return feature_invocation, False
+
+
 async def submit_player_intent(
+    handle: CombatHandle,
+    actor_id: str,
+    intent: PlayerIntent,
+) -> None:
+    """Submit an intent; feature resolver data errors restore state and propagate.
+
+    Events are buffered until a feature invocation returns. An unexpected
+    ValueError is a defect, never a rule rejection, and is logged and re-raised
+    after restoring every live field and the RNG. Normal refusals keep their
+    authoritative rejection events. The pure preflight remains the primary gate.
+    """
+    if intent.intent_type != "use_feature":
+        await _submit_player_intent(handle, actor_id, intent)
+        return
+    live = _get_live(handle)
+    queue = live.event_queue
+    listeners = live.event_listeners
+    original_rng = live.rng
+    snapshot = copy.deepcopy(live, {id(queue): queue, id(listeners): listeners})
+    buffered: asyncio.Queue[CombatEvent | None] = asyncio.Queue()
+    live.event_queue = buffered
+    live.event_listeners = []
+    try:
+        await _submit_player_intent(handle, actor_id, intent)
+    except ValueError:
+        original_rng.setstate(snapshot.rng.getstate())
+        snapshot.rng = original_rng
+        live.__dict__.update(snapshot.__dict__)
+        _LOGGER.exception("unexpected_feature_resolution_error feature=%s", intent.feature_id)
+        raise
+    finally:
+        live.event_queue = queue
+        live.event_listeners = listeners
+    while not buffered.empty():
+        event = buffered.get_nowait()
+        queue.put_nowait(event)
+        if event is not None:
+            for listener in listeners:
+                listener(event)
+
+
+async def _submit_player_intent(
     handle: CombatHandle,
     actor_id: str,
     intent: PlayerIntent,
@@ -12346,18 +12486,9 @@ async def submit_player_intent(
     # stays untouched: no Bonus Action / Action spent, no IntentSubmitted emitted,
     # turn preserved. This ordering is the fix for the economy bug where a
     # rejected feature still spent the Bonus Action.
-    feature_invocation: _FeatureInvocation | None = None
-    if intent.feature_id:
-        feature_invocation = _resolve_feature_invocation(
-            current,
-            intent.feature_id,
-            intent.activity_id,
-            pool_points=intent.pool_points,
-            raging=_rage_effect(live, actor_id) is not None,
-            leaving_form=intent.form_id is None and _is_wild_shaped(live, actor_id),
-        )
-        if feature_invocation is None:
-            return
+    feature_invocation, feature_rejected = _prepare_feature_invocation(live, current, intent)
+    if feature_rejected:
+        return
 
     # SRD §Limited-Use Features / §Item Charges — a capped feature
     # (Second Wind) rejects when its per-rest uses are exhausted with no
@@ -12428,6 +12559,7 @@ async def submit_player_intent(
     # returns a non-``None`` event wins; that event is emitted and the intent
     # is rejected.
     pre_resolution_gates: tuple[Callable[[], CombatEvent | None], ...] = (
+        lambda: feature_state_failure(live, current, intent),
         lambda: _attack_input_failure(live, current, intent, attack_weapon, funding),
         lambda: _spell_out_of_range_failure(live, actor_id, intent, cast_spell_for_timing),
         lambda: _attack_out_of_range_failure(live, actor_id, intent),
@@ -12546,6 +12678,7 @@ async def submit_player_intent(
 
     # SRD 5.2 Rage — a committed Bonus-Action extension, read by this turn's
     # ``engine:rage-extension`` hook.
+    _commit_feature_operation(live, actor_id, intent, feature_invocation)
     _record_rage_extension(live, actor_id, feature_invocation)
 
     # SRD 5.2 Wild Shape — a committed Bonus-Action leave ends the form (no-op
@@ -12743,6 +12876,7 @@ async def submit_player_intent(
         )
         actx = replace(
             actx,
+            source_uses=feature_invocation.source_uses if feature_invocation else None,
             spell_dispatch=lambda spell, child_ctx: resolve_spell_activities(
                 live, spell, child_ctx, intent=intent
             ),

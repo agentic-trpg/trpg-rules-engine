@@ -172,6 +172,9 @@
     "known_divergence": null,
     "requires_user_decision": false
   },
+  "runtime_operations": {
+    "FsDnynyqno8XNHgf": "native"
+  },
   "slug": "wild-shape",
   "source_slug": "druid",
   "uses": {

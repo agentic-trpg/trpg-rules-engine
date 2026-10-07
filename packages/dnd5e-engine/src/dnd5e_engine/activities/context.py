@@ -24,6 +24,18 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True)
+class SourceUses:
+    """Source pool before payment, snapshotted for one invocation."""
+
+    spent: int
+    maximum: int
+
+    @property
+    def current(self) -> int:
+        return max(0, self.maximum - self.spent)
+
+
+@dataclass(frozen=True)
 class ActivityResolutionContext:
     """Caster/target state + seeded RNG + event sink for one activity resolution.
 
@@ -529,6 +541,7 @@ class ActivityResolutionContext:
     # chose. Set only for a feature activity that scales its own-pool cost by
     # amount (Lay on Hands' Heal: the points drawn). ``None`` keeps ``@scaling``
     # an unhandled token, so a spell formula that names it still fails loudly.
+    source_uses: SourceUses | None = None
     scaling_value: int | None = None
     # SRD 5.2 Martial Arts is active for the attacker: it has the feature and
     # wears no armor and wields no Shield (orchestrator-checked). ``attack.py``

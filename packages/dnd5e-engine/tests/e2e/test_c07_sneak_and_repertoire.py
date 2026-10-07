@@ -299,12 +299,13 @@ def test_c07_s03_channel_divinity_repertoire_needs_activity_selection():
                 intent_type="use_feature",
                 feature_id="channel-divinity-cleric",
                 activity_id="UdbUwbvrWwgDuNy9",  # type: ignore[call-arg]
+                target_id="mon:foe",  # Divine Spark requires another creature.
             ),
         )
         return live
 
     live = run_async(_run())
-    heals = [e for e in events_of(live, HealingApplied) if e.target_id == "char:cleric"]
+    heals = [e for e in events_of(live, HealingApplied) if e.target_id == "mon:foe"]
     assert len(heals) == 1
     assert 4 <= heals[0].amount <= 11
 

@@ -395,11 +395,9 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   Mind is a fixed `points: 0` ASI entry up to 25, the Barbarian's Primal
   Champion a feature). Not validated at all: multiclass ability
   prerequisites (the sheet has no score history, and enforcing them would
-  reject the corpus's own default-STR/DEX builds in C19-S09), choice-pool
-  capacity (how many skills/invocations/styles a build may pick — Skilled's
-  grants are not in the corpus) — and since C20 applies Fighting Style feats
-  in combat (2026-09-24), a build listing more styles than its pools allow (a
-  Fighter 1 with two) gets every one, `attunement_constraint`, untrained-armor
+  reject the corpus's own default-STR/DEX builds in C19-S09), skill-choice
+  capacity where grants are missing (for example Skilled),
+  `attunement_constraint`, untrained-armor
   penalties (`armor_training` is reported so a host can apply them), and
   magic items' own passive effects (hosts pass them as `active_effects`).
   Feat repeatability is also prose-only, so `DerivedSheet.feats` is not
@@ -409,8 +407,9 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
 - **Remaining C19 sheet consumers (narrowed 2026-10-07).** Noisy armor,
   Jack of All Trades and Reliable Talent now project into live combat and the
   shared typed ability-check pipeline. Mage Armor still does not flip derived
-  `ac_calc_mode`; Divine Order Thaumaturge, Primal Order Magician and Primal
-  Knowledge bonuses remain separate follow-ups.
+  `ac_calc_mode`. Divine Order Thaumaturge and Primal Order Magician now project
+  structured skill bonuses into shared live checks. Primal Knowledge still needs
+  a Rage-conditioned ability-substitution carrier; its prose is not interpreted.
 
 ## Architecture (2026-08-22)
 
@@ -560,156 +559,58 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   `packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_fold_d20_test_bonus`).
 ## Class / species feature mechanics
 
-- **Unconsumed `system.bonuses.heal.*` buckets (2026-08-26).**
-  `activities/heal.py::resolve_heal` never reads any bonus sidecar off
-  `ActivityResolutionContext` (unlike `attack.py`'s `passive_*_damage_bonus`
-  fields), so a `system.bonuses.heal.*` change on an active effect is inert.
-  (The attack/damage, `spell.dc` and — as of F1d — `abilities.check` /
-  `abilities.skill` / `abilities.<ab>.save` families are folded.)
-  (`packages/dnd5e-engine/src/dnd5e_engine/activities/heal.py`)
-- **Rage's Heavy-armor rules, its no-spells rule and its 10-minute cap are not
-  modelled (2026-09-24, C20 scope cut).** SRD 5.2: "You can enter it as a
-  Bonus Action if you aren't wearing Heavy armor"; it "ends early if you don
-  Heavy armor"; "No Concentration or Spells. You can't maintain
-  Concentration, and you can't cast spells."; "You can maintain a Rage for up
-  to 10 minutes." Entry isn't gated on `Combatant.worn_armor`, armor is never
-  donned in combat, and a raging barbarian may still cast and concentrate. The
-  corpus effect's `rounds: 10` (one minute) stays the outer cap, because
-  `rounds` wins over its `seconds: 600`.
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_hook_rage_extension`)
-- **Persistent Rage's Rage recovery on rolling Initiative is not applied
-  (2026-09-25).** SRD 5.2 Persistent Rage (Barbarian 15): "When you roll
-  Initiative, you can regain all expended uses of Rage. After you regain uses
-  of Rage in this way, you can't do so again until you finish a Long Rest."
-  The corpus carries it as an activity triggered "When you roll initiative"
-  (`dnd5eactivity000`), which `start_combat` never runs, so Rage uses a host
-  seeds as spent (`PartyMemberSpec.custom_counters`) stay spent. The rest of
-  the feature applies (no extension needed; only Unconscious ends it early),
-  under the same one-minute outer cap as above where SRD 5.2 says it "now
-  lasts for 10 minutes".
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::start_combat`,
-  `packages/dnd5e-srd-data/src/dnd5e_srd_data/canonical/features/persistent-rage.json`)
-- **Monk's Focus features other than Flurry of Blows don't reach the action
-  economy (2026-09-24, C20 scope cut).** SRD 5.2 Patient Defense: "You can take
-  the Disengage action as a Bonus Action. Alternatively, you can expend 1
-  Focus Point to take both the Disengage and the Dodge actions as a Bonus
-  Action." Step of the Wind: "You can take the Dash action as a Bonus Action.
-  Alternatively, you can expend 1 Focus Point to take both the Disengage and
-  Dash actions as a Bonus Action, and your jump distance is doubled for the
-  turn." Both spend the right Focus Points (C20), but their corpus effects are
-  markers (a "Disengaged" effect, a `dodging` status) that never set
-  `Combatant.disengaging_this_turn` or `dodging`; Step of the Wind adds no
-  movement, and the corpus ships only its Focus Point version. Stunning
-  Strike's Focus Point isn't spent either: its cost names the Monk's Focus
-  pool — another feature's — which `_feature_activity_cost` never charges.
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_feature_activity_cost`)
+- **Feature runtime safety audit (2026-10-07).** The old 29-activity failure
+  estimate is retired. The pre-change numeric resolver audit found 20 failures
+  among 77 damage/heal/save activities; that count did not prove public API
+  reachability. The new deterministic audit covers all 191 reachable canonical
+  activities: 17 `fully_resolvable`, 44 `unsupported_preflight`, and 130
+  `semantic_special_case`. Every rejected invocation is checked before action,
+  resource or RNG consumption. See [the contract](docs/dev/feature-runtime.md)
+  and [slug/activity/reason rows](docs/dev/feature-runtime-audit.json).
+  Closed shared gaps: selected feature build-to-combat projection, owner-class
+  spellcasting context, closed arithmetic and source-use carriers, cross-feature
+  resource identity, Remove Poison, Patient Defense, Adrenaline Rush, Rage's
+  armor/spell/concentration/duration rules, and Thaumaturge/Magician skill bonuses.
+- **Heal bonus producer audit (2026-10-07).** Current canonical effects contain
+  zero `system.bonuses.heal.*` producers. A generic consumer is deferred until
+  there is a typed producer/contract; no feature-specific bonus shortcut was added.
+- **Stunning Strike needs complete hit/rider semantics (2026-10-07).** Its exact
+  Foundry reference resolves through the shared resource lookup to one Monk Focus
+  point. The live invocation rejects before payment: hit binding, once-per-turn
+  eligibility, source-turn expiry, and the successful-save speed/next-attack rider
+  are not represented. Canonical also marks both riders as failed-save effects.
+  Resource pricing alone does not make Stunning Strike executable.
+- **Step of the Wind remains deferred (2026-10-07).** The corpus contains only
+  the Focus variant. Its doubled jump distance has no carrier; preflight rejects
+  rather than applying only Dash/Disengage. Patient Defense's free Disengage and
+  one-Focus Disengage+Dodge now delegate to the real action mechanics.
 - **Action Surge's extra action funds no Action-costed feature or item
-  (2026-09-24, narrowed 2026-10-07).** The corpus still lacks reliable
-  Magic-action classification for features and items, so every Action-costed
-  `use_feature` and `use_item` conservatively counts as a Magic action.
-  Character Action Economy now preserves refused casts and pays eligible
-  non-Magic actions with the restricted extra slot first, allowing Attack
-  and Magic in either order. Counterspell now spends the interrupted cast's
-  casting-time budget while preserving its spell slot and any unused extra
-  Action; true refused casts still preserve budgets and RNG. The
-  classification gap remains.
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_MAGIC_ACTION_INTENTS`)
-- **Brutal Strike isn't tied to a Reckless Attack hit (2026-09-25; predates
-  C20).** SRD 5.2 Brutal Strike (Barbarian 9): "If you use Reckless Attack,
-  you can forgo any Advantage on one Strength-based attack roll of your choice
-  on your turn. The chosen attack roll mustn't have Disadvantage. If the
-  chosen attack roll hits, the target takes an extra 1d10 damage of the same
-  type dealt by the weapon or Unarmed Strike, and you can cause one Brutal
-  Strike effect of your choice." The corpus carries it as a
-  `special`-activation damage activity, and Reckless Attack has no activity,
-  so nothing binds it to an attack roll: `use_feature brutal-strike` costs the
-  Action like any feature use and deals its damage with no attack roll, no
-  Reckless Attack and no hit.
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_resolve_feature_invocation`,
-  `packages/dnd5e-srd-data/src/dnd5e_srd_data/canonical/features/brutal-strike.json`)
-- **Bardic Inspiration follow-ups (narrowed 2026-10-07).** Weapon attacks retain
-  their existing redemption path; ability checks now accept explicit nested
-  redemption, roll only after a failed D20 Test and expend the held effect.
-  Spell-attack and save redemption, grant range/sight/hearing enforcement and
-  redemption after the granting bard departs remain deferred.
-  (`packages/dnd5e-engine/src/dnd5e_engine/activities/check_pipeline.py`)
-
-- **Font of Inspiration and Superior Inspiration are not modelled
-  (2026-09-25).** SRD 5.2 Font of Inspiration (Bard 5): "You now regain all
-  your expended uses of Bardic Inspiration when you finish a Short or Long
-  Rest. In addition, you can expend a spell slot (no action required) to
-  regain one expended use of Bardic Inspiration." Superior Inspiration (Bard
-  18): "When you roll Initiative, you regain expended uses of Bardic
-  Inspiration until you have two if you have fewer than that." Now that
-  Bardic Inspiration is capped (C20), this bites: the corpus feature recovers
-  on a Long Rest only, so `recover_feature_uses` after a Short Rest leaves a
-  Bard 5's spent uses spent, and nothing restores a use from a spell slot or
-  at Initiative.
-  (`packages/dnd5e-srd-data/src/dnd5e_srd_data/canonical/features/bardic-inspiration.json`,
-  `packages/dnd5e-engine/src/dnd5e_engine/rest.py::recover_feature_uses`)
-- **Lay on Hands' Remove Poison spends 5 points but leaves Poisoned in place
-  (2026-09-24, C20 scope cut).** SRD 5.2: "You can also expend 5 Hit Points
-  from the pool of healing power to remove the Poisoned condition from the
-  creature". The corpus activity (`K6UeXQwTyDHWvis8`) carries no effect —
-  Foundry leaves the removal to the table — so the engine charges the pool and
-  removes nothing.
-  (`packages/dnd5e-srd-data/src/dnd5e_srd_data/canonical/features/lay-on-hands.json`,
-  `packages/dnd5e-engine/src/dnd5e_engine/activities/resolver.py`)
-- **`use_feature cunning-action` does nothing mechanical (2026-09-24, C20
-  scope cut).** Dash's and Disengage's corpus activities carry no effect
-  rider, so invoking either by `activity_id` spends the Bonus Action and
-  resolves nothing; Hide's carries one, but it points at an inert "Hiding"
-  marker (no `changes`, no `duration`, and `hiding` isn't a recognized SRD
-  condition), so it only emits a cosmetic `EffectApplied`. None of the three
-  runs the real mechanic — Cunning Action works through the `dash`,
-  `disengage` and `hide` intents with `use_bonus_action=True` (Hide payment
-  corrected 2026-10-07). The corpus marker itself remains unimplemented.
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_resolve_feature_invocation`)
-- **Picked features never reach the live feature gate (2026-09-24, C20 scope
-  cut).** `_granted_feature_slugs` walks each class's, the subclass's and the
-  species' fixed grants at their own levels, but a feature-choice pick — an
-  Eldritch Invocation, Blessed Warrior, a Metamagic option — lives only on
-  `DerivedSheet.features`, which `PartyMemberSpec` doesn't carry, so
-  `use_feature` rejects it as out of repertoire. Fighting Style picks ride
-  `PartyMemberSpec.feats` and do apply.
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_granted_feature_slugs`)
-- **29 feature activities raise `ValueError` out of `submit_player_intent`
-  after their cost is spent (2026-09-25; predates C20).** Each uses a formula
-  shape the activity layer can't evaluate yet, and the raise comes after the
-  invocation's Action, Bonus Action or Reaction, and any use, is spent, so the
-  host gets an exception and a half-paid turn. By cause:
-  - a save DC by ability (`save.dc.calculation` `wis`, `dex` or empty), which
-    `activities/save.py::_resolve_dc` refuses — SRD 5.2 Monk's Focus: "Some
-    features that use Focus Points require your target to make a saving
-    throw. The save DC equals 8 plus your Wisdom modifier and Proficiency
-    Bonus.": Stunning Strike, Open Hand Technique (2 activities), Deflect
-    Attacks, Deflect Energy and Quivering Palm; Cunning Strike: "If a Cunning
-    Strike effect requires a saving throw, the DC equals 8 plus your
-    Dexterity modifier and Proficiency Bonus." (2), and Devious Strikes (3),
-    whose effects "are now among your Cunning Strike options"; Relentless
-    Rage: "you can make a DC 10 Constitution saving throw … Each time you use
-    this feature after the first, the DC increases by 5."; and Intimidating
-    Presence: "a Wisdom saving throw (DC 8 plus your Strength modifier and
-    Proficiency Bonus)";
-  - a `spellcasting` save DC, which `use_feature` can't meet because it never
-    threads the class's spellcasting ability into the context
-    (`orchestrator.py::_resolve_intent_activities`) — SRD 5.2 Channel
-    Divinity: "If a Channel Divinity effect requires a saving throw, the DC
-    equals the spell save DC from this class's Spellcasting feature.":
-    Channel Divinity (Cleric, 2), Sear Undead, Land's Aid, Abjure Foes and
-    Hurl Through Hell;
-  - an unhandled roll-data token in `activities/formula.py`: `@scaling` in
-    Disciple of Life, Blessed Healer and Cunning Strike, `@item.uses.spent` in
-    Overchannel;
-  - a dice expression `activities/dice.py` can't parse: `*` in Relentless
-    Rage's heal, Preserve Life, Improved Blessed Strikes and Slow Fall,
-    `max(…)` in Tireless and Dark One's Blessing.
-  A check that refuses these before anything is spent would end the half-paid
-  state until each shape is supported.
-  (`packages/dnd5e-engine/src/dnd5e_engine/activities/save.py`,
-  `packages/dnd5e-engine/src/dnd5e_engine/activities/formula.py`,
-  `packages/dnd5e-engine/src/dnd5e_engine/activities/dice.py`,
-  `packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_resolve_intent_activities`)
+  (2026-09-24, narrowed 2026-10-07).** The corpus still lacks reliable Magic-action
+  classification for features and items, so Action-costed `use_feature` and
+  `use_item` conservatively count as Magic actions. The restricted extra Action
+  therefore cannot fund them. Attack/Magic ordering and refused casts preserve
+  the appropriate budgets.
+- **Attack riders require hit binding (2026-10-07).** Brutal Strike, Cunning
+  Strike, Devious Strikes and other trigger-bound activities reject before
+  payment. Brutal Strike can no longer deal standalone damage without Reckless
+  Attack or a hit. Implement them through a future shared rider-selection seam.
+- **Breath Weapon and Intimidating Presence (2026-10-07).** Canonical feature
+  invocation now rejects. Breath Weapon lacks Attack replacement and ancestry-bound
+  damage selection; Intimidating Presence lacks repeated end-of-turn saves and
+  the correct one-minute condition duration. Numeric DC support is insufficient.
+- **Bardic Inspiration follow-ups (narrowed 2026-10-07).** Grant range and the
+  recipient's sight/hearing now gate payment. Weapon attacks and ability checks
+  retain their redemption paths. Spell-attack/save redemption and redemption
+  after the granting bard departs remain deferred.
+- **Persistent Rage recovery, Font of Inspiration and Superior Inspiration
+  (2026-10-07).** Initiative recovery and spell-slot conversion need a shared
+  resource-trigger lifecycle. Font's Short-Rest recharge upgrade also remains
+  absent. These standalone activities reject before spending. Persistent Rage's
+  existing no-extension/Unconscious behavior now uses the corrected 100-round cap.
+- **Cunning Action has one mechanical entrypoint (2026-10-07).** Canonical
+  `use_feature cunning-action` activities explicitly reject. Use dedicated
+  `dash`, `disengage`, and `hide` intents with `use_bonus_action=True`; cosmetic
+  canonical markers are not a second implementation.
 - **An Emanation never includes its creature of origin, even when its text
   says otherwise (2026-10-04, C26a).** SRD 5.2 Dust of Sneezing and Choking:
   "forcing yourself and every creature in a 30-foot Emanation originating
@@ -721,9 +622,9 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
 - **Preserve Life's "divide those Hit Points among them" is not modelled
   (2026-10-04, C26a).** Its heal is an area of your choice (a 30-foot
   Emanation), and an area heal gives every creature it affects the whole
-  amount, so once its `5 * @classes.cleric.levels` formula parses (see the
-  half-paid row above) each ally in range would regain the whole pool rather
-  than a share. The cleric's own space is outside its Emanation (an
+  amount. Its `5 * @classes.cleric.levels` formula now parses, but feature
+  preflight rejects the invocation: a generic area heal would grant the whole
+  pool to every ally rather than a share. The cleric's own space is outside its Emanation (an
   Emanation never includes its creator — see above), so it can't heal
   itself ("which can include you"), and the "no more than half its Hit
   Point maximum" cap is not applied.
@@ -734,9 +635,9 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   Emotions-style "Each Humanoid" is narrower still — its restriction lives
   only in description prose, with no typed field at all. `select_affected`
   reads `affects_type` (`"enemy"`/`"ally"`), `choice` and `count`, but never
-  `special`, so now that these feature and item areas resolve (C26a), they
-  catch every creature, or every enemy, in range rather than only the
-  named creature type.
+  `special`. Feature preflight now rejects Sear Undead before payment; the
+  item-area path still catches every creature, or every enemy, in range rather
+  than only the named creature type.
   (`packages/dnd5e-engine/src/dnd5e_engine/areas.py::select_affected`)
 
 ### Passive-stat projection (`activities/passive_stats.py`)

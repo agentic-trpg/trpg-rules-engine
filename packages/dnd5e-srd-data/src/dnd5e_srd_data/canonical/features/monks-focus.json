@@ -437,6 +437,11 @@
     "known_divergence": null,
     "requires_user_decision": false
   },
+  "runtime_operations": {
+    "2ghJTBhilLrFn9xT": "flurry",
+    "7xj7b6e8tDznDSrE": "dodge_disengage",
+    "EFzidO6yAapw8d60": "disengage"
+  },
   "slug": "monks-focus",
   "source_slug": "monk",
   "uses": {

@@ -207,15 +207,15 @@ def test_remove_poison_costs_five_points_of_the_pool(spent: int, refused: bool) 
     assert _counter(live, "char:paladin", "lay-on-hands") == {"spent": spent if refused else 10}
 
 
-def test_a_lone_activity_with_no_declared_cost_still_spends_a_use() -> None:
-    """Indomitable (Fighter 9: one use per Long Rest): Foundry's only activity
-    declares no consumption, but the SRD caps the feature."""
+def test_a_lone_activity_without_a_trigger_or_declared_cost_rejects() -> None:
+    """Indomitable needs a failed-save trigger; a standalone invocation cannot pay."""
     handle, live = start([pc(class_slug="fighter", character_level=9)], seed=1)
+    before = live.rng.getstate()
     act(handle, "char:hero", intent_type="use_feature", feature_id="indomitable")
-    assert _counter(live, "char:hero", "indomitable") == {"spent": 1}
-
-
-# ── Lay on Hands' pool ───────────────────────────────────────────────────────
+    assert _counter(live, "char:hero", "indomitable") is None
+    assert combatant(live).action_available
+    assert events(live, CastFailed)[-1].reason == "unsupported_feature"
+    assert live.rng.getstate() == before
 
 
 def _paladin(**fields):

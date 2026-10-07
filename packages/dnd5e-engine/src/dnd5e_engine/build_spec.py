@@ -54,11 +54,13 @@ from dnd5e_engine.rules.character import (
     proficiency_grants,
     subclass_gate_level,
     validate_ability_score_method,
+    validate_feature_picks,
     validate_increase_budget,
     weapon_proficiencies_from_changes,
 )
 from dnd5e_engine.rules.choices import ParsedChoices, parse_selected_choices
 from dnd5e_engine.rules.dice import ability_modifier, proficiency_bonus
+from dnd5e_engine.rules.skill_bonuses import skill_check_bonuses
 from dnd5e_engine.rules.skills import SKILL_CODE_TO_SLUG, Skill, passive_perception
 from dnd5e_engine.spellcasting import (
     SpellcastingProgression,
@@ -310,6 +312,7 @@ class DerivedSheet(BaseModel):
     save_proficiencies: frozenset[Ability]
     skill_proficiencies: frozenset[Skill]
     skill_expertise: frozenset[Skill]
+    skill_check_bonuses: dict[Skill, int] = Field(default_factory=dict)
     weapon_proficiencies: frozenset[str]
     armor_training: frozenset[ArmorTraining]
     passive_perception: int
@@ -670,6 +673,7 @@ def derive_sheet(spec: CharacterBuildSpec, *, loader: AssetLoader) -> DerivedShe
         (species, spec.level),
     ]
     picked_features, picked_feats = _split_picks(choices.picks, _choice_options(level_sources))
+    validate_feature_picks(level_sources, choices.picks)
     features = list(dict.fromkeys([*leveled_feature_slugs(level_sources), *picked_features]))
     changes = _always_on_changes(features, loader)
     used_asi_slots: set[tuple[str, int]] = set()
@@ -731,6 +735,10 @@ def derive_sheet(spec: CharacterBuildSpec, *, loader: AssetLoader) -> DerivedShe
         condition_immunities=passive.condition_immunities,
         save_proficiencies=save_proficiencies,
         skill_proficiencies=skills,
+        skill_check_bonuses=skill_check_bonuses(
+            changes,
+            {code: modifiers[name] for code, name in ABILITY_NAME_BY_CODE.items()},
+        ),
         skill_expertise=expertise,
         weapon_proficiencies=grants.weapons | weapon_proficiencies_from_changes(changes),
         armor_training=training,

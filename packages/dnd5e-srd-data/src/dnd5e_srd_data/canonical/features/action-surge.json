@@ -114,6 +114,9 @@
     "known_divergence": null,
     "requires_user_decision": false
   },
+  "runtime_operations": {
+    "jtpVG47zPBUI0CZ5": "native"
+  },
   "slug": "action-surge",
   "source_slug": "fighter",
   "uses": {

@@ -167,11 +167,14 @@ def _ongoing_lifecycles():
     handle, live = start(
         [pc(class_slug="druid", character_level=4)],
         seed=7,
-        active_effects=(concentration, grapple, rage),
+        active_effects=(concentration, grapple),
     )
     act(handle, "char:hero", intent_type="use_feature", feature_id="wild-shape", form_id="wolf")
     assert live.transforms
     assert live.concentration_chain
+    # Isolate clause independence with deliberately contradictory internal
+    # state. The public Rage entry/seed boundary now ends Concentration.
+    live.active_effects["char:hero"].append(rage)
     return live
 
 

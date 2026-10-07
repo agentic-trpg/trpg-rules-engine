@@ -125,6 +125,9 @@
     "known_divergence": null,
     "requires_user_decision": false
   },
+  "runtime_operations": {
+    "jN5Zo6mDXll3c4Cz": "dash_heal"
+  },
   "slug": "adrenaline-rush",
   "source_slug": "orc",
   "uses": {

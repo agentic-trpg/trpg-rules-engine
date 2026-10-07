@@ -84,6 +84,7 @@ AdvantageSource = Literal[
 ]
 
 EffectExpiryReason = Literal[
+    "heavy_armor",
     "duration",
     "concentration_drop",
     "remove_ieffect",
@@ -106,6 +107,8 @@ EffectExpiryReason = Literal[
 ]
 
 CastFailedReason = Literal[
+    "raging",
+    "unsupported_feature",
     "out_of_range",
     "no_slot",
     "target_invalid",
@@ -405,6 +408,9 @@ class ConditionRemoved(BaseModel):
     type: Literal["condition_removed"] = "condition_removed"
     target_id: str
     condition: ConditionType
+    # Explicit cures end this condition from every source. Expiring one effect
+    # keeps the default False so another effect can still maintain the condition.
+    all_sources: bool = False
 
 
 # ── concentration ───────────────────────────────────────────────────────────

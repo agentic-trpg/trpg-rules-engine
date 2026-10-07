@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import random
 
+from dnd5e_srd_data.schema.monster import CreatureSize
+
 from dnd5e_engine import PlayerIntent
 from dnd5e_engine.events import DamageApplied, ReactionTriggered
 from dnd5e_engine.orchestrator import _get_live, start_combat, submit_player_intent
@@ -76,7 +78,7 @@ def test_c17_s03_multiclass_paladin_wizard_has_no_per_class_level_input():
     from dnd5e_engine.build_spec import CharacterBuildSpec, derive_multiclass_slots
 
     spec = CharacterBuildSpec(
-        species_slug="human", classes={"paladin": 2, "wizard": 3}
+        species_slug="human", size_choice=CreatureSize.MEDIUM, classes={"paladin": 2, "wizard": 3}
     )  # API delta (C17/C19)
     slots = derive_multiclass_slots(spec.classes)
 

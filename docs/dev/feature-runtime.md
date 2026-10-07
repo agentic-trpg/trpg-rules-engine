@@ -25,8 +25,8 @@ choice pools. The classifications are:
 | `fully_resolvable` | 17 | The supported invocation passes pure preflight; normal live target/economy gates still apply. |
 | `unsupported_preflight` | 44 | Refused before payment or draws: unsupported operation, formula/carrier or resource shape. |
 | `semantic_special_case` | 99 | Refused before payment or draws: missing triggering event, lifecycle or action semantics. |
-| `attack_rider_executable` | 6 | Standalone invocation refuses; the authoritative attack path supports the rider. |
-| `attack_rider_deferred` | 25 | Standalone invocation refuses; the attack option is explicitly deferred with its missing clauses. |
+| `attack_rider_executable` | 7 | Standalone invocation refuses; the authoritative attack path supports the rider. |
+| `attack_rider_deferred` | 24 | Standalone invocation refuses; the attack option is explicitly deferred with its missing clauses. |
 
 Each row records the feature slug, activity ID, actual granting owner, reason,
 and independent formula/resource diagnostics, plus `execution_path`,
@@ -120,14 +120,16 @@ and remains deferred. A scan of current canonical effects found **zero
 ## Deliberate remaining limits
 
 - **Attack-bound execution:** standalone Stunning Strike, Sneak Attack, Open Hand
-  Technique and Devious Strikes Obscure continue to reject. Their typed attack
+  Technique, Cunning Strike Trip and Devious Strikes Obscure continue to reject. Their typed attack
   path is described in [attack feature riders](attack-feature-riders.md) and the
   [option audit](attack-rider-audit.json). This distinction prevents standalone
   damage, saves or resource payments from bypassing an actual qualifying hit.
+  Trip's typed size qualifier accepts Large or smaller targets before payment;
+  its Dexterity save and one-die Sneak Attack cost use the shared rider path.
 - **Step of the Wind:** the corpus includes only the Focus variant. Combined
   Dash/Disengage plus doubled jump distance lacks a full carrier, so it rejects;
   no free variant was invented.
-- **Remaining optional riders:** Cunning Strike Poison/Trip/Withdraw, Devious
+- **Remaining optional riders:** Cunning Strike Poison/Withdraw, Devious
   Strikes Daze/Knock Out, Reckless/Brutal Strike and other corpus riders remain
   deferred per option. Obscure is a Dexterity save ending at the end of the
   target's next turn; one supported option does not imply a complete feature.

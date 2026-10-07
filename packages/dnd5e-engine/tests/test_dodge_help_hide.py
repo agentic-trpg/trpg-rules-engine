@@ -301,7 +301,7 @@ async def _start_help_combat(
                 hp_current=20,
                 hp_max=20,
                 attack_bonus=5,
-                zone_id=striker_zone,
+                zone_id=cell(2, 2),
             ),
         ],
         encounter=[

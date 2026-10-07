@@ -9,7 +9,8 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from dnd5e_srd_data.schema.monster import CreatureSize
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from dnd5e_engine.activities.passive_stats import CombatantMovementModes, CombatantSenses
 from dnd5e_engine.types.combat import FightingStyle
@@ -26,6 +27,13 @@ class PartyMemberSpec(BaseModel):
     """
 
     model_config = ConfigDict(extra="forbid")
+
+    @field_validator("zone_id")
+    @classmethod
+    def _canonical_cell(cls, value: str) -> str:
+        from dnd5e_engine.spatial import cell_id, parse_cell
+
+        return cell_id(*parse_cell(value)) if value else value
 
     entity_id: str
     name: str
@@ -83,6 +91,7 @@ class PartyMemberSpec(BaseModel):
     # session-side cutover. The condition-predicate evaluator reads this
     # via ``target.creature_type`` / ``caster.creature_type``.
     creature_type: str | None = None
+    creature_size: CreatureSize = CreatureSize.MEDIUM
     # SRD §Damage Resistance / §Damage Immunity — per-PC type lists. Empty by
     # default; populated from the character sheet projection when wired.
     damage_resistances: list[str] = Field(default_factory=list)
@@ -226,6 +235,13 @@ class EncounterMemberSpec(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    @field_validator("zone_id")
+    @classmethod
+    def _canonical_cell(cls, value: str) -> str:
+        from dnd5e_engine.spatial import cell_id, parse_cell
+
+        return cell_id(*parse_cell(value)) if value else value
+
     entity_id: str
     entity_type: Literal["Monster", "NPC"]
     name: str
@@ -270,6 +286,7 @@ class EncounterMemberSpec(BaseModel):
     # NPCs without a template. Drives type-gated spell semantics (Hold
     # Person targets humanoids; Sleep autopasses undead/elves; etc.).
     creature_type: str | None = None
+    creature_size: CreatureSize = CreatureSize.MEDIUM
     # SRD §Damage Resistance / §Damage Immunity — per-monster type lists,
     # populated from the host's monster template record. Empty
     # by default for fixtures that don't specify.
@@ -345,6 +362,26 @@ class GridScene(BaseModel):
     """
 
     model_config = ConfigDict(extra="forbid")
+
+    @field_validator("blocked_cells", "difficult_terrain_cells")
+    @classmethod
+    def _canonical_cell_list(cls, values: list[str]) -> list[str]:
+        from dnd5e_engine.spatial import canonical_cell_id
+
+        return list(dict.fromkeys(canonical_cell_id(value) for value in values))
+
+    @field_validator("cover_cells", "lighting", "obscurement_cells")
+    @classmethod
+    def _canonical_cell_keys(cls, values: dict[str, str]) -> dict[str, str]:
+        from dnd5e_engine.spatial import canonical_cell_id
+
+        canonical: dict[str, str] = {}
+        for raw, value in values.items():
+            cell = canonical_cell_id(raw)
+            if cell in canonical and canonical[cell] != value:
+                raise ValueError(f"conflicting values for canonical cell {cell!r}")
+            canonical[cell] = value
+        return canonical
 
     width: int = Field(ge=1)
     height: int = Field(ge=1)

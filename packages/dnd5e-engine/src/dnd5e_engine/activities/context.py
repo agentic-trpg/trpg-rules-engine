@@ -5,6 +5,8 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
+from dnd5e_srd_data.schema.monster import CreatureSize
+
 from dnd5e_engine.events import AdvantageMode, AdvantageSource, CombatEvent, DamageType
 from dnd5e_engine.types.checks import CheckActorState, CheckRequest
 from dnd5e_engine.types.combat import Combatant
@@ -105,6 +107,7 @@ class AttackResolutionContext:
     sneak_dice_count: int
     damage_types: tuple[str, ...]
     monk_weapon: bool = False
+    target_size: CreatureSize = CreatureSize.MEDIUM
     sneak_dice_sacrificed: int = 0
     remaining_sneak_dice_count: int = 0
     damage_dealt: int = 0

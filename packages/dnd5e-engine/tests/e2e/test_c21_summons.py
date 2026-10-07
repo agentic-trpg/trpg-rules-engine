@@ -285,7 +285,7 @@ def test_c21_s04_magic_weapon_enchant_grants_plus1_to_hit_and_damage():
                         hp_current=500,
                         hp_max=500,
                         ac=1,
-                        zone_id=cell(0, 0),
+                        zone_id=cell(1, 0),
                     )
                 ],
                 grid_scene=GridScene(width=5, height=5, wall_segments=[]),

@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 from dnd5e_srd_data.loader import BundledAssetLoader
+from dnd5e_srd_data.schema.monster import CreatureSize
 from pydantic import BaseModel
 
 from dnd5e_engine.activities.arithmetic import parse_expression, scalar
@@ -178,7 +179,10 @@ def test_source_use_carrier_and_ability_dc_are_draw_free():
 
 def test_selected_choice_build_reaches_live_invocation():
     build = make_build_spec(
-        classes={"warlock": 2}, species_slug="human", selected_choices=("fiendish-vigor",)
+        classes={"warlock": 2},
+        species_slug="human",
+        size_choice=CreatureSize.MEDIUM,
+        selected_choices=("fiendish-vigor",),
     )
     assert "fiendish-vigor" in derive_sheet(build, loader=LOADER).features
     member = build_party_member(
@@ -421,6 +425,7 @@ def test_derived_skill_bonus_reaches_shared_live_checks(class_slug, choice, skil
     build = make_build_spec(
         classes={class_slug: 1},
         species_slug="human",
+        size_choice=CreatureSize.MEDIUM,
         ability_scores={"wisdom": 16, "intelligence": 12},
         selected_choices=(choice,),
     )
@@ -590,7 +595,12 @@ def test_choice_capacity_cannot_be_bypassed_by_host_or_build():
     picks = ("divine-order-thaumaturge", "divine-order-protector")
     with pytest.raises(ValueError, match="capacity"):
         derive_sheet(
-            make_build_spec(classes={"cleric": 1}, species_slug="human", selected_choices=picks),
+            make_build_spec(
+                classes={"cleric": 1},
+                species_slug="human",
+                size_choice=CreatureSize.MEDIUM,
+                selected_choices=picks,
+            ),
             loader=LOADER,
         )
     with pytest.raises(ValueError, match="capacity"):

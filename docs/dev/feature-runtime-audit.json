@@ -1,7 +1,7 @@
 {
   "counts": {
-    "attack_rider_deferred": 25,
-    "attack_rider_executable": 6,
+    "attack_rider_deferred": 24,
+    "attack_rider_executable": 7,
     "fully_resolvable": 17,
     "semantic_special_case": 99,
     "unsupported_preflight": 44
@@ -360,13 +360,13 @@
       "slug": "cunning-strike",
       "activity_id": "dWcCw1vTWRMx4YzD",
       "owner": "rogue",
-      "classification": "attack_rider_deferred",
-      "reason": "standalone use_feature rejected; attack rider deferred: requires authoritative target size Large or smaller",
+      "classification": "attack_rider_executable",
+      "reason": "standalone use_feature rejected; attack-triggered execution supported",
       "formula_error": null,
       "resource_error": null,
       "execution_path": "attack_triggered_rider",
       "standalone_executable": false,
-      "rider_executable": false
+      "rider_executable": true
     },
     {
       "slug": "cunning-strike",
@@ -637,7 +637,7 @@
       "activity_id": "CXJlzDUkMYU9w9i9",
       "owner": "warlock",
       "classification": "attack_rider_deferred",
-      "reason": "standalone use_feature rejected; attack rider deferred: requires authoritative pact-weapon binding, Pact Magic slot and target size Huge or smaller",
+      "reason": "standalone use_feature rejected; attack rider deferred: requires authoritative pact-weapon binding and Pact Magic slot",
       "formula_error": "Unhandled roll-data token: '@spells.pact.level'",
       "resource_error": "unsupported consumption type: attribute",
       "execution_path": "attack_triggered_rider",
@@ -1033,7 +1033,7 @@
       "activity_id": "I2wKOUDxhIb5hHb7",
       "owner": "goliath",
       "classification": "attack_rider_deferred",
-      "reason": "standalone use_feature rejected; attack rider deferred: requires positive triggering damage and authoritative target size Large or smaller",
+      "reason": "standalone use_feature rejected; attack rider deferred: requires positive triggering damage and linked species resource",
       "formula_error": null,
       "resource_error": null,
       "execution_path": "attack_triggered_rider",
@@ -1813,7 +1813,7 @@
       "activity_id": "OXhI1TDQxORrGAgc",
       "owner": "warlock",
       "classification": "attack_rider_deferred",
-      "reason": "standalone use_feature rejected; attack rider deferred: requires validated selected cantrip invocation binding and authoritative target size",
+      "reason": "standalone use_feature rejected; attack rider deferred: requires validated selected cantrip invocation binding",
       "formula_error": null,
       "resource_error": null,
       "execution_path": "attack_triggered_rider",

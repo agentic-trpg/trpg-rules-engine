@@ -6,6 +6,7 @@ Transcribed from specs/e2e-scenario-catalog.md, Cluster 8.
 from __future__ import annotations
 
 from dnd5e_srd_data.loader import BundledAssetLoader
+from dnd5e_srd_data.schema.monster import CreatureSize
 
 from dnd5e_engine import PlayerIntent
 from dnd5e_engine.events import DamageApplied
@@ -308,6 +309,7 @@ def test_c08_s04_granted_feature_movement_mode_never_lands_on_combatant():
         class_slug="ranger",
         subclass_slug=None,
         species_slug="human",
+        size_choice=CreatureSize.MEDIUM,
         level=6,
         ability_scores=AbilityScores(
             strength=10, dexterity=16, constitution=14, intelligence=10, wisdom=14, charisma=10

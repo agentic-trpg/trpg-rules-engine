@@ -7,6 +7,7 @@ import random
 import pytest
 from dnd5e_srd_data.loader import BundledAssetLoader
 from dnd5e_srd_data.schema.common import CheckActivity
+from dnd5e_srd_data.schema.monster import CreatureSize
 from pydantic import ValidationError
 
 from dnd5e_engine import CheckRequest, CombatInstance, build_party_member, make_build_spec
@@ -455,6 +456,7 @@ def test_canonical_check_and_live_share_the_core_with_semantics_and_reliable_tal
 def test_derived_sheet_flags_reach_real_live_combat(class_slug, level, flag):
     build = make_build_spec(
         species_slug="human",
+        size_choice=CreatureSize.MEDIUM,
         class_slug=class_slug,
         level=level,
         ability_scores={"dex": 14},

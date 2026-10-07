@@ -206,11 +206,8 @@ def _burning_hands() -> Scenario:
                 dexterity=15,
                 monster_template_slug="giant-rat",
                 xp_value=25,
-                # All four stand on one cell at the corridor mouth, inside
-                # Orin's 15-ft cone. ``start_combat`` accepts a shared start
-                # cell (BACKLOG.md); a grid host should seat each creature on
-                # its own.
-                zone_id=cell_id(4, 2),
+                # Distinct legal cells inside Orin's east-facing 15-ft cone.
+                zone_id=cell_id(*[(2, 1), (2, 2), (2, 3), (3, 2)][i - 1]),
             )
             for i, init in enumerate([13, 10, 8, 6], start=1)
         ],

@@ -132,7 +132,7 @@ def test_zero_speed_dash_pays_action_without_adding_movement_or_drawing_dice(
 
 
 @pytest.mark.parametrize("condition", ["grappled", "restrained"])
-def test_midturn_condition_clamps_budget_and_release_keeps_existing_recovery(
+def test_midturn_condition_clamps_budget_and_release_restores_unspent_allowance(
     condition: str,
 ) -> None:
     start = _start()
@@ -147,8 +147,8 @@ def test_midturn_condition_clamps_budget_and_release_keeps_existing_recovery(
     hero = _find_combatant(live, "char:hero")
     assert hero is not None
     assert _effective_speed(hero, live) == 45
-    # Removal restores Speed, but never raises this turn's clamped budget.
-    assert hero.movement_remaining == 0
+    # Removal restores Speed; a zero-speed clamp does not erase unspent allowance.
+    assert hero.movement_remaining == 45
     run_async(
         submit_player_intent(
             start.handle, actor_id="char:hero", intent=PlayerIntent(intent_type="dash")
@@ -169,19 +169,23 @@ def test_midturn_condition_clamps_budget_and_release_keeps_existing_recovery(
         "actor_moved",
     ]
     assert isinstance(events[2], DashTaken)
-    assert events[2].doubled_movement_remaining == 45
+    assert events[2].doubled_movement_remaining == 90
     assert isinstance(events[3], ActorMoved)
     assert events[3].distance_ft == 5
     hero = _find_combatant(live, "char:hero")
     assert hero is not None
-    assert hero.movement_remaining == 40
+    assert hero.movement_remaining == 85
     assert live.actor_zone[hero.entity_id] == cell(1, 0)
     assert live.rng.getstate() == before_rng
 
 
-@pytest.mark.parametrize("conditions", [(), ("stunned",), ("prone",)])
+@pytest.mark.parametrize(
+    "conditions,mode,cost", [((), "walk", 5), (("stunned",), "walk", 5), (("prone",), "crawl", 10)]
+)
 def test_normal_and_neighbour_movement_keep_budget_events_and_rng(
     conditions: tuple[str, ...],
+    mode: str,
+    cost: int,
 ) -> None:
     start = _start(*conditions)
     live = _get_live(start.handle)
@@ -191,7 +195,7 @@ def test_normal_and_neighbour_movement_keep_budget_events_and_rng(
         submit_player_intent(
             start.handle,
             actor_id="char:hero",
-            intent=PlayerIntent(intent_type="move", target_zone_id=cell(1, 0)),
+            intent=PlayerIntent(intent_type="move", target_zone_id=cell(1, 0), movement_mode=mode),
         )
     )
     events = live.event_log[event_count:]
@@ -200,7 +204,7 @@ def test_normal_and_neighbour_movement_keep_budget_events_and_rng(
     assert events[0].distance_ft == 5
     hero = _find_combatant(live, "char:hero")
     assert hero is not None
-    assert hero.movement_remaining == 40
+    assert hero.movement_remaining == 45 - cost
     assert hero.action_available is True
     assert live.rng.getstate() == before_rng
 

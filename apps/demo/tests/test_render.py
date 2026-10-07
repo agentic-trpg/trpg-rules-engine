@@ -78,22 +78,19 @@ async def test_grid_marks_tokens_and_terrain() -> None:
     assert len(ctx["cells"]) == scenario.grid.width * scenario.grid.height
 
 
-async def test_grid_stacked_cell_renders_exactly_one_token() -> None:
-    # burning-hands deliberately stacks all four giant rats on one cell
-    # (cell_id(4, 2)) so a single Burning Hands cast hits them all. The
-    # grid context's per-cell shape has room for exactly one token, so
-    # this pins down the documented last-writer-wins behavior rather than
-    # leaving it unexercised.
+async def test_grid_burning_hands_renders_each_rat_on_its_own_cell() -> None:
+    # Legal starts give every creature its own cell and visible token.
     scenario = get_scenario("burning-hands")
     out = await _replay("burning-hands")
     ctx = grid_context(scenario, out)
     by_cell = {c["cell_id"]: c for c in ctx["cells"]}
 
-    stacked = by_cell[cell_id(4, 2)]
-    assert stacked["token"] is not None
-    rat_ids = {m.entity_id for m in scenario.encounter}
-    assert stacked["token"]["entity_id"] in rat_ids
-    assert stacked["token"]["side"] == "foe"
+    assert len({m.zone_id for m in scenario.encounter}) == 4
+    for rat in scenario.encounter:
+        token = by_cell[rat.zone_id]["token"]
+        assert token is not None
+        assert token["entity_id"] == rat.entity_id
+        assert token["side"] == "foe"
 
 
 async def test_move_candidates_only_on_pc_turn() -> None:

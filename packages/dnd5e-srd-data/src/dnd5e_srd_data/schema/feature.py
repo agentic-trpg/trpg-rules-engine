@@ -15,6 +15,7 @@ from pydantic import (
 
 from dnd5e_srd_data.schema.advancement import AdvancementEntry
 from dnd5e_srd_data.schema.common import Activity, PassiveEffect, Provenance, ReviewState
+from dnd5e_srd_data.schema.monster import CreatureSize
 
 FeatureType = Literal["class_feature", "subclass_feature", "species_trait"]
 FeatureRuntimeOperation = Literal[
@@ -65,6 +66,7 @@ class AttackRiderSemantics(BaseModel, frozen=True):
     qualification: AttackRiderQualification
     phase: AttackRiderPhase
     target_role: Literal["attack_target", "attacker"] = "attack_target"
+    target_size_max: CreatureSize | None = None
     choice_group: str | None = None
     once_per_turn: bool = False
     sneak_dice_cost: NonNegativeInt = 0
@@ -76,6 +78,13 @@ class AttackRiderSemantics(BaseModel, frozen=True):
     deferred_options: dict[str, str] = Field(default_factory=dict)
     inventory_role: Literal["rider", "foundation", "producer", "passive", "defensive"] = "rider"
     related_activity_ids: tuple[str, ...] = ()
+
+    @model_serializer(mode="wrap")
+    def _serialize_rider(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        if self.target_size_max is None:
+            data.pop("target_size_max", None)
+        return data
 
 
 # SRD 5.2 rest / recharge periods a limited-use feature recovers on. Foundry's

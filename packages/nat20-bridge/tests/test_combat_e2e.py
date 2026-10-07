@@ -14,6 +14,7 @@ PARTY = [
         "name": "Brom",
         "build": {
             "species_slug": "human",
+            "size_choice": "medium",
             "class_slug": "fighter",
             "level": 3,
             "ability_scores": {
@@ -76,6 +77,73 @@ def test_same_seed_same_narration(client: TestClient) -> None:
     a, b = _start(client, seed=7), _start(client, seed=7)
     assert a["narration"] == b["narration"]
     assert a["events"] == b["events"]
+
+
+@pytest.mark.parametrize("mode,cost", [("walk", 5), ("crawl", 10), ("climb", 10), ("swim", 10)])
+def test_intent_route_preserves_movement_mode_and_charges_its_cost(
+    tmp_path: Path, mode: str, cost: int
+) -> None:
+    state = BridgeState(homebrew_path=tmp_path / "homebrew.json")
+    with TestClient(create_app(state)) as client:
+        cid = _start(client)["combat_id"]
+        response = client.post(
+            f"/v1/combat/{cid}/intent",
+            json={
+                "actor_id": "char:brom",
+                "intent_type": "move",
+                "target_zone_id": " 0, 1 ",
+                "movement_mode": mode,
+            },
+        )
+        assert response.status_code == 200, response.text
+        [move] = [e for e in response.json()["events"] if e["type"] == "actor_moved"]
+        assert (move["movement_mode"], move["movement_cost_ft"]) == (mode, cost)
+        live = _get_live(state.combats[cid])
+        assert live.actor_zone["char:brom"] == "0,1"
+        assert live.movement_ledgers["char:brom"].spent_ft == cost
+
+
+@pytest.mark.parametrize("target", ["", "a,1", "0,1,2", "zone:a"])
+def test_intent_route_rejects_malformed_cell_before_state_or_rng_changes(
+    tmp_path: Path, target: str
+) -> None:
+    state = BridgeState(homebrew_path=tmp_path / "homebrew.json")
+    with TestClient(create_app(state)) as client:
+        cid = _start(client)["combat_id"]
+        live = _get_live(state.combats[cid])
+        view_before = client.get(f"/v1/combat/{cid}").json()
+        rng_before = live.rng.getstate()
+        ledgers_before = dict(live.movement_ledgers)
+        events_before = [event.model_dump() for event in live.event_log]
+        response = client.post(
+            f"/v1/combat/{cid}/intent",
+            json={
+                "actor_id": "char:brom",
+                "intent_type": "move",
+                "target_zone_id": target,
+            },
+        )
+        assert response.status_code == 422
+        assert response.json()["detail"][0]["loc"] == ["body", "target_zone_id"]
+        assert client.get(f"/v1/combat/{cid}").json() == view_before
+        assert live.rng.getstate() == rng_before
+        assert live.movement_ledgers == ledgers_before
+        assert [event.model_dump() for event in live.event_log] == events_before
+
+
+def test_intent_route_rejects_unsupported_movement_mode(client: TestClient) -> None:
+    cid = _start(client)["combat_id"]
+    response = client.post(
+        f"/v1/combat/{cid}/intent",
+        json={
+            "actor_id": "char:brom",
+            "intent_type": "move",
+            "target_zone_id": "0,1",
+            "movement_mode": "fly",
+        },
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["loc"] == ["body", "movement_mode"]
 
 
 def test_bridge_template_slugs_hydrate_senses_in_live_engine(
@@ -195,6 +263,7 @@ def test_a_summon_joins_the_view_and_dodges_on_advance_monster(tmp_path: Path) -
         "name": "Vex",
         "build": {
             "species_slug": "human",
+            "size_choice": "medium",
             "class_slug": "wizard",
             "level": 9,
             "ability_scores": {"str": 8, "dex": 14, "con": 14, "int": 18, "wis": 12, "cha": 10},

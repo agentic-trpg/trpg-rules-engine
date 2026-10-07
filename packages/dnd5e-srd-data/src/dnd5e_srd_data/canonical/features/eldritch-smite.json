@@ -118,7 +118,7 @@
       "automatic": false,
       "choice_group": null,
       "deferred_options": {},
-      "deferred_reason": "requires authoritative pact-weapon binding, Pact Magic slot and target size Huge or smaller",
+      "deferred_reason": "requires authoritative pact-weapon binding and Pact Magic slot",
       "effects": [],
       "forced_movement": null,
       "inherit_damage_type": false,
@@ -129,6 +129,7 @@
       "related_activity_ids": [],
       "sneak_dice_cost": 0,
       "target_role": "attack_target",
+      "target_size_max": "huge",
       "trigger": "final_hit"
     }
   },

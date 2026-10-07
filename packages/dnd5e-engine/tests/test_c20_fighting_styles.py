@@ -9,6 +9,7 @@ from collections.abc import Iterator
 import pytest
 from dnd5e_srd_data.loader import BundledAssetLoader
 from dnd5e_srd_data.schema.common import DamagePart
+from dnd5e_srd_data.schema.monster import CreatureSize
 from pydantic import ValidationError
 
 from dnd5e_engine import CharacterBuildSpec, CombatInstance, build_party_member, derive_sheet
@@ -50,6 +51,7 @@ def test_a_champion_7_carries_both_styles_into_combat() -> None:
     member = build_party_member(
         CharacterBuildSpec(
             species_slug="human",
+            size_choice=CreatureSize.MEDIUM,
             class_slug="fighter",
             level=7,
             subclass_slug="champion",
@@ -80,6 +82,7 @@ def test_defense_adds_one_only_while_wearing_armor(equipment: tuple[str, ...], a
     sheet = derive_sheet(
         CharacterBuildSpec(
             species_slug="human",
+            size_choice=CreatureSize.MEDIUM,
             class_slug="fighter",
             level=1,
             selected_choices=("defense",),
@@ -209,7 +212,7 @@ def test_twf_changes_only_the_offhand_swing(style: str | None, offhand: int) -> 
             )
         ],
         seed=9,
-        encounter=[foe(zone_id=cell_id(0, 0))],
+        encounter=[foe(zone_id=cell_id(1, 0))],
     )
     act(handle, "char:hero", intent_type="attack", weapon_id="shortsword", target_id="mon:foe")
     act(

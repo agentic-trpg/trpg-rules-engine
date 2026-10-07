@@ -226,6 +226,7 @@ def test_same_boundary_uses_stable_cast_order_and_seeded_events(monkeypatch):
                 pc(class_slug="wizard", intelligence=40, spell_slots={4: 1}),
                 pc(
                     "char:other",
+                    zone_id="0,1",
                     class_slug="wizard",
                     initiative=15,
                     intelligence=40,
@@ -463,7 +464,13 @@ def test_timed_start_damage_removes_summon_and_hands_off_to_next_actor():
     handle, live = start(
         [
             summoner(),
-            pc(class_slug="wizard", intelligence=40, spell_slots={1: 1}, initiative=15),
+            pc(
+                class_slug="wizard",
+                intelligence=40,
+                spell_slots={1: 1},
+                initiative=15,
+                zone_id="0,2",
+            ),
         ],
         seed=7,
         encounter=[foe(zone_id="9,9")],

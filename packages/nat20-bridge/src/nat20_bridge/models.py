@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 import secrets
 
+from dnd5e_srd_data.schema.monster import CreatureSize
 from pydantic import BaseModel, Field
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
@@ -56,6 +57,7 @@ class AbilityScoresModel(BaseModel):
 
 class BuildRequest(BaseModel):
     species_slug: str
+    size_choice: CreatureSize | None = None
     class_slug: str
     subclass_slug: str | None = None
     level: int = 1

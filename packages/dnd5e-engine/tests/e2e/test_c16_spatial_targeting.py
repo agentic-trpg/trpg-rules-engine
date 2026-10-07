@@ -558,9 +558,11 @@ def test_c16_s06_multicell_move_succeeds_with_terrain_cost_or_fails_unreachable_
     moved_a = events_of(live_a, ActorMoved)
     assert moved_a
     assert moved_a[-1].to_zone == cell(3, 0)
-    assert moved_a[-1].distance_ft == 20
+    assert moved_a[-1].distance_ft == 15
+    assert moved_a[-1].movement_cost_ft == 15
+    assert cell(2, 0) not in moved_a[-1].path
     hero_a = next(c for c in live_a.initiative if c.entity_id == "char:hero")
-    assert hero_a.movement_remaining == 10
+    assert hero_a.movement_remaining == 15
     assert not events_of(live_a, MoveFailed)
 
     # Run B — unreachable (boxed in on all sides; the occupant sits outside

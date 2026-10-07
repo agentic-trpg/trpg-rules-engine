@@ -1082,6 +1082,7 @@ def _attack_rider_plan(
         remaining_sneak_dice_count=dice_count if will_fire else 0,
         damage_types=tuple(dict.fromkeys(damage_types)),
         monk_weapon=_is_monk_weapon(weapon),
+        target_size=target.creature_size,
     )
 
 

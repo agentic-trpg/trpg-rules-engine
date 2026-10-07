@@ -6,6 +6,7 @@ from typing import Any
 
 import pytest
 from dnd5e_srd_data.loader import BundledAssetLoader
+from dnd5e_srd_data.schema.monster import CreatureSize
 
 from dnd5e_engine.build_spec import CharacterBuildSpec, DerivedSheet, derive_sheet
 
@@ -14,6 +15,8 @@ LOADER = BundledAssetLoader()
 
 def _sheet(**fields: Any) -> DerivedSheet:
     fields.setdefault("species_slug", "human")
+    if fields["species_slug"] == "human":
+        fields.setdefault("size_choice", CreatureSize.MEDIUM)
     return derive_sheet(CharacterBuildSpec(**fields), loader=LOADER)
 
 
@@ -100,6 +103,7 @@ def test_make_build_spec_takes_the_new_fields() -> None:
 
     spec = make_build_spec(
         species_slug="human",
+        size_choice=CreatureSize.MEDIUM,
         class_slug="barbarian",
         background_slug="soldier",
         hp_mode="rolled",

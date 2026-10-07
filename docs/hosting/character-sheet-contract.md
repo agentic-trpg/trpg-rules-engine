@@ -11,6 +11,7 @@ any time, and the rules the derivation applies.
 | Field | Store | Why it matters |
 |---|---|---|
 | `species_slug` | the species | speed, senses, resistances, species features and choices |
+| `size_choice` | a typed `CreatureSize` when canonical Size advancement offers several choices | required for Human and other Small/Medium species; only canonical choices are accepted, while single-size species derive automatically |
 | `classes` | `{class_slug: level}` **in the order the classes were first taken** | the first key alone gets its Hit Die maximum at level 1 and its initial-class proficiencies |
 | `subclass_slug` | once the class reaches its subclass level (3) | earlier is rejected |
 | `background_slug` | the background | its two skill proficiencies; the options for the `background:` adjustment |
@@ -56,6 +57,13 @@ The four SRD 5.2 Fighting Style feats therefore apply in
 combat (Defense is already in the derived `ac`, and only while Light, Medium
 or Heavy armor is worn), and each class's features and scale values are read
 at that class's own level.
+
+`DerivedSheet.creature_size` reaches `PartyMemberSpec` and the live `Combatant`.
+Hand-built party and encounter specs can provide `creature_size` explicitly;
+monster templates, summons and transformed forms use their canonical stat-block
+size. Reverting restores the original size. Creature size supplies rule
+qualifiers; every creature still occupies one grid cell in the current spatial
+abstraction.
 
 ## What `derive_sheet` does not apply
 

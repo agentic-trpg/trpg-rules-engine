@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 from dnd5e_srd_data.loader import BundledAssetLoader
+from dnd5e_srd_data.schema.monster import CreatureSize
 
 from dnd5e_engine import CombatInstance, build_party_member, make_build_spec, start_combat
 from dnd5e_engine.lib_loader import set_lib_loader_for_tests
@@ -26,7 +27,13 @@ def _bundled_loader():
 
 def _member(build: dict[str, Any] | None = None, **instance: Any) -> PartyMemberSpec:
     spec = make_build_spec(
-        **{"species_slug": "human", "class_slug": "fighter", "level": 1, **(build or {})}
+        **{
+            "species_slug": "human",
+            "size_choice": CreatureSize.MEDIUM,
+            "class_slug": "fighter",
+            "level": 1,
+            **(build or {}),
+        }
     )
     fields: dict[str, Any] = {
         "entity_id": "char:hero",
@@ -70,7 +77,11 @@ def test_combat_instance_still_derives_after_a_model_dump_round_trip() -> None:
     # a model_fields_set sentinel, so this round-trip must not freeze them at
     # the CombatInstance class defaults.
     spec = make_build_spec(
-        species_slug="human", class_slug="fighter", level=1, ability_scores={"dexterity": 16}
+        species_slug="human",
+        size_choice=CreatureSize.MEDIUM,
+        class_slug="fighter",
+        level=1,
+        ability_scores={"dexterity": 16},
     )
     inst = CombatInstance(entity_id="char:hero", name="Hero", zone_id=cell_id(0, 0))
     rebuilt = CombatInstance(**inst.model_dump())
@@ -128,6 +139,7 @@ def test_multiclass_passive_projection_is_per_class() -> None:
 def test_live_combat_reads_the_derived_sheet() -> None:
     spec = make_build_spec(
         species_slug="human",
+        size_choice=CreatureSize.MEDIUM,
         class_slug="fighter",
         level=5,
         ability_scores={"strength": 16, "constitution": 14},

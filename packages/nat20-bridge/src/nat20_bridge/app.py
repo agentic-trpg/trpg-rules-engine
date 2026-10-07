@@ -210,6 +210,7 @@ def create_app(state: BridgeState) -> FastAPI:
         try:
             build_spec = make_build_spec(
                 species_slug=req.build.species_slug,
+                size_choice=req.build.size_choice,
                 class_slug=req.build.class_slug,
                 level=req.build.level,
                 subclass_slug=req.build.subclass_slug,

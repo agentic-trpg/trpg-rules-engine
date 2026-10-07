@@ -81,6 +81,15 @@ homebrew entry you've imported is visible everywhere a canonical slug would
 be (`/v1/combat` monster/party lookups, `/v1/srd/...` reads, etc.) without
 restarting the process.
 
+Party builds include `build.size_choice` when the canonical species offers
+several sizes: for example, a Human uses `"size_choice": "small"` or
+`"size_choice": "medium"`. Missing or disallowed choices return `422`.
+The derived member carries its validated `creature_size` into combat.
+
+Move intents accept `movement_mode` as `"walk"` (the default), `"crawl"`,
+`"climb"` or `"swim"`. The bridge forwards it to the engine, which validates
+the move and charges its actual movement cost; unsupported modes return `422`.
+
 ## Homebrew content format
 
 Homebrew entries are raw JSON dicts that get re-validated against the same

@@ -46,7 +46,7 @@ metadata. A character must have the feature in its authoritative repertoire.
    Remaining Sneak Attack dice inherit the weapon's damage type and double on a
    critical hit. Commit Sneak Attack's once-per-turn state inside that damage
    resolution, before a Cleave continuation can select it again.
-5. **After damage.** Resolve the selected Open Hand or Obscure option through
+5. **After damage.** Resolve the selected Open Hand, Trip or Obscure option through
    the shared `SaveActivity`/utility resolver and apply its typed outcome through
    combat events.
    Forced movement uses the shared push primitive and persistent-area entry
@@ -66,6 +66,7 @@ parse feature names, descriptions, qualifiers or activation prose.
 | Open Hand: Addle | `1jdSaWanuRrdkVs3` | A paid Flurry of Blows Unarmed Strike hit suppresses the target's opportunity attacks until that target's next turn starts. There is no save and no extra Focus charge. |
 | Open Hand: Push | `XoaS0RtDCGAqrQsf` | On that paid Flurry hit, a failed STR save against `8 + PB + WIS` pushes the target away by the declared `push_distance_ft`: 0, 5, 10 or 15 feet. Forced movement spends no movement budget and provokes no opportunity attack; area-entry effects still run. |
 | Open Hand: Topple | `5Qgc0K3TfuonkPIG` | On that paid Flurry hit, a failed DEX save against `8 + PB + WIS` imposes Prone through the ordinary condition/effect events. |
+| Cunning Strike: Trip | `dWcCw1vTWRMx4YzD` | An eligible Sneak Attack sacrifices one d6 against a Large-or-smaller target. A failed DEX save against `8 + PB + DEX` imposes Prone. The sacrifice remains paid on a successful save; a larger target is refused before attack payment or dice. |
 | Devious Strikes: Obscure | `ki4lIPVGNA0HjEzH` | An eligible Sneak Attack sacrifices three of its d6s. A failed DEX save against `8 + PB + DEX` imposes Blinded until the end of the target's next turn. The sacrifice remains paid on a successful save. |
 
 Open Hand options require the owning Monk subclass and paid Flurry provenance.
@@ -87,8 +88,7 @@ does not make the complete option executable.
 | Feature / option | Missing contract |
 |---|---|
 | Cunning Strike: Poison | An authoritative carried Poisoner's Kit requirement and the repeated end-of-turn save lifecycle. Applying Poisoned alone is insufficient. |
-| Cunning Strike: Trip | The Large-or-smaller target gate; live combatants do not yet carry authoritative size. |
-| Cunning Strike: Withdraw | Immediate movement up to half Speed and an opportunity-attack exemption scoped to that movement. A persistent Disengage marker is insufficient. |
+| Cunning Strike: Withdraw | Complete immediate movement up to half Speed and an opportunity-attack exemption scoped to that movement. The typed `MovementGrant` is a foundation; a persistent Disengage marker is insufficient. |
 | Cunning Strike: standalone Sneak Attack damage activity | This is a data carrier for dice sacrifice, not permission to deal Sneak Attack damage without an eligible attack hit. |
 | Devious Strikes: Daze | The target's next-turn choice of movement, Action or Bonus Action, allowing only one of those. An inert duration marker is insufficient. |
 | Devious Strikes: Knock Out | One-minute Unconscious, removal on any damage, and a repeated end-of-turn save. A one-turn condition is insufficient. |
@@ -100,16 +100,18 @@ does not make the complete option executable.
 
 The full inventory also keeps Divine Strike's own-turn/choice scaling,
 Primal Strike's weapon-or-Wild-Shape and damage choice, Eldritch Smite's pact
-weapon/slot/size requirements, Lifedrinker's pact weapon/damage/Hit Die choices,
+weapon/slot requirements, Lifedrinker's pact weapon/damage/Hit Die choices,
 Frenzy's Reckless/Rage/first-target foundation, Colossus Slayer's validated
-choice and missing-HP gate, and Repelling Blast's selected cantrip/size binding
+choice and missing-HP gate, and Repelling Blast's selected cantrip binding
 deferred. Fire's Burn, Frost's Chill and Hill's Tumble need positive triggering
-damage and their linked species resources; Hill's Tumble also needs size.
+damage and their linked species resources. Shared size qualification alone does
+not complete these riders: typed size metadata records Large-or-smaller for
+Hill's Tumble and Repelling Blast, and Huge-or-smaller for Eldritch Smite.
 Quivering Palm needs vibration binding and its later release lifecycle.
 Hurl Through Hell needs banishment/return and the Fiend damage exclusion.
 Each activity's exact missing clauses remain in the linked audit.
 
-Stunning Strike and the listed Open Hand/Obscure activities still reject
+Stunning Strike and the listed Open Hand/Trip/Obscure activities still reject
 standalone `use_feature`; their executable entrypoint is the bound attack.
 The standalone [feature audit](feature-runtime.md) therefore distinguishes
 standalone rejection from attack-rider execution.
@@ -122,8 +124,8 @@ phases, executable status and specific deferred reasons. Ingestion owns the
 exact canonical mappings. Unknown declarations do not gain semantics by
 matching human-readable text.
 
-The inventory has 51 rows from 36 feature documents: six executable riders,
-26 deferred rider options and 19 supporting contexts. The six executable rows
+The inventory has 51 rows from 36 feature documents: seven executable riders,
+25 deferred rider options and 19 supporting contexts. The seven executable rows
 include automatic Sneak Attack. Funding producers, defensive reactions and
 passive/foundation records are inventoried separately and are not counted as
 newly executable outgoing riders.

@@ -402,8 +402,14 @@
       "automatic": false,
       "choice_group": "cunning-strike",
       "deferred_options": {},
-      "deferred_reason": "requires authoritative target size Large or smaller",
-      "effects": [],
+      "deferred_reason": null,
+      "effects": [
+        {
+          "effect_id": "La47n2N3VtECtnA9",
+          "expiry": "none",
+          "outcome": "failure"
+        }
+      ],
       "forced_movement": null,
       "inherit_damage_type": false,
       "inventory_role": "rider",
@@ -413,6 +419,7 @@
       "related_activity_ids": [],
       "sneak_dice_cost": 1,
       "target_role": "attack_target",
+      "target_size_max": "large",
       "trigger": "sneak_attack_damage"
     },
     "jR7KqMuPOZYUCDyO": {

@@ -261,16 +261,20 @@ def test_only_polymorphs_own_temp_hp_vanish(
     assert (live.tracked_temp_hp[DRUID], combatant(live, DRUID).temp_hp) == (after_end, after_end)
 
 
-def test_movement_clamps_to_the_forms_speed() -> None:
-    """A Crab walks 20 ft: the druid's unspent 30 ft drops to 20 and stays 20
-    after the revert (a transformation never adds movement)."""
-    _, live = start([druid()], seed=1)
+@pytest.mark.parametrize("spent", [0, 5, 25])
+def test_movement_projects_the_forms_speed_against_turn_expenditure(spent: int) -> None:
+    """Changing speed preserves distance already spent in the current turn."""
+    handle, live = start([druid()], seed=1, encounter=[foe(zone_id="9,9")])
+    if spent:
+        act(handle, DRUID, intent_type="move", target_zone_id=f"0,{spent // 5}")
+    assert live.movement_ledgers[DRUID].spent_ft == spent
     _shape(live, DRUID, "crab")
     crab = combatant(live, DRUID)
-    assert (crab.base_speed, crab.movement_remaining) == (20, 20)
+    assert (crab.base_speed, crab.movement_remaining) == (20, max(0, 20 - spent))
     _end_transform(live, DRUID, "remove_ieffect")
     reverted = combatant(live, DRUID)
-    assert (reverted.base_speed, reverted.movement_remaining) == (30, 20)
+    assert (reverted.base_speed, reverted.movement_remaining) == (30, 30 - spent)
+    assert live.movement_ledgers[DRUID].spent_ft == spent
 
 
 @pytest.mark.parametrize(

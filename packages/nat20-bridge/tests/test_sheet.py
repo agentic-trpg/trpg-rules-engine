@@ -4,6 +4,7 @@ import pytest
 from dnd5e_engine import make_build_spec
 from dnd5e_engine.build_spec import derive_sheet as engine_derive_sheet
 from dnd5e_srd_data.loader import BundledAssetLoader
+from dnd5e_srd_data.schema.monster import CreatureSize
 from fastapi.testclient import TestClient
 
 from nat20_bridge.sheet import derive_sheet
@@ -39,6 +40,7 @@ def test_wizard_hp_ac_slots() -> None:
 def test_fighter_armor_and_shield_ac() -> None:
     spec = make_build_spec(
         species_slug="human",
+        size_choice=CreatureSize.MEDIUM,
         class_slug="fighter",
         level=1,
         ability_scores={"str": 16, "dex": 14, "con": 14, "int": 10, "wis": 12, "cha": 8},
@@ -116,6 +118,34 @@ def test_party_validate_route_bad_class(client: TestClient) -> None:
     assert "wizzard" in resp.json()["detail"]
 
 
+@pytest.mark.parametrize("size", ["small", "medium"])
+def test_party_validate_forwards_canonical_species_size_choice(client: TestClient, size) -> None:
+    response = client.post(
+        "/v1/party/validate",
+        json={
+            "name": "Human",
+            "build": {"species_slug": "human", "size_choice": size, "class_slug": "fighter"},
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["member"]["creature_size"] == size
+
+
+@pytest.mark.parametrize("size", [None, "large"])
+def test_party_validate_refuses_missing_or_invalid_species_size_choice(
+    client: TestClient, size
+) -> None:
+    response = client.post(
+        "/v1/party/validate",
+        json={
+            "name": "Human",
+            "build": {"species_slug": "human", "size_choice": size, "class_slug": "fighter"},
+        },
+    )
+    assert response.status_code == 422
+    assert "size_choice" in response.json()["detail"]
+
+
 def test_the_bridge_sheet_is_the_engine_derivation() -> None:
     spec = make_build_spec(
         species_slug="dwarf", class_slug="fighter", level=5, ability_scores={"con": 14}
@@ -131,7 +161,9 @@ def test_the_bridge_sheet_is_the_engine_derivation() -> None:
 
 
 def test_half_caster_level1_slots_follow_the_engine_table() -> None:
-    spec = make_build_spec(species_slug="human", class_slug="paladin", level=1)
+    spec = make_build_spec(
+        species_slug="human", size_choice=CreatureSize.MEDIUM, class_slug="paladin", level=1
+    )
     assert derive_sheet(spec, name="P", entity_id="char:p", loader=LOADER).spell_slots == {1: 2}
 
 
@@ -147,6 +179,7 @@ def test_party_validate_route_rejects_an_early_subclass(client: TestClient) -> N
             "name": "X",
             "build": {
                 "species_slug": "human",
+                "size_choice": "medium",
                 "class_slug": "fighter",
                 "level": 2,
                 "subclass_slug": "champion",

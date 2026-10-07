@@ -180,6 +180,31 @@ def test_encode_decode_roundtrip() -> None:
     assert decode_log(encode_log(log)) == log
 
 
+@pytest.mark.parametrize("mode,cost", [("walk", 5), ("crawl", 10), ("climb", 10), ("swim", 10)])
+async def test_encoded_move_intent_preserves_movement_mode_and_real_cost(
+    mode: str, cost: int
+) -> None:
+    command = IntentCommand.model_validate(
+        {
+            "actor": "char:hero",
+            "intent": {
+                "intent_type": "move",
+                "target_zone_id": "0,1",
+                "movement_mode": mode,
+            },
+        }
+    )
+    log = decode_log(encode_log(make_log([command])))
+    out = await replay_fight(log, *fresh_specs())
+    assert out.accepted == 1
+    assert out.rejected_reason is None
+    [move] = [e for e in out.all_events if e.type == "actor_moved"]
+    assert (move.movement_mode, move.movement_cost_ft) == (mode, cost)
+    assert out.view.actor_zone["char:hero"] == "0,1"
+    hero = next(c for c in out.view.initiative if c.entity_id == "char:hero")
+    assert hero.movement_remaining == 30 - cost
+
+
 def test_decode_garbage_raises() -> None:
     with pytest.raises(ValueError):
         decode_log("not-base64!!")

@@ -56,6 +56,7 @@ def _row(
         "qualification": semantics.qualification,
         "execution_phase": semantics.phase,
         "target_role": semantics.target_role,
+        "target_size_max": semantics.target_size_max,
         "once_per_turn": semantics.once_per_turn,
         "choice_group": semantics.choice_group,
         "automatic": semantics.automatic,

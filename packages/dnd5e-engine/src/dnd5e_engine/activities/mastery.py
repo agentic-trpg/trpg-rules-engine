@@ -39,9 +39,7 @@ cleave / nick, are resolved elsewhere entirely:
   Large or smaller." On a HIT (damage irrelevant), append
   ``("push", target_id)``; the orchestrator folds it into a
   ``push_combatant(..., 10)`` forced move (controller ruling R5: always the
-  full 10 ft). The "Large or smaller" size gate is NOT modelled — creature
-  size is not a ``Combatant`` attribute yet (see ``BACKLOG.md``, the
-  Grapple/Shove/Push size-gate entry), so every target is pushed.
+  full 10 ft). Targets larger than Large do not produce a Push proc.
 * **cleave** (C15 Task 7) — resolved in ``attack.py`` itself (the chained
   second attack roll needs the attack machinery: to-hit, d20, damage), gated
   by the orchestrator-precomputed ``ctx.cleave_available`` /
@@ -63,10 +61,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from dnd5e_srd_data.schema.monster import CreatureSize
+
 from dnd5e_engine.activities.apply import apply_damage
 from dnd5e_engine.activities.effects import is_condition_immune
 from dnd5e_engine.activities.save_primitive import roll_save
 from dnd5e_engine.events import ConditionApplied, LegendaryResistanceUsed, SaveRolled
+from dnd5e_engine.size import size_at_most
 
 if TYPE_CHECKING:
     from dnd5e_srd_data.schema.item import Weapon
@@ -135,8 +136,9 @@ def apply_mastery_on_hit(
         return
     if mastery == _PUSH:
         # SRD §Push: "If you hit a creature with this weapon" — damage-
-        # independent, like sap. Size gate unmodelled (module docstring).
-        ctx.mastery_procs.append((_PUSH, target.entity_id))
+        # independent, like sap, against a Large or smaller creature.
+        if size_at_most(target.creature_size, CreatureSize.LARGE):
+            ctx.mastery_procs.append((_PUSH, target.entity_id))
         return
     # graze triggers on a MISS, not a hit; cleave resolves in attack.py; nick
     # is orchestrator action-economy — nothing to do on a hit for any of them.

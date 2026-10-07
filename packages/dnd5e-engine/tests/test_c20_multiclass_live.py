@@ -7,6 +7,7 @@ from collections.abc import Iterator
 
 import pytest
 from dnd5e_srd_data.loader import BundledAssetLoader
+from dnd5e_srd_data.schema.monster import CreatureSize
 from pydantic import ValidationError
 
 from dnd5e_engine import CharacterBuildSpec, CombatInstance, build_party_member, get_live
@@ -51,7 +52,11 @@ def test_class_slug_must_be_one_of_the_classes() -> None:
 
 def test_build_party_member_forwards_the_classes() -> None:
     member = build_party_member(
-        CharacterBuildSpec(species_slug="human", classes={"fighter": 1, "wizard": 4}),
+        CharacterBuildSpec(
+            species_slug="human",
+            size_choice=CreatureSize.MEDIUM,
+            classes={"fighter": 1, "wizard": 4},
+        ),
         CombatInstance(entity_id="char:hero", name="Hero", zone_id=cell_id(0, 0)),
         loader=LOADER,
     )

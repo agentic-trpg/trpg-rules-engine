@@ -107,7 +107,7 @@
       "automatic": false,
       "choice_group": null,
       "deferred_options": {},
-      "deferred_reason": "requires validated selected cantrip invocation binding and authoritative target size",
+      "deferred_reason": "requires validated selected cantrip invocation binding",
       "effects": [],
       "forced_movement": null,
       "inherit_damage_type": false,
@@ -118,6 +118,7 @@
       "related_activity_ids": [],
       "sneak_dice_cost": 0,
       "target_role": "attack_target",
+      "target_size_max": "large",
       "trigger": "final_hit"
     }
   },

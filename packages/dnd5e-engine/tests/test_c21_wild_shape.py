@@ -322,7 +322,7 @@ def test_hold_persons_paralysis_ends_wild_shape() -> None:
     """Paralyzed includes Incapacitated. The druid keeps its creature type (a
     Humanoid) in Beast form, so Hold Person can target it. Seed 1: the druid's
     Wisdom save rolls 5 against the Wizard 9's DC 16."""
-    party = [druid(creature_type="humanoid"), wizard(initiative=15)]
+    party = [druid(creature_type="humanoid"), wizard(initiative=15, zone_id="0,1")]
     handle, live = start(party, seed=1, encounter=[_far_foe()])
     _wild_shape(handle, "giant-badger")
     act(handle, DRUID, intent_type="pass")

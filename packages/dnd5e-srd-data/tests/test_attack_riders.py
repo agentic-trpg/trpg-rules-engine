@@ -14,6 +14,7 @@ from dnd5e_srd_data.schema.feature import (
     RiderEffectSpec,
     RiderForcedMovement,
 )
+from dnd5e_srd_data.schema.monster import CreatureSize
 from tools.translators.attack_riders import (
     attack_rider_activities,
     attack_rider_choice_limits,
@@ -87,6 +88,56 @@ def test_stunning_outcomes_and_shared_changes_are_exact():
     assert activity.consumption.targets[0].value == "1"
 
 
+def test_trip_is_a_size_qualified_canonical_sneak_damage_rider():
+    feature = BundledAssetLoader().get_feature("cunning-strike")
+    semantics = feature.attack_riders["dWcCw1vTWRMx4YzD"]
+    activity = next(a for a in feature.activities if a.id == "dWcCw1vTWRMx4YzD")
+    assert semantics.deferred_reason is None
+    assert semantics.target_size_max is CreatureSize.LARGE
+    assert semantics.trigger == "sneak_attack_damage"
+    assert semantics.phase == "after_damage" and semantics.sneak_dice_cost == 1
+    assert activity.save.ability == ["dex"] and activity.save.dc.calculation == "dex"
+    assert semantics.effects == (RiderEffectSpec(effect_id="La47n2N3VtECtnA9", outcome="failure"),)
+    effect = next(
+        effect for effect in feature.passive_effects if effect.id == semantics.effects[0].effect_id
+    )
+    assert effect.statuses == ["prone"]
+
+
+@pytest.mark.parametrize(
+    "slug,activity_id,maximum,reason",
+    [
+        (
+            "hills-tumble",
+            "I2wKOUDxhIb5hHb7",
+            CreatureSize.LARGE,
+            "requires positive triggering damage and linked species resource",
+        ),
+        (
+            "eldritch-smite",
+            "CXJlzDUkMYU9w9i9",
+            CreatureSize.HUGE,
+            "requires authoritative pact-weapon binding and Pact Magic slot",
+        ),
+        (
+            "repelling-blast",
+            "OXhI1TDQxORrGAgc",
+            CreatureSize.LARGE,
+            "requires validated selected cantrip invocation binding",
+        ),
+    ],
+)
+def test_deferred_riders_record_completed_size_primitive_and_remaining_clauses(
+    slug, activity_id, maximum, reason
+):
+    feature = BundledAssetLoader().get_feature(slug)
+    semantics = feature.attack_riders[activity_id]
+    assert semantics.target_size_max is maximum
+    assert semantics.deferred_reason == reason
+    assert semantics.model_dump(mode="json")["target_size_max"] == maximum.value
+    assert attack_riders(slug, [activity_id])[activity_id] == semantics
+
+
 def test_open_hand_and_obscure_preserve_all_rule_clauses():
     loader = BundledAssetLoader()
     hand = loader.get_feature("open-hand-technique")
@@ -117,6 +168,7 @@ def test_open_hand_and_obscure_preserve_all_rule_clauses():
         ("phase", "after_payment_error"),
         ("sneak_dice_cost", -1),
         ("target_role", "last_damaged_by"),
+        ("target_size_max", "colossal"),
     ],
 )
 def test_rider_metadata_values_are_closed(field, value):

@@ -99,7 +99,7 @@
       "automatic": false,
       "choice_group": null,
       "deferred_options": {},
-      "deferred_reason": "requires positive triggering damage and authoritative target size Large or smaller",
+      "deferred_reason": "requires positive triggering damage and linked species resource",
       "effects": [],
       "forced_movement": null,
       "inherit_damage_type": false,
@@ -110,6 +110,7 @@
       "related_activity_ids": [],
       "sneak_dice_cost": 0,
       "target_role": "attack_target",
+      "target_size_max": "large",
       "trigger": "final_hit"
     }
   },

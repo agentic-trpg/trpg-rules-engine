@@ -14,9 +14,8 @@ Controller ruling R3 (deterministic choice policy): the target saves with
 whichever of STR/DEX has the higher save modifier (tie -> STR); the escaper
 picks Athletics vs Acrobatics by higher check modifier (tie -> Athletics/STR).
 
-Out of scope (BACKLOG): the size gate, the free-hand gate, and the
-distance-exceeded auto-release (no forced-move currently separates a
-grappled pair).
+The free-hand gate remains out of scope (BACKLOG). Shared physical movement
+now supplies size qualification, dragging and release after forced separation.
 
 Task 7 appends its own test classes (Shove / Stand Up) to this module.
 """
@@ -35,6 +34,7 @@ from dnd5e_engine.events import (
     ConditionRemoved,
     SaveRolled,
 )
+from dnd5e_engine.movement import MovementLedger
 from dnd5e_engine.orchestrator import (
     IntentRejectedError,
     _condition_source_entity,
@@ -606,6 +606,7 @@ class TestStandUp:
             for idx, c in enumerate(live.initiative):
                 if c.entity_id == "char:target":
                     live.initiative[idx] = c.model_copy(update={"movement_remaining": 5})
+                    live.movement_ledgers[c.entity_id] = MovementLedger(spent_ft=c.base_speed - 5)
                     break
             with pytest.raises(IntentRejectedError) as exc_info:
                 await submit_player_intent(

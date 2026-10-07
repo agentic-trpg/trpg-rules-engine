@@ -16,6 +16,7 @@ from typing import Annotated, Literal
 from dnd5e_srd_data.schema.common import ReactionTriggerKind
 from pydantic import BaseModel, Field
 
+from dnd5e_engine.movement import MovementMode
 from dnd5e_engine.types.effects import ActiveEffect
 
 # ── canonical closed-set aliases ────────────────────────────────────────────
@@ -547,6 +548,10 @@ class ActorMoved(BaseModel):
     from_zone: str
     to_zone: str
     distance_ft: int
+    forced: bool = False
+    movement_mode: MovementMode = "walk"
+    movement_cost_ft: int = 0
+    path: tuple[str, ...] = ()
 
 
 class CombatantMoved(BaseModel):
@@ -566,6 +571,9 @@ class CombatantMoved(BaseModel):
     to_zone: str
     distance_ft: int
     forced: bool
+    movement_mode: MovementMode = "walk"
+    movement_cost_ft: int = 0
+    dragged_by: str | None = None
 
 
 class DashTaken(BaseModel):
@@ -611,6 +619,7 @@ class MoveFailed(BaseModel):
         # SRD 5.2 Frightened: "You can't willingly move closer to the
         # source of fear." (C16b)
         "frightened",
+        "prone",
     ]
 
 

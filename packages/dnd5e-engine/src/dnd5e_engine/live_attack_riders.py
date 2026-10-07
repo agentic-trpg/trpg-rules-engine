@@ -101,6 +101,7 @@ def preflight_attack_riders(
     ) and not isinstance(live.topology, GridTopology):
         raise FeaturePreflightError("rider forced movement requires grid geometry")
     owners = feature_repertoire(actor, get_lib_loader())
+    target = orch._find_combatant(live, intent.target_id) if intent.target_id else None
     used = {
         slug
         for entity, slug, serial in live.rider_uses
@@ -119,6 +120,7 @@ def preflight_attack_riders(
         },
         used_features=used,
         cell_size_ft=live.topology.cell_size_ft if isinstance(live.topology, GridTopology) else 1,
+        target_size=target.creature_size if target is not None else None,
     )
 
 

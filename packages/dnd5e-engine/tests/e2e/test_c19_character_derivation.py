@@ -13,6 +13,7 @@ collection error.
 from __future__ import annotations
 
 from dnd5e_srd_data.loader import BundledAssetLoader
+from dnd5e_srd_data.schema.monster import CreatureSize
 
 
 def test_c19_s01_level1_hp_is_hit_die_max_plus_con_modifier_single_class_fighter():
@@ -33,6 +34,7 @@ def test_c19_s01_level1_hp_is_hit_die_max_plus_con_modifier_single_class_fighter
 
     build_spec = CharacterBuildSpec(
         species_slug="human",
+        size_choice=CreatureSize.MEDIUM,
         classes={"fighter": 1},  # API delta (C19): multiclass dict, not class_slug
         ability_scores={"constitution": 14},
         level=1,
@@ -59,6 +61,7 @@ def test_c19_s02_level5_hp_accumulates_fixed_per_level_gains():
 
     build_spec = CharacterBuildSpec(
         species_slug="human",
+        size_choice=CreatureSize.MEDIUM,
         classes={"fighter": 5},  # API delta (C19)
         ability_scores={"constitution": 14},
         level=5,
@@ -88,6 +91,7 @@ def test_c19_s03_chain_mail_ac_ignores_dex_shield_stacks_plus2():
 
     spec_a = CharacterBuildSpec(
         species_slug="human",
+        size_choice=CreatureSize.MEDIUM,
         classes={"fighter": 1},  # API delta (C19)
         ability_scores={"dexterity": 18},
         equipment=("chain-mail",),
@@ -95,6 +99,7 @@ def test_c19_s03_chain_mail_ac_ignores_dex_shield_stacks_plus2():
     )
     spec_b = CharacterBuildSpec(
         species_slug="human",
+        size_choice=CreatureSize.MEDIUM,
         classes={"fighter": 1},
         ability_scores={"dexterity": 18},
         equipment=("chain-mail", "shield"),
@@ -123,6 +128,7 @@ def test_c19_s04_scale_mail_caps_dex_bonus_at_plus2():
 
     build_spec = CharacterBuildSpec(
         species_slug="human",
+        size_choice=CreatureSize.MEDIUM,
         classes={"rogue": 1},  # API delta (C19)
         ability_scores={"dexterity": 20},
         equipment=("scale-mail",),
@@ -148,6 +154,7 @@ def test_c19_s05_unarmored_defense_barbarian_replaces_base_with_dex_plus_con():
 
     build_spec = CharacterBuildSpec(
         species_slug="human",
+        size_choice=CreatureSize.MEDIUM,
         classes={"barbarian": 1},  # API delta (C19)
         ability_scores={"dexterity": 14, "constitution": 16},
         equipment=(),
@@ -180,6 +187,7 @@ def test_c19_s06_save_and_skill_proficiencies_derive_from_class_and_background()
 
     build_spec = CharacterBuildSpec(
         species_slug="human",
+        size_choice=CreatureSize.MEDIUM,
         classes={"fighter": 1},  # API delta (C19)
         background_slug="soldier",  # API delta (C19)
         ability_scores={},
@@ -211,6 +219,7 @@ def test_c19_s07_asi_at_level4_from_selected_choices_raises_ability_score():
 
     build_spec = CharacterBuildSpec(
         species_slug="human",
+        size_choice=CreatureSize.MEDIUM,
         classes={"fighter": 4},  # API delta (C19)
         ability_scores={"strength": 16},
         level=4,
@@ -243,6 +252,7 @@ def test_c19_s08_subclass_below_level3_is_rejected():
 
     build_spec = CharacterBuildSpec(
         species_slug="human",
+        size_choice=CreatureSize.MEDIUM,
         classes={"fighter": 2},  # API delta (C19)
         subclass_slug="champion",
         level=2,
@@ -269,6 +279,7 @@ def test_c19_s09_multiclass_fighter3_rogue2_hp_and_proficiency_bonus():
 
     build_spec = CharacterBuildSpec(
         species_slug="human",
+        size_choice=CreatureSize.MEDIUM,
         classes={"fighter": 3, "rogue": 2},  # API delta (C19)
         ability_scores={"constitution": 14},
         level=5,
@@ -284,7 +295,12 @@ def test_c19_s09_multiclass_fighter3_rogue2_hp_and_proficiency_bonus():
     # SRD 5.2 Multiclassing, "Extra Attack": "If you gain the Extra Attack
     # feature from more than one class, the features don't stack."
     doubled = derive_sheet(
-        CharacterBuildSpec(species_slug="human", classes={"fighter": 5, "barbarian": 5}, level=10),
+        CharacterBuildSpec(
+            species_slug="human",
+            size_choice=CreatureSize.MEDIUM,
+            classes={"fighter": 5, "barbarian": 5},
+            level=10,
+        ),
         loader=loader,
     )
     assert doubled.extra_attack_count == 1
@@ -351,6 +367,7 @@ def test_c19_s11_fourth_attuned_item_rejected_at_3_item_cap():
 
     build_spec = CharacterBuildSpec(
         species_slug="human",
+        size_choice=CreatureSize.MEDIUM,
         classes={"wizard": 5},  # API delta (C19)
         equipment=items,
         attuned_items=items,  # API delta (C19)
@@ -377,6 +394,7 @@ def test_c19_s12_heavy_armor_without_str_requirement_imposes_flat_speed_penalty(
 
     build_spec = CharacterBuildSpec(
         species_slug="human",
+        size_choice=CreatureSize.MEDIUM,
         classes={"fighter": 1},  # API delta (C19)
         ability_scores={"strength": 11},
         equipment=("chain-mail",),

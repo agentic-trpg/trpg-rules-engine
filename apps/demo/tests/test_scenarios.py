@@ -63,8 +63,8 @@ SHOWCASE_SCRIPTS: dict[str, list[Command]] = {
         MonsterTurnCommand(),
         MonsterTurnCommand(),
     ],
-    # Orin's cone catches all four giant rats stacked on the corridor-mouth
-    # cell in one cast: four Dex saves, half damage on a save, full on a
+    # Orin's cone catches four giant rats in distinct corridor-mouth
+    # cells in one cast: four Dex saves, half damage on a save, full on a
     # fail. One monster turn closes out the round.
     "burning-hands": [
         _cast("char:orin", "burning-hands", target="mon:rat1"),

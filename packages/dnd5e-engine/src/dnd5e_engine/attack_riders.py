@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, get_args
 
 from dnd5e_srd_data.schema.common import SaveActivity, UtilityActivity
 from dnd5e_srd_data.schema.item import WeaponProperty
+from dnd5e_srd_data.schema.monster import CreatureSize
 from pydantic import BaseModel, ConfigDict, Field
 
 from dnd5e_engine.activities.arithmetic import parse_expression, scalar
@@ -22,6 +23,7 @@ from dnd5e_engine.feature_runtime import (
     resource_payments,
     validate_feature_formulas,
 )
+from dnd5e_engine.size import size_at_most
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -243,6 +245,7 @@ def plan_attack_riders(
     spent: Mapping[str, int],
     used_features: set[str],
     cell_size_ft: int,
+    target_size: CreatureSize | None = None,
 ) -> tuple[AttackRiderPlan, ...]:
     """Validate all declarations and aggregate costs before the attack is paid."""
     owners = feature_repertoire(actor, loader)
@@ -257,6 +260,10 @@ def plan_attack_riders(
     plans = []
     for request in requests:
         feature, activity, semantics = _requested_rider(owned, request)
+        if semantics.target_size_max is not None and (
+            target_size is None or not size_at_most(target_size, semantics.target_size_max)
+        ):
+            raise FeaturePreflightError("target exceeds the rider's maximum creature size")
         if semantics.once_per_turn and feature.slug in used_features:
             raise FeaturePreflightError("rider already used on this turn")
         if not _potential_attack_qualification(semantics.qualification, weapon, origin):
@@ -298,6 +305,10 @@ def matches_rider(plan: AttackRiderPlan, attack: AttackResolutionContext) -> boo
     if not attack.is_hit or not _actual_attack_qualification(plan.semantics.qualification, attack):
         return False
     semantics = plan.semantics
+    if semantics.target_size_max is not None and not size_at_most(
+        attack.target_size, semantics.target_size_max
+    ):
+        return False
     if semantics.trigger == "sneak_attack_damage":
         return attack.sneak_eligible and attack.sneak_will_fire
     if semantics.trigger == "flurry_hit":

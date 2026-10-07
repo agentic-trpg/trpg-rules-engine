@@ -367,7 +367,7 @@ def test_a_polymorphed_character_cannot_release_its_readied_spell() -> None:
 def test_a_polymorphed_character_cannot_cast() -> None:
     """ "...it can't speak or cast spells." Seed 1: the ally wizard's save rolls
     5; on its turn its Hold Person is refused and its slot is kept."""
-    ally = wizard("char:ally", initiative=15)
+    ally = wizard("char:ally", initiative=15, zone_id="0,1")
     handle, live = start([wizard(), ally], seed=1, encounter=[_tough()])
     _polymorph(handle, target_id="char:ally")
     act(

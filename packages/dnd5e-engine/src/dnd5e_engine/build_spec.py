@@ -18,6 +18,7 @@ from dnd5e_srd_data.schema.background import Background
 from dnd5e_srd_data.schema.class_ import Class, Subclass
 from dnd5e_srd_data.schema.common import PassiveEffectChange
 from dnd5e_srd_data.schema.item import Armor
+from dnd5e_srd_data.schema.monster import CreatureSize
 from dnd5e_srd_data.schema.species import Species
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -62,6 +63,7 @@ from dnd5e_engine.rules.choices import ParsedChoices, parse_selected_choices
 from dnd5e_engine.rules.dice import ability_modifier, proficiency_bonus
 from dnd5e_engine.rules.skill_bonuses import skill_check_bonuses
 from dnd5e_engine.rules.skills import SKILL_CODE_TO_SLUG, Skill, passive_perception
+from dnd5e_engine.size import resolve_species_size
 from dnd5e_engine.spellcasting import (
     SpellcastingProgression,
     derive_pact_slots,
@@ -109,6 +111,7 @@ class CharacterBuildSpec(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
     species_slug: str
+    size_choice: CreatureSize | None = None
     class_slug: str = ""
     classes: dict[str, int] = Field(default_factory=dict)
     subclass_slug: str | None = None
@@ -207,6 +210,7 @@ def _normalize_abilities(raw: dict[str, int]) -> AbilityScores:
 def make_build_spec(
     *,
     species_slug: str,
+    size_choice: CreatureSize | None = None,
     class_slug: str | None = None,
     level: int | None = None,
     classes: Mapping[str, int] | None = None,
@@ -223,6 +227,7 @@ def make_build_spec(
 ) -> CharacterBuildSpec:
     payload: dict[str, Any] = {
         "species_slug": species_slug,
+        "size_choice": size_choice,
         "subclass_slug": subclass_slug,
         "ability_scores": _normalize_abilities(ability_scores or {}),
         "equipment": equipment,
@@ -303,6 +308,7 @@ class DerivedSheet(BaseModel):
     ability_scores: AbilityScores
     ability_modifiers: dict[AbilityName, int]
     proficiency_bonus: int
+    creature_size: CreatureSize = CreatureSize.MEDIUM
     base_speed: int
     movement_modes: CombatantMovementModes
     senses: CombatantSenses
@@ -665,6 +671,7 @@ def derive_sheet(spec: CharacterBuildSpec, *, loader: AssetLoader) -> DerivedShe
     choices = parse_selected_choices(spec.selected_choices)
     class_docs = _class_docs(spec.classes, loader)
     species = _species(spec.species_slug, loader)
+    creature_size = resolve_species_size(species, spec.size_choice)
     subclass, subclass_level = _subclass(spec, class_docs, loader)
     background = _background(spec.background_slug, loader)
     level_sources: list[_LeveledSource] = [
@@ -725,6 +732,7 @@ def derive_sheet(spec: CharacterBuildSpec, *, loader: AssetLoader) -> DerivedShe
         ability_scores=AbilityScores(**scores),
         ability_modifiers=modifiers,
         proficiency_bonus=pb,
+        creature_size=creature_size,
         base_speed=(
             walk + passive.walk_speed_bonus - armor_speed_penalty(worn.body, scores["strength"])
         ),

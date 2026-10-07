@@ -11,6 +11,7 @@ from dnd5e_srd_data.schema.feature import (
     RiderEffectSpec,
     RiderForcedMovement,
 )
+from dnd5e_srd_data.schema.monster import CreatureSize
 
 _RECKLESS = (
     "requires first-attack Reckless decision, Strength Advantage and incoming Advantage lifecycle"
@@ -75,7 +76,8 @@ _RIDERS: dict[tuple[str, str], AttackRiderSemantics] = {
         phase="after_damage",
         choice_group="cunning-strike",
         sneak_dice_cost=1,
-        deferred_reason="requires authoritative target size Large or smaller",
+        target_size_max=CreatureSize.LARGE,
+        effects=(RiderEffectSpec(effect_id="La47n2N3VtECtnA9", outcome="failure"),),
     ),
     ("cunning-strike", "jR7KqMuPOZYUCDyO"): AttackRiderSemantics(
         trigger="sneak_attack_damage",
@@ -198,7 +200,7 @@ _DEFERRED: tuple[tuple[str, str, str, str], ...] = (
         "hills-tumble",
         "I2wKOUDxhIb5hHb7",
         "any_attack",
-        "requires positive triggering damage and authoritative target size Large or smaller",
+        "requires positive triggering damage and linked species resource",
     ),
     (
         "hunters-prey",
@@ -210,8 +212,7 @@ _DEFERRED: tuple[tuple[str, str, str, str], ...] = (
         "eldritch-smite",
         "CXJlzDUkMYU9w9i9",
         "pact_weapon",
-        "requires authoritative pact-weapon binding, Pact Magic slot "
-        "and target size Huge or smaller",
+        "requires authoritative pact-weapon binding and Pact Magic slot",
     ),
     (
         "lifedrinker",
@@ -255,15 +256,21 @@ _DEFERRED: tuple[tuple[str, str, str, str], ...] = (
         "repelling-blast",
         "OXhI1TDQxORrGAgc",
         "spell_attack",
-        "requires validated selected cantrip invocation binding and authoritative target size",
+        "requires validated selected cantrip invocation binding",
     ),
 )
+_DEFERRED_TARGET_SIZES = {
+    ("hills-tumble", "I2wKOUDxhIb5hHb7"): CreatureSize.LARGE,
+    ("eldritch-smite", "CXJlzDUkMYU9w9i9"): CreatureSize.HUGE,
+    ("repelling-blast", "OXhI1TDQxORrGAgc"): CreatureSize.LARGE,
+}
 for _slug, _activity, _qualification, _reason in _DEFERRED:
     _RIDERS[(_slug, _activity)] = AttackRiderSemantics.model_validate(
         {
             "trigger": "final_hit",
             "qualification": _qualification,
             "phase": "after_damage",
+            "target_size_max": _DEFERRED_TARGET_SIZES.get((_slug, _activity)),
             "deferred_reason": _reason,
         }
     )

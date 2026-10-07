@@ -174,17 +174,11 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   `activity_id` when an item carries alternatives, as a feature already
   does.
   (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_resolve_intent_activities`)
-- **Grapple's/Shove's size gate, free-hand gate, and distance-exceeded
-  auto-release are not modelled** (2026-09-01). SRD 5.2 Grapple/Shove
-  require "a hand free" (Grapple only) and cap the actor at one size larger
-  than the target; "Ending a Grapple" also ends the condition when a forced
-  move separates the pair beyond reach. None of the three block or
-  auto-release `grapple`/`shove`/`escape_grapple` today: no combatant has a
-  size attribute to read. The Push weapon mastery's "if it is Large or smaller" gate
-  (2026-09-02, C15 Task 7) shares the same missing creature-size attribute
-  and pushes every target.
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_handle_grapple`,
-  `::_handle_shove`, `::_fold_mastery_procs`)
+- **Grapple's free-hand gate remains unmodelled (narrowed 2026-10-08).**
+  Physical movement supplies typed creature size, Grapple/Shove's target-size
+  gate, dragging, release beyond reach and the Push mastery's Large-or-smaller
+  gate. Grapple still needs an authoritative free-hand/equipment model.
+  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_handle_grapple`)
 - **Ritual casting is out-of-combat only (2026-09-03, C17).** `spellcasting.
   resolve_ritual_cast(spell, *, prepared, ritual_adept=False)` is the host
   seam: it validates the Ritual tag + prepared/Ritual-Adept gate and returns
@@ -265,24 +259,20 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
 
 ## Movement (2026-08-22)
 
-- **No elevation.** The grid is strictly 2-D, so flying creatures have no
-  altitude and `movement_modes` beyond walk speed do not affect positioning.
+- **No elevation or 3-D flying/burrowing (narrowed 2026-10-08).** The grid is
+  strictly 2-D. Explicit crawl/climb/swim, special-speed costs and shared turn
+  accounting now resolve; fly/burrow speeds are retained and receive modifiers,
+  but are not positioning modes. Water, climbable surfaces and falling are not
+  inferred from cell geometry.
 - **No multi-tile creature footprints (amended 2026-09-26, C21b).** Every
   creature occupies one cell regardless of size, a Large summoned Draconic
   Spirit included: its placement needs one free cell.
   (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_summon_placement`)
-- **`start_combat` seats two combatants on one cell (2026-10-03, C25).** It
-  checks that each start cell is in bounds and unblocked, not that it is free,
-  so two creatures can start on one cell, which no move can produce (SRD 5.2:
-  "You can't willingly end a move in a space occupied by another creature").
-  The demo's burning-hands scenario stacks four giant rats this way, and 18
-  engine tests start two creatures on one cell (under
-  `packages/dnd5e-engine/tests/`: `e2e/test_c20_class_features.py`,
-  `test_dodge_help_hide.py`, `test_c20_fighting_styles.py`,
-  `test_loading_property.py`, `e2e/test_c21_summons.py`,
-  `test_c21_polymorph.py`, `test_c21_wild_shape.py`); refusing a shared
-  start cell means re-seating them first.
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_resolve_topology`)
+- **Jumping remains deferred (narrowed 2026-10-08).** Long/high jumps, jump
+  distance choices and Step of the Wind's complete jump behavior still need
+  typed execution. The scoped `MovementGrant` value provides direction,
+  distance, OA behavior and lifetime, but does not execute Withdraw or Brutal
+  Forceful on its own. See [the movement contract](docs/dev/movement-positioning.md).
 
 ## Event stream observability (2026-08-22)
 
@@ -405,14 +395,10 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
 
 ## Spatial mechanics (grid backend is in place; these are additive)
 
-- **Route choice is fewest-squares, not cheapest.** `GridTopology.shortest_path`
-  (`spatial.py`) is BFS over legal steps — walls, diagonal corner-cutting and
-  enemy-occupied cells are all honoured (C16) — and `_handle_move` charges each
-  leg's `edge_distance` to the movement budget, but the SEARCH does not minimise
-  that cost. A mover is therefore routed straight through difficult terrain when
-  a same-length detour would be cheaper (pinned by C16-S06). No threat-aware
-  routing, no multi-tile creatures.
-  (`packages/dnd5e-engine/src/dnd5e_engine/spatial.py::GridTopology.shortest_path`)
+- **Threat-aware routing remains deferred (narrowed 2026-10-08).** Shared
+  weighted paths minimize movement cost with stable ties and preserve the BFS
+  helper's contract. They do not rank opportunity-attack exposure or creature
+  footprints.
 
 - **Thunderwave's push is an engine-side registry, not data** (2026-08-27).
   `activities/forced_movement.py::FORCED_MOVEMENT_RIDERS` names the spell by
@@ -420,23 +406,12 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   a typed push field on the save activity + a translator rule, then delete the
   registry.
   (`packages/dnd5e-engine/src/dnd5e_engine/activities/forced_movement.py`)
-- **The monster AI's closing walk ignores occupancy; line width is not modelled** (2026-08-27,
-  amended 2026-10-03, C24). The closing walk in `advance_monster_turn` calls
-  `shortest_path` without `avoid=`, so a monster may path straight through a PC
-  where a PC `"move"` intent may not; the flee walk avoids enemy spaces and never
-  ends on a creature (C24). `cells_in_template("line")` is one cell wide, so a
+- **Line width is not modelled (narrowed 2026-10-08).** Monster closing and
+  flee now share PC occupancy and weighted cost rules. `cells_in_template("line")`
+  remains one cell wide, so a
   5-ft-wide Lightning Bolt is treated as a 1-cell ray and a wider
   `template.width` is ignored.
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::advance_monster_turn`,
-  `packages/dnd5e-engine/src/dnd5e_engine/spatial.py::cells_in_template`)
-- **A spaced cell id is stored as written (2026-09-27, C21b).**
-  `GridTopology.is_valid_cell` parses with `int()`, which also reads `"1, 1"`
-  or `" 1,1"`, so `start_combat` seats a combatant at such a `zone_id` and
-  Spiritual Weapon places its force at such a `target_zone_id` verbatim: a
-  string no other position check matches (another creature can enter that
-  space, an area of effect misses it). A `move` to one fails `unreachable`,
-  and Summon Dragon refuses one with `target_invalid`.
-  (`packages/dnd5e-engine/src/dnd5e_engine/spatial.py::GridTopology.is_valid_cell`)
+  (`packages/dnd5e-engine/src/dnd5e_engine/spatial.py::cells_in_template`)
 - **Truesight sees into Heavily Obscured cells (2026-09-27, C23).** SRD 5.2
   Truesight: "your vision pierces through" Darkness, Invisibility, visual
   illusions, transformations and the Ethereal Plane — not fog or foliage. The
@@ -548,13 +523,13 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   therefore cannot fund them. Attack/Magic ordering and refused casts preserve
   the appropriate budgets.
 - **Remaining attack rider options (narrowed 2026-10-08).** Shared typed attack
-  binding, Stunning Strike, Open Hand Addle/Push/Topple and Devious Obscure are
+  binding, Stunning Strike, Open Hand Addle/Push/Topple, Cunning Trip and Devious Obscure are
   executable. Sneak Attack commits inside damage resolution before Cleave or
   another attack can select it again. The full [rider inventory](docs/dev/attack-rider-audit.json)
-  distinguishes six executable riders, 26 deferred options and 19 supporting
+  distinguishes seven executable riders, 25 deferred options and 19 supporting
   contexts; see [the contract](docs/dev/attack-feature-riders.md).
   Cunning Poison still needs authoritative Poisoner's Kit inventory and repeated
-  end-turn saves; Trip needs target size; Withdraw needs immediate half-Speed
+  end-turn saves; Withdraw needs complete immediate half-Speed
   movement with a move-scoped OA exemption. Devious Daze needs mutually exclusive
   movement/Action/Bonus Action restrictions, and Knock Out needs break-on-damage
   plus repeated saves. These complete options reject before payment.
@@ -898,14 +873,6 @@ zone + apply logic:
   `ActiveEffect` remains orphaned in `live.active_effects` regardless.
   (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_handle_grapple`,
   `::_handle_escape_grapple`)
-- **A grappler killed without a `ConditionApplied` (Incapacitated) path
-  does not auto-release its victim.** `_release_grapple_victims_of` fires
-  only from the Incapacitated fold inside `_fold_condition_onto_combatant`;
-  a grappler removed from combat by a path that never applies Incapacitated
-  leaves its victim's Grappled condition stuck. SRD 5.2 "Ending a Grapple"
-  names only the Incapacitated case, so this is RAW-arguable rather than a
-  clear defect — recorded for a future ruling.
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_release_grapple_victims_of`)
 - **Monster AI never selects Dodge, Hide, Help, Grapple, or Shove.**
   `advance_monster_turn` has no branch that chooses any of the five C14
   actions; a monster only ever attacks, casts, moves, or flees.
@@ -926,17 +893,15 @@ zone + apply logic:
   and Incapacitated Disadvantage; the SRD "Delay" combat option (holding
   your Initiative count to act later) is still absent.
   (`packages/dnd5e-engine/src/dnd5e_engine/specs.py`)
-- **Movement rules beyond the budget are absent:** crawling, climb/swim
-  cost, jumping; `Combatant.movement_modes` is hydrated and never read.
-  Standing from Prone (half Speed, rounded down) closed C14 Task 7
-  (2026-09-01) via the `stand_up` `IntentType`
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_handle_stand_up`).
-  Occupancy (C16) treats every enemy space as
-  impassable — the SRD's Tiny / two-sizes-larger pass-through and the "another
-  creature's space is Difficult Terrain" cost both need creature size, which is
-  not modelled; the forced-Prone consequence of ending a turn in a shared space
-  is not applied either.
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_handle_move`)
+- **Remaining movement geometry (narrowed 2026-10-08).** Crawling, explicit
+  climb/swim, additive movement costs, special-speed modifiers, one shared
+  turn ledger, size-aware creature-space passage and grapple dragging now
+  resolve. Jumping, elevation and flying/burrowing positioning, footprints,
+  and a forced shared-space turn-end consequence remain deferred. Voluntary
+  starts and endpoints cannot overlap; Tiny stacking is not introduced.
+  Multiple dragged victims use fixed deterministic packing; alternate follower
+  formations and joint positional path searches remain outside that convention.
+  (`packages/dnd5e-engine/src/dnd5e_engine/live_movement.py`)
 
 ## Audit 2026-08-26 — spellcasting & concentration
 
@@ -1194,7 +1159,8 @@ canonical sight-gated clause with live fear-source visibility. The erroneous
 no-approach LOS gate (recorded 2026-09-03) is removed: a known, living, tracked
 source still blocks a distance-reducing path while unseen. Regression tests
 isolate both behaviors in the same wall/darkness/invisibility scenes.
-The separate monster AI movement follow-up above remains open.
+Monster movement now uses the same per-step Frightened approach check as PC
+movement through the shared physical movement adapter.
 
 - **Blinded/Deafened typed check auto-fail resolved (2026-10-07).** Explicit
   sight/hearing requirements consume canonical clauses without d20 draws.
@@ -1213,10 +1179,6 @@ re-discovered.
   skill-branch test pins Exhaustion; live checks also combine the declarative
   penalty with active-effect bonus dice in deterministic order.
 
-- **`_monster_dash_movement_budget`'s parameter is still named `base_speed`**
-  although its caller now passes the condition/exhaustion-PROJECTED speed. A
-  rename to `effective_speed` is cosmetic but removes a real reading trap.
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_monster_dash_movement_budget`)
 - **The `enumerate(live.initiative)` → `model_copy` → slot-replace loop is
   still open-coded 38 times**, although `_update_combatant(live, entity_id,
   **fields)` now exists (C21) and 9 call sites use it.

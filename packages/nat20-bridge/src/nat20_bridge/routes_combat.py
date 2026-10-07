@@ -57,9 +57,11 @@ from dnd5e_engine import (
     start_combat,
     submit_player_intent,
 )
+from dnd5e_engine.movement import MovementMode
 from dnd5e_engine.orchestrator import IntentRejectedError, UnknownHandleError
+from dnd5e_engine.spatial import canonical_cell_id
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from nat20_bridge.models import PartyValidateRequest, resolve_seed, slugify
 from nat20_bridge.narrate import narrate
@@ -107,6 +109,12 @@ class _IntentRequest(BaseModel):
     weapon_id: str | None = None
     feature_id: str | None = None
     target_zone_id: str | None = None
+    movement_mode: MovementMode = "walk"
+
+    @field_validator("target_zone_id")
+    @classmethod
+    def _canonical_target_zone(cls, value: str | None) -> str | None:
+        return None if value is None else canonical_cell_id(value)
 
 
 def _get_handle(state: BridgeState, cid: str) -> CombatHandle:
@@ -167,6 +175,7 @@ def _build_party_specs(
         try:
             build_spec = make_build_spec(
                 species_slug=member_req.build.species_slug,
+                size_choice=member_req.build.size_choice,
                 class_slug=member_req.build.class_slug,
                 level=member_req.build.level,
                 subclass_slug=member_req.build.subclass_slug,

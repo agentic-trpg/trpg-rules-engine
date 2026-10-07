@@ -106,7 +106,10 @@ def test_second_same_action_shot_with_loading_weapon_is_rejected():
 def test_crossbow_fires_again_on_a_later_turn():
     async def _run():
         start = await _start(
-            [_fighter5(initiative=20), _fighter5(entity_id="char:hero2", initiative=1)],
+            [
+                _fighter5(initiative=20),
+                _fighter5(entity_id="char:hero2", initiative=1, zone_id=cell(0, 1)),
+            ],
             [_foe(initiative=10)],
             "c15-t5-b",
         )
@@ -179,7 +182,10 @@ def test_non_loading_weapon_fires_twice_in_the_same_turn():
 def test_flag_is_per_actor_not_global():
     async def _run():
         start = await _start(
-            [_fighter5(initiative=20), _fighter5(entity_id="char:hero2", initiative=19)],
+            [
+                _fighter5(initiative=20),
+                _fighter5(entity_id="char:hero2", initiative=19, zone_id=cell(0, 1)),
+            ],
             [_foe()],
             "c15-t5-d",
         )

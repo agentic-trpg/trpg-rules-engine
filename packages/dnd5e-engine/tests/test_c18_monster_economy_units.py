@@ -90,7 +90,16 @@ def _events(live, kind):
     return [e for e in live.event_log if isinstance(e, kind)]
 
 
-def _hero(entity_id="char:hero", *, initiative=20, hp=40, ac=15, attack_bonus=6, col=0):
+def _hero(
+    entity_id="char:hero",
+    *,
+    initiative=20,
+    hp=40,
+    ac=15,
+    attack_bonus=6,
+    col=0,
+    creature_size=CreatureSize.MEDIUM,
+):
     return PartyMemberSpec(
         entity_id=entity_id,
         name=entity_id,
@@ -100,6 +109,7 @@ def _hero(entity_id="char:hero", *, initiative=20, hp=40, ac=15, attack_bonus=6,
         ac=ac,
         attack_bonus=attack_bonus,
         zone_id=cell(col, 0),
+        creature_size=creature_size,
     )
 
 
@@ -773,7 +783,7 @@ def test_grapple_of_an_armed_dragon_converts_the_failed_save():
 
     async def go():
         handle, live = await _start(
-            [_hero(col=0)],
+            [_hero(col=0, creature_size=CreatureSize.LARGE)],
             [_foe("adult-red-dragon", hp=256, ac=19, col=1)],
             seed=1,
         )
@@ -1155,7 +1165,7 @@ def test_flag_clears_when_the_monster_fights_again():
 def test_grapple_conversion_emits_legendary_resistance_used_after_save_rolled():
     async def go():
         handle, live = await _start(
-            [_hero(col=0)],
+            [_hero(col=0, creature_size=CreatureSize.LARGE)],
             [_foe("adult-red-dragon", hp=256, ac=19, col=1)],
             seed=1,
         )

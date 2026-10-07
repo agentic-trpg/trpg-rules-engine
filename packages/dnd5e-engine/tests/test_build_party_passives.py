@@ -9,6 +9,7 @@ Activation-gated (Rage, disabled=true) and conditional-non-transfer
 import logging
 
 from dnd5e_srd_data.loader import BundledAssetLoader
+from dnd5e_srd_data.schema.monster import CreatureSize
 
 from dnd5e_engine.build_party import build_party_member
 from dnd5e_engine.build_spec import CombatInstance, make_build_spec
@@ -23,7 +24,7 @@ _INST = CombatInstance(
     ac=16,
     attack_bonus=5,
     initiative=12,
-    zone_id="zone:a",
+    zone_id="0,0",
 )
 
 
@@ -45,7 +46,9 @@ def test_roving_folds_walk_bonus_and_projects_climb_swim_carrier():
     from dnd5e_engine.activities.passive_stats import CombatantMovementModes
 
     spec = build_party_member(
-        make_build_spec(species_slug="human", class_slug="ranger", level=6),
+        make_build_spec(
+            species_slug="human", size_choice=CreatureSize.MEDIUM, class_slug="ranger", level=6
+        ),
         _INST,
         loader=_LOADER,
     )
@@ -59,7 +62,9 @@ def test_ranger_below_level_6_has_no_roving_movement_modes():
     from dnd5e_engine.activities.passive_stats import CombatantMovementModes
 
     spec = build_party_member(
-        make_build_spec(species_slug="human", class_slug="ranger", level=1),
+        make_build_spec(
+            species_slug="human", size_choice=CreatureSize.MEDIUM, class_slug="ranger", level=1
+        ),
         _INST,
         loader=_LOADER,
     )

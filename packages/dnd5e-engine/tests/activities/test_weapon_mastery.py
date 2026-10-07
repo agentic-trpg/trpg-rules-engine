@@ -35,6 +35,7 @@ from dnd5e_srd_data.schema.common import (
     ReviewState,
 )
 from dnd5e_srd_data.schema.item import Weapon
+from dnd5e_srd_data.schema.monster import CreatureSize
 
 from dnd5e_engine.activities.context import ActivityResolutionContext
 from dnd5e_engine.activities.mastery import apply_mastery_on_hit, apply_mastery_on_miss
@@ -42,6 +43,20 @@ from dnd5e_engine.events import ConditionApplied, DamageApplied, SaveRolled
 from dnd5e_engine.types.combat import Combatant
 
 ABILITIES = {"str": 10, "dex": 10, "con": 10, "int": 10, "wis": 10, "cha": 10}
+
+
+@pytest.mark.parametrize("size", list(CreatureSize))
+def test_push_only_reports_large_or_smaller_targets(size: CreatureSize) -> None:
+    ctx, events = _ctx()
+    rng_before = ctx.rng.getstate()
+    target = _target(creature_size=size)
+    apply_mastery_on_hit(_weapon("push"), ctx, target, "str", damage_dealt=0)
+    expected = (
+        [] if size in {CreatureSize.HUGE, CreatureSize.GARGANTUAN} else [("push", target.entity_id)]
+    )
+    assert ctx.mastery_procs == expected
+    assert events == []
+    assert ctx.rng.getstate() == rng_before
 
 
 def _provenance() -> Provenance:

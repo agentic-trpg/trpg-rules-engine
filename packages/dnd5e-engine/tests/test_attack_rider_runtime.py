@@ -10,6 +10,7 @@ from random import Random
 
 import pytest
 from dnd5e_srd_data.loader import BundledAssetLoader
+from dnd5e_srd_data.schema.monster import CreatureSize
 from pydantic import BaseModel, ValidationError
 
 from dnd5e_engine import ActiveEffect, PlayerIntent
@@ -33,6 +34,7 @@ from dnd5e_engine.events import (
     ReactionTriggered,
     SaveRolled,
 )
+from dnd5e_engine.feature_repertoire import feature_repertoire
 from dnd5e_engine.lib_loader import set_lib_loader_for_tests
 from dnd5e_engine.live_attack_riders import attach_attack_riders, preflight_attack_riders
 from dnd5e_engine.persistent_areas import register_area
@@ -46,6 +48,7 @@ ADDLE = ("open-hand-technique", "1jdSaWanuRrdkVs3")
 PUSH = ("open-hand-technique", "XoaS0RtDCGAqrQsf")
 TOPPLE = ("open-hand-technique", "5Qgc0K3TfuonkPIG")
 OBSCURE = ("devious-strikes", "ki4lIPVGNA0HjEzH")
+TRIP = ("cunning-strike", "dWcCw1vTWRMx4YzD")
 FLURRY = "2ghJTBhilLrFn9xT"
 
 
@@ -483,7 +486,7 @@ def test_shield_converted_miss_does_not_trigger_stunning_strike():
         spells_known=["shield"],
         spell_slots={1: 2},
     )
-    handle, live = start([shielded, _monk(attack_bonus=4)], seed=7)
+    handle, live = start([shielded, _monk(attack_bonus=4)], seed=7, encounter=[foe(zone_id="4,4")])
     act(handle, "char:shielded", intent_type="ready", spell_id="shield")
     expected = Random()
     expected.setstate(live.rng.getstate())
@@ -511,7 +514,9 @@ def test_shield_converted_miss_preserves_sneak_attack_and_obscure_dice():
         spells_known=["shield"],
         spell_slots={1: 2},
     )
-    handle, live = start([shielded, _rogue(attack_bonus=4), _ally()], seed=7)
+    handle, live = start(
+        [shielded, _rogue(attack_bonus=4), _ally()], seed=7, encounter=[foe(zone_id="4,4")]
+    )
     act(handle, "char:shielded", intent_type="ready", spell_id="shield")
     expected = Random()
     expected.setstate(live.rng.getstate())
@@ -745,6 +750,67 @@ def test_obscure_successful_save_still_pays_sneak_dice_without_blinding():
     assert combatant(live).sneak_attack_spent_this_turn
 
 
+@pytest.mark.parametrize("size", list(CreatureSize)[:4])
+@pytest.mark.parametrize("seed", [4, 5])
+def test_trip_uses_actual_size_and_sacrifices_one_die_before_critical_doubling(size, seed):
+    handle, live = start(
+        [_rogue(), _ally()], seed=seed, encounter=[foe(creature_size=size, dexterity=1)]
+    )
+    expected = Random()
+    expected.setstate(live.rng.getstate())
+    natural = expected.randint(1, 20)
+    critical = natural == 20
+    amount = sum(expected.randint(1, 4) for _ in range(2 if critical else 1)) + 4
+    amount += sum(expected.randint(1, 6) for _ in range(12 if critical else 6))
+    save_natural = expected.randint(1, 20)
+    _attack(handle, _request(TRIP), weapon="dagger")
+    [damage] = events(live, DamageApplied)
+    [save] = events(live, SaveRolled)
+    rider = next(e for e in events(live, AttackRiderTriggered) if e.feature_id == TRIP[0])
+    assert damage.amount == amount
+    assert (save.ability, save.dc, save.natural, save.succeeded) == ("dex", 17, save_natural, False)
+    assert "prone" in _conditions(live)
+    assert rider.sacrificed_sneak_dice == 1
+    assert combatant(live).sneak_attack_spent_this_turn
+    assert live.event_log.index(damage) < live.event_log.index(save)
+    assert live.rng.getstate() == expected.getstate()
+
+
+@pytest.mark.parametrize("size", [CreatureSize.HUGE, CreatureSize.GARGANTUAN])
+def test_trip_size_refusal_preserves_payment_rng_turn_and_state(size):
+    handle, live = start([_rogue(), _ally()], seed=4, encounter=[foe(creature_size=size)])
+    before, offset = _snapshot(live), len(live.event_log)
+    _attack(handle, _request(TRIP), weapon="dagger")
+    _assert_preflight_unchanged(live, before, offset)
+
+
+def test_trip_successful_save_sacrifices_the_die_and_does_not_apply_prone():
+    handle, live = start(
+        [_rogue(), _ally()], seed=4, encounter=[foe(creature_size=CreatureSize.LARGE, dexterity=40)]
+    )
+    _attack(handle, _request(TRIP), weapon="dagger")
+    assert events(live, SaveRolled)[0].succeeded
+    assert "prone" not in _conditions(live)
+    assert combatant(live).sneak_attack_spent_this_turn
+    assert (
+        next(
+            e for e in events(live, AttackRiderTriggered) if e.feature_id == TRIP[0]
+        ).sacrificed_sneak_dice
+        == 1
+    )
+
+
+def test_improved_cunning_combines_trip_and_obscure_in_declared_order():
+    handle, live = start([_rogue(), _ally()], seed=4, encounter=[foe(dexterity=1)])
+    _attack(handle, _request(TRIP), _request(OBSCURE), weapon="dagger")
+    chosen = [e for e in events(live, AttackRiderTriggered) if e.feature_id != "sneak-attack"]
+    assert [(e.feature_id, e.sacrificed_sneak_dice) for e in chosen] == [
+        (TRIP[0], 1),
+        (OBSCURE[0], 3),
+    ]
+    assert {"prone", "blinded"} <= _conditions(live)
+
+
 def test_obscure_without_actual_sneak_eligibility_adds_no_save_cost_or_effect():
     handle, live = start([_rogue()], seed=4)
     expected = Random()
@@ -761,10 +827,10 @@ def test_obscure_without_actual_sneak_eligibility_adds_no_save_cost_or_effect():
 
 
 @pytest.mark.parametrize(
-    "option,status", [(STUN, "stunned"), (TOPPLE, "prone"), (OBSCURE, "blinded")]
+    "option,status", [(STUN, "stunned"), (TOPPLE, "prone"), (OBSCURE, "blinded"), (TRIP, "prone")]
 )
 def test_rider_conditions_honor_the_shared_immunity_gate(option, status):
-    member = _rogue() if option == OBSCURE else _monk(subclass_slug="hand")
+    member = _rogue() if option in (OBSCURE, TRIP) else _monk(subclass_slug="hand")
     handle, live = start(
         [member, _ally()],
         seed=4,
@@ -773,7 +839,9 @@ def test_rider_conditions_honor_the_shared_immunity_gate(option, status):
     orch._update_combatant(live, FOE, constitution=1)
     if option == TOPPLE:
         _flurry(handle)
-    _attack(handle, _request(option), weapon="dagger" if option == OBSCURE else "unarmed-strike")
+    _attack(
+        handle, _request(option), weapon="dagger" if option in (OBSCURE, TRIP) else "unarmed-strike"
+    )
     assert events(live, SaveRolled)[0].succeeded is False
     assert status not in _conditions(live)
     assert not [e for e in events(live, ConditionApplied) if e.condition == status]
@@ -980,7 +1048,6 @@ def test_sneak_attack_is_not_spent_by_a_miss_or_remaining_disadvantage(mode):
     "feature,activity,class_slug,level",
     [
         ("cunning-strike", "n64fvJMT9fPUy7DH", "rogue", 14),
-        ("cunning-strike", "dWcCw1vTWRMx4YzD", "rogue", 14),
         ("cunning-strike", "m2bRZ1YeD3yf9nV7", "rogue", 14),
         ("cunning-strike", "jR7KqMuPOZYUCDyO", "rogue", 14),
         ("devious-strikes", "4TnBjQTJzt9UjUos", "rogue", 14),
@@ -997,9 +1064,61 @@ def test_deferred_options_are_refused_as_bound_riders(feature, activity, class_s
     _assert_preflight_unchanged(live, before, offset)
 
 
-@pytest.mark.parametrize("option", [STUN, ADDLE, PUSH, TOPPLE, OBSCURE])
+@pytest.mark.parametrize(
+    "feature,activity,maximum,fields",
+    [
+        (
+            "hills-tumble",
+            "I2wKOUDxhIb5hHb7",
+            CreatureSize.LARGE,
+            {"species_slug": "goliath", "granted_features": ("hills-tumble",)},
+        ),
+        (
+            "eldritch-smite",
+            "CXJlzDUkMYU9w9i9",
+            CreatureSize.HUGE,
+            {
+                "class_slug": "warlock",
+                "character_level": 5,
+                "granted_features": ("pact-of-the-blade", "eldritch-smite"),
+            },
+        ),
+        (
+            "repelling-blast",
+            "OXhI1TDQxORrGAgc",
+            CreatureSize.LARGE,
+            {
+                "class_slug": "warlock",
+                "character_level": 2,
+                "granted_features": ("repelling-blast",),
+            },
+        ),
+    ],
+)
+def test_completed_size_qualification_does_not_enable_other_deferred_mechanics(
+    feature, activity, maximum, fields
+):
+    loader = BundledAssetLoader()
+    handle, live = start([_rogue(**fields), _ally()], seed=4)
+    assert feature in {owner.slug for owner in feature_repertoire(combatant(live), loader)}
+    row = next(
+        row
+        for row in audit_document(loader)["rows"]
+        if row["feature_slug"] == feature and row["activity_id"] == activity
+    )
+    assert row["target_size_max"] is maximum
+    assert row["classification"] == "deferred_rider"
+    assert not row["fully_executable"]
+    assert row["standalone_use_feature_rejected"]
+    assert "size" not in row["deferred_reason"]
+    before, offset = _snapshot(live), len(live.event_log)
+    _attack(handle, _request((feature, activity)), weapon="dagger")
+    _assert_preflight_unchanged(live, before, offset)
+
+
+@pytest.mark.parametrize("option", [STUN, ADDLE, PUSH, TOPPLE, OBSCURE, TRIP])
 def test_executable_riders_still_refuse_standalone_use_feature(option):
-    member = _rogue() if option == OBSCURE else _monk(subclass_slug="hand")
+    member = _rogue() if option in (OBSCURE, TRIP) else _monk(subclass_slug="hand")
     handle, live = start([member, _ally()], seed=4)
     before = _snapshot(live)
     act(
@@ -1119,7 +1238,15 @@ def test_rider_audit_is_deterministic_matches_golden_and_separates_entrypoints()
         for row in first["rows"]
         if row["fully_executable"]
     }
-    assert executable == {STUN, ADDLE, PUSH, TOPPLE, OBSCURE, ("sneak-attack", "a1T6nHaqmvbLpyJr")}
+    assert executable == {
+        STUN,
+        ADDLE,
+        PUSH,
+        TOPPLE,
+        OBSCURE,
+        TRIP,
+        ("sneak-attack", "a1T6nHaqmvbLpyJr"),
+    }
     for row in first["rows"]:
         assert row["trigger"]
         assert row["qualification"]

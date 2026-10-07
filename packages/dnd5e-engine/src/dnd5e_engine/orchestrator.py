@@ -32,8 +32,8 @@ Scope and constraints worth knowing up front
   seeded by ``start_combat(rng_seed=...)``. Same seed + same intent sequence
   reproduces the same combat exactly, independent of global ``random`` state.
 - **Movement is one route per intent.** A ``"move"`` intent names any cell;
-  the engine walks the fewest-cells legal route there and prices the whole
-  route up front.
+  the movement layer selects the cheapest legal route and prices the whole
+  route before payment.
 - **Reactions are pre-armed.** The engine never pauses mid-resolution to ask a
   host "do you want to react?". A reactor arms a reaction on its own turn with
   a ``"ready"`` intent, and the engine fires it automatically when the trigger
@@ -82,6 +82,7 @@ from dnd5e_srd_data.schema.spell import (
 )
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from dnd5e_engine import live_movement
 from dnd5e_engine.activities.actor_stats import (
     ABILITY_CODES,
     ability_modifier_of,
@@ -152,7 +153,6 @@ from dnd5e_engine.attack_riders import AttackRiderRequest
 from dnd5e_engine.death_saves import DeathSaveState, roll_death_save
 from dnd5e_engine.events import (
     Ability,
-    ActorMoved,
     AdvantageMode,
     AdvantageSource,
     AreaTargeted,
@@ -164,7 +164,6 @@ from dnd5e_engine.events import (
     CombatantJoined,
     CombatantLeft,
     CombatantLeftReason,
-    CombatantMoved,
     CombatEnded,
     CombatEvent,
     ConcentrationCheck,
@@ -182,7 +181,6 @@ from dnd5e_engine.events import (
     IntentType,
     LegendaryActionUsed,
     LegendaryResistanceUsed,
-    MoveFailed,
     ReactionTriggered,
     RechargeRolled,
     RoundStarted,
@@ -213,7 +211,6 @@ from dnd5e_engine.live_attack_riders import (
     prevents_opportunity_attacks,
     register_rider_hooks,
     reject_nonattack_riders,
-    rider_speed,
 )
 from dnd5e_engine.live_checks import (
     observe_check,
@@ -242,6 +239,7 @@ from dnd5e_engine.live_reactions import (
     register_pending_reaction,
     spell_cast_opportunity,
 )
+from dnd5e_engine.movement import MovementLedger, MovementMode
 from dnd5e_engine.outcome import (
     CombatOutcome,
     DeathRecord,
@@ -249,8 +247,6 @@ from dnd5e_engine.outcome import (
 )
 from dnd5e_engine.persistent_areas import (
     PersistentAreaState,
-    after_movement_step,
-    area_speed,
     before_turn_start,
     register_area_hooks,
     register_item_areas,
@@ -277,15 +273,14 @@ from dnd5e_engine.rules.conditions import (
     conditions_disadvantage_initiative,
     conditions_unseen,
     d20_test_penalty,
-    exhaustion_level_of,
     is_condition_active,
     project_passive_check_modifiers,
     project_passive_damage_modifiers,
     project_passive_save_modifiers,
-    project_speed,
 )
 from dnd5e_engine.rules.dice import ability_modifier
 from dnd5e_engine.rules.uses import UsesRollData, evaluate_uses_formula
+from dnd5e_engine.size import target_at_most_one_size_larger
 from dnd5e_engine.spatial import GridTopology, SpatialTopology, cell_id, parse_cell
 from dnd5e_engine.specs import (
     EncounterMemberSpec,
@@ -393,6 +388,13 @@ class PlayerIntent(BaseModel):
     # ``"move"``; also the space a conjuration names (Spiritual Weapon's force,
     # Summon Dragon's spirit).
     target_zone_id: str | None = None
+    movement_mode: MovementMode = "walk"
+
+    @field_validator("target_zone_id")
+    @classmethod
+    def _canonical_target_zone(cls, value: str | None) -> str | None:
+        return None if value is None else cell_id(*parse_cell(value))
+
     # C16 — SRD 5.2 §Areas of Effect: a Cone / Line / Cube "extends … in a
     # direction its creator chooses". Grid offset vector ``(dcol, drow)``; only
     # the sign of each component matters (one of the 8 grid directions). When
@@ -1809,50 +1811,8 @@ def _hostile_adjacent_to_attacker(live: _LiveCombat, caster: Combatant) -> bool:
 
 
 def push_combatant(live: _LiveCombat, target_id: str, origin_cell: str, distance_ft: int) -> None:
-    """Forced movement primitive — move ``target_id`` up to ``distance_ft``
-    straight away from ``origin_cell`` and emit ``CombatantMoved(forced=True)``
-    for the distance actually covered. Consumes no movement budget and
-    provokes no opportunity attack (SRD 5.2 §Opportunity Attacks). A dead or
-    untracked target is never moved, and a target sharing ``origin_cell`` with
-    the pusher has no direction to be pushed along: no move and no event."""
-    topology = live.topology
-    target_cell = live.actor_zone.get(target_id)
-    if target_cell is None or target_id in live.dead_ids:
-        return
-    occupied = _occupied_cells(live, exclude=(target_id,))
-    path = topology.push_path(origin_cell, target_cell, distance_ft, occupied_cells=occupied)
-    if not path:
-        return
-    previous_cell = target_cell
-    split_steps = bool(live.persistent_areas.areas)
-    for next_cell in path:
-        live.actor_zone[target_id] = next_cell
-        if split_steps:
-            _emit(
-                live,
-                CombatantMoved(
-                    actor_id=target_id,
-                    from_zone=previous_cell,
-                    to_zone=next_cell,
-                    distance_ft=topology.cell_size_ft,
-                    forced=True,
-                ),
-            )
-        after_movement_step(live, target_id, previous_cell)
-        previous_cell = next_cell
-        if target_id in live.dead_ids or _find_combatant(live, target_id) is None:
-            break
-    if not split_steps:
-        _emit(
-            live,
-            CombatantMoved(
-                actor_id=target_id,
-                from_zone=target_cell,
-                to_zone=previous_cell,
-                distance_ft=(path.index(previous_cell) + 1) * topology.cell_size_ft,
-                forced=True,
-            ),
-        )
+    """Existing push geometry, through the shared positional lifecycle."""
+    live_movement.push(live, target_id, origin_cell, distance_ft)
 
 
 def _apply_forced_movement_riders(
@@ -1970,38 +1930,8 @@ def _plan_flee_route(
 
 
 def _take_walk_step(live: _LiveCombat, mover_id: str, next_cell: str) -> bool:
-    """One step of a monster's walk (the closing walk, the flee walk): fire the
-    opportunity attacks it provokes, then pay the step out of
-    ``movement_remaining``, move, and emit its own ``ActorMoved``.
-
-    Returns ``False``, without moving, when the walk ends here instead: the
-    step is illegal or no longer affordable (an opportunity attack's rider can
-    cut the budget), or an opportunity attack stopped the mover
-    (``_walk_must_stop``)."""
-    mover = _find_combatant(live, mover_id)
-    from_cell = live.actor_zone.get(mover_id)
-    if mover is None or from_cell is None:
-        return False
-    step_distance = live.topology.edge_distance(from_cell, next_cell)
-    if step_distance is None or mover.movement_remaining < step_distance:
-        return False
-    if _fire_opportunity_attacks_on_step(
-        live, mover_id=mover_id, from_cell=from_cell, to_cell=next_cell
-    ):
-        return False
-    mover = _find_combatant(live, mover_id)
-    if mover is None or mover.movement_remaining < step_distance:
-        return False
-    _update_combatant(live, mover_id, movement_remaining=mover.movement_remaining - step_distance)
-    live.actor_zone[mover_id] = next_cell
-    _emit(
-        live,
-        ActorMoved(
-            actor_id=mover_id, from_zone=from_cell, to_zone=next_cell, distance_ft=step_distance
-        ),
-    )
-    after_movement_step(live, mover_id, from_cell)
-    return True
+    """Monster closing/flee use the same live step operation as PC movement."""
+    return live_movement.take_step(live, mover_id, next_cell) is not None
 
 
 def _walk_path(live: _LiveCombat, mover_id: str, path: Sequence[str]) -> None:
@@ -2017,30 +1947,8 @@ def _walk_path(live: _LiveCombat, mover_id: str, path: Sequence[str]) -> None:
 def _execute_flee_retreat(
     live: _LiveCombat, monster: Combatant, enemies: Sequence[Combatant]
 ) -> None:
-    """A fleeing monster spends its movement getting away from ``enemies``,
-    every living enemy it would otherwise attack (a charmer excluded): the
-    route ``_plan_flee_route`` picks, walked by ``_walk_path``. Fleeing takes
-    no Disengage or Dash, so each step out of an enemy's reach provokes its
-    opportunity attack. Monster-AI plumbing (DM-adjudicated, not SRD text):
-    ``_monster_is_fleeing`` decides the monster wants to get away; this gives
-    that decision teeth. A monster with nowhere farther to go holds.
-    """
-    start = live.actor_zone.get(monster.entity_id)
-    threat_cells = [
-        cell for enemy in enemies if (cell := live.actor_zone.get(enemy.entity_id)) is not None
-    ]
-    if start is None or not threat_cells:
-        return
-    route = _plan_flee_route(
-        live.topology,
-        start,
-        threat_cells,
-        monster.movement_remaining,
-        enemy_cells=_occupied_cells(live, exclude=_allied_ids(live, monster.entity_id)),
-        occupied_cells=_occupied_cells(live, exclude=(monster.entity_id,)),
-    )
-    if route is not None:
-        _walk_path(live, monster.entity_id, route)
+    """Deterministic flee routing using shared occupancy and weighted costs."""
+    live_movement.flee(live, monster, enemies)
 
 
 def _apply_monster_flee_stance(
@@ -3196,6 +3104,12 @@ class _LiveCombat:
     final_outcome: CombatOutcome | None = None
     # each combatant's cell, per entity_id (read through ``topology``)
     actor_zone: dict[str, str] = field(default_factory=dict)
+    movement_ledgers: dict[str, MovementLedger] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        for actor in self.initiative:
+            self.movement_ledgers.setdefault(actor.entity_id, live_movement.ledger_for(self, actor))
+
     # SRD 5.2 Opportunity Attacks: the weapon slug each character makes its
     # opportunity attacks with (``_opportunity_attack_weapon_slug``); a
     # character absent from it makes an Unarmed Strike.
@@ -3641,25 +3555,11 @@ def _condition_names(c: Combatant) -> list[str]:
     return active_condition_names(c.conditions)
 
 
-def _effective_speed(c: Combatant, live: _LiveCombat | None = None) -> int:
-    """SRD 5.2 walking Speed under the combatant's conditions
-    (``rules.conditions.project_speed``): 0 under a Speed-0 condition, else
-    ``base_speed - projected_multiplier x exhaustion level``.
-
-    C15 Task 7 — SRD 5.2 §Weapon Mastery, Slow: when ``live`` is supplied
-    and ``c`` carries any outstanding ``live.slow_marks`` entry, a FLAT
-    10 ft comes off on top ("the Speed reduction doesn't exceed 10 feet" —
-    one deduction regardless of how many slow-weapon hits landed), floored
-    at 0. ``live=None`` (unit-test / pre-combat callers) projects
-    conditions only.
-    """
-    speed = project_speed(c.base_speed, _condition_names(c), exhaustion_level_of(c.conditions))
-    if live is not None and live.slow_marks.get(c.entity_id):
-        speed = max(0, speed - 10)
-    if live is not None:
-        speed = rider_speed(live, c.entity_id, speed)
-        speed = area_speed(live, c.entity_id, speed)
-    return speed
+def _effective_speed(
+    c: Combatant, live: _LiveCombat | None = None, *, movement_mode: str = "walk"
+) -> int:
+    """Compatibility wrapper for the shared all-speed projection."""
+    return live_movement.effective_speed(c, movement_mode, live)
 
 
 def _set_dodging(live: _LiveCombat, actor_id: str) -> None:
@@ -3732,6 +3632,17 @@ def _reject_invalid_grapple_target(live: _LiveCombat, actor_id: str, intent: Pla
             f"actor_id={actor_id!r} grapple target {intent.target_id!r} is not a living "
             "combatant within reach (5 ft)",
         )
+    if intent.intent_type == "grapple":
+        attacker = _find_combatant(live, actor_id)
+        target = _find_combatant(live, intent.target_id or "")
+        if (
+            attacker is not None
+            and target is not None
+            and not target_at_most_one_size_larger(attacker.creature_size, target.creature_size)
+        ):
+            raise IntentRejectedError(
+                "target_invalid", "grapple target exceeds one size category larger than attacker"
+            )
 
 
 def _reject_invalid_shove_target(live: _LiveCombat, actor_id: str, intent: PlayerIntent) -> None:
@@ -3749,6 +3660,17 @@ def _reject_invalid_shove_target(live: _LiveCombat, actor_id: str, intent: Playe
             f"actor_id={actor_id!r} shove target {intent.target_id!r} is not a living "
             "combatant within reach (5 ft)",
         )
+    if intent.intent_type == "shove":
+        attacker = _find_combatant(live, actor_id)
+        target = _find_combatant(live, intent.target_id or "")
+        if (
+            attacker is not None
+            and target is not None
+            and not target_at_most_one_size_larger(attacker.creature_size, target.creature_size)
+        ):
+            raise IntentRejectedError(
+                "target_invalid", "shove target exceeds one size category larger than attacker"
+            )
 
 
 def _dodge_benefit_active(live: _LiveCombat, c: Combatant) -> bool:
@@ -3772,17 +3694,8 @@ def _dodge_benefit_active(live: _LiveCombat, c: Combatant) -> bool:
 
 
 def _clamp_movement_budget(live: _LiveCombat, entity_id: str) -> None:
-    """Re-project one combatant's ``movement_remaining`` after its conditions
-    changed mid-turn: never above the effective Speed (a creature grappled
-    mid-move loses the rest of its budget; the budget is never RAISED here —
-    only the turn-start reset and Dash add movement)."""
-    for idx, c in enumerate(live.initiative):
-        if c.entity_id != entity_id:
-            continue
-        cap = _effective_speed(c, live)
-        if c.movement_remaining > cap:
-            live.initiative[idx] = c.model_copy(update={"movement_remaining": cap})
-        break
+    """Project the active speed against expenditure and Dash grants."""
+    live_movement.project_remaining(live, entity_id)
 
 
 #: SRD 5.2 Incapacitated — intents that spend NO action, Bonus Action or
@@ -4060,10 +3973,8 @@ def _martial_arts_active(c: Combatant) -> bool:
 # has the higher save modifier (tie -> STR); the escaper picks Athletics vs
 # Acrobatics by higher check modifier (tie -> Athletics/STR).
 #
-# Out of scope (BACKLOG.md, Task 10): the size gate ("a creature can grapple
-# no more than one size larger than itself"), the free-hand gate (SRD
-# requires "a hand free"), and the distance-exceeded auto-release (no
-# forced-move currently separates a grappled pair mid-grapple).
+# The shared size and movement layers enforce size limits and separation.
+# The free-hand requirement remains deferred until hands are authoritative.
 
 
 def _unarmed_option_dc(attacker: Combatant) -> int:
@@ -4260,8 +4171,7 @@ def _handle_grapple(
 # ``intent.shove_push`` choice (Controller ruling R3: no player-facing
 # choice prompt exists at this seam, so the choice rides the intent).
 #
-# Out of scope (BACKLOG.md, Task 10): the size gate ("no more than one size
-# larger than you").
+# The pre-payment target gate enforces the shared size qualifier.
 
 
 def _handle_shove(
@@ -4472,8 +4382,7 @@ def _apply_dash(
     budget_consumed: Literal["action", "bonus_action"],
 ) -> None:
     """The shared paid Dash operation; delegation never pays a second action."""
-    movement = current.movement_remaining + _effective_speed(current, live)
-    _update_combatant(live, current.entity_id, movement_remaining=movement)
+    movement = live_movement.add_dash(live, current)
     _emit(
         live,
         DashTaken(
@@ -4627,19 +4536,16 @@ def _handle_stand_up(live: _LiveCombat, current: Combatant, intent: PlayerIntent
             f"actor_id={actor_id!r} has Speed 0; can't right themself (SRD 5.2 Prone)",
         )
     cost = speed // 2
-    if current.movement_remaining < cost:
+    ledger = live_movement.ledger_for(live, current)
+    remaining = ledger.remaining(live_movement.effective_speed(current, ledger.active_mode, live))
+    if remaining < cost:
         raise IntentRejectedError(
             "insufficient_movement",
             f"actor_id={actor_id!r} has {current.movement_remaining} ft remaining, "
             f"needs {cost} ft (half Speed) to stand up",
         )
-    for idx, c in enumerate(live.initiative):
-        if c.entity_id == actor_id:
-            live.initiative[idx] = c.model_copy(
-                update={"movement_remaining": c.movement_remaining - cost}
-            )
-            break
-    _emit(live, ConditionRemoved(target_id=actor_id, condition="prone"))
+    live_movement.pay_movement(live, current, cost, 0, ledger.active_mode)
+    _emit(live, ConditionRemoved(target_id=actor_id, condition="prone", all_sources=True))
 
 
 def _break_hide_on_attack_or_verbal_cast(
@@ -4966,6 +4872,7 @@ def _emit(live: _LiveCombat, event: CombatEvent) -> None:
         _strip_condition_from_combatant(
             live, event.target_id, event.condition, all_sources=event.all_sources
         )
+        _clamp_movement_budget(live, event.target_id)
         return
 
     if isinstance(event, EffectApplied):
@@ -4991,6 +4898,7 @@ def _emit_apply_turn_started(live: _LiveCombat, event: TurnStarted) -> None:
     live.rider_uses.clear()
     expire_rider_effects(live, event.actor_id, "start")
     before_turn_start(live, event.actor_id)
+    live.movement_ledgers[event.actor_id] = MovementLedger()
     # SRD §Action Economy — refresh the actor's per-turn budgets on the
     # start of their own turn. The reaction line ("You regain your
     # reaction at the start of your turn") and the Action/Bonus Action
@@ -5065,14 +4973,14 @@ def _emit_apply_turn_started(live: _LiveCombat, event: TurnStarted) -> None:
     # SRD 5.2 §Weapon Mastery — Slow (C15 Task 7): "until the start of your
     # next turn" — again the SOURCE attacker's own next turn. Drop this
     # actor out of every slowed creature's source set; a creature whose set
-    # empties is no longer slowed (its Speed projects normally from the
-    # next read; an in-flight budget is never RAISED — only its own next
-    # TurnStarted refreshes it).
+    # empties is no longer slowed. Re-project its unspent allowance from
+    # the shared ledger; expiry never resets expenditure.
     for slowed_id in list(live.slow_marks):
         sources = live.slow_marks[slowed_id]
         sources.discard(event.actor_id)
         if not sources:
             del live.slow_marks[slowed_id]
+            _clamp_movement_budget(live, slowed_id)
 
 
 def _hook_expire_reaction_effects(live: _LiveCombat, actor_id: str | None) -> None:
@@ -5518,6 +5426,7 @@ def _emit_apply_effect_expired(live: _LiveCombat, event: EffectExpired) -> None:
                 active_cond_set.discard(status)
     _end_anchor_dependents(live, event)
     _revert_transform_on_expiry(live, event)
+    _clamp_movement_budget(live, event.target_id)
 
 
 def _maybe_roll_death_save(live: _LiveCombat) -> None:
@@ -5614,6 +5523,7 @@ def _record_death(live: _LiveCombat, event: Death, *, killer_id: str | None) -> 
     # inside the _emit fold: the cascade emits no DamageApplied/Death, so
     # it cannot recurse into death synthesis.
     _drop_concentration(live, event.target_id)
+    _release_grapple_victims_of(live, event.target_id)
     # SRD 5.2 Wild Shape: "...or die"; shape-shifting: "You revert to your true
     # form if you die."
     _end_wild_shape(live, event.target_id, "source_dead")
@@ -7542,6 +7452,7 @@ def _build_pc_combatants(
                 charisma=pc.charisma,
                 concentration_effect_id=pc.concentration_effect_id,
                 creature_type=pc.creature_type,
+                creature_size=pc.creature_size,
                 damage_resistances=list(pc.damage_resistances),
                 damage_immunities=list(pc.damage_immunities),
                 damage_vulnerabilities=list(pc.damage_vulnerabilities),
@@ -7647,6 +7558,13 @@ def _build_foe_combatants(
                     nonmagical_only = False
                 sc = monster.ability_scores
                 template_kw = {
+                    "creature_size": monster.creature_size,
+                    "movement_modes": CombatantMovementModes(
+                        climb=monster.movement.climb,
+                        swim=monster.movement.swim,
+                        fly=monster.movement.fly,
+                        burrow=monster.movement.burrow,
+                    ),
                     "strength": sc.str,
                     "constitution": sc.con,
                     "intelligence": sc.int,
@@ -7707,6 +7625,7 @@ def _build_foe_combatants(
                 behavior_profile=foe.behavior_profile,
                 dexterity=template_kw.pop("dexterity", foe.dexterity),
                 creature_type=foe.creature_type,
+                creature_size=template_kw.pop("creature_size", foe.creature_size),
                 damage_resistances=resistances,
                 damage_immunities=immunities,
                 damage_vulnerabilities=vulnerabilities,
@@ -7742,7 +7661,15 @@ def _resolve_topology(
     # an illegal start position would silently disable the range/move gates
     # for that actor (they read actor_zone, which would hold a bad cell).
     members: list[PartyMemberSpec | EncounterMemberSpec] = [*party, *encounter]
+    starts: dict[str, str] = {}
     for spec in members:
+        canonical = cell_id(*parse_cell(spec.zone_id))
+        if canonical in starts:
+            raise ValueError(
+                f"start_combat: duplicate occupied start cell {canonical!r}: "
+                f"{starts[canonical]} and {spec.entity_id}"
+            )
+        starts[canonical] = spec.entity_id
         if not grid.is_valid_cell(spec.zone_id):
             raise ValueError(
                 f"start_combat: {spec.entity_id} start cell {spec.zone_id!r} "
@@ -8070,6 +7997,7 @@ async def start_combat(
     # All seeded effects, concentration chains and 0-HP conditions now exist.
     # Reconcile actual attachments only after phase-one hydration is complete.
     _reconcile_seeded_condition_lifecycle(live)
+    live_movement.reconcile_grapple_range(live)
     for combatant in tuple(live.initiative):
         _reconcile_rage_state(live, combatant.entity_id)
 
@@ -9073,7 +9001,7 @@ def _insert_into_roster(
     live.initiative.insert(index, combatant)
     if index <= live.current_turn_index:
         live.current_turn_index += 1
-    live.actor_zone[combatant.entity_id] = zone_id
+    live.actor_zone[combatant.entity_id] = cell_id(*parse_cell(zone_id))
     live.tracked_hp[combatant.entity_id] = combatant.hp_current
 
 
@@ -9196,6 +9124,15 @@ def _leave_roster(live: _LiveCombat, entity_id: str, reason: CombatantLeftReason
     if _find_combatant(live, entity_id) is None:
         return
     _drop_concentration(live, entity_id)
+    _release_grapple_victims_of(live, entity_id)
+    departed = _find_combatant(live, entity_id)
+    if departed is not None:
+        for condition in departed.conditions:
+            if condition.condition == "grappled":
+                _release_one_grapple_effect(live, entity_id, condition.source_effect_id)
+        if any(ac.condition == "grappled" for ac in departed.conditions):
+            _emit(live, ConditionRemoved(target_id=entity_id, condition="grappled"))
+    live.movement_ledgers.pop(entity_id, None)
     was_current = _remove_from_roster(live, entity_id)
     _emit(live, CombatantLeft(entity_id=entity_id, reason=reason))
     if was_current and live.departed_actor_id is None:
@@ -9246,132 +9183,8 @@ def _validate_intent_preconditions(
 
 
 def _handle_move(live: _LiveCombat, current: Combatant, intent: PlayerIntent) -> None:
-    """SRD 5.2 §Movement and Position — move ``current`` to ``target_zone_id``
-    along the fewest-cells legal route (``shortest_path``), paying each leg's
-    ``edge_distance`` (difficult terrain doubles) out of ``movement_remaining``.
-    Each uninterrupted run of steps emits one ``ActorMoved`` (see below). Movement does
-    NOT end the turn.
-
-    Rejections (``MoveFailed``, nothing mutated): ``not_adjacent`` — no
-    destination / untracked position / destination is the current cell (the
-    legacy reason is retained for hosts); ``occupied`` — "You can't willingly
-    end a move in a space occupied by another creature"; ``blocked_path`` —
-    the destination is adjacent but the step crosses a wall or cuts a blocked
-    corner; ``unreachable`` — no legal route (enemy-occupied cells are
-    impassable, allies may be passed through); ``insufficient_movement`` — the
-    whole route costs more than the remaining budget, and nothing moves;
-    ``frightened`` — SRD 5.2 Frightened: "You can't willingly move closer to
-    the source of fear" (C16b) — the mover is Frightened of a known, living,
-    tracked, currently-visible source and some step of the route would
-    reduce distance to it (``_frightened_approach_blocked``).
-
-    Every opportunity attack a step provokes, from either side, fires before
-    the mover leaves its cell (``_fire_opportunity_attacks_on_step``). A step
-    that provokes closes the ``ActorMoved`` run walked so far, so the attack
-    lands between two events. A mover an attack stops (0 HP, Speed 0, gone)
-    stays on the cell it was leaving; a mover an attack pushes stops where
-    the push leaves it, keeping its unspent movement.
-    """
-    actor_id = current.entity_id
-    # SRD 5.2 "Speed 0. Your Speed is 0 and can't increase." (Grappled /
-    # Restrained / Paralyzed / Petrified / Unconscious) and Exhaustion's
-    # ``-5 ft x level``: a creature whose effective Speed is 0 cannot move at
-    # all — distinct from ``insufficient_movement`` (budget spent this turn).
-    if _effective_speed(current, live) == 0:
-        _emit(live, MoveFailed(actor_id=actor_id, reason="speed_zero"))
-        return
-    destination = intent.target_zone_id
-    start_zone = live.actor_zone.get(actor_id)
-    if destination is None or start_zone is None or destination == start_zone:
-        _emit(live, MoveFailed(actor_id=actor_id, reason="not_adjacent"))
-        return
-    # SRD §Moving Around Other Creatures — a move may not END in another
-    # creature's space, ally or enemy alike.
-    if destination in _occupied_cells(live, exclude=(actor_id,)):
-        _emit(live, MoveFailed(actor_id=actor_id, reason="occupied"))
-        return
-    # Adjacency alone doesn't guarantee a legal step — a wall
-    # crossing the segment or a diagonal cutting a blocked corner yields None
-    # from edge_distance (SRD 5.2 "Corners").
-    if (
-        live.topology.is_adjacent(start_zone, destination)
-        and live.topology.edge_distance(start_zone, destination) is None
-    ):
-        _emit(live, MoveFailed(actor_id=actor_id, reason="blocked_path"))
-        return
-    # Enemy spaces are impassable; an ally's space, a summon's included, may
-    # be passed through.
-    enemy_cells = _occupied_cells(live, exclude=_allied_ids(live, actor_id))
-    path = live.topology.shortest_path(start_zone, destination, avoid=enemy_cells)
-    if not path:
-        _emit(live, MoveFailed(actor_id=actor_id, reason="unreachable"))
-        return
-    # "To enter a square, you must have enough movement left to pay for
-    # entering" — the whole route is priced up front so a rejection is atomic.
-    total_cost = _path_total_distance(live.topology, path)
-    if total_cost is None or current.movement_remaining < total_cost:
-        _emit(live, MoveFailed(actor_id=actor_id, reason="insufficient_movement"))
-        return
-    # SRD 5.2 Frightened: "You can't willingly move closer to the source of
-    # fear." (C16b) — checked before any budget is spent or opportunity
-    # attack fires, so a rejection here is as atomic as the ones above.
-    if _frightened_approach_blocked(live, current, path):
-        _emit(live, MoveFailed(actor_id=actor_id, reason="frightened"))
-        return
-    # SRD 5.2 Opportunity Attacks: "The attack occurs right before the
-    # creature leaves your reach." One ``ActorMoved`` per uninterrupted run of
-    # steps: a step that provokes first closes the run walked so far, so the
-    # attack lands between the two events.
-    run_start, run_ft, position = start_zone, 0, start_zone
-    for next_cell in path[1:]:
-        step_distance = live.topology.edge_distance(position, next_cell)
-        if step_distance is None:  # pragma: no cover - route is legal by construction
-            break
-        if run_ft and _opportunity_attackers(
-            live, mover_id=actor_id, from_cell=position, to_cell=next_cell
-        ):
-            _emit(
-                live,
-                ActorMoved(
-                    actor_id=actor_id, from_zone=run_start, to_zone=position, distance_ft=run_ft
-                ),
-            )
-            run_start, run_ft = position, 0
-        if _fire_opportunity_attacks_on_step(
-            live, mover_id=actor_id, from_cell=position, to_cell=next_cell
-        ):
-            break
-        mover = _find_combatant(live, actor_id)
-        if mover is None or mover.movement_remaining < step_distance:
-            break
-        _update_combatant(
-            live, actor_id, movement_remaining=mover.movement_remaining - step_distance
-        )
-        previous_cell = position
-        live.actor_zone[actor_id] = next_cell
-        position = next_cell
-        run_ft += step_distance
-        if live.persistent_areas.areas:
-            _emit(
-                live,
-                ActorMoved(
-                    actor_id=actor_id, from_zone=run_start, to_zone=position, distance_ft=run_ft
-                ),
-            )
-            run_start, run_ft = position, 0
-        after_movement_step(live, actor_id, previous_cell)
-        if _walk_must_stop(live, actor_id):
-            break
-    # A summon dropped to 0 HP on the way has left the order, and its
-    # departure already opened the next turn: no ActorMoved.
-    if run_ft and _find_combatant(live, actor_id) is not None:
-        _emit(
-            live,
-            ActorMoved(
-                actor_id=actor_id, from_zone=run_start, to_zone=position, distance_ft=run_ft
-            ),
-        )
-    # Turn stays live — no TurnEnded, no current_turn_index advance.
+    """Typed movement intent into the deterministic physical movement layer."""
+    live_movement.handle_move(live, current, intent)
 
 
 # ── C21 conjurations: the shared pre-spend gate and the enchant ─────────────
@@ -10187,6 +10000,7 @@ def _physical_stat_fields(form: Monster) -> dict[str, Any]:
     scores = form.ability_scores
     return {
         "ac": form.ac,
+        "creature_size": form.creature_size,
         "strength": scores.str,
         "dexterity": scores.dex,
         "constitution": scores.con,
@@ -10301,7 +10115,7 @@ def _apply_transform(
     if is_monster:
         live.monster_slug_by_entity[target_id] = form.slug
         live.monster_action_uses_by_entity[target_id] = _hydrate_monster_action_uses(form)
-    _clamp_movement_budget(live, target_id)
+    live_movement.project_remaining(live, target_id)
     _emit(live, TempHpApplied(target_id=target_id, amount=temp_hp))
 
 
@@ -10331,7 +10145,8 @@ def _end_transform(live: _LiveCombat, entity_id: str, reason: EffectExpiryReason
 
 def _revert_transform_on_expiry(live: _LiveCombat, event: EffectExpired) -> None:
     """Revert the creature whose transformation effect just expired: restore
-    every stashed field and the monster's own actions, re-clamp its movement,
+    every stashed field and the monster's own actions, project its movement
+    against the same turn's expenditure,
     and — for Polymorph's own grant — empty its Temporary Hit Points ("These
     Temporary Hit Points vanish if any remain when the spell ends"). Wild
     Shape's Temporary Hit Points stay."""
@@ -10351,7 +10166,7 @@ def _revert_transform_on_expiry(live: _LiveCombat, event: EffectExpired) -> None
         live.monster_action_uses_by_entity.pop(event.target_id, None)
     else:
         live.monster_action_uses_by_entity[event.target_id] = transform.original_action_uses
-    _clamp_movement_budget(live, event.target_id)
+    live_movement.project_remaining(live, event.target_id)
     if transform.clears_temp_hp_on_end:
         live.tracked_temp_hp[event.target_id] = 0
         _update_combatant(live, event.target_id, temp_hp=0)
@@ -12959,44 +12774,9 @@ async def advance_monster_turn(
             and target_zone is not None
             and not _in_range_with_los(live.topology, attacker_zone, target_zone, monster_range_ft)
         ):
-            # Plan the path and walk it greedily within budget.
-            path = live.topology.shortest_path(attacker_zone, target_zone)
-            dashed_budget = _monster_dash_movement_budget(
-                _path_total_distance(live.topology, path),
-                current.movement_remaining,
-                # SRD 5.2 Dash adds the creature's EFFECTIVE Speed: a Speed-0
-                # monster (Grappled / Restrained / …) "can't increase" it, so
-                # the gambit is declined outright (budget <= 0 → None).
-                _effective_speed(current, live),
+            dashed_this_turn = live_movement.close_to_target(
+                live, current, chosen_target, monster_range_ft
             )
-            if dashed_budget is not None and current.action_available:
-                dashed_this_turn = True
-                for idx, c in enumerate(live.initiative):
-                    if c.entity_id == current.entity_id:
-                        live.initiative[idx] = c.model_copy(
-                            update={
-                                "action_available": False,
-                                "movement_remaining": dashed_budget,
-                            }
-                        )
-                        break
-                _emit(
-                    live,
-                    DashTaken(
-                        actor_id=current.entity_id,
-                        doubled_movement_remaining=dashed_budget,
-                        budget_consumed="action",
-                    ),
-                )
-            # path[0] is attacker_zone; skip it. Walk forward step by step
-            # until either (a) a step can't be taken (budget, or an
-            # opportunity attack stopped the monster), or (b) we end up
-            # within attack range.
-            for next_zone in path[1:]:
-                if not _take_walk_step(live, current.entity_id, next_zone):
-                    break
-                if _in_range_with_los(live.topology, next_zone, target_zone, monster_range_ft):
-                    break
             # Re-check range after the (possibly partial) move.
             final_zone = live.actor_zone[current.entity_id]
             if not _in_range_with_los(live.topology, final_zone, target_zone, monster_range_ft):

@@ -14,7 +14,7 @@ from dataclasses import field as dc_field
 from enum import StrEnum
 from typing import Any, Literal
 
-from dnd5e_srd_data.schema.monster import MonsterTraitMechanic
+from dnd5e_srd_data.schema.monster import CreatureSize, MonsterTraitMechanic
 from pydantic import BaseModel, Field, model_validator
 
 from dnd5e_engine.activities.passive_stats import CombatantMovementModes, CombatantSenses
@@ -121,6 +121,7 @@ class Combatant(BaseModel):
     # ``None`` until the character-sheet projection lands. Read by the
     # condition-predicate evaluator via ``target.creature_type``.
     creature_type: str | None = None
+    creature_size: CreatureSize = CreatureSize.MEDIUM
     # SRD §Damage Resistance / §Damage Immunity — per-creature lists of damage
     # type slugs (lower-case SRD 5.1 types: acid, bludgeoning, cold, fire, force,
     # lightning, necrotic, piercing, poison, psychic, radiant, slashing, thunder).

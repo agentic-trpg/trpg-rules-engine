@@ -24,7 +24,6 @@ from dnd5e_engine.events import (
     CombatantLeft,
     CombatEvent,
     ConcentrationDropped,
-    DashTaken,
     Death,
     EffectApplied,
     EffectExpired,
@@ -104,8 +103,6 @@ class PersistentAreaState:
     # Area riders ending at a target's next turn start live independently of
     # their producer: leaving/dying inside a stationary hazard cannot delete it.
     next_turn_start_effects: dict[EffectIdentity, int] = field(default_factory=dict)
-    speed_penalties: dict[str, int] = field(default_factory=dict)
-    dash_grants: dict[str, int] = field(default_factory=dict)
 
     def concentration_ended(self, live: _LiveCombat, caster_id: str, *, duration: bool) -> None:
         for area in tuple(self.areas):
@@ -135,15 +132,6 @@ class PersistentAreaState:
         )
 
     def observe(self, live: _LiveCombat, event: CombatEvent) -> None:
-        if isinstance(event, DashTaken):
-            previous_grants = self.dash_grants.get(event.actor_id, 0)
-            self.dash_grants[event.actor_id] = previous_grants + 1
-            # Dash has already added the current effective Speed. Record the
-            # extra allowance without charging that same reduction twice.
-            penalty = self.speed_penalties.get(event.actor_id, 0)
-            self.speed_penalties[event.actor_id] = (
-                penalty * (previous_grants + 2) // (previous_grants + 1)
-            )
         for area in tuple(self.areas):
             if isinstance(event, EffectExpired) and area.concentration_identity == (
                 event.target_id,
@@ -170,8 +158,6 @@ class PersistentAreaState:
             for identity in tuple(self.next_turn_start_effects):
                 if identity[0] == entity_id:
                     del self.next_turn_start_effects[identity]
-            self.speed_penalties.pop(entity_id, None)
-            self.dash_grants.pop(entity_id, None)
 
 
 def register_area(
@@ -293,24 +279,11 @@ def area_speed(live: _LiveCombat, entity_id: str, speed: int) -> int:
 
 
 def _clamp_covered(live: _LiveCombat) -> None:
-    from dnd5e_engine import orchestrator as orch
+    """Area changes re-project the shared ledger, including special speeds."""
+    from dnd5e_engine.live_movement import project_remaining
 
     for creature in tuple(live.initiative):
-        # A changing Speed changes the remaining distance, without refunding
-        # distance already walked or destroying a previously paid Dash budget.
-        unmodified = orch._effective_speed(creature)
-        if live.slow_marks.get(creature.entity_id):
-            unmodified = max(0, unmodified - 10)
-        penalty = unmodified - area_speed(live, creature.entity_id, unmodified)
-        penalty *= 1 + live.persistent_areas.dash_grants.get(creature.entity_id, 0)
-        previous = live.persistent_areas.speed_penalties.get(creature.entity_id, 0)
-        if penalty != previous:
-            orch._update_combatant(
-                live,
-                creature.entity_id,
-                movement_remaining=max(0, creature.movement_remaining + previous - penalty),
-            )
-        live.persistent_areas.speed_penalties[creature.entity_id] = penalty
+        project_remaining(live, creature.entity_id)
 
 
 def after_movement_step(live: _LiveCombat, mover_id: str, from_cell: str) -> None:
@@ -405,7 +378,6 @@ def before_turn_start(live: _LiveCombat, actor_id: str) -> None:
     """Expire next-start riders before TurnStarted refreshes the movement budget."""
     from dnd5e_engine import orchestrator as orch
 
-    live.persistent_areas.dash_grants.pop(actor_id, None)
     for identity in tuple(live.persistent_areas.next_turn_start_effects):
         if identity[0] == actor_id:
             target_id, effect_id, origin = identity

@@ -11,6 +11,7 @@ from __future__ import annotations
 import random
 
 import pytest
+from dnd5e_srd_data.schema.monster import CreatureSize
 
 from dnd5e_engine import PlayerIntent
 from dnd5e_engine.events import AttackRolled, DamageApplied
@@ -44,6 +45,7 @@ def test_c20_s01_fighting_style_defense_grants_plus1_ac_while_armored():
         async def _inner():
             spec = CharacterBuildSpec(
                 species_slug="human",
+                size_choice=CreatureSize.MEDIUM,
                 class_slug="fighter",
                 level=1,
                 selected_choices=selected_choices,
@@ -189,7 +191,7 @@ def test_c20_s03_fighting_style_great_weapon_fighting_floors_1_2_damage_dice_at_
                         hp_current=500,
                         hp_max=500,
                         ac=1,
-                        zone_id=cell(0, 0),
+                        zone_id=cell(1, 0),
                     )
                 ],
                 grid_scene=grid_scene(width=5, height=5),
@@ -262,7 +264,7 @@ def test_c20_s04_fighting_style_two_weapon_fighting_adds_ability_mod_to_offhand(
                         hp_current=500,
                         hp_max=500,
                         ac=1,
-                        zone_id=cell(0, 0),
+                        zone_id=cell(1, 0),
                     )
                 ],
                 grid_scene=grid_scene(width=5, height=5),
@@ -334,7 +336,7 @@ def test_c20_s05_martial_arts_unarmed_strike_uses_scaling_die_and_dex():
                         hp_current=500,
                         hp_max=500,
                         ac=1,
-                        zone_id=cell(0, 0),
+                        zone_id=cell(1, 0),
                     )
                 ],
                 grid_scene=grid_scene(width=5, height=5),
@@ -397,7 +399,7 @@ def test_c20_s06_flurry_of_blows_spends_focus_for_two_bonus_action_strikes():
                     hp_current=500,
                     hp_max=500,
                     ac=1,
-                    zone_id=cell(0, 0),
+                    zone_id=cell(1, 0),
                 )
             ],
             grid_scene=grid_scene(width=5, height=5),
@@ -470,7 +472,7 @@ def test_c20_s07_action_surge_grants_a_second_action_same_turn():
                     hp_current=500,
                     hp_max=500,
                     ac=1,
-                    zone_id=cell(0, 0),
+                    zone_id=cell(1, 0),
                 )
             ],
             grid_scene=grid_scene(width=5, height=5),
@@ -689,7 +691,7 @@ def test_c20_s10_lay_on_hands_pool_caps_at_5x_paladin_level_per_long_rest():
                     initiative=10,
                     hp_current=1,
                     hp_max=200,
-                    zone_id=cell(0, 0),
+                    zone_id=cell(0, 1),
                 ),
             ],
             encounter=[

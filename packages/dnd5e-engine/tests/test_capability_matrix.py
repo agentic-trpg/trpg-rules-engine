@@ -323,6 +323,8 @@ def _attack_rider_options_resolve(
     flurry: bool = False,
 ) -> bool:
     """Exercise the typed, draw-free planner with real class/subclass grants."""
+    from dnd5e_srd_data.schema.monster import CreatureSize
+
     from dnd5e_engine.activities.build_context import build_activity_context
     from dnd5e_engine.activities.scale import build_scale_values
     from dnd5e_engine.attack_riders import AttackRiderRequest, plan_attack_riders
@@ -391,6 +393,7 @@ def _attack_rider_options_resolve(
                 spent={},
                 used_features=set(),
                 cell_size_ft=5,
+                target_size=CreatureSize.MEDIUM,
             )
         except FeaturePreflightError:
             return False
@@ -404,19 +407,24 @@ def _attack_rider_options_resolve(
 
 
 def _cunning_rider_scope_matches() -> bool:
-    return _attack_rider_options_resolve(
-        "devious-strikes",
-        ("ki4lIPVGNA0HjEzH",),
-        class_slug="rogue",
-        level=14,
-    ) and all(
-        not _attack_rider_options_resolve(slug, (activity,), class_slug="rogue", level=14)
-        for slug, activity in (
-            ("cunning-strike", "n64fvJMT9fPUy7DH"),
-            ("cunning-strike", "dWcCw1vTWRMx4YzD"),
-            ("cunning-strike", "m2bRZ1YeD3yf9nV7"),
-            ("devious-strikes", "4TnBjQTJzt9UjUos"),
-            ("devious-strikes", "3eq7lcmpkJJBU2KO"),
+    return (
+        _attack_rider_options_resolve(
+            "devious-strikes",
+            ("ki4lIPVGNA0HjEzH",),
+            class_slug="rogue",
+            level=14,
+        )
+        and _attack_rider_options_resolve(
+            "cunning-strike", ("dWcCw1vTWRMx4YzD",), class_slug="rogue", level=14
+        )
+        and all(
+            not _attack_rider_options_resolve(slug, (activity,), class_slug="rogue", level=14)
+            for slug, activity in (
+                ("cunning-strike", "n64fvJMT9fPUy7DH"),
+                ("cunning-strike", "m2bRZ1YeD3yf9nV7"),
+                ("devious-strikes", "4TnBjQTJzt9UjUos"),
+                ("devious-strikes", "3eq7lcmpkJJBU2KO"),
+            )
         )
     )
 
@@ -439,6 +447,23 @@ def _brutal_rider_scope_matches() -> bool:
     )
 
 
+def _physical_movement_contract_resolves() -> bool:
+    from dnd5e_srd_data.schema.monster import CreatureSize
+
+    from dnd5e_engine.movement import MovementLedger, can_enter_creature_space, step_cost
+
+    ledger = MovementLedger().spend(cost_ft=10, distance_ft=5, mode="crawl", effective_speed=30)
+    return (
+        ledger.remaining(40) == 30
+        and ledger.add_dash().remaining(40) == 70
+        and step_cost(5, mode="crawl", difficult_terrain=True) == 15
+        and can_enter_creature_space(CreatureSize.MEDIUM, CreatureSize.HUGE)
+        and not can_enter_creature_space(CreatureSize.MEDIUM, CreatureSize.LARGE)
+        and "live_movement.handle_move(live," in _src("orchestrator.py")
+        and "live_movement.take_step(live," in _src("orchestrator.py")
+    )
+
+
 _PROBES: dict[str, tuple[Any, str]] = {
     "Ability & skill checks": (
         lambda: (
@@ -453,7 +478,7 @@ _PROBES: dict[str, tuple[Any, str]] = {
         lambda: (
             "class PersistentArea:" in _src("persistent_areas.py")
             and "resolve_activity(area.activity, ctx)" in _src("persistent_areas.py")
-            and "after_movement_step(live, actor_id, previous_cell)" in _src("orchestrator.py")
+            and "after_movement_step(live, actor_id, cell)" in _src("live_movement.py")
             and "register_area_hooks(live)" in _src("orchestrator.py")
         ),
         "✅ Resolved",
@@ -568,11 +593,11 @@ _PROBES: dict[str, tuple[Any, str]] = {
         lambda: "natural:" in _event_class_body("AttackRolled"),
         "`natural`",
     ),
-    # C16: the PC move handler paths through shortest_path and reports unreachable.
+    # Live movement consumes weighted paths; the pure BFS remains compatible.
     "Multi-cell movement in one intent": (
         lambda: (
-            '"unreachable"' in _src("orchestrator.py")
-            and "shortest_path(" in _src("orchestrator.py")
+            '"unreachable"' in _src("live_movement.py")
+            and "lowest_cost_path(" in _src("live_movement.py")
         ),
         "✅",
     ),
@@ -599,7 +624,10 @@ _PROBES: dict[str, tuple[Any, str]] = {
     ),
     # C16: the forced-movement primitive emits CombatantMoved.
     "Forced movement (push)": (
-        lambda: "CombatantMoved(" in _src("orchestrator.py"),
+        lambda: (
+            "live_movement.push(live," in _src("orchestrator.py")
+            and "CombatantMoved(" in _src("live_movement.py")
+        ),
         "✅",
     ),
     # C16b: the visibility predicate feeds the attack resolver.
@@ -742,9 +770,9 @@ _PROBES: dict[str, tuple[Any, str]] = {
     ),
     # C15 Task 7: Push weapon mastery wired into the same forced-movement
     # primitive as Thunderwave / Shove.
-    "Push weapon mastery (C15": (
+    "Push mastery retains its full 10-ft distance": (
         lambda: 'elif mastery_slug == "push":' in _src("orchestrator.py"),
-        "Push weapon mastery (C15",
+        "Push mastery retains its full 10-ft distance",
     ),
     # C15 Task 6: Topple's prone rider is gated by the shared
     # is_condition_immune helper (previously an ungated emit site).
@@ -1026,15 +1054,38 @@ _PROBES: dict[str, tuple[Any, str]] = {
         lambda: not re.search("elevation|altitude", _src("spatial.py"), re.IGNORECASE),
         "❌",
     ),
-    # A footprint needs a creature size, which the combatant model lacks.
+    "Physical movement modes and shared ledger": (_physical_movement_contract_resolves, "✅"),
+    "Creature size qualifiers": (
+        lambda: (
+            _physical_movement_contract_resolves()
+            and "creature_size: CreatureSize" in _src("types/combat.py")
+            and "size_choice: CreatureSize" in _src("build_spec.py")
+        ),
+        "✅",
+    ),
+    "Grapple dragging and range release": (
+        lambda: (
+            "def drag_positions(" in _src("live_movement.py")
+            and "def reconcile_grapple_range(" in _src("live_movement.py")
+            and "dragged_by=actor_id" in _src("live_movement.py")
+        ),
+        "✅",
+    ),
+    # Creature size qualifies rules; footprints require additional geometry.
     "Multi-tile (Large+) creature footprints": (
-        lambda: not re.search(r"^    size\b", _src("types/combat.py"), re.MULTILINE),
+        lambda: "footprint" not in _src("spatial.py"),
         "❌",
     ),
-    # Every move's route is a fewest-squares BFS (``shortest_path``); only
-    # the flee planner's reachability search prices routes by cost.
-    "Threat-aware or cost-aware pathfinding": (
-        lambda: "deque([a])" in _src("spatial.py"),
+    "Cost-aware pathfinding": (
+        lambda: (
+            "def lowest_cost_path(" in _src("spatial.py")
+            and "step_cost=lambda a, b: movement_cost(live," in _src("live_movement.py")
+            and "def close_to_target(" in _src("live_movement.py")
+        ),
+        "✅",
+    ),
+    "Threat-aware pathfinding": (
+        lambda: "threat_cost" not in _src("live_movement.py"),
         "❌",
     ),
     "Spell attack rolls & save DCs": (
@@ -1068,7 +1119,7 @@ _PROBES: dict[str, tuple[Any, str]] = {
     # C24: the grid flee planner ranks the cells ``reachable_cells`` finds.
     "Flee / retreat behaviour": (
         lambda: (
-            "def _plan_flee_route(" in _src("orchestrator.py")
+            "live_movement.flee(live," in _src("orchestrator.py")
             and "def reachable_cells(" in _src("spatial.py")
             and "has_fled" in _src("types/combat.py")
         ),

@@ -248,9 +248,9 @@ _WALLED = GridScene(width=10, height=10, wall_segments=[WallSegment(x1=2, y1=0, 
         (GridScene(width=15, height=1), cell_id(13, 0), "out_of_range"),  # 65 ft
         (_WALLED, cell_id(3, 3), "out_of_range"),  # behind the wall
         (GridScene(width=2, height=1), None, "out_of_range"),  # no free cell at all
-        (GridScene(width=10, height=10), "1, 1", "target_invalid"),  # not the grid's own id
-        (GridScene(width=10, height=10), " 1,1", "target_invalid"),
-        (GridScene(width=10, height=10), "01,1", "target_invalid"),
+        (GridScene(width=10, height=10), "1, 0", "target_invalid"),  # canonical occupied foe cell
+        (GridScene(width=10, height=10), " 1,0", "target_invalid"),
+        (GridScene(width=10, height=10), "01,0", "target_invalid"),
     ],
     ids=[
         "occupied",

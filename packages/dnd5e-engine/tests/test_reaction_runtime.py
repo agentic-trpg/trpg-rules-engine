@@ -431,7 +431,7 @@ def test_ineligible_candidate_stays_armed_without_payment_or_rng(blocked, spell)
 
 
 def test_ineligible_first_counterspeller_is_skipped_in_initiative_order():
-    second = reactor(entity_id="char:second", initiative=25, zone_id="1,0")
+    second = reactor(entity_id="char:second", initiative=25, zone_id="1,1")
     _, live = start([reactor(), second, attacker()], seed=1)
     register_pending_reaction(
         live, "char:second", PlayerIntent(intent_type="ready", spell_id="counterspell")
@@ -447,7 +447,7 @@ def test_ineligible_first_counterspeller_is_skipped_in_initiative_order():
 
 
 def test_first_eligible_counterspeller_fires_in_initiative_not_registration_order():
-    second = reactor(entity_id="char:second", initiative=25, zone_id="1,0")
+    second = reactor(entity_id="char:second", initiative=25, zone_id="1,1")
     _, live = start([reactor(), second, attacker()], seed=1)
     for owner_id in ("char:second", REACTOR):
         register_pending_reaction(

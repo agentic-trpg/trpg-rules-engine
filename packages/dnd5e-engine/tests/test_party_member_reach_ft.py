@@ -22,7 +22,7 @@ def _pc(**overrides) -> PartyMemberSpec:
         initiative=10,
         hp_current=20,
         hp_max=20,
-        zone_id="zone:a",
+        zone_id="0,0",
     )
     base.update(overrides)
     return PartyMemberSpec(**base)

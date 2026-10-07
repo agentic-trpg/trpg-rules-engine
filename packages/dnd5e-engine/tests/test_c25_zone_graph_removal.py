@@ -12,6 +12,7 @@ import asyncio
 import logging
 
 import pytest
+from pydantic import ValidationError
 
 from dnd5e_engine.events import ConcentrationCheck, MoveFailed, SaveRolled
 from dnd5e_engine.orchestrator import _extends_rage, start_combat
@@ -52,8 +53,9 @@ def test_a_zone_name_destination_is_unreachable_on_the_grid() -> None:
     """A host still naming zones: nothing moves and nothing is spent."""
     handle, live = start([pc()], seed=1)
     budget = combatant(live).movement_remaining
-    act(handle, "char:hero", intent_type="move", target_zone_id="zone:b")
-    assert [e.reason for e in events(live, MoveFailed)] == ["unreachable"]
+    with pytest.raises(ValidationError, match="malformed cell id"):
+        act(handle, "char:hero", intent_type="move", target_zone_id="zone:b")
+    assert not events(live, MoveFailed)
     assert live.actor_zone["char:hero"] == cell_id(0, 0)
     assert combatant(live).movement_remaining == budget
 

@@ -10,13 +10,14 @@ from __future__ import annotations
 
 import heapq
 from collections import deque
-from collections.abc import Collection
+from collections.abc import Callable, Collection
 from typing import Literal, Protocol, runtime_checkable
 
 from dnd5e_engine.activities.passive_stats import CombatantSenses
 from dnd5e_engine.specs import GridScene, LightLevel, Obscurement, WallSegment
 
 CoverDegree = Literal["none", "half", "three_quarters", "total"]
+StepCostOracle = Callable[[str, str], int | None]
 
 # Ranking for "does this cell grant MORE cover than the best seen so far" —
 # SRD 5.2 §Cover: none < half < three-quarters < total.
@@ -48,6 +49,11 @@ def parse_cell(cid: str) -> tuple[int, int]:
     if not col_s or not row_s or "," in row_s:
         raise ValueError(f"malformed cell id: {cid!r}")
     return int(col_s), int(row_s)
+
+
+def canonical_cell_id(cid: str) -> str:
+    """Normalize a valid coordinate so equivalent handles share one identity."""
+    return cell_id(*parse_cell(cid))
 
 
 def _orientation(ax: float, ay: float, bx: float, by: float, cx: float, cy: float) -> int:
@@ -143,6 +149,25 @@ class SpatialTopology(Protocol):
 
     def shortest_path(self, a: str, b: str, *, avoid: Collection[str] = ()) -> list[str]: ...
 
+    def lowest_cost_path(
+        self,
+        a: str,
+        b: str,
+        *,
+        avoid: Collection[str] = (),
+        step_cost: StepCostOracle | None = None,
+        budget_ft: int | None = None,
+    ) -> list[str]: ...
+
+    def reachable_cells(
+        self,
+        start: str,
+        budget_ft: int | None,
+        *,
+        avoid: Collection[str] = (),
+        step_cost: StepCostOracle | None = None,
+    ) -> dict[str, tuple[int, str | None]]: ...
+
     def has_line_of_sight(self, a: str, b: str) -> bool: ...
 
     def cover_between(
@@ -186,6 +211,10 @@ class GridTopology:
     def cell_size_ft(self) -> int:
         """Feet per cell — the scale every ``*_ft`` argument is divided by."""
         return self._cell_size_ft
+
+    def is_difficult_terrain(self, cid: str) -> bool:
+        """Whether entry into this cell contributes a Difficult Terrain cost."""
+        return canonical_cell_id(cid) in self._difficult
 
     def _in_bounds(self, cid: str) -> bool:
         try:
@@ -637,49 +666,104 @@ class GridTopology:
                     queue.append(nb)
         return []
 
-    def reachable_cells(
-        self, start: str, budget_ft: int, *, avoid: Collection[str] = ()
+    def _weighted_reachable(
+        self,
+        start: str,
+        *,
+        budget_ft: int | None,
+        avoid: Collection[str],
+        step_cost: StepCostOracle | None,
+        goal: str | None = None,
     ) -> dict[str, tuple[int, str | None]]:
-        """Every cell a creature standing on ``start`` can walk to for at most
-        ``budget_ft`` of movement, mapped to ``(cost_ft, previous_cell)``:
-        the cheapest route's price (SRD 5.2 §Difficult Terrain: entering a
-        difficult cell costs double) and the cell that route enters it from
-        (``None`` for ``start``, cost 0). Follow ``previous_cell`` back to
-        ``start`` for the route itself.
-
-        Dijkstra over the same legal steps as ``shortest_path`` (walls, blocked
-        cells, cut corners); ``avoid`` cells are never entered (an enemy's
-        space, SRD 5.2 §Moving Around Other Creatures). Ties keep the route
-        found first, popping equal costs in ``(column, row)`` order, so the
-        result is deterministic. Bounded by the budget: at most
-        ``(2 * budget_ft // cell_size_ft + 1) ** 2`` cells, whatever the grid
-        size. ``{}`` for an out-of-bounds ``start``. Grid-only; not part of
-        ``SpatialTopology``."""
-        if not self._in_bounds(start):
+        """Shared deterministic Dijkstra, ordered by cost, steps, then cell."""
+        if not self._in_bounds(start) or (budget_ft is not None and budget_ft < 0):
             return {}
-        avoid_set = set(avoid)
+        start = canonical_cell_id(start)
+        avoid_set = {canonical_cell_id(cid) for cid in avoid}
         reached: dict[str, tuple[int, str | None]] = {start: (0, None)}
+        best: dict[str, tuple[int, int]] = {start: (0, 0)}
         col, row = parse_cell(start)
-        frontier: list[tuple[int, int, int, str]] = [(0, col, row, start)]
+        frontier: list[tuple[int, int, int, int, str]] = [(0, 0, col, row, start)]
+        oracle = step_cost or self.edge_distance
         while frontier:
-            cost, _, _, cid = heapq.heappop(frontier)
-            if cost > reached[cid][0]:
+            cost, steps, _, _, cid = heapq.heappop(frontier)
+            if (cost, steps) != best[cid]:
                 continue
+            if cid == goal:
+                break
             for nb in self._neighbors(cid):
-                step = self.edge_distance(cid, nb)
-                if nb in avoid_set or step is None or cost + step > budget_ft:
+                if nb in avoid_set:
                     continue
-                known = reached.get(nb)
-                if known is None or cost + step < known[0]:
-                    reached[nb] = (cost + step, cid)
+                step = oracle(cid, nb)
+                if step is None:
+                    continue
+                if step < 0:
+                    raise ValueError("movement step costs must be nonnegative")
+                candidate = (cost + step, steps + 1)
+                if budget_ft is not None and candidate[0] > budget_ft:
+                    continue
+                if nb not in best or candidate < best[nb]:
+                    best[nb] = candidate
+                    reached[nb] = (candidate[0], cid)
                     nb_col, nb_row = parse_cell(nb)
-                    heapq.heappush(frontier, (cost + step, nb_col, nb_row, nb))
+                    heapq.heappush(frontier, (*candidate, nb_col, nb_row, nb))
         return reached
+
+    def lowest_cost_path(
+        self,
+        a: str,
+        b: str,
+        *,
+        avoid: Collection[str] = (),
+        step_cost: StepCostOracle | None = None,
+        budget_ft: int | None = None,
+    ) -> list[str]:
+        """Minimum-cost legal path, including both endpoints.
+
+        The oracle replaces terrain pricing while grid geometry still gates
+        every step. None rejects a step. Equal costs prefer fewer steps, then
+        deterministic cell/neighbor order. No affordable route returns [].
+        """
+        if not self._in_bounds(a) or not self._in_bounds(b):
+            return []
+        a, b = canonical_cell_id(a), canonical_cell_id(b)
+        reached = self._weighted_reachable(
+            a, budget_ft=budget_ft, avoid=avoid, step_cost=step_cost, goal=b
+        )
+        if b not in reached:
+            return []
+        path = [b]
+        while path[-1] != a:
+            previous = reached[path[-1]][1]
+            assert previous is not None
+            path.append(previous)
+        path.reverse()
+        return path
+
+    def reachable_cells(
+        self,
+        start: str,
+        budget_ft: int | None,
+        *,
+        avoid: Collection[str] = (),
+        step_cost: StepCostOracle | None = None,
+    ) -> dict[str, tuple[int, str | None]]:
+        """Affordable cells mapped to (minimum cost, predecessor).
+
+        Uses exactly the same geometry, oracle and deterministic tie-breaking
+        as lowest_cost_path. None searches the entire connected component.
+        The start has cost zero and no predecessor.
+        """
+        return self._weighted_reachable(
+            start, budget_ft=budget_ft, avoid=avoid, step_cost=step_cost
+        )
 
 
 __all__ = [
     "GridTopology",
     "SpatialTopology",
+    "StepCostOracle",
+    "canonical_cell_id",
     "cell_id",
     "parse_cell",
 ]

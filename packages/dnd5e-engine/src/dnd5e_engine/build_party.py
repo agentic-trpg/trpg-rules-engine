@@ -53,6 +53,7 @@ def build_party_member(
         classes=dict(build_spec.classes),
         subclass_slug=build_spec.subclass_slug,
         species_slug=build_spec.species_slug,
+        creature_size=sheet.creature_size,
         base_speed=sheet.base_speed if instance.base_speed is None else instance.base_speed,
         equipment=build_spec.equipment,
         feats=sheet.feats,

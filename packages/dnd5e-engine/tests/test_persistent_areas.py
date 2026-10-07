@@ -298,7 +298,7 @@ def test_a_single_target_disappearing_preserves_the_area(removal):
     "origin,reason",
     [
         ("-1,0", "target_invalid"),
-        ("01,0", "target_invalid"),
+        ("0100,0", "target_invalid"),
         ("100,0", "target_invalid"),
         ("broken", "target_invalid"),
         ("25,2", "out_of_range"),
@@ -307,8 +307,15 @@ def test_a_single_target_disappearing_preserves_the_area(removal):
 def test_illegal_point_origin_spends_no_slot_action_or_rng(origin, reason):
     handle, live = _combat()
     rng = live.rng.getstate()
-    _cast(handle, "stinking-cloud", target_zone_id=origin)
-    assert [e.reason for e in events(live, CastFailed)] == [reason]
+    if origin == "broken":
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError, match="malformed cell id"):
+            _cast(handle, "stinking-cloud", target_zone_id=origin)
+        assert not events(live, CastFailed)
+    else:
+        _cast(handle, "stinking-cloud", target_zone_id=origin)
+        assert [e.reason for e in events(live, CastFailed)] == [reason]
     assert live.spell_slots_by_entity[HERO][3] == 3
     assert combatant(live).action_available
     assert not live.persistent_areas.areas

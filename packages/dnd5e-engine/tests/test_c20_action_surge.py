@@ -123,19 +123,20 @@ def test_extra_attack_gets_fresh_swings_on_the_surge_action() -> None:
     _swing(handle)
     assert combatant(live).attacks_remaining == 1
     _swing(handle)
+    assert live.current_actor_id == "char:hero"  # Extra Attack preserves remaining movement.
     _swing(handle)
     assert [e.amount for e in events(live, DamageApplied)] == [5, 8, 4, 11]
     assert [e.reason for e in events(live, AttackFailed)] == ["no_action_economy"]
 
 
 def test_surge_then_dodge_keeps_the_turn_for_the_extra_action() -> None:
-    """Dodge on the base Action would end the turn; with the surge's action left
-    it doesn't, and that action then takes the Attack action (seed 6: 5)."""
+    """Dodge spends the restricted extra slot, retaining the base Action for
+    the next Attack action (seed 6: 5)."""
     handle, live = _fighter()
     _surge(handle)
     act(handle, "char:hero", intent_type="dodge")
     hero = combatant(live)
-    assert (hero.dodging, hero.action_available, hero.extra_actions_remaining) == (True, False, 1)
+    assert (hero.dodging, hero.action_available, hero.extra_actions_remaining) == (True, True, 0)
     assert live.current_actor_id == "char:hero"
     _swing(handle)
     assert [e.amount for e in events(live, DamageApplied)] == [5]
@@ -151,7 +152,7 @@ def test_the_surge_action_cannot_be_a_magic_action() -> None:
     still takes the Attack action."""
     handle, live = _fighter()
     _surge(handle)
-    _swing(handle)
+    act(handle, "char:hero", intent_type="cast_spell", spell_id="fire-bolt", target_id="mon:foe")
     act(handle, "char:hero", intent_type="cast_spell", spell_id="fire-bolt", target_id="mon:foe")
     with pytest.raises(IntentRejectedError) as rejected:
         act(
@@ -210,7 +211,7 @@ def test_grapple_and_shove_can_take_the_surge_action(first: str, second: str) ->
     _surge(handle)
     act(handle, "char:hero", intent_type=first, target_id="mon:foe")
     hero = combatant(live)
-    assert (hero.action_available, hero.extra_actions_remaining) == (False, 1)
+    assert (hero.action_available, hero.extra_actions_remaining) == (True, 0)
     assert live.current_actor_id == "char:hero"
     act(handle, "char:hero", intent_type=second, target_id="mon:foe")
     assert combatant(live).extra_actions_remaining == 0

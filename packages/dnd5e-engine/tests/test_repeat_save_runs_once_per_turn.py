@@ -132,7 +132,7 @@ def test_action_only_turn_rolls_exactly_one_repeat_save():
     """The baseline: one Action, one turn end, one repeat save."""
     live, pre = _run(
         "sess-repeat-save-action",
-        [PlayerIntent(intent_type="attack", target_id="mon:foe")],
+        [PlayerIntent(intent_type="attack", weapon_id="longsword", target_id="mon:foe")],
     )
     assert len(_repeat_saves(live, pre)) == 1
 
@@ -144,7 +144,7 @@ def test_bonus_action_then_action_rolls_exactly_one_repeat_save():
         "sess-repeat-save-bonus",
         [
             PlayerIntent(intent_type="use_feature", feature_id="rage"),
-            PlayerIntent(intent_type="attack", target_id="mon:foe"),
+            PlayerIntent(intent_type="attack", weapon_id="longsword", target_id="mon:foe"),
         ],
     )
     assert len(_repeat_saves(live, pre)) == 1
@@ -156,7 +156,7 @@ def test_repeat_save_lands_inside_the_turn_end_phase():
     effects attributes this one correctly."""
     live, pre = _run(
         "sess-repeat-save-phase",
-        [PlayerIntent(intent_type="attack", target_id="mon:foe")],
+        [PlayerIntent(intent_type="attack", weapon_id="longsword", target_id="mon:foe")],
     )
     tail = live.event_log[pre:]
     types = [e.type for e in tail]

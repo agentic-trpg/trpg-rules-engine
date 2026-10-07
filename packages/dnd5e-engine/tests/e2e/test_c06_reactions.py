@@ -42,7 +42,6 @@ from dnd5e_engine.events import (
     IntentSubmitted,
     ReactionTriggered,
     SaveRolled,
-    TurnEnded,
     TurnStarted,
 )
 from dnd5e_engine.orchestrator import (
@@ -208,31 +207,11 @@ def test_c06_s01_prearmed_counterspell_forces_con_save_two_seeds():
     assert not events_of(live_b, DamageApplied)
 
 
-def test_c06_s02_countered_cast_preserves_slot_and_wastes_action():
-    """C06-S02: A countered, slot-cast Counterspell target does not expend
-    its spell slot; the interrupted caster's action is wasted (turn
-    advances with no further action).
-
-    Counterspell's own canonical text (authoritative): "...the action,
-    Bonus Action, or Reaction used to cast it is wasted. If that spell was
-    cast with a spell slot, the slot isn't expended."
-    (packages/dnd5e-srd-data/src/dnd5e_srd_data/canonical/spells/counterspell.json,
-    description). Engine:
-    packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_consume_spell_slot
-    decrements the CASTER's own spell-slot pool unconditionally at
-    cast_spell intent-submission time, strictly before
-    _resolve_intent_activities ever runs — no slot-refund path exists in
-    src/ today, so the slot is spent whether or not the cast is later
-    interrupted. The sibling no_slot branch of the same function already
-    calls _advance_turn(live, actor_id) directly after a CastFailed
-    emission — the existing, shipped precedent this scenario's "action
-    wasted" assertion reuses. State exposure:
-    packages/dnd5e-engine/src/dnd5e_engine/views.py::LiveCombatView.spell_slots_by_entity
-    (read via orchestrator.get_live).
-
-    Reuses C06-S01's rng_seed=1 (S_b, save-fails/countered) branch; the
-    save-succeeds branch spends the slot normally like any uninterrupted
-    cast and is not retested here.
+def test_c06_s02_countered_cast_preserves_slot_action_and_turn():
+    """C06-S02: Character Action Economy preserves the interrupted caster's
+    slot, Action and current turn on a pre-resolution Counterspell refusal.
+    The counterspeller still spends its own slot and Reaction. Seed 1 pins
+    the failed-save branch; C06-S01 covers the successful-save branch.
     """
 
     async def _run():
@@ -315,24 +294,12 @@ def test_c06_s02_countered_cast_preserves_slot_and_wastes_action():
     assert failed[0].spell_id == "fireball"
     assert failed[0].reason == "countered"
 
-    # Action wasted: the tail after CastFailed shows TurnEnded(enemy_caster)
-    # -> TurnStarted(<next actor>), no further activity events this turn —
-    # mirrors the shipped no_slot/no_action_economy CastFailed branches'
-    # own _end_turn_and_advance call.
+    # A pre-resolution refusal keeps the caster's payment and current turn.
+    caster = next(c for c in live.initiative if c.entity_id == "char:enemy_caster")
+    assert caster.action_available
+    assert live.current_actor_id == "char:enemy_caster"
     failed_idx = live.event_log.index(failed[0])
-    # Engine F3a interleaves informational ``TurnPhase`` markers around every
-    # turn boundary; they carry no rules outcome, so the "nothing happened
-    # between CastFailed and TurnEnded" assertion below reads the tail with
-    # them filtered out. The marker order itself is pinned in
-    # tests/test_turn_lifecycle.py.
-    tail = [e for e in live.event_log[failed_idx + 1 :] if e.type != "turn_phase"]
-    # No further activity events for char:enemy_caster this turn — TurnEnded
-    # must be the very next event after CastFailed, with a TurnStarted for
-    # the next actor following it.
-    assert tail
-    assert isinstance(tail[0], TurnEnded)
-    assert tail[0].actor_id == "char:enemy_caster"
-    assert any(isinstance(e, TurnStarted) for e in tail[1:])
+    assert live.event_log[failed_idx + 1 :] == []
 
 
 def test_c06_s03_prearmed_shield_raises_ac_by_5_expires_next_turn():

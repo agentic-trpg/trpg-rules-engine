@@ -306,7 +306,11 @@ _PROBES: dict[str, tuple[Any, str]] = {
     ),
     # Closed (C14 Task 5): Hide has a dispatch handler.
     "| Hide |": (
-        lambda: 'if intent.intent_type == "hide"' in _src("orchestrator.py"),
+        lambda: (
+            'if intent.intent_type == "hide"' in _src("orchestrator.py")
+            and '_require_cunning_action(current, "Hide")' in _src("orchestrator.py")
+            and '_action_payment(current, "hide")' in _src("orchestrator.py")
+        ),
         "✅",
     ),
     # C16b (plan ruling R1): Hide's "out of any enemy's line of sight"
@@ -466,8 +470,23 @@ _PROBES: dict[str, tuple[Any, str]] = {
         lambda: (
             "_attacks_per_action(" in _src("orchestrator.py")
             and "_twf_window_open(" in _src("orchestrator.py")
+            and "def _turn_can_continue(" in _src("orchestrator.py")
+            and "def _attack_input_failure(" in _src("orchestrator.py")
+            and "loading_weapon_fired_this_action" in _src("types/combat.py")
         ),
-        "modelled (C14)",
+        "Character Action Economy",
+    ),
+    "restricted non-Magic Action": (
+        lambda: "def _action_payment(" in _src("orchestrator.py"),
+        "in either order",
+    ),
+    "Refused casts preserve action budgets": (
+        lambda: "def _apply_pre_slot_cast_gates(" in _src("orchestrator.py"),
+        "Refused casts preserve action budgets",
+    ),
+    "feature/item Magic-action classification": (
+        lambda: "_MAGIC_ACTION_INTENTS" in _src("orchestrator.py"),
+        "Still partial",
     ),
     # C14 Task 6/7: Grapple/Shove resolve via the shared Unarmed Strike save.
     "Grapple / Shove": (
@@ -628,9 +647,9 @@ _PROBES: dict[str, tuple[Any, str]] = {
         "Rage's end-of-turn extension check (C20)",
     ),
     # C20: Action Surge's extra action is counted on the live turn view.
-    "Action Surge's extra action (C20": (
+    "Action Surge grants one restricted": (
         lambda: "extra_actions_remaining" in _src("views.py"),
-        "Action Surge's extra action (C20",
+        "extra_actions_remaining",
     ),
     # C20: the Bonus-Action Dash/Disengage read the Cunning Action feature,
     # not the class slug.

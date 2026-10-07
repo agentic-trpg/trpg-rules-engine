@@ -279,14 +279,9 @@ class Combatant(BaseModel):
     # see ``_dodge_benefit_active`` in orchestrator.py). Reset to False at
     # the actor's own TurnStarted — the exact SRD expiry point.
     dodging: bool = False
-    # SRD 5.2 §Actions in Combat — Hide (final-review fix F3). Although Hide
-    # touches no Action-economy budget (``_handle_hide``'s docstring), the
-    # SRD frames it as taking "the Hide action" — a single attempt, not a
-    # retry loop against an unresolved DC 15 Dexterity (Stealth) check.
-    # True once a gated-through Hide attempt (success OR failure) has been
-    # made this turn; a second attempt is rejected
-    # (``IntentRejectedError("no_action_economy")``) with zero d20 draws.
-    # Reset to False at the actor's own TurnStarted, alongside dodging.
+    # Records a paid Hide attempt (success or failure) this turn. Each repeat
+    # needs another Action or Cunning Action payment; this is bookkeeping,
+    # not a once-per-turn cap. Reset at the actor's own TurnStarted.
     hide_attempted_this_turn: bool = False
     # C22: typed SRD 5.2 monster traits hydrated from the template's
     # ``special_abilities[].mechanic`` (Magic Resistance → advantage on saves
@@ -333,14 +328,10 @@ class Combatant(BaseModel):
     # SRD 5.2 Loading — "You can fire only one piece of ammunition from a
     # Loading weapon when you use an action, a Bonus Action, or a Reaction
     # to fire it, regardless of the number of attacks you can normally
-    # make." Engine reading: one fire per TURN, not per action-type — no
-    # PC reaction-attack path exists, so action/bonus/reaction collapse to
-    # the turn boundary; the cap is per-actor (not per-weapon), matching
-    # the SRD's "you" framing. Set True after any resolved main-hand OR
-    # off-hand swing with a ``WeaponProperty.LOADING`` weapon (C15 Task
-    # 5). Reset to False at the actor's own TurnStarted, alongside the
-    # other per-turn attack-economy fields above.
-    loading_weapon_fired_this_turn: bool = False
+    # make." Tracks the current Attack action, including Nick; reset when
+    # a new Attack action is paid or the actor's turn starts. A Bonus Action
+    # or Reaction has its own payment and its own one-attack budget.
+    loading_weapon_fired_this_action: bool = False
     # SRD 5.2 §Weapon Mastery — Cleave: "You can make this extra attack only
     # once per turn." Set True by the orchestrator once a cleave chain has
     # FIRED this turn (the extra attack roll was made, hit or miss); gates

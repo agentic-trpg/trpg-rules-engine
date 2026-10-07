@@ -101,6 +101,8 @@ def test_c14_s02_hide_grants_advantage_on_next_attack():
             PartyMemberSpec(
                 entity_id="char:rogue",
                 name="Rogue",
+                class_slug="rogue",
+                character_level=2,
                 initiative=20,
                 hp_current=20,
                 hp_max=20,
@@ -153,7 +155,9 @@ def test_c14_s02_hide_grants_advantage_on_next_attack():
         )
         live = _get_live(start.handle)
         await submit_player_intent(
-            start.handle, actor_id="char:rogue", intent=PlayerIntent(intent_type="hide")
+            start.handle,
+            actor_id="char:rogue",
+            intent=PlayerIntent(intent_type="hide", use_bonus_action=True),
         )
         await submit_player_intent(
             start.handle,

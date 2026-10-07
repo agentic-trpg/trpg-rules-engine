@@ -168,17 +168,17 @@ def test_third_attack_is_rejected_and_actor_keeps_the_turn():
     assert live.current_actor_id == "char:ftr"
 
 
-def test_one_attack_actor_ends_turn_on_first_swing_back_compat():
-    """A 1-attack actor (no Extra Attack) swinging a non-Light weapon must
-    still end the turn on the first attack — the back-compat bar for C14."""
+def test_one_attack_fighter_keeps_turn_for_action_surge():
+    """Fighter 2–4 can decide to use Action Surge after the first Attack action."""
 
     async def _run():
-        start = await _start_fighter_combat("sess-t1-back-compat", character_level=4)
+        start = await _start_fighter_combat("sess-t1-surge-opportunity", character_level=4)
         await submit_player_intent(start.handle, actor_id="char:ftr", intent=_attack_intent())
         return _get_live(start.handle)
 
     live = asyncio.run(_run())
-    assert live.current_actor_id != "char:ftr"
+    assert live.current_actor_id == "char:ftr"
+    assert live.initiative[0].action_available is False
 
 
 def test_dash_then_attack_is_rejected_hard_no_double_dip():

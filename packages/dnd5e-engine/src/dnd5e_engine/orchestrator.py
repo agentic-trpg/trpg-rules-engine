@@ -2108,24 +2108,28 @@ def _attack_out_of_range_failure(
 
 
 def _loading_weapon_already_fired_failure(
-    current: Combatant, actor_id: str, intent: PlayerIntent, weapon: Weapon | None
+    current: Combatant,
+    actor_id: str,
+    intent: PlayerIntent,
+    weapon: Weapon | None,
+    funding: AttackFunding,
 ) -> CombatEvent | None:
-    """SRD 5.2 Loading — "You can fire only one piece of ammunition from a
-    Loading weapon when you use an action, a Bonus Action, or a Reaction to
-    fire it, regardless of the number of attacks you can normally make."
-    Engine reading: one fire per TURN (no PC reaction-attack path exists,
-    so action/bonus/reaction collapse to the turn boundary); the cap is
-    per-actor, not per-weapon (SRD ambiguity resolved toward "you", the
-    actor). Applies to BOTH the main-hand and off-hand attack path — one
-    of the ``pre_resolution_gates`` failure-builders consumed by
-    ``submit_player_intent``, so a rejected shot spends no Action/Bonus
-    Action and leaves ``attacks_remaining`` untouched (C15 Task 5)."""
+    """Loading allows one shot per Action, Bonus Action or Reaction.
+
+    A bonus-funded off-hand shot has its own payment. A Nick shot belongs to
+    the Attack action. A fresh Action can abandon the old sequence and open
+    a new one; otherwise a second Loading shot spends nothing.
+    """
     if (
         intent.intent_type != "attack"
         or weapon is None
         or WeaponProperty.LOADING not in weapon.properties
-        or not current.loading_weapon_fired_this_turn
+        or not current.loading_weapon_fired_this_action
     ):
+        return None
+    if funding == "light_offhand" and weapon.mastery != "nick":
+        return None
+    if funding == "action" and _action_payment(current, "attack"):
         return None
     return AttackFailed(
         actor_id=actor_id, target_id=intent.target_id, reason="weapon_already_fired"
@@ -4173,7 +4177,9 @@ def _roll_unarmed_option_save(
     return event
 
 
-def _handle_grapple(live: _LiveCombat, attacker: Combatant, intent: PlayerIntent) -> None:
+def _handle_grapple(
+    live: _LiveCombat, attacker: Combatant, intent: PlayerIntent, *, allow_movement: bool = False
+) -> None:
     """SRD 5.2 Unarmed Strike — Grapple. Rolls the target's save via
     ``_roll_unarmed_option_save`` (shared with ``_handle_shove`` — auto-fail
     conditions + exhaustion penalty come free; no advantage source of its
@@ -4201,7 +4207,7 @@ def _handle_grapple(live: _LiveCombat, attacker: Combatant, intent: PlayerIntent
         _emit_grapple_condition_applied(
             live, target_id, save_dc=save.dc, source_effect_id=effect_id
         )
-    _end_action(live, attacker.entity_id, intent)
+    _end_action(live, attacker.entity_id, intent, allow_movement=allow_movement)
 
 
 # SRD 5.2 Unarmed Strike, "Shove": "The target must succeed on a Strength or
@@ -4221,7 +4227,9 @@ def _handle_grapple(live: _LiveCombat, attacker: Combatant, intent: PlayerIntent
 # larger than you").
 
 
-def _handle_shove(live: _LiveCombat, attacker: Combatant, intent: PlayerIntent) -> None:
+def _handle_shove(
+    live: _LiveCombat, attacker: Combatant, intent: PlayerIntent, *, allow_movement: bool = False
+) -> None:
     """SRD 5.2 Unarmed Strike — Shove. Rolls the target's save via the same
     ``_roll_unarmed_option_save`` helper ``_handle_grapple`` uses (auto-fail
     conditions + exhaustion penalty come free; no advantage source of its
@@ -4241,7 +4249,7 @@ def _handle_shove(live: _LiveCombat, attacker: Combatant, intent: PlayerIntent) 
             push_combatant(live, target_id, origin_cell=origin_cell, distance_ft=5)
         else:
             _emit(live, ConditionApplied(target_id=target_id, condition="prone"))
-    _end_action(live, attacker.entity_id, intent)
+    _end_action(live, attacker.entity_id, intent, allow_movement=allow_movement)
 
 
 def _escape_grapple_actor_invalid(current: Combatant) -> bool:
@@ -4316,7 +4324,11 @@ def _handle_escape_grapple(live: _LiveCombat, current: Combatant, intent: Player
 
 
 def _dispatch_simple_turn_ending_intent(
-    live: _LiveCombat, current: Combatant, actor_id: str, intent: PlayerIntent
+    live: _LiveCombat,
+    current: Combatant,
+    actor_id: str,
+    intent: PlayerIntent,
+    funding: AttackFunding,
 ) -> bool:
     """Route the turn-ending intents that resolve no activities of their own
     — Dodge, Help, Grapple, Shove, ``escape_grapple`` — to their handlers and
@@ -4335,10 +4347,10 @@ def _dispatch_simple_turn_ending_intent(
         _end_action(live, actor_id, intent)
         return True
     if intent.intent_type == "grapple":
-        _handle_grapple(live, current, intent)
+        _handle_grapple(live, current, intent, allow_movement=funding != "action")
         return True
     if intent.intent_type == "shove":
-        _handle_shove(live, current, intent)
+        _handle_shove(live, current, intent, allow_movement=funding != "action")
         return True
     if intent.intent_type == "escape_grapple":
         _handle_escape_grapple(live, current, intent)
@@ -4349,7 +4361,9 @@ def _dispatch_simple_turn_ending_intent(
 _CUNNING_ACTION: Final = "cunning-action"
 
 
-def _require_cunning_action(current: Combatant, action: Literal["Dash", "Disengage"]) -> None:
+def _require_cunning_action(
+    current: Combatant, action: Literal["Dash", "Disengage", "Hide"]
+) -> None:
     """SRD 5.2 Cunning Action (Rogue 2): "On your turn, you can take one of the
     following actions as a Bonus Action: Dash, Disengage, or Hide." Taking
     ``action`` as a Bonus Action needs the feature among the granted ones —
@@ -4383,8 +4397,8 @@ def _handle_dash(live: _LiveCombat, current: Combatant, intent: PlayerIntent) ->
     """SRD §Combat — Dash: double the actor's movement budget for this turn.
 
     Adds ``base_speed`` to ``movement_remaining`` and consumes either the
-    Action (default; the Action path pays with the base Action, else an
-    Action Surge extra action) or the Bonus Action (Cunning Action, when
+    Action (default; the Action path pays an eligible Action Surge slot first, then the
+    base Action) or the Bonus Action (Cunning Action, when
     ``intent.use_bonus_action`` is True). Dash does NOT advance the turn.
 
     Rejections raise ``IntentRejectedError("no_action_economy")``:
@@ -4453,14 +4467,9 @@ def _handle_hide(live: _LiveCombat, current: Combatant, intent: PlayerIntent) ->
     you must be out of any enemy's line of sight... On a successful
     check, you have the Invisible condition while hidden."*
 
-    CONTROLLER RULING (supersedes the task brief's "soft-consume the
-    Action" line): Hide costs NO Action-economy budget at all — the same
-    zero-cost, turn-keeping shape as ``_handle_drop_concentration``. The
-    SRD actually costs an Action; this divergence is deliberately
-    UNENFORCED pending strict Attack-action accounting (an Action-
-    consuming Hide would make the catalog's approved hide-then-attack
-    script unsatisfiable against the hard Action gate the first attack
-    swing enforces) — see BACKLOG.md.
+    Costs an Action, or a Bonus Action with Cunning Action and an explicit
+    ``use_bonus_action=True``. Validate payment before checking visibility;
+    commit it only after all visibility gates pass, before the Stealth roll.
 
     Gate: the hider's own cell must be behind Three-Quarters/Total cover,
     Heavily Obscured, or in Darkness (SRD 5.2 §Vision and Light glossary:
@@ -4482,17 +4491,19 @@ def _handle_hide(live: _LiveCombat, current: Combatant, intent: PlayerIntent) ->
     (the SRD's "an enemy finds you" break clause) is a host concern out
     of this engine's scope.
 
-    FINAL-REVIEW FIX (F3): one Hide attempt per turn. Zero-cost + turn-
-    keeping with no repeat gate would otherwise let a host loop ``hide``
-    against the DC 15 check until it lands. A SECOND attempt this turn
-    raises ``IntentRejectedError("no_action_economy")`` before the cover
-    gate even runs — zero draws either way.
+    Each attempt needs a fresh payment, whether the Stealth check succeeds
+    or fails. Action Surge and Cunning Action can fund another attempt.
     """
     actor_id = current.entity_id
-    if current.hide_attempted_this_turn:
+    if intent.use_bonus_action:
+        _require_cunning_action(current, "Hide")
+        payment = {"bonus_action_available": False}
+    else:
+        payment = _action_payment(current, "hide")
+    if not payment:
         raise IntentRejectedError(
             "no_action_economy",
-            f"actor_id={actor_id!r} has already attempted Hide this turn",
+            f"actor_id={actor_id!r} has no Action remaining for Hide",
         )
     cell = live.actor_zone.get(actor_id)
     cover = live.topology.cover_on_cell(cell) if cell is not None else "none"
@@ -4527,9 +4538,7 @@ def _handle_hide(live: _LiveCombat, current: Combatant, intent: PlayerIntent) ->
                     "Hide requires being out of every enemy's line of sight",
                 )
 
-    # F3 — this attempt has cleared the cover gate and is now committed to
-    # rolling; record it BEFORE the roll so a same-turn retry (success or
-    # failure) is rejected regardless of this attempt's outcome.
+    _update_combatant(live, actor_id, **payment)
     _set_hide_attempted(live, actor_id)
 
     _emit(
@@ -4561,6 +4570,7 @@ def _handle_hide(live: _LiveCombat, current: Combatant, intent: PlayerIntent) ->
     if succeeded:
         _emit(live, ConditionApplied(target_id=actor_id, condition="invisible"))
         live.hidden_entities.add(actor_id)
+    _end_action(live, actor_id, intent, allow_movement=intent.use_bonus_action)
 
 
 def _handle_stand_up(live: _LiveCombat, current: Combatant, intent: PlayerIntent) -> None:
@@ -4569,7 +4579,7 @@ def _handle_stand_up(live: _LiveCombat, current: Combatant, intent: PlayerIntent
     thereby end the condition. If your Speed is 0, you can't right
     yourself."*
 
-    Touches NO Action/Bonus Action budget (turn-KEEPING, like Hide/Dash) —
+    Touches NO Action/Bonus Action budget (turn-KEEPING) —
     only movement. Gates, in order: the actor must be Prone
     (``IntentRejectedError("target_invalid")``, mirrors ``_reject_invalid_
     escape_grapple_actor``'s "nothing to do this from" shape); effective
@@ -4978,10 +4988,8 @@ def _emit_apply_turn_started(live: _LiveCombat, event: TurnStarted) -> None:
                     # turn; the gate resets alongside Dodge at the actor's own
                     # TurnStarted.
                     "hide_attempted_this_turn": False,
-                    # SRD 5.2 Loading — the one-fire-per-turn cap resets at
-                    # the actor's own TurnStarted, alongside the other
-                    # per-turn attack-economy fields (C15 Task 5).
-                    "loading_weapon_fired_this_turn": False,
+                    # Loading starts a fresh per-Action allowance each turn.
+                    "loading_weapon_fired_this_action": False,
                     # SRD 5.2 §Weapon Mastery — Cleave: "only once per turn";
                     # the cap resets at the actor's own TurnStarted (C15
                     # Task 7).
@@ -7986,20 +7994,50 @@ def _twf_window_open(current: Combatant) -> bool:
     return _offhand_window_open(current) and current.bonus_action_available
 
 
-def _attack_action_is_spent(live: _LiveCombat, current: Combatant) -> bool:
-    """SRD §Extra Attack — R1: the Attack action is fully spent (and so the
-    turn should end after a main-hand attack) only when NO swings remain
-    this Action, the actor gets exactly one attack per Action (multi-attack
-    actors always keep the turn until their budget is exhausted), and no
-    Light off-hand window is open (Bonus-Action-funded OR Nick — C15
-    Task 7, ``_offhand_window_open``). Flurry of Blows strikes still owed
-    keep the turn open the same way: the Focus Point and the Bonus Action
-    already paid for them."""
+def _attack_action_is_spent(current: Combatant) -> bool:
+    """Whether the paid Attack action has no remaining swings."""
+    return not current.attack_action_engaged or current.attacks_remaining <= 0
+
+
+def _action_surge_opportunity(live: _LiveCombat, current: Combatant) -> bool:
+    """An unused, granted and affordable Action Surge can still open an Action."""
+    if current.action_surge_used_this_turn or _ACTION_SURGE not in _granted_feature_slugs(current):
+        return False
+    feature = get_lib_loader().get_feature(_ACTION_SURGE)
+    if feature is None:
+        return False
+    cap = _feature_use_cap(feature, _uses_roll_data(current, _scale_values_of(current)))
+    return _feature_spend_fits_cap(live, current.entity_id, _ACTION_SURGE, cap=cap, cost=1)
+
+
+def _turn_can_continue(
+    live: _LiveCombat, current: Combatant, *, allow_movement: bool = False
+) -> bool:
+    """Keep an Action's turn for a concrete remaining payment or attack window.
+
+    An otherwise idle Bonus Action is insufficient: it needs Martial Arts,
+    Cunning Action or an opened Light/Nick window. Paid Flurry strikes survive
+    any intervening Action. Bonus/free completions and Extra Attack preserve
+    existing movement windows; other Actions do not hold for movement alone.
+    """
     return (
-        current.attacks_remaining <= 0
-        and _attacks_per_action(live, current) == 1
-        and not _offhand_window_open(current)
-        and current.flurry_strikes_remaining <= 0
+        current.action_available
+        or current.extra_actions_remaining > 0
+        or not _attack_action_is_spent(current)
+        or current.flurry_strikes_remaining > 0
+        or _offhand_window_open(current)
+        or (
+            current.bonus_action_available
+            and (
+                _martial_arts_active(current) or "cunning-action" in _granted_feature_slugs(current)
+            )
+        )
+        or _action_surge_opportunity(live, current)
+        or (
+            allow_movement
+            and current.movement_remaining > 0
+            and _effective_speed(current, live) > 0
+        )
     )
 
 
@@ -8873,14 +8911,17 @@ def _keep_turn(live: _LiveCombat) -> None:
     _maybe_roll_death_save(live)
 
 
-def _end_action(live: _LiveCombat, actor_id: str, intent: PlayerIntent) -> None:
-    """End ``actor_id``'s turn after an Action-costed intent, unless an Action
-    Surge extra action is still unspent — SRD 5.2: "On your turn, you can take
-    one additional action" — so the turn stays open for it (an unused one
-    lapses at the actor's next turn start). ``pass`` always ends the turn."""
+def _end_action(
+    live: _LiveCombat, actor_id: str, intent: PlayerIntent, *, allow_movement: bool = False
+) -> None:
+    """Continue for an executable resource/window; ``pass`` always ends the turn."""
     actor = _find_combatant(live, actor_id)
-    if intent.intent_type != "pass" and actor is not None and actor.extra_actions_remaining > 0:
-        _maybe_roll_death_save(live)
+    if (
+        intent.intent_type != "pass"
+        and actor is not None
+        and _turn_can_continue(live, actor, allow_movement=allow_movement)
+    ):
+        _keep_turn(live)
         return
     _end_turn_and_advance(live, actor_id)
 
@@ -10536,7 +10577,7 @@ def _hellish_rebuke_target_invalid(current: Combatant, intent: PlayerIntent) -> 
 
 
 def _cast_target_invalid_failure(
-    current: Combatant, actor_id: str, intent: PlayerIntent
+    live: _LiveCombat, current: Combatant, actor_id: str, intent: PlayerIntent
 ) -> CombatEvent | None:
     """``CastFailed(reason="target_invalid")`` for every pre-slot illegal
     cast target (Hellish Rebuke's fixed target); ``None`` otherwise. An
@@ -10544,9 +10585,46 @@ def _cast_target_invalid_failure(
     ``_area_target_failure``'s, which covers every intent kind. One of the
     ``pre_resolution_gates`` failure-builders consumed by
     ``submit_player_intent``."""
-    if not _hellish_rebuke_target_invalid(current, intent):
+    if intent.intent_type != "cast_spell":
         return None
-    return CastFailed(actor_id=actor_id, spell_id=intent.spell_id or "", reason="target_invalid")
+    named_targets = intent.target_ids or ([intent.target_id] if intent.target_id else [])
+    live_ids = {c.entity_id for c in live.initiative}
+    if _hellish_rebuke_target_invalid(current, intent) or any(
+        t not in live_ids for t in named_targets
+    ):
+        return CastFailed(
+            actor_id=actor_id, spell_id=intent.spell_id or "", reason="target_invalid"
+        )
+    return None
+
+
+def _attack_input_failure(
+    live: _LiveCombat,
+    current: Combatant,
+    intent: PlayerIntent,
+    weapon: Weapon | None,
+    funding: AttackFunding,
+) -> CombatEvent | None:
+    """Reject empty/unknown weapon attacks before any payment or sequence spend.
+
+    A validated construct repeat names its spell instead of a weapon. Stat-block
+    attacks retain their existing validation and area-target handling.
+    """
+    if (
+        intent.intent_type != "attack"
+        or funding == "construct_bonus"
+        or intent.stat_block_action_id
+    ):
+        return None
+    if weapon is None:
+        return AttackFailed(
+            actor_id=current.entity_id, target_id=intent.target_id, reason="action_unavailable"
+        )
+    if intent.target_id is None or _find_combatant(live, intent.target_id) is None:
+        return AttackFailed(
+            actor_id=current.entity_id, target_id=intent.target_id, reason="target_invalid"
+        )
+    return None
 
 
 # SRD 5.2 Magic action: "When you take the Magic action, you cast a spell that
@@ -10570,13 +10648,13 @@ def _extra_action_funds(c: Combatant, intent_type: IntentType) -> bool:
 
 
 def _action_payment(c: Combatant, intent_type: IntentType) -> dict[str, Any]:
-    """The initiative-slot update that pays one Action for ``intent_type``: the
-    base Action while unspent, then an Action Surge extra action; empty when
-    neither can pay (``pass`` once its Action is gone)."""
-    if c.action_available:
-        return {"action_available": False}
+    """Pay the restricted slot first, preserving the base Action for Magic."""
+    if intent_type == "pass":
+        return {}
     if _extra_action_funds(c, intent_type):
         return {"extra_actions_remaining": c.extra_actions_remaining - 1}
+    if c.action_available:
+        return {"action_available": False}
     return {}
 
 
@@ -10586,8 +10664,8 @@ def _consume_action_budget(
     """Consume the classified action-economy budget on ``actor_id``'s
     initiative slot and return the refreshed current actor. ``current`` is a
     stale snapshot; mutate via slot model_copy so subsequent reads see the
-    updated state. An Action is paid by ``_action_payment`` (the base Action,
-    else an Action Surge extra action); a free ``special`` activation pays nothing."""
+    updated state. An Action is paid by ``_action_payment`` (a restricted extra slot first,
+    then the unrestricted base Action); a free ``special`` activation pays nothing."""
     if cost.is_free_action:
         return _current_actor(live)
     for idx, c in enumerate(live.initiative):
@@ -10661,7 +10739,7 @@ def _action_economy_gate_failure(
         return None
     extra_action = _extra_action_funds(current, intent.intent_type)
     if intent.intent_type == "attack":
-        if current.attacks_remaining <= 0 and not extra_action:
+        if current.attacks_remaining <= 0 and not current.action_available and not extra_action:
             return AttackFailed(
                 actor_id=current.entity_id,
                 target_id=intent.target_id,
@@ -10693,7 +10771,9 @@ def _action_economy_gate_failure(
     return None
 
 
-def _consume_attack_budget(live: _LiveCombat, actor_id: str, current: Combatant) -> Combatant:
+def _consume_attack_budget(
+    live: _LiveCombat, actor_id: str, current: Combatant, *, start_new_action: bool = False
+) -> Combatant:
     """SRD §Extra Attack — soft-consume the Action for a main-hand attack
     (R2): the Action is spent only on the FIRST swing of a multi-attack
     sequence (``attack_action_engaged`` False); a later swing this Action
@@ -10706,22 +10786,18 @@ def _consume_attack_budget(live: _LiveCombat, actor_id: str, current: Combatant)
     turn)."""
     for idx, c in enumerate(live.initiative):
         if c.entity_id == actor_id:
-            if not c.attack_action_engaged:
+            if start_new_action or _attack_action_is_spent(c):
                 update: dict[str, Any] = {
                     **_action_payment(c, "attack"),
                     "attack_action_engaged": True,
+                    "loading_weapon_fired_this_action": False,
                     # The count is read as the Action is taken: a form adopted
                     # earlier this turn (Wild Shape is a Bonus Action) swings
                     # with the form's count.
                     "attacks_remaining": _attacks_per_action(live, c) - 1,
                 }
-            elif c.attacks_remaining > 0:
-                update = {"attacks_remaining": c.attacks_remaining - 1}
             else:
-                update = {
-                    **_action_payment(c, "attack"),
-                    "attacks_remaining": _attacks_per_action(live, c) - 1,
-                }
+                update = {"attacks_remaining": c.attacks_remaining - 1}
             live.initiative[idx] = c.model_copy(update=update)
             break
     return _current_actor(live)
@@ -10856,7 +10932,10 @@ def _classify_attack_funding(
         return "construct_bonus"
     if _is_offhand_attack_swing(current, intent, weapon):
         return "light_offhand"
-    if intent.intent_type != "attack" or intent.weapon_id != _UNARMED_STRIKE:
+    unarmed_option = intent.intent_type in ("grapple", "shove") or (
+        intent.intent_type == "attack" and intent.weapon_id == _UNARMED_STRIKE
+    )
+    if not unarmed_option:
         return "action"
     if current.flurry_strikes_remaining > 0:
         return "flurry"
@@ -10874,7 +10953,14 @@ def _intent_economy_failure(
     Unarmed Strike and a construct's repeat need the Bonus Action; every
     other intent goes through ``_action_economy_gate_failure`` (which may
     raise)."""
-    if funding in ("martial_arts_bonus", "construct_bonus") and not current.bonus_action_available:
+    invalid_bonus_unarmed = (
+        intent.use_bonus_action
+        and funding == "action"
+        and (intent.intent_type in ("grapple", "shove") or intent.weapon_id == _UNARMED_STRIKE)
+    )
+    if invalid_bonus_unarmed or (
+        funding in ("martial_arts_bonus", "construct_bonus") and not current.bonus_action_available
+    ):
         return AttackFailed(
             actor_id=current.entity_id, target_id=intent.target_id, reason="no_action_economy"
         )
@@ -10902,10 +10988,17 @@ def _consume_intent_budget(
     Action / Bonus Action / Reaction; an attack spends what ``funding`` names:
     the Attack action's soft-consume, the Light extra attack's Bonus Action
     (none with Nick), one owed Flurry strike, or the Bonus Action."""
-    if intent.intent_type != "attack":
-        return _consume_action_budget(live, actor_id, cost, intent.intent_type)
     if funding == "action":
-        return _consume_attack_budget(live, actor_id, current)
+        if intent.intent_type != "attack":
+            return _consume_action_budget(live, actor_id, cost, intent.intent_type)
+        fresh_loading_action = (
+            weapon is not None
+            and WeaponProperty.LOADING in weapon.properties
+            and current.loading_weapon_fired_this_action
+        )
+        return _consume_attack_budget(
+            live, actor_id, current, start_new_action=fresh_loading_action
+        )
     if funding == "light_offhand":
         return _consume_offhand_attack_budget(live, actor_id, current, weapon)
     if funding == "flurry":
@@ -10971,14 +11064,10 @@ def _record_light_weapon_swing(
 
 
 def _record_loading_weapon_fired(live: _LiveCombat, actor_id: str, current: Combatant) -> Combatant:
-    """Record that this turn's one permitted Loading-weapon shot has been
-    fired (SRD 5.2 Loading), closing the window for any further same-turn
-    attack attempt with a Loading weapon (checked pre-budget in
-    ``submit_player_intent``). Reset to False at the actor's own
-    TurnStarted."""
+    """Record this Attack action's shot; a new Attack action resets the cap."""
     for idx, c in enumerate(live.initiative):
         if c.entity_id == actor_id:
-            live.initiative[idx] = c.model_copy(update={"loading_weapon_fired_this_turn": True})
+            live.initiative[idx] = c.model_copy(update={"loading_weapon_fired_this_action": True})
             break
     return _current_actor(live)
 
@@ -11016,7 +11105,7 @@ def _reject_over_count_targets(
     loader and inspects ``spell.activities`` directly.
 
     Returns ``True`` iff the cast was REJECTED (``CastFailed(reason=
-    "target_invalid")`` emitted and the turn already advanced — the caller must
+    "target_invalid")`` emitted with budgets and turn preserved — the caller must
     return). ``False`` means not applicable (no count-bearing activity) or the
     named targets are all live and within the resolved count N — either way the
     cast proceeds unchanged; ``_count_scaled_targets`` later assumes validity and
@@ -11049,7 +11138,6 @@ def _reject_over_count_targets(
                 reason="target_invalid",
             ),
         )
-        _end_turn_and_advance(live, actor_id)
         return True
     return False
 
@@ -11074,8 +11162,8 @@ def _apply_pre_slot_cast_gates(
     independent and order-insensitive (each returns ``False`` fast when not
     applicable to the intent).
 
-    Returns ``True`` iff any gate emitted ``CastFailed`` and already
-    advanced the turn — the caller must return.
+    Returns ``True`` iff a gate emitted ``CastFailed``; the caller returns
+    with the caster's budgets and turn preserved.
     """
     if (
         intent.intent_type == "cast_spell"
@@ -11091,7 +11179,6 @@ def _apply_pre_slot_cast_gates(
                 reason="ritual_in_combat",
             ),
         )
-        _end_turn_and_advance(live, actor_id)
         return True
     if _drain_counterspell_reaction(live, current, actor_id, intent):
         return True
@@ -11113,7 +11200,7 @@ def _consume_spell_slot(
     draws from Spellcasting first, then Pact — see ``_take_spell_slot``.
 
     Returns ``True`` if the cast was REJECTED (a ``CastFailed`` was emitted
-    and the turn advanced — the caller must return); ``False`` otherwise.
+    with budgets and turn preserved — the caller must return); ``False`` otherwise.
     """
     if not (intent.intent_type == "cast_spell" and intent.spell_id):
         return False
@@ -11138,7 +11225,6 @@ def _consume_spell_slot(
                 reason="no_slot",
             ),
         )
-        _end_turn_and_advance(live, actor_id)
         return True
     # Consume the slot. The typed PC resolver does not touch
     # ``_counter_state``, so this subtract is the authoritative
@@ -11152,7 +11238,6 @@ def _consume_spell_slot(
                 reason="no_slot",
             ),
         )
-        _end_turn_and_advance(live, actor_id)
         return True
     return False
 
@@ -11925,14 +12010,13 @@ def _drain_counterspell_reaction(
             reason="countered",
         ),
     )
-    _end_turn_and_advance(live, actor_id)
     return True
 
 
 async def _dispatch_turn_nonending_intent(
     live: _LiveCombat, current: Combatant, intent: PlayerIntent
 ) -> bool:
-    """Dispatch the turn-non-ending intents; return ``True`` when handled.
+    """Dispatch movement/utility intents; return ``True`` when handled.
 
     SRD §Action Economy — these intents keep the actor on turn (no
     ``_end_turn_and_advance``); the actor may follow with another intent:
@@ -11960,9 +12044,8 @@ async def _dispatch_turn_nonending_intent(
       keeps the actor on turn.
     * ``hide`` — SRD §Actions in Combat, Hide: gate on cover/obscurement,
       roll a DC 15 Dexterity (Stealth) check, grant Invisible on success.
-      CONTROLLER RULING: touches NO Action-economy budget (see
-      ``_handle_hide``'s docstring for the divergence from strict SRD
-      cost) and keeps the actor on turn.
+      Pay an Action, or a Cunning Action Bonus Action when explicitly chosen;
+      continue only for the shared helper's remaining resources/windows.
     * ``stand_up`` — SRD 5.2 Prone, Restricted Movement: spend half Speed
       (rounded down) of movement to end Prone. Touches NO Action/Bonus
       Action budget — movement only — and keeps the actor on turn.
@@ -12123,8 +12206,8 @@ async def submit_player_intent(
     live = _get_live(handle)
     current = _validate_intent_preconditions(live, handle, actor_id, intent=intent)
 
-    # Turn-non-ending intents (move_mark / move / dash) dispatch through
-    # their dedicated handlers and keep the actor on turn — see
+    # Movement and utility intents dispatch through dedicated handlers;
+    # Hide pays its Action and uses the shared continuation helper. See
     # ``_dispatch_turn_nonending_intent``'s docstring for the SRD framing
     # of each.
     if await _dispatch_turn_nonending_intent(live, current, intent):
@@ -12206,7 +12289,7 @@ async def submit_player_intent(
     # consumed, so a rejection spends no Action/Bonus Action/slot and leaves
     # the turn untouched. Order matters and is preserved from the original
     # sequential if-chain: spell range (SRD §Spell Range) -> weapon reach
-    # (SRD §Weapon Reach / Range) -> Loading one-shot-per-turn cap (SRD 5.2
+    # (SRD §Weapon Reach / Range) -> Loading one-shot-per-Action cap (SRD 5.2
     # Loading) -> Charmed target (SRD 5.2 "You can't attack the charmer or
     # target the charmer with damaging abilities or magical effects") ->
     # pre-slot ``target_invalid`` (Hellish Rebuke's fixed target, SRD
@@ -12220,11 +12303,14 @@ async def submit_player_intent(
     # returns a non-``None`` event wins; that event is emitted and the intent
     # is rejected.
     pre_resolution_gates: tuple[Callable[[], CombatEvent | None], ...] = (
+        lambda: _attack_input_failure(live, current, intent, attack_weapon, funding),
         lambda: _spell_out_of_range_failure(live, actor_id, intent, cast_spell_for_timing),
         lambda: _attack_out_of_range_failure(live, actor_id, intent),
-        lambda: _loading_weapon_already_fired_failure(current, actor_id, intent, attack_weapon),
+        lambda: _loading_weapon_already_fired_failure(
+            current, actor_id, intent, attack_weapon, funding
+        ),
         lambda: _charmed_target_failure(live, actor_id, current, intent),
-        lambda: _cast_target_invalid_failure(current, actor_id, intent),
+        lambda: _cast_target_invalid_failure(live, current, actor_id, intent),
         lambda: _area_target_failure(live, current, actor_id, intent, feature_invocation),
         lambda: _action_surge_failure(current, intent),
         lambda: _bardic_inspiration_target_failure(live, actor_id, intent),
@@ -12266,13 +12352,6 @@ async def submit_player_intent(
     # pre-budget target gate above.
     _reject_invalid_escape_grapple_actor(actor_id, intent, current)
 
-    # Consume the budget now: what ``funding`` names for an attack, the
-    # classified Action / Bonus Action / Reaction otherwise. ``current`` is
-    # refreshed so the turn-advance branch below sees the spend.
-    current = _consume_intent_budget(
-        live, actor_id, current, intent, action_cost, funding, attack_weapon
-    )
-
     _emit(
         live,
         IntentSubmitted(
@@ -12284,15 +12363,25 @@ async def submit_player_intent(
         ),
     )
 
+    # Refused or countered casts preserve the caster's Action/Bonus/Reaction
+    # and any Action Surge slot. Slot payment succeeds before action payment.
+    if _apply_pre_slot_cast_gates(live, current, actor_id, intent):
+        return
+    if _consume_spell_slot(live, current, actor_id, intent):
+        return
+    current = _consume_intent_budget(
+        live, actor_id, _current_actor(live), intent, action_cost, funding, attack_weapon
+    )
+
     # SRD §Actions in Combat — Dodge / Help / Unarmed Strike Grapple/Shove /
-    # "Ending a Grapple". Every one is Action-cost (already spent above),
-    # resolves no activities of its own, and ends the turn immediately; each
+    # "Ending a Grapple". Their classified payment is already spent above; each
+    # resolves without activities and shares the continuation helper. Each
     # target/actor-state gate already ran before any budget was touched
     # (``_reject_invalid_help_target`` / ``_reject_invalid_grapple_target`` /
     # ``_reject_invalid_shove_target`` / ``_reject_invalid_escape_grapple_
     # actor``). Collapsed into one dispatch
     # call — see ``_dispatch_simple_turn_ending_intent``'s docstring.
-    if _dispatch_simple_turn_ending_intent(live, current, actor_id, intent):
+    if _dispatch_simple_turn_ending_intent(live, current, actor_id, intent, funding):
         return
 
     # SRD §Ready — a "ready" intent pre-arms the pending-reaction queue
@@ -12317,23 +12406,6 @@ async def submit_player_intent(
                 trigger_event_uuid="",
             ),
         )
-
-    # SRD 5.2 Counterspell (drain a pending "cast_spell" reaction) + C17/R5
-    # (validate a count-bearing cast's named targets — Magic Missile darts,
-    # Hold Person's extra Humanoids) — BOTH run BEFORE the slot gate, so a
-    # countered or rejected cast never reaches ``_consume_spell_slot`` and the
-    # interrupted/rejected caster's slot is never expended; see
-    # docs/dev/reaction-queue.md, "Slot-consumption redesign". Returns True
-    # iff either gate fired a ``CastFailed`` and already advanced the turn
-    # (the wasted action) — the caller must return.
-    if _apply_pre_slot_cast_gates(live, current, actor_id, intent):
-        return
-
-    # SRD §Spellcasting — Spell Slots. Gate + decrement live on the
-    # orchestrator; a rejected cast emits ``CastFailed`` + advances the turn
-    # and signals the caller to return.
-    if _consume_spell_slot(live, current, actor_id, intent):
-        return
 
     # C17 — ``SpellCast`` metadata event (component/material/ritual bookkeeping,
     # never enforced). Emitted right after the slot gate passes so it is
@@ -12598,16 +12670,14 @@ async def submit_player_intent(
         ):
             current = _record_light_weapon_swing(live, actor_id, current, fetched_weapon.slug)
 
-        # SRD 5.2 Loading — after ANY resolved swing (main-hand or off-hand)
-        # with a Loading weapon, mark the actor's one-fire-per-turn cap so a
-        # subsequent same-turn attack attempt with a Loading weapon is
-        # rejected pre-budget above (C15 Task 5). Recorded unconditionally
-        # on hit-or-miss, mirroring the Light-weapon record above — the
-        # SRD caps firing the weapon, not landing the shot.
+        # Loading caps shots within this Attack action, including Nick.
+        # A bonus-funded off-hand shot has a separate one-attack payment.
+        # Firing counts on hit or miss.
         if (
             intent.intent_type == "attack"
             and fetched_weapon is not None
             and WeaponProperty.LOADING in fetched_weapon.properties
+            and (funding == "action" or fetched_weapon.mastery == "nick")
         ):
             current = _record_loading_weapon_fired(live, actor_id, current)
 
@@ -12626,8 +12696,8 @@ async def submit_player_intent(
 
     # SRD §Hold Person / §Hold Monster — *"At the end of each of its turns,
     # the target repeats the save."* This runs as the ``engine:repeat-save``
-    # ``turn_end`` hook inside ``_end_turn_and_advance``, NOT here: a bonus
-    # action does not end the turn, so it must not trigger a repeat save.
+    # ``turn_end`` hook inside ``_end_turn_and_advance``, NOT here: an
+    # unfinished turn must not trigger a repeat save.
     #
     # Advance the turn. End-of-round wraps to next round + emits a
     # RoundStarted; a follow-up RoundEnded would land in the cutover
@@ -12635,30 +12705,20 @@ async def submit_player_intent(
     # surface minimal: TurnEnded → TurnStarted (and RoundStarted on
     # wrap) is what a narrator-side consumer needs to see today.
     #
-    # SRD §Action Economy — a bonus action does NOT end the turn; the
-    # actor keeps initiative and may follow with a regular Action.
-    #
-    # Every swing outside the Attack action (``funding`` other than
-    # ``"action"``: the Light extra attack, a Flurry strike, the Bonus Unarmed
-    # Strike) is bonus-funded too, and ``is_bonus_action`` only covers a
-    # Bonus-Action cast or feature. Without this a one-attack actor's extra
-    # swing would reach ``_attack_action_is_spent`` below and end the turn,
-    # discarding the movement it still owes. A free ``special`` activation
-    # (Action Surge) is part of the turn rather than an action, so it keeps
-    # the turn too.
-    if is_bonus_action or action_cost.is_free_action or funding != "action":
-        _keep_turn(live)
-        return
-    # SRD §Extra Attack — a main-hand attack keeps the turn (R1) while
-    # swings remain this Action, OR a two-weapon-fighting off-hand window
-    # is still open (Task 2 fills the window itself in; until then
-    # ``_twf_window_open`` is always False, so a 1-attack actor's attack
-    # ends the turn exactly as before this feature — the back-compat bar).
-    if intent.intent_type == "attack" and not _attack_action_is_spent(live, current):
-        _keep_turn(live)
-        return
-    # An Action intent ends the turn unless an Action Surge extra action is left.
-    _end_action(live, actor_id, intent)
+    # All completed intents share the continuation decision, including bonus
+    # attacks and free features. They retain any remaining base Action, paid
+    # strikes or legal bonus window; pass explicitly abandons every window.
+    _end_action(
+        live,
+        actor_id,
+        intent,
+        allow_movement=(
+            is_bonus_action
+            or action_cost.is_free_action
+            or funding != "action"
+            or (intent.intent_type == "attack" and _attacks_per_action(live, current) > 1)
+        ),
+    )
 
 
 def _opportunity_attackers(

@@ -66,6 +66,7 @@ def start(
     *,
     seed: int,
     encounter: list[EncounterMemberSpec] | None = None,
+    grid_scene: GridScene | None = None,
     **kwargs: Any,
 ) -> tuple[CombatHandle, _LiveCombat]:
     """Start a combat on a 10x10 grid; ``kwargs`` pass through (``active_effects=``)."""
@@ -74,7 +75,7 @@ def start(
             session_id=f"c20-{seed}",
             party=party,
             encounter=encounter or [foe()],
-            grid_scene=GridScene(width=10, height=10),
+            grid_scene=grid_scene or GridScene(width=10, height=10),
             rng_seed=seed,
             **kwargs,
         )

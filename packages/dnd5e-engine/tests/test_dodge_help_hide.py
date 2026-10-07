@@ -220,7 +220,7 @@ class TestDodgeDexSaveAdvantage:
                         hp_current=20,
                         hp_max=20,
                         spells_known=["acid-splash"],
-                        character_level=1,
+                        character_level=2,
                         zone_id=cell(0, 0),
                     )
                 ],
@@ -511,11 +511,7 @@ class TestHelpExpiry:
 # host/Search concern, out of engine scope; the found-DC (check total) is
 # NOT stored.
 #
-# CONTROLLER RULING: Hide is zero-Action-cost (turn-keeping), NOT the SRD's
-# Action-consuming version — see ``_handle_hide``'s docstring in
-# ``orchestrator.py`` for the rationale (an Action-consuming Hide would make
-# the approved hide-then-attack catalog script unsatisfiable against the
-# hard Action gate the first attack swing enforces).
+# Hide costs an Action; these Rogue 2 fixtures can explicitly choose Cunning Action.
 
 
 def _hide_party(**overrides: object) -> list[PartyMemberSpec]:
@@ -526,6 +522,8 @@ def _hide_party(**overrides: object) -> list[PartyMemberSpec]:
         hp_current=20,
         hp_max=20,
         dexterity=10,
+        class_slug="rogue",
+        character_level=2,
         zone_id=cell(1, 1),
     )
     base.update(overrides)
@@ -568,8 +566,8 @@ class TestHideGateAndCheck:
     def test_hide_behind_three_quarters_cover_rolls_check_and_keeps_turn(self):
         """(a) A ``hide`` intent on a Three-Quarters-cover cell rolls a DC 15
         Dexterity (Stealth) check — modifier = DEX mod + PB (stealth
-        proficient) — and keeps the actor on turn without touching the
-        Action budget (controller ruling: zero-cost, not soft-consumed)."""
+        proficient). It spends the Action and keeps the Rogue on turn for
+        Cunning Action."""
 
         async def _run():
             start = await _start_hide_combat(
@@ -577,7 +575,7 @@ class TestHideGateAndCheck:
                 grid_kw={"cover_cells": {cell(1, 1): "three_quarters"}},
                 dexterity=16,
                 skill_proficiencies=("stealth",),
-                character_level=1,
+                character_level=2,
             )
             await submit_player_intent(
                 start.handle,
@@ -594,7 +592,8 @@ class TestHideGateAndCheck:
         # DEX 16 -> +3 modifier; proficient in Stealth at level 1 -> +2 PB.
         assert rolled.modifier == 5
         hider = next(c for c in live.initiative if c.entity_id == "char:hider")
-        assert hider.action_available is True
+        assert hider.action_available is False
+        assert hider.bonus_action_available is True
         assert live.current_actor_id == "char:hider"
 
     def test_hide_on_a_heavily_obscured_cell_also_gates_open(self):
@@ -656,7 +655,7 @@ class TestHideGrantsInvisibleAndBreaksOnAttack:
             await submit_player_intent(
                 start.handle,
                 actor_id="char:hider",
-                intent=PlayerIntent(intent_type="hide"),
+                intent=PlayerIntent(intent_type="hide", use_bonus_action=True),
             )
             await submit_player_intent(
                 start.handle,
@@ -706,7 +705,7 @@ class TestHideFailedCheck:
             await submit_player_intent(
                 start.handle,
                 actor_id="char:hider",
-                intent=PlayerIntent(intent_type="hide"),
+                intent=PlayerIntent(intent_type="hide", use_bonus_action=True),
             )
             await submit_player_intent(
                 start.handle,
@@ -724,17 +723,10 @@ class TestHideFailedCheck:
         assert attack.advantage == "normal"
 
 
-# ── Final-review fix wave — F3: Hide is retryable-until-success ────────────
-#
-# CONTROLLER RULING: ``_handle_hide`` is zero-cost and turn-keeping with no
-# repeat gate, which lets a host loop ``hide`` intents until the DC 15 check
-# lands. Fix: one Hide attempt per turn — ``Combatant.hide_attempted_this_
-# turn`` gates a second same-turn attempt with
-# ``IntentRejectedError("no_action_economy")`` and zero d20 draws; the gate
-# resets at the actor's own next TurnStarted.
+# Every Hide attempt requires its own Action or Cunning Action payment.
 
 
-class TestHideOncePerTurn:
+class TestHidePayment:
     def test_failed_hide_then_retry_same_turn_is_rejected_with_no_second_roll(self):
         async def _run():
             start = await _start_hide_combat(
@@ -781,7 +773,7 @@ class TestHideOncePerTurn:
                 intent=PlayerIntent(intent_type="pass"),
             )
             await advance_monster_turn(start.handle)
-            # It is now the hider's own next turn — the per-turn gate reset.
+            # The hider's own next turn restores its Action payment.
             await submit_player_intent(
                 start.handle,
                 actor_id="char:hider",
@@ -805,13 +797,13 @@ class TestHideBreaksOnVerbalCast:
                 grid_kw={"cover_cells": {cell(1, 1): "three_quarters"}},
                 dexterity=40,
                 spells_known=["acid-splash"],
-                character_level=1,
+                character_level=2,
                 foe_zone=cell(2, 1),
             )
             await submit_player_intent(
                 start.handle,
                 actor_id="char:hider",
-                intent=PlayerIntent(intent_type="hide"),
+                intent=PlayerIntent(intent_type="hide", use_bonus_action=True),
             )
             live = _get_live(start.handle)
             assert "char:hider" in live.hidden_entities

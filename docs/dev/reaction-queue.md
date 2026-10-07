@@ -110,11 +110,12 @@ Three call sites drain the queue, each for a different trigger:
 
 1. **`submit_player_intent`, `cast_spell` branch, BEFORE `_consume_spell_slot`**
    — `trigger="cast_spell"`, `triggering_actor_id` = the caster. This is
-   Counterspell's hook. It runs earlier than every other cast-time gate
-   (out-of-range / Hellish-Rebuke-target / action-economy have already been
-   validated and the Action already consumed by this point, matching "the
-   action... used to cast it is wasted" — only the SLOT gate has not yet
-   run).
+   Counterspell's hook. Range, target and action-economy validation have
+   already passed, but the caster's slot and Action/Bonus Action/Reaction
+   payment have not run. Character Action Economy preserves those payments
+   and the current turn on a pre-resolution refusal; a Counterspell reactor
+   still pays its own slot and Reaction.
+
 2. **`submit_player_intent`, `cast_spell`/`attack` branches, right after
    `_resolve_targets`** — `trigger="hit_by_attack"` for an `"attack"` intent,
    `trigger="targeted_by_magic_missile"` for a `spell_id == "magic-missile"`
@@ -170,12 +171,12 @@ resolver, with the interrupted caster as sole target.
    to `_consume_spell_slot` and resolves the triggering spell exactly as if
    no reaction had fired.
 5. `succeeded=False` → emit `CastFailed(actor_id=<interrupted caster>,
-   spell_id=<their spell>, reason="countered")`, call `_advance_turn`
-   directly (mirroring the existing `no_slot` / `no_action_economy`
-   `CastFailed` branches' own `_advance_turn` call — the shipped precedent
-   for "a failed cast still ends the turn, with no further activity this
-   turn"), and return `True` — the caller returns immediately, **before**
-   `_consume_spell_slot` ever runs for the triggering spell.
+   spell_id=<their spell>, reason="countered")` and return `True`. The caller
+   returns before the caster's spell-slot and action-budget payment, keeping
+   the current turn. This Character Action Economy pre-resolution contract
+   also preserves refused `no_slot`, ritual and invalid-target casts. It
+   intentionally preserves the caster's Action here despite the SRD's
+   "wasted" wording quoted above; the reactor's payment remains committed.
 
 ### Slot-consumption redesign (closes the discovered "slots consumed at
 submission" entry)

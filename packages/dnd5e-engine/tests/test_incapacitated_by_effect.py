@@ -104,6 +104,7 @@ def test_hold_person_on_a_grappler_releases_its_grapple() -> None:
     )
     handle, live = start([fighter, wizard()], seed=2)
     act(handle, "char:hero", intent_type="grapple", target_id="mon:foe")
+    act(handle, "char:hero", intent_type="pass")  # Decline the remaining Action Surge window.
     assert _has(live, "mon:foe", "grappled")
     hold_person(handle, "char:hero")
     assert _has(live, "char:hero", "paralyzed")
@@ -174,6 +175,7 @@ def test_the_grapple_an_effect_breaks_ends_before_its_condition_lands() -> None:
     )
     handle, live = start([fighter, wizard()], seed=2)
     act(handle, "char:hero", intent_type="grapple", target_id="mon:foe")
+    act(handle, "char:hero", intent_type="pass")  # Decline the remaining Action Surge window.
     mark = len(live.event_log)
     hold_person(handle, "char:hero")
     assert _paralysis_span(live, mark) == [EffectApplied, ConditionRemoved, ConditionApplied]

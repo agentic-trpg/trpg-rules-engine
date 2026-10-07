@@ -263,16 +263,16 @@ def test_the_bonus_unarmed_strike_spends_the_bonus_action() -> None:
 @pytest.mark.parametrize(
     ("class_slug", "equipment"), [("fighter", ()), ("monk", ("leather-armor",))]
 )
-def test_without_martial_arts_use_bonus_action_changes_nothing(
+def test_without_martial_arts_bonus_unarmed_is_refused_without_payment(
     class_slug: str, equipment: tuple[str, ...]
 ) -> None:
-    """No Martial Arts (a Fighter, or a Monk in armor): ``use_bonus_action`` on
-    an Unarmed Strike is an ordinary Attack-action swing, as today. Seed 2:
-    d20 2 + STR 3 + PB 2 hits; 1 + 3 = 4; the one-attack turn ends."""
+    """A missing or inactive Martial Arts cannot fund a Bonus Unarmed Strike."""
     handle, live = start([pc(class_slug=class_slug, strength=16, equipment=equipment)], seed=2)
     _unarmed(handle, use_bonus_action=True)
-    assert [e.amount for e in events(live, DamageApplied)] == [4]
-    assert live.current_actor_id == "mon:foe"
+    assert events(live, DamageApplied) == []
+    assert [e.reason for e in events(live, AttackFailed)] == ["no_action_economy"]
+    assert live.current_actor_id == "char:hero"
+    assert combatant(live).action_available
     assert combatant(live).bonus_action_available
 
 

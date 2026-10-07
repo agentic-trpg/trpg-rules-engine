@@ -574,9 +574,8 @@ class AttackFailed(BaseModel):
         # SRD 5.2 Loading — "You can fire only one piece of ammunition from
         # a Loading weapon when you use an action, a Bonus Action, or a
         # Reaction to fire it, regardless of the number of attacks you can
-        # normally make." Engine reading: one fire per turn (no PC
-        # reaction-attack path exists, so action/bonus/reaction collapse
-        # to the turn boundary). (C15)
+        # normally make." The cap resets for each new Attack action;
+        # Bonus Actions and Reactions are separate payments.
         "weapon_already_fired",
         # SRD 5.2 Bardic Inspiration — the attack asked to redeem a die
         # (``PlayerIntent.redeem_granted_die``) its attacker does not hold, or

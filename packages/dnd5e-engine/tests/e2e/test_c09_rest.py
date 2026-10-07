@@ -152,6 +152,10 @@ def test_c09_s03_second_wind_has_no_per_rest_usage_cap():
             await submit_player_intent(
                 start.handle, actor_id="char:hero", intent=PlayerIntent(intent_type="dodge")
             )
+            # Explicitly decline the still-available Action Surge opportunity.
+            await submit_player_intent(
+                start.handle, actor_id="char:hero", intent=PlayerIntent(intent_type="pass")
+            )
             await advance_monster_turn(start.handle)
 
         return live

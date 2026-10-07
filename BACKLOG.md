@@ -181,11 +181,6 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   target within 5 feet of you"), so a host that sets `reach_ft=10` sees a
   10-ft opportunity attack its on-turn attack can't match.
   (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_pc_attack_out_of_range`)
-- **An `attack` that names no weapon resolves nothing but spends the Action
-  (2026-09-27, C23).** A character's `attack` with neither `weapon_id` nor
-  `stat_block_action_id` emits only `IntentSubmitted` and ends the turn: no
-  attack roll, the Action gone. It should be refused before anything is spent.
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::submit_player_intent`)
 - **An `attack` or an unchosen `use_item` resolves every activity on its
   weapon or item, not the one it means to fire (2026-10-04, C26a).** A
   weapon's own non-attack activity (the Mace of Terror's Wave of Terror
@@ -628,60 +623,14 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   Strike's Focus Point isn't spent either: its cost names the Monk's Focus
   pool — another feature's — which `_feature_activity_cost` never charges.
   (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_feature_activity_cost`)
-- **A one-attack actor's turn still ends with its Attack action (2026-09-24,
-  C20 scope cut).** C14 ends the turn of an actor with one attack per Attack
-  action at its first swing (the back-compat pin
-  `test_one_attack_actor_ends_turn_on_first_swing_back_compat`), so a Monk 1–4
-  has to make its Bonus Unarmed Strike (or, from Monk 2, use Flurry of Blows),
-  and a Fighter 2–4 Action Surge, before the Attack action. Strikes a Flurry still owes keep the
-  turn open after that Attack action until they are made or the monk passes
-  (C20). SRD 5.2 imposes no such order.
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_attack_action_is_spent`)
-- **Flurry of Blows strikes still owed are lost when a turn-ending Action
-  comes next (2026-09-25).** SRD 5.2 Flurry of Blows: "You can expend 1 Focus
-  Point to make two Unarmed Strikes as a Bonus Action." The Focus Point and
-  the Bonus Action are paid when the Flurry is committed, and the strikes are
-  the monk's next Unarmed Strike attacks. They keep the turn open after the
-  Attack action, but a Dodge, Help, Grapple or Shove still ends the turn at
-  once, so the paid strikes lapse unmade.
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_end_action`)
-- **A Monk's Grapple or Shove can't be its Bonus Unarmed Strike or a Flurry
-  strike, and `use_bonus_action` on either is ignored (2026-09-25).** SRD 5.2
-  Martial Arts: "Bonus Unarmed Strike. You can make an Unarmed Strike as a
-  Bonus Action." An Unarmed Strike is "a melee attack that involves you using
-  your body to damage, grapple, or shove a target within 5 feet of you", and
-  Flurry of Blows makes "two Unarmed Strikes". The `grapple` and `shove`
-  intents always take the Action, even with `use_bonus_action=True` or Flurry
-  strikes owed; the flag is silently ignored rather than refused.
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_handle_grapple`,
-  `packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_handle_shove`)
-- **Action Surge: a refused cast still ends the turn, and the extra action
-  funds no feature or item (2026-09-24, C20 scope cut).** A cast refused for
-  want of a slot, countered, attempted as a Ritual or over-counted ends the
-  turn as before, even with an extra action left. SRD 5.2 bars only the Magic
-  action ("On your turn, you can take one additional action, except the Magic
-  action."), but the corpus doesn't mark which features and items need one,
-  so every `use_feature` and `use_item` counts as a Magic action.
+- **Action Surge's extra action funds no Action-costed feature or item
+  (2026-09-24, narrowed 2026-10-07).** The corpus still lacks reliable
+  Magic-action classification for features and items, so every Action-costed
+  `use_feature` and `use_item` conservatively counts as a Magic action.
+  Character Action Economy now preserves refused casts and pays eligible
+  non-Magic actions with the restricted extra slot first, allowing Attack
+  and Magic in either order; the classification gap remains.
   (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_MAGIC_ACTION_INTENTS`)
-- **Action Surge refuses an Attack action followed by a Magic action
-  (2026-09-25).** SRD 5.2 Action Surge: "On your turn, you can take one
-  additional action, except the Magic action." A surged turn may hold one
-  Magic action and one other action in either order, but the engine pays
-  each Action-costed intent with the base Action first and the extra action
-  second, and the extra action can't fund a Magic action. So an attack, then
-  a `cast_spell`, is refused (`CastFailed(reason="no_action_economy")`,
-  nothing spent, turn kept), while the cast, then the attack, works, although
-  the attack could have used the extra action.
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_action_payment`)
-- **A Loading weapon gets no second shot on Action Surge's extra action
-  (2026-09-25).** SRD 5.2 Loading: "You can fire only one piece of ammunition
-  from a Loading weapon when you use an action, a Bonus Action, or a Reaction
-  to fire it, regardless of the number of attacks you can normally make." The
-  engine caps a Loading weapon at one shot per turn, a cap that assumed one
-  action per turn: after a surge, a Heavy Crossbow shot on the extra action is
-  refused with `AttackFailed(reason="weapon_already_fired")`, although that
-  action starts a new Attack action.
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_loading_weapon_already_fired_failure`)
 - **Brutal Strike isn't tied to a Reckless Attack hit (2026-09-25; predates
   C20).** SRD 5.2 Brutal Strike (Barbarian 9): "If you use Reckless Attack,
   you can forgo any Advantage on one Strength-based attack roll of your choice
@@ -733,9 +682,9 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   resolves nothing; Hide's carries one, but it points at an inert "Hiding"
   marker (no `changes`, no `duration`, and `hiding` isn't a recognized SRD
   condition), so it only emits a cosmetic `EffectApplied`. None of the three
-  runs the real mechanic — the feature works through the `dash` and
-  `disengage` intents with `use_bonus_action=True`; Hide charges no budget at
-  all (see "Hide costs no Action").
+  runs the real mechanic — Cunning Action works through the `dash`,
+  `disengage` and `hide` intents with `use_bonus_action=True` (Hide payment
+  corrected 2026-10-07). The corpus marker itself remains unimplemented.
   (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_resolve_feature_invocation`)
 - **Picked features never reach the live feature gate (2026-09-24, C20 scope
   cut).** `_granted_feature_slugs` walks each class's, the subclass's and the
@@ -1054,7 +1003,7 @@ zone + apply logic:
   (or projected `modifier`) on `CheckSpec`.
   (`packages/dnd5e-engine/src/dnd5e_engine/check.py::CheckSpec`)
 - **`ammunition` is parsed and never read (2026-09-02, narrowed by C15).**
-  C15 wired `finesse`, `reach`, `loading` (one-shot-per-turn cap),
+  C15 wired `finesse`, `reach`, `loading` (one-shot-per-Action cap),
   `thrown` (thrown-at-range attacks), `light` (Nick's off-hand-swing
   exemption), `two_handed`/`versatile` (grip selection via
   `PlayerIntent.two_handed`; `versatile_damage` is now chosen when
@@ -1084,16 +1033,6 @@ zone + apply logic:
   catalog acceptance scenario or a harmonised API-DELTAS row — a maintainer
   flag, not an oversight.
   (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py`)
-- **Hide costs no Action** (2026-09-01). SRD 5.2 costs an Action to Hide;
-  `_handle_hide` deliberately charges no Action/Bonus-Action budget (the
-  same turn-keeping shape as Dash/`drop_concentration`) because the
-  approved S02 catalog script requires a hide-then-attack sequence inside
-  one turn, and the first attack swing hard-requires the Action — an
-  Action-consuming Hide would make that script unsatisfiable. Tighten once
-  strict Attack-action accounting lands. Cunning Action's Bonus-Action Hide is
-  just as free (2026-09-24, C20): Dash and Disengage charge the Bonus Action,
-  Hide charges nothing.
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_handle_hide`)
 - **Help's ability-check flavor is unimplemented.** No check-advantage
   producer exists on the check-resolution path, so a helper cannot grant
   Advantage on an ally's upcoming ability check (only the attack-roll

@@ -1,11 +1,11 @@
-"""C15 Task 5 — Loading weapon property, one-shot-per-turn cap (closes
+"""C15 Task 5 — Loading weapon property, one-shot-per-Action cap (closes
 C15-S05).
 
 SRD 5.2 Loading (verbatim): "You can fire only one piece of ammunition
 from a Loading weapon when you use an action, a Bonus Action, or a
 Reaction to fire it, regardless of the number of attacks you can
-normally make." Engine reading: one fire per TURN — no PC reaction-attack
-path exists, so action/bonus/reaction collapse to the turn boundary.
+normally make." Extra Attack cannot fire twice within one Attack action;
+Action Surge opens a fresh Attack action with a fresh Loading allowance.
 """
 
 from __future__ import annotations
@@ -64,10 +64,10 @@ def _start(party, encounter, session_id: str):
     )
 
 
-# ── (a) second same-turn shot with a Loading weapon is rejected ─────────
+# ── (a) second same-Action shot with a Loading weapon is rejected ────────
 
 
-def test_second_same_turn_shot_with_loading_weapon_is_rejected():
+def test_second_same_action_shot_with_loading_weapon_is_rejected():
     async def _run():
         start = await _start([_fighter5()], [_foe()], "c15-t5-a")
         live = _get_live(start.handle)

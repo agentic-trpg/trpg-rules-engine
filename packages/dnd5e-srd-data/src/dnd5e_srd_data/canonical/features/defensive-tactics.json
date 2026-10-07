@@ -94,6 +94,25 @@
     }
   ],
   "advancement": [],
+  "attack_rider_context": {
+    "automatic": false,
+    "choice_group": null,
+    "deferred_options": {},
+    "deferred_reason": "incoming-hit defense requires attacker-specific remaining-turn Disadvantage",
+    "effects": [],
+    "forced_movement": null,
+    "inherit_damage_type": false,
+    "inventory_role": "defensive",
+    "once_per_turn": false,
+    "phase": "after_damage",
+    "qualification": "any_attack",
+    "related_activity_ids": [
+      "ioagLQG0o1axCBtr"
+    ],
+    "sneak_dice_cost": 0,
+    "target_role": "attack_target",
+    "trigger": "final_hit"
+  },
   "description": "You gain one of the following feature options of your choice. Whenever you finish a Short or Long Rest, you can replace the chosen option with the other one.\n\nEscape the Horde. Opportunity Attacks have Disadvantage against you.\n\nMultiattack Defense. When a creature hits you with an attack roll, that creature has Disadvantage on all other attack rolls against you this turn.\n\nFoundry Note\n\nThis feature includes a Multiattack Defense activity with an Active Effect which can be used to track a creature that has Disadvantage against you but it does not automate the effect.",
   "entry_kind": "feature",
   "feature_type": "subclass_feature",

@@ -117,6 +117,25 @@
     }
   ],
   "advancement": [],
+  "attack_rider_context": {
+    "automatic": false,
+    "choice_group": null,
+    "deferred_options": {},
+    "deferred_reason": "pre-attack weapon enchantment requires bound melee weapon and per-hit Radiant damage choice",
+    "effects": [],
+    "forced_movement": null,
+    "inherit_damage_type": false,
+    "inventory_role": "passive",
+    "once_per_turn": false,
+    "phase": "damage_preparation",
+    "qualification": "any_weapon",
+    "related_activity_ids": [
+      "Ew70lNTD8dR3vREt"
+    ],
+    "sneak_dice_cost": 0,
+    "target_role": "attack_target",
+    "trigger": "final_hit"
+  },
   "description": "When you take the Attack action, you can expend one use of your Channel Divinity to imbue one Melee weapon that you are holding with positive energy. For 10 minutes or until you use this feature again, you add your Charisma modifier to attack rolls you make with that weapon (minimum bonus of +1), and each time you hit with it, you cause it to deal its normal damage type or Radiant damage.\n\nThe weapon also emits Bright Light in a 20-foot radius and Dim Light 20 feet beyond that.\n\nYou can end this effect early (no action required). This effect also ends if you aren't carrying the weapon.",
   "entry_kind": "feature",
   "feature_type": "subclass_feature",

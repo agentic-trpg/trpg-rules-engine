@@ -1,6 +1,26 @@
 {
   "activities": [],
   "advancement": [],
+  "attack_rider_choice_limits": {
+    "cunning-strike": 2
+  },
+  "attack_rider_context": {
+    "automatic": false,
+    "choice_group": "cunning-strike",
+    "deferred_options": {},
+    "deferred_reason": "choice-capacity modifier; consumed by owned concrete riders rather than standalone execution",
+    "effects": [],
+    "forced_movement": null,
+    "inherit_damage_type": false,
+    "inventory_role": "foundation",
+    "once_per_turn": false,
+    "phase": "damage_preparation",
+    "qualification": "finesse_or_ranged",
+    "related_activity_ids": [],
+    "sneak_dice_cost": 0,
+    "target_role": "attack_target",
+    "trigger": "sneak_attack_damage"
+  },
   "description": "You can use up to two Cunning Strike effects when you deal Sneak Attack damage, paying the die cost for each effect.\n\nFoundry Note\n\nAfter using Cunning Strike effects use the [[/item Cunning Strike activity=Cunning Sneak Attack]]{Cunning Sneak Attack} activity. It will prompt you to select how many dice you expended on effects and deduct them from your Sneak Attack roll automatically.\n\nYou can control the damage type in the damage roll dialog box.",
   "entry_kind": "feature",
   "feature_type": "class_feature",

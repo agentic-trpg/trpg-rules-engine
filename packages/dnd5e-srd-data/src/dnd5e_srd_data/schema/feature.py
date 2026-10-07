@@ -4,7 +4,14 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, SerializerFunctionWrapHandler, model_serializer
+from pydantic import (
+    BaseModel,
+    Field,
+    NonNegativeInt,
+    PositiveInt,
+    SerializerFunctionWrapHandler,
+    model_serializer,
+)
 
 from dnd5e_srd_data.schema.advancement import AdvancementEntry
 from dnd5e_srd_data.schema.common import Activity, PassiveEffect, Provenance, ReviewState
@@ -14,6 +21,62 @@ FeatureRuntimeOperation = Literal[
     "native", "flurry", "remove_poison", "disengage", "dodge_disengage", "dash_heal"
 ]
 FeatureTargetRule = Literal["other_visible_creature", "perceives_caster"]
+AttackRiderTrigger = Literal["final_hit", "sneak_attack_damage", "flurry_hit", "reckless_hit"]
+AttackRiderQualification = Literal[
+    "any_attack",
+    "any_weapon",
+    "finesse_or_ranged",
+    "monk_weapon_or_unarmed",
+    "flurry_unarmed",
+    "strength",
+    "pact_weapon",
+    "spell_attack",
+    "unarmed",
+    "melee_weapon_or_unarmed",
+]
+AttackRiderPhase = Literal["final_hit_before_damage", "after_damage", "damage_preparation"]
+RiderEffectExpiry = Literal[
+    "none", "source_next_turn_start", "target_next_turn_start", "target_next_turn_end"
+]
+
+
+class RiderEffectSpec(BaseModel, frozen=True):
+    effect_id: str
+    outcome: Literal["always", "failure", "success"] = "always"
+    expiry: RiderEffectExpiry = "none"
+
+
+class RiderForcedMovement(BaseModel, frozen=True):
+    max_distance_ft: NonNegativeInt
+    requires_distance_choice: bool = True
+    on_save: Literal["always", "failure", "success"] = "failure"
+
+
+class AttackRiderSemantics(BaseModel, frozen=True):
+    """Reviewed attack binding; numeric costs and saves stay on its Activity.
+
+    Exact ingestion identities supply these contracts. ``deferred_reason``
+    explains a refusal and never authorizes partial execution. Feature-level
+    context records foundations without a standalone activity, while concrete
+    executable riders live in ``Feature.attack_riders`` keyed by activity id.
+    """
+
+    trigger: AttackRiderTrigger
+    qualification: AttackRiderQualification
+    phase: AttackRiderPhase
+    target_role: Literal["attack_target", "attacker"] = "attack_target"
+    choice_group: str | None = None
+    once_per_turn: bool = False
+    sneak_dice_cost: NonNegativeInt = 0
+    inherit_damage_type: bool = False
+    effects: tuple[RiderEffectSpec, ...] = ()
+    forced_movement: RiderForcedMovement | None = None
+    automatic: bool = False
+    deferred_reason: str | None = None
+    deferred_options: dict[str, str] = Field(default_factory=dict)
+    inventory_role: Literal["rider", "foundation", "producer", "passive", "defensive"] = "rider"
+    related_activity_ids: tuple[str, ...] = ()
+
 
 # SRD 5.2 rest / recharge periods a limited-use feature recovers on. Foundry's
 # ``uses.recovery[].period`` vocabulary observed across the SRD feature corpus;
@@ -78,6 +141,9 @@ class Feature(BaseModel):
     # payload. Ingestion owns the exact identities; runtime consumes this type.
     runtime_operations: dict[str, FeatureRuntimeOperation] = Field(default_factory=dict)
     target_rules: dict[str, FeatureTargetRule] = Field(default_factory=dict)
+    attack_riders: dict[str, AttackRiderSemantics] = Field(default_factory=dict)
+    attack_rider_choice_limits: dict[str, PositiveInt] = Field(default_factory=dict)
+    attack_rider_context: AttackRiderSemantics | None = None
     provenance: Provenance
     review: ReviewState = Field(default_factory=ReviewState)
 
@@ -90,4 +156,10 @@ class Feature(BaseModel):
             data.pop("runtime_operations", None)
         if not self.target_rules:
             data.pop("target_rules", None)
+        if not self.attack_riders:
+            data.pop("attack_riders", None)
+        if not self.attack_rider_choice_limits:
+            data.pop("attack_rider_choice_limits", None)
+        if self.attack_rider_context is None:
+            data.pop("attack_rider_context", None)
         return data

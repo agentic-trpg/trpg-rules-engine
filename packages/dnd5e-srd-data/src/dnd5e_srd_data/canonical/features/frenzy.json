@@ -115,6 +115,25 @@
     }
   ],
   "advancement": [],
+  "attack_riders": {
+    "myPBq8xozti108Mc": {
+      "automatic": false,
+      "choice_group": null,
+      "deferred_options": {},
+      "deferred_reason": "requires first-attack Reckless decision, Strength Advantage and incoming Advantage lifecycle; also requires active Rage and first qualifying target per own turn",
+      "effects": [],
+      "forced_movement": null,
+      "inherit_damage_type": true,
+      "inventory_role": "rider",
+      "once_per_turn": false,
+      "phase": "damage_preparation",
+      "qualification": "strength",
+      "related_activity_ids": [],
+      "sneak_dice_cost": 0,
+      "target_role": "attack_target",
+      "trigger": "reckless_hit"
+    }
+  },
   "description": "If you use Reckless Attack while your Rage is active, you deal extra damage to the first target you hit on your turn with a Strength-based attack. To determine the extra damage, roll a number of d6s equal to your Rage Damage bonus, and add them together. The damage has the same type as the weapon or Unarmed Strike used for the attack.\n\nFoundry Note\n\nThe Damage activity scales automatically as you level up and allows you to select the type of damage to use in the damage roll's dialog box. It will then remember your choice going forward.",
   "entry_kind": "feature",
   "feature_type": "subclass_feature",

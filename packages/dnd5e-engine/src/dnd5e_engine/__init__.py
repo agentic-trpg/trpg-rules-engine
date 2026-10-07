@@ -27,6 +27,7 @@ try:  # pragma: no cover - trivial packaging fallback
 except PackageNotFoundError:  # pragma: no cover - source tree without install
     __version__ = "0.0.0+unknown"
 
+from dnd5e_engine.attack_riders import AttackRiderRequest
 from dnd5e_engine.build_party import build_party_member
 from dnd5e_engine.build_spec import (
     AbilityScores,
@@ -93,6 +94,7 @@ __all__ = [
     "ActiveEffectChange",
     "ActiveEffectDuration",
     "AdvantageSource",
+    "AttackRiderRequest",
     "CharacterBuildSpec",
     "CheckKind",
     "CheckRequest",

@@ -9,6 +9,7 @@ TOP_LEVEL = {
     "ActiveEffectChange",
     "ActiveEffectDuration",
     "AdvantageSource",
+    "AttackRiderRequest",
     "CharacterBuildSpec",
     "CheckKind",
     "CheckResult",
@@ -87,6 +88,19 @@ PUBLIC_MODULES = [
 
 def test_top_level_surface_is_exact():
     assert set(dnd5e_engine.__all__) == TOP_LEVEL
+
+
+def test_attack_rider_request_is_public_and_serializes_only_content_choices() -> None:
+    from dnd5e_engine import AttackRiderRequest
+    from dnd5e_engine.attack_riders import AttackRiderRequest as RiderModel
+
+    assert AttackRiderRequest is RiderModel
+    request = AttackRiderRequest(feature_id="stunning-strike", activity_id="stun")
+    assert request.model_dump() == {
+        "feature_id": "stunning-strike",
+        "activity_id": "stun",
+        "push_distance_ft": None,
+    }
 
 
 def test_every_public_module_declares_all():

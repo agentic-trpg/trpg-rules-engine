@@ -103,6 +103,25 @@
     }
   ],
   "advancement": [],
+  "attack_rider_context": {
+    "automatic": false,
+    "choice_group": null,
+    "deferred_options": {},
+    "deferred_reason": "requires attributed Hunter's Mark triggering damage and chosen second visible target",
+    "effects": [],
+    "forced_movement": null,
+    "inherit_damage_type": false,
+    "inventory_role": "passive",
+    "once_per_turn": false,
+    "phase": "after_damage",
+    "qualification": "any_attack",
+    "related_activity_ids": [
+      "yqOAxbsX16RkOx06"
+    ],
+    "sneak_dice_cost": 0,
+    "target_role": "attack_target",
+    "trigger": "final_hit"
+  },
   "description": "Once per turn when you deal damage to a creature marked by your Hunter's Mark, you can also deal that spell's extra damage to a different creature that you can see within 30 feet of the first creature.\n\nFoundry Note\n\nYou can apply the damage from Hunter's Mark or use the Damage activity on this feature.",
   "entry_kind": "feature",
   "feature_type": "subclass_feature",

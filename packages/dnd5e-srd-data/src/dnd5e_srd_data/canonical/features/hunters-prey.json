@@ -115,6 +115,25 @@
     }
   ],
   "advancement": [],
+  "attack_riders": {
+    "Ek6m8ZY5Df7Mp6DO": {
+      "automatic": false,
+      "choice_group": null,
+      "deferred_options": {},
+      "deferred_reason": "requires validated Colossus Slayer option and target missing-HP qualification",
+      "effects": [],
+      "forced_movement": null,
+      "inherit_damage_type": false,
+      "inventory_role": "rider",
+      "once_per_turn": false,
+      "phase": "after_damage",
+      "qualification": "any_weapon",
+      "related_activity_ids": [],
+      "sneak_dice_cost": 0,
+      "target_role": "attack_target",
+      "trigger": "final_hit"
+    }
+  },
   "description": "You gain one of the following feature options of your choice. Whenever you finish a Short or Long Rest, you can replace the chosen option with the other one.\n\nColossus Slayer. Your tenacity can wear down even the most resilient foes. When you hit a creature with a weapon, the weapon deals an extra 1d8 damage to the target if it's missing any of its Hit Points. You can deal this extra damage only once per turn.\n\nHorde Breaker. Once on each of your turns when you make an attack with a weapon, you can make another attack with the same weapon against a different creature that is within 5 feet of the original target, that is within the weapon's range, and that you haven't attacked this turn.\n\nFoundry Note\n\nThis feature includes a Colossus Slayer activity for the additional damage. You can select the correct damage type in the roll dialog.\n\nFor the Horde Breaker option simply make another attack.",
   "entry_kind": "feature",
   "feature_type": "subclass_feature",

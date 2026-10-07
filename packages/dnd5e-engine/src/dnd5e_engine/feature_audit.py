@@ -14,6 +14,7 @@ import sys
 from collections import Counter
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Literal
 
 from dnd5e_srd_data.loader import AssetLoader, BundledAssetLoader
 
@@ -42,6 +43,11 @@ class FeatureAuditRow:
     reason: str
     formula_error: str | None
     resource_error: str | None
+    execution_path: Literal[
+        "standalone_activity", "attack_triggered_rider", "other_event_triggered"
+    ]
+    standalone_executable: bool
+    rider_executable: bool
 
 
 def reachable_actors(loader: AssetLoader) -> dict[str, Combatant]:
@@ -180,6 +186,15 @@ def audit_features(loader: AssetLoader) -> tuple[FeatureAuditRow, ...]:
                     reason,
                     formula_error,
                     resource_error,
+                    (
+                        "attack_triggered_rider"
+                        if activity.id in feature.attack_riders
+                        else "other_event_triggered"
+                        if classification == "semantic_special_case"
+                        else "standalone_activity"
+                    ),
+                    classification == "fully_resolvable",
+                    classification == "attack_rider_executable",
                 )
             )
     return tuple(rows)

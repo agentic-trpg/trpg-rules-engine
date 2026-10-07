@@ -1,6 +1,23 @@
 {
   "activities": [],
   "advancement": [],
+  "attack_rider_context": {
+    "automatic": false,
+    "choice_group": null,
+    "deferred_options": {},
+    "deferred_reason": "critical-hit movement requires a selected half-Speed post-hit movement grant without Opportunity Attacks",
+    "effects": [],
+    "forced_movement": null,
+    "inherit_damage_type": false,
+    "inventory_role": "passive",
+    "once_per_turn": false,
+    "phase": "after_damage",
+    "qualification": "any_attack",
+    "related_activity_ids": [],
+    "sneak_dice_cost": 0,
+    "target_role": "attack_target",
+    "trigger": "final_hit"
+  },
   "description": "Thanks to your athleticism, you have Advantage on Initiative rolls and Strength (Athletics) checks.\n\nIn addition, immediately after you score a Critical Hit, you can move up to half your Speed without provoking Opportunity Attacks.\n\nFoundry Note\n\nThis feature automatically grants Advantage on Initiative rolls.",
   "entry_kind": "feature",
   "feature_type": "subclass_feature",

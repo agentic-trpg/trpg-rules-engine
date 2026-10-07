@@ -102,6 +102,25 @@
     }
   ],
   "advancement": [],
+  "attack_riders": {
+    "OXhI1TDQxORrGAgc": {
+      "automatic": false,
+      "choice_group": null,
+      "deferred_options": {},
+      "deferred_reason": "requires validated selected cantrip invocation binding and authoritative target size",
+      "effects": [],
+      "forced_movement": null,
+      "inherit_damage_type": false,
+      "inventory_role": "rider",
+      "once_per_turn": false,
+      "phase": "after_damage",
+      "qualification": "spell_attack",
+      "related_activity_ids": [],
+      "sneak_dice_cost": 0,
+      "target_role": "attack_target",
+      "trigger": "final_hit"
+    }
+  },
   "description": "Prerequisite: Level 2+ Warlock, a Warlock Cantrip That Deals Damage via an Attack Roll\n\nChoose one of your known Warlock cantrips that requires an attack roll. When you hit a Large or smaller creature with that cantrip, you can push the creature up to 10 feet straight away from you.\n\nRepeatable. You can gain this invocation more than once. Each time you do so, choose a different eligible cantrip.\n\nFoundry Note\n\nThe Make Repelling activity can be used to enchant a cantrip which adds \", Repelling\" as a reminder.",
   "entry_kind": "feature",
   "feature_type": "class_feature",

@@ -284,6 +284,75 @@
     }
   ],
   "advancement": [],
+  "attack_riders": {
+    "1jdSaWanuRrdkVs3": {
+      "automatic": false,
+      "choice_group": "open-hand-technique",
+      "deferred_options": {},
+      "deferred_reason": null,
+      "effects": [
+        {
+          "effect_id": "uQ474o5Wsv3sEAJK",
+          "expiry": "target_next_turn_start",
+          "outcome": "always"
+        }
+      ],
+      "forced_movement": null,
+      "inherit_damage_type": false,
+      "inventory_role": "rider",
+      "once_per_turn": false,
+      "phase": "after_damage",
+      "qualification": "flurry_unarmed",
+      "related_activity_ids": [],
+      "sneak_dice_cost": 0,
+      "target_role": "attack_target",
+      "trigger": "flurry_hit"
+    },
+    "5Qgc0K3TfuonkPIG": {
+      "automatic": false,
+      "choice_group": "open-hand-technique",
+      "deferred_options": {},
+      "deferred_reason": null,
+      "effects": [
+        {
+          "effect_id": "E1A8QE6kPsLgqTAP",
+          "expiry": "none",
+          "outcome": "failure"
+        }
+      ],
+      "forced_movement": null,
+      "inherit_damage_type": false,
+      "inventory_role": "rider",
+      "once_per_turn": false,
+      "phase": "after_damage",
+      "qualification": "flurry_unarmed",
+      "related_activity_ids": [],
+      "sneak_dice_cost": 0,
+      "target_role": "attack_target",
+      "trigger": "flurry_hit"
+    },
+    "XoaS0RtDCGAqrQsf": {
+      "automatic": false,
+      "choice_group": "open-hand-technique",
+      "deferred_options": {},
+      "deferred_reason": null,
+      "effects": [],
+      "forced_movement": {
+        "max_distance_ft": 15,
+        "on_save": "failure",
+        "requires_distance_choice": true
+      },
+      "inherit_damage_type": false,
+      "inventory_role": "rider",
+      "once_per_turn": false,
+      "phase": "after_damage",
+      "qualification": "flurry_unarmed",
+      "related_activity_ids": [],
+      "sneak_dice_cost": 0,
+      "target_role": "attack_target",
+      "trigger": "flurry_hit"
+    }
+  },
   "description": "Whenever you hit a creature with an attack granted by your Flurry of Blows, you can impose one of the following effects on that target.\n\nAddle. The target can't make Opportunity Attacks until the start of its next turn.\n\nPush. The target must succeed on a Strength saving throw or be pushed up to 15 feet away from you.\n\nTopple. The target must succeed on a Dexterity saving throw or have the Prone condition.\n\nFoundry Note\n\nThe Addle activity includes an Active Effect for tracking the addled target.\n\nThe Topple activity includes an Active Effect that applies the Prone status.",
   "entry_kind": "feature",
   "feature_type": "subclass_feature",
@@ -291,7 +360,14 @@
   "name": "Open Hand Technique",
   "passive_effects": [
     {
-      "changes": [],
+      "changes": [
+        {
+          "key": "flags.cannot_make_opportunity_attacks",
+          "mode": 5,
+          "priority": null,
+          "value": "true"
+        }
+      ],
       "description": "",
       "disabled": false,
       "duration": {

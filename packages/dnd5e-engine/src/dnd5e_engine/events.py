@@ -82,6 +82,7 @@ AdvantageSource = Literal[
     "trait",
     "armor",
     "charmed",
+    "feature_rider",
 ]
 
 EffectExpiryReason = Literal[
@@ -292,6 +293,36 @@ class AttackRolled(BaseModel):
     # unchanged for backward compatibility.
     advantage_sources: list[AdvantageSource] = Field(default_factory=list)
     disadvantage_sources: list[AdvantageSource] = Field(default_factory=list)
+
+
+class RiderResourceSpent(BaseModel):
+    feature_id: str
+    cost: int = Field(ge=1)
+    maximum: int = Field(ge=0)
+
+
+class AttackRiderTriggered(BaseModel):
+    type: Literal["attack_rider_triggered"] = "attack_rider_triggered"
+    attacker_id: str
+    target_id: str
+    feature_id: str
+    activity_id: str
+    source_activity_id: str
+    trigger: Literal["final_hit", "sneak_attack_damage", "flurry_hit", "reckless_hit"]
+    phase: Literal["final_hit_before_damage", "after_damage", "damage_preparation"]
+    resource_spent: tuple[RiderResourceSpent, ...] = ()
+    sacrificed_sneak_dice: int = Field(default=0, ge=0)
+    save_outcome: Literal["success", "failure"] | None = None
+
+
+class EffectModifiersConsumed(BaseModel):
+    """Consume specific one-roll grants while retaining the effect's other clauses."""
+
+    type: Literal["effect_modifiers_consumed"] = "effect_modifiers_consumed"
+    target_id: str
+    effect_id: str
+    origin: str
+    keys: tuple[Literal["flags.attack.next_advantage", "attack.next_bonus"], ...]
 
 
 class SaveRolled(BaseModel):
@@ -625,6 +656,7 @@ class AttackFailed(BaseModel):
         # later turns, you can move the force up to 20 feet and repeat the
         # attack").
         "action_unavailable",
+        "unsupported_rider",
     ]
 
 
@@ -826,6 +858,8 @@ CombatEvent = Annotated[
     | TurnPhase
     | IntentSubmitted
     | AttackRolled
+    | AttackRiderTriggered
+    | EffectModifiersConsumed
     | SaveRolled
     | CheckRolled
     | DamageApplied
@@ -875,6 +909,8 @@ ALL_COMBAT_EVENT_TYPES: tuple[type[BaseModel], ...] = (
     TurnPhase,
     IntentSubmitted,
     AttackRolled,
+    AttackRiderTriggered,
+    EffectModifiersConsumed,
     SaveRolled,
     CheckRolled,
     DamageApplied,
@@ -923,6 +959,7 @@ __all__ = [
     "AreaShape",
     "AreaTargeted",
     "AttackFailed",
+    "AttackRiderTriggered",
     "AttackRolled",
     "CastFailed",
     "CastFailedReason",
@@ -949,6 +986,7 @@ __all__ = [
     "EffectApplied",
     "EffectExpired",
     "EffectExpiryReason",
+    "EffectModifiersConsumed",
     "HealingApplied",
     "IntentSubmitted",
     "IntentType",
@@ -958,6 +996,7 @@ __all__ = [
     "ReactionTriggered",
     "RechargeRolled",
     "RequiredSense",
+    "RiderResourceSpent",
     "RoundEnded",
     "RoundStarted",
     "SaveRolled",

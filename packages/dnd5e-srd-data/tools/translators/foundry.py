@@ -89,6 +89,13 @@ from dnd5e_srd_data import (
     WeaponProperty,
 )
 from dnd5e_srd_data.schema.common import ReactionCondition, ReactionTriggerKind
+from tools.translators.attack_riders import (
+    attack_rider_activities,
+    attack_rider_choice_limits,
+    attack_rider_context,
+    attack_rider_effects,
+    attack_riders,
+)
 from tools.translators.feature_runtime import (
     feature_runtime_activities,
     feature_runtime_effects,
@@ -3098,7 +3105,9 @@ def translate_feature_yaml(
     system = doc.get("system") or {}
     feature_type, source_slug = _feature_type_and_source(yaml_path)
     slug = _feature_slug(doc, yaml_path)
-    activities = feature_runtime_activities(slug, _translate_activities(system))
+    activities = attack_rider_activities(
+        slug, feature_runtime_activities(slug, _translate_activities(system))
+    )
     return Feature(
         slug=slug,
         name=_name(doc),
@@ -3109,7 +3118,12 @@ def translate_feature_yaml(
         activities=activities,
         runtime_operations=feature_runtime_operations(slug, [a.id for a in activities]),
         target_rules=feature_target_rules(slug, [a.id for a in activities]),
-        passive_effects=feature_runtime_effects(slug, _passive_effects(doc)),
+        attack_riders=attack_riders(slug, [a.id for a in activities]),
+        attack_rider_choice_limits=attack_rider_choice_limits(slug),
+        attack_rider_context=attack_rider_context(slug),
+        passive_effects=attack_rider_effects(
+            slug, feature_runtime_effects(slug, _passive_effects(doc))
+        ),
         advancement=_advancement(system),
         uses=_feature_uses(system),
         provenance=_provenance(yaml_path, ingest_date, ingest_version),

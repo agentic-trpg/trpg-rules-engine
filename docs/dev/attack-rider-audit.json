@@ -1,0 +1,1734 @@
+{
+  "counts": {
+    "deferred_rider": 26,
+    "executable_rider": 6,
+    "supporting_context": 19
+  },
+  "role_counts": {
+    "defensive": 6,
+    "foundation": 6,
+    "passive": 5,
+    "producer": 2,
+    "rider": 32
+  },
+  "feature_sources": 36,
+  "concrete_rider_activities": 31,
+  "inventory_rows": 51,
+  "inventory_notes": {
+    "scope": "entire canonical feature corpus reviewed; item/feat riders remain excluded",
+    "discovery": "ingestion-time exact feature/activity mappings; no runtime prose parsing",
+    "support": "standalone refusal is independent from authoritative attack-rider execution",
+    "obscure": "canonical Dexterity save; Blinded until end of target's next turn",
+    "incoming_hit": "defensive reaction contexts are inventoried but not executed as outgoing riders"
+  },
+  "rows": [
+    {
+      "feature_slug": "blessed-strikes",
+      "activity_id": null,
+      "option_id": null,
+      "inventory_role": "foundation",
+      "trigger": "final_hit",
+      "qualification": "any_weapon",
+      "execution_phase": "after_damage",
+      "target_role": "attack_target",
+      "once_per_turn": false,
+      "choice_group": null,
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [],
+        "feature_uses": null,
+        "sneak_dice_cost": 0,
+        "inherit_damage_type": false,
+        "commit": null
+      },
+      "save": null,
+      "effects": [],
+      "forced_movement": null,
+      "fully_executable": false,
+      "standalone_use_feature_rejected": true,
+      "classification": "supporting_context",
+      "deferred_reason": "choice container; concrete Divine Strike options carry separate activities"
+    },
+    {
+      "feature_slug": "blessed-strikes-divine-strike",
+      "activity_id": "uYVz8MBW0EZ2X0zD",
+      "option_id": null,
+      "inventory_role": "rider",
+      "trigger": "final_hit",
+      "qualification": "any_weapon",
+      "execution_phase": "after_damage",
+      "target_role": "attack_target",
+      "once_per_turn": false,
+      "choice_group": null,
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [],
+        "feature_uses": null,
+        "sneak_dice_cost": 0,
+        "inherit_damage_type": false,
+        "commit": null
+      },
+      "save": null,
+      "effects": [],
+      "forced_movement": null,
+      "fully_executable": false,
+      "standalone_use_feature_rejected": true,
+      "classification": "deferred_rider",
+      "deferred_reason": "requires on-own-turn qualification and validated Divine Strike choice/scaling"
+    },
+    {
+      "feature_slug": "blessed-strikes-divine-strike",
+      "activity_id": "MbCGfaQAeW2rzNWb",
+      "option_id": null,
+      "inventory_role": "rider",
+      "trigger": "final_hit",
+      "qualification": "any_weapon",
+      "execution_phase": "after_damage",
+      "target_role": "attack_target",
+      "once_per_turn": false,
+      "choice_group": null,
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [],
+        "feature_uses": null,
+        "sneak_dice_cost": 0,
+        "inherit_damage_type": false,
+        "commit": null
+      },
+      "save": null,
+      "effects": [],
+      "forced_movement": null,
+      "fully_executable": false,
+      "standalone_use_feature_rejected": true,
+      "classification": "deferred_rider",
+      "deferred_reason": "requires on-own-turn qualification and validated Divine Strike choice/scaling"
+    },
+    {
+      "feature_slug": "brutal-strike",
+      "activity_id": "nN5gsB6AcSQ4uQPN",
+      "option_id": "forceful-blow",
+      "inventory_role": "rider",
+      "trigger": "reckless_hit",
+      "qualification": "strength",
+      "execution_phase": "damage_preparation",
+      "target_role": "attack_target",
+      "once_per_turn": false,
+      "choice_group": "brutal-strike",
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [],
+        "feature_uses": null,
+        "sneak_dice_cost": 0,
+        "inherit_damage_type": true,
+        "commit": null
+      },
+      "save": null,
+      "effects": [],
+      "forced_movement": null,
+      "fully_executable": false,
+      "standalone_use_feature_rejected": true,
+      "classification": "deferred_rider",
+      "deferred_reason": "requires first-attack Reckless decision, Strength Advantage and incoming Advantage lifecycle; also requires selected straight-toward half-Speed follow movement without OA"
+    },
+    {
+      "feature_slug": "brutal-strike",
+      "activity_id": "nN5gsB6AcSQ4uQPN",
+      "option_id": "hamstring-blow",
+      "inventory_role": "rider",
+      "trigger": "reckless_hit",
+      "qualification": "strength",
+      "execution_phase": "damage_preparation",
+      "target_role": "attack_target",
+      "once_per_turn": false,
+      "choice_group": "brutal-strike",
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [],
+        "feature_uses": null,
+        "sneak_dice_cost": 0,
+        "inherit_damage_type": true,
+        "commit": null
+      },
+      "save": null,
+      "effects": [],
+      "forced_movement": null,
+      "fully_executable": false,
+      "standalone_use_feature_rejected": true,
+      "classification": "deferred_rider",
+      "deferred_reason": "requires first-attack Reckless decision, Strength Advantage and incoming Advantage lifecycle; latest-only speed reduction awaits complete foundation"
+    },
+    {
+      "feature_slug": "cunning-strike",
+      "activity_id": "n64fvJMT9fPUy7DH",
+      "option_id": null,
+      "inventory_role": "rider",
+      "trigger": "sneak_attack_damage",
+      "qualification": "finesse_or_ranged",
+      "execution_phase": "after_damage",
+      "target_role": "attack_target",
+      "once_per_turn": false,
+      "choice_group": "cunning-strike",
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [],
+        "feature_uses": null,
+        "sneak_dice_cost": 1,
+        "inherit_damage_type": false,
+        "commit": null
+      },
+      "save": {
+        "ability": [
+          "con"
+        ],
+        "dc": {
+          "calculation": "dex",
+          "formula": ""
+        },
+        "ignore_cover": false
+      },
+      "effects": [],
+      "forced_movement": null,
+      "fully_executable": false,
+      "standalone_use_feature_rejected": true,
+      "classification": "deferred_rider",
+      "deferred_reason": "requires authoritative Poisoner's Kit inventory and repeated end-turn save lifecycle"
+    },
+    {
+      "feature_slug": "cunning-strike",
+      "activity_id": "dWcCw1vTWRMx4YzD",
+      "option_id": null,
+      "inventory_role": "rider",
+      "trigger": "sneak_attack_damage",
+      "qualification": "finesse_or_ranged",
+      "execution_phase": "after_damage",
+      "target_role": "attack_target",
+      "once_per_turn": false,
+      "choice_group": "cunning-strike",
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [],
+        "feature_uses": null,
+        "sneak_dice_cost": 1,
+        "inherit_damage_type": false,
+        "commit": null
+      },
+      "save": {
+        "ability": [
+          "dex"
+        ],
+        "dc": {
+          "calculation": "dex",
+          "formula": ""
+        },
+        "ignore_cover": false
+      },
+      "effects": [],
+      "forced_movement": null,
+      "fully_executable": false,
+      "standalone_use_feature_rejected": true,
+      "classification": "deferred_rider",
+      "deferred_reason": "requires authoritative target size Large or smaller"
+    },
+    {
+      "feature_slug": "cunning-strike",
+      "activity_id": "jR7KqMuPOZYUCDyO",
+      "option_id": null,
+      "inventory_role": "rider",
+      "trigger": "sneak_attack_damage",
+      "qualification": "finesse_or_ranged",
+      "execution_phase": "damage_preparation",
+      "target_role": "attack_target",
+      "once_per_turn": false,
+      "choice_group": null,
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [],
+        "feature_uses": null,
+        "sneak_dice_cost": 0,
+        "inherit_damage_type": true,
+        "commit": null
+      },
+      "save": null,
+      "effects": [],
+      "forced_movement": null,
+      "fully_executable": false,
+      "standalone_use_feature_rejected": true,
+      "classification": "deferred_rider",
+      "deferred_reason": "legacy Cunning Sneak Attack damage helper is replaced by authoritative dice sacrifice"
+    },
+    {
+      "feature_slug": "cunning-strike",
+      "activity_id": "m2bRZ1YeD3yf9nV7",
+      "option_id": null,
+      "inventory_role": "rider",
+      "trigger": "sneak_attack_damage",
+      "qualification": "finesse_or_ranged",
+      "execution_phase": "after_damage",
+      "target_role": "attack_target",
+      "once_per_turn": false,
+      "choice_group": "cunning-strike",
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [],
+        "feature_uses": null,
+        "sneak_dice_cost": 1,
+        "inherit_damage_type": false,
+        "commit": null
+      },
+      "save": null,
+      "effects": [],
+      "forced_movement": null,
+      "fully_executable": false,
+      "standalone_use_feature_rejected": true,
+      "classification": "deferred_rider",
+      "deferred_reason": "requires immediate selected half-Speed movement with OA exemption limited to that movement"
+    },
+    {
+      "feature_slug": "defensive-tactics",
+      "activity_id": "ioagLQG0o1axCBtr",
+      "option_id": null,
+      "inventory_role": "defensive",
+      "trigger": "final_hit",
+      "qualification": "any_attack",
+      "execution_phase": "after_damage",
+      "target_role": "attack_target",
+      "once_per_turn": false,
+      "choice_group": null,
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [],
+        "feature_uses": null,
+        "sneak_dice_cost": 0,
+        "inherit_damage_type": false,
+        "commit": null
+      },
+      "save": null,
+      "effects": [],
+      "forced_movement": null,
+      "fully_executable": false,
+      "standalone_use_feature_rejected": true,
+      "classification": "supporting_context",
+      "deferred_reason": "incoming-hit defense requires attacker-specific remaining-turn Disadvantage"
+    },
+    {
+      "feature_slug": "deflect-attacks",
+      "activity_id": "rQwRKkuZ7WhnB7v7",
+      "option_id": null,
+      "inventory_role": "defensive",
+      "trigger": "final_hit",
+      "qualification": "any_attack",
+      "execution_phase": "final_hit_before_damage",
+      "target_role": "attack_target",
+      "once_per_turn": false,
+      "choice_group": null,
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [],
+        "feature_uses": null,
+        "sneak_dice_cost": 0,
+        "inherit_damage_type": false,
+        "commit": null
+      },
+      "save": null,
+      "effects": [],
+      "forced_movement": null,
+      "fully_executable": false,
+      "standalone_use_feature_rejected": true,
+      "classification": "supporting_context",
+      "deferred_reason": "incoming-hit reaction requires damage reduction, damage-type qualification and redirected damage lifecycle"
+    },
+    {
+      "feature_slug": "deflect-attacks",
+      "activity_id": "dJv36KHyIVsbD00p",
+      "option_id": null,
+      "inventory_role": "defensive",
+      "trigger": "final_hit",
+      "qualification": "any_attack",
+      "execution_phase": "final_hit_before_damage",
+      "target_role": "attack_target",
+      "once_per_turn": false,
+      "choice_group": null,
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [
+          {
+            "type": "itemUses",
+            "target": "Compendium.dnd5e.classes24.Item.phbmnkMonksFocus",
+            "value": "1",
+            "scaling": {
+              "mode": "",
+              "formula": ""
+            }
+          }
+        ],
+        "feature_uses": null,
+        "sneak_dice_cost": 0,
+        "inherit_damage_type": false,
+        "commit": null
+      },
+      "save": {
+        "ability": [
+          "dex"
+        ],
+        "dc": {
+          "calculation": "wis",
+          "formula": ""
+        },
+        "ignore_cover": false
+      },
+      "effects": [],
+      "forced_movement": null,
+      "fully_executable": false,
+      "standalone_use_feature_rejected": true,
+      "classification": "supporting_context",
+      "deferred_reason": "incoming-hit reaction requires damage reduction, damage-type qualification and redirected damage lifecycle"
+    },
+    {
+      "feature_slug": "deflect-energy",
+      "activity_id": "F7NbTRmkUTDDZxj7",
+      "option_id": null,
+      "inventory_role": "defensive",
+      "trigger": "final_hit",
+      "qualification": "any_attack",
+      "execution_phase": "final_hit_before_damage",
+      "target_role": "attack_target",
+      "once_per_turn": false,
+      "choice_group": null,
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [],
+        "feature_uses": null,
+        "sneak_dice_cost": 0,
+        "inherit_damage_type": false,
+        "commit": null
+      },
+      "save": null,
+      "effects": [],
+      "forced_movement": null,
+      "fully_executable": false,
+      "standalone_use_feature_rejected": true,
+      "classification": "supporting_context",
+      "deferred_reason": "incoming-hit reaction requires damage reduction and redirected elemental damage lifecycle"
+    },
+    {
+      "feature_slug": "deflect-energy",
+      "activity_id": "AnEiO80Ga3etD595",
+      "option_id": null,
+      "inventory_role": "defensive",
+      "trigger": "final_hit",
+      "qualification": "any_attack",
+      "execution_phase": "final_hit_before_damage",
+      "target_role": "attack_target",
+      "once_per_turn": false,
+      "choice_group": null,
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [
+          {
+            "type": "itemUses",
+            "target": "Compendium.dnd5e.classes24.Item.phbmnkMonksFocus",
+            "value": "1",
+            "scaling": {
+              "mode": "",
+              "formula": ""
+            }
+          }
+        ],
+        "feature_uses": null,
+        "sneak_dice_cost": 0,
+        "inherit_damage_type": false,
+        "commit": null
+      },
+      "save": {
+        "ability": [
+          "dex"
+        ],
+        "dc": {
+          "calculation": "wis",
+          "formula": ""
+        },
+        "ignore_cover": false
+      },
+      "effects": [],
+      "forced_movement": null,
+      "fully_executable": false,
+      "standalone_use_feature_rejected": true,
+      "classification": "supporting_context",
+      "deferred_reason": "incoming-hit reaction requires damage reduction and redirected elemental damage lifecycle"
+    },
+    {
+      "feature_slug": "devious-strikes",
+      "activity_id": "4TnBjQTJzt9UjUos",
+      "option_id": null,
+      "inventory_role": "rider",
+      "trigger": "sneak_attack_damage",
+      "qualification": "finesse_or_ranged",
+      "execution_phase": "after_damage",
+      "target_role": "attack_target",
+      "once_per_turn": false,
+      "choice_group": "cunning-strike",
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [],
+        "feature_uses": null,
+        "sneak_dice_cost": 2,
+        "inherit_damage_type": false,
+        "commit": null
+      },
+      "save": {
+        "ability": [
+          "con"
+        ],
+        "dc": {
+          "calculation": "dex",
+          "formula": ""
+        },
+        "ignore_cover": false
+      },
+      "effects": [],
+      "forced_movement": null,
+      "fully_executable": false,
+      "standalone_use_feature_rejected": true,
+      "classification": "deferred_rider",
+      "deferred_reason": "requires authoritative move/action/Bonus Action mutual restriction on next turn"
+    },
+    {
+      "feature_slug": "devious-strikes",
+      "activity_id": "3eq7lcmpkJJBU2KO",
+      "option_id": null,
+      "inventory_role": "rider",
+      "trigger": "sneak_attack_damage",
+      "qualification": "finesse_or_ranged",
+      "execution_phase": "after_damage",
+      "target_role": "attack_target",
+      "once_per_turn": false,
+      "choice_group": "cunning-strike",
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [],
+        "feature_uses": null,
+        "sneak_dice_cost": 6,
+        "inherit_damage_type": false,
+        "commit": null
+      },
+      "save": {
+        "ability": [
+          "con"
+        ],
+        "dc": {
+          "calculation": "dex",
+          "formula": ""
+        },
+        "ignore_cover": false
+      },
+      "effects": [],
+      "forced_movement": null,
+      "fully_executable": false,
+      "standalone_use_feature_rejected": true,
+      "classification": "deferred_rider",
+      "deferred_reason": "requires generic break-on-damage and repeated end-turn save lifecycle"
+    },
+    {
+      "feature_slug": "devious-strikes",
+      "activity_id": "ki4lIPVGNA0HjEzH",
+      "option_id": null,
+      "inventory_role": "rider",
+      "trigger": "sneak_attack_damage",
+      "qualification": "finesse_or_ranged",
+      "execution_phase": "after_damage",
+      "target_role": "attack_target",
+      "once_per_turn": false,
+      "choice_group": "cunning-strike",
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [],
+        "feature_uses": null,
+        "sneak_dice_cost": 3,
+        "inherit_damage_type": false,
+        "commit": "qualifying_final_hit"
+      },
+      "save": {
+        "ability": [
+          "dex"
+        ],
+        "dc": {
+          "calculation": "dex",
+          "formula": ""
+        },
+        "ignore_cover": false
+      },
+      "effects": [
+        {
+          "effect_id": "Fb1n6Yk2MlOAckf0",
+          "outcome": "failure",
+          "expiry": "target_next_turn_end"
+        }
+      ],
+      "forced_movement": null,
+      "fully_executable": true,
+      "standalone_use_feature_rejected": true,
+      "classification": "executable_rider",
+      "deferred_reason": null
+    },
+    {
+      "feature_slug": "eldritch-smite",
+      "activity_id": "CXJlzDUkMYU9w9i9",
+      "option_id": null,
+      "inventory_role": "rider",
+      "trigger": "final_hit",
+      "qualification": "pact_weapon",
+      "execution_phase": "after_damage",
+      "target_role": "attack_target",
+      "once_per_turn": false,
+      "choice_group": null,
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [
+          {
+            "type": "attribute",
+            "target": "spells.pact.value",
+            "value": "1",
+            "scaling": {
+              "mode": "",
+              "formula": ""
+            }
+          }
+        ],
+        "feature_uses": null,
+        "sneak_dice_cost": 0,
+        "inherit_damage_type": false,
+        "commit": null
+      },
+      "save": null,
+      "effects": [],
+      "forced_movement": null,
+      "fully_executable": false,
+      "standalone_use_feature_rejected": true,
+      "classification": "deferred_rider",
+      "deferred_reason": "requires authoritative pact-weapon binding, Pact Magic slot and target size Huge or smaller"
+    },
+    {
+      "feature_slug": "elemental-fury",
+      "activity_id": null,
+      "option_id": null,
+      "inventory_role": "foundation",
+      "trigger": "final_hit",
+      "qualification": "any_weapon",
+      "execution_phase": "after_damage",
+      "target_role": "attack_target",
+      "once_per_turn": false,
+      "choice_group": null,
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [],
+        "feature_uses": null,
+        "sneak_dice_cost": 0,
+        "inherit_damage_type": false,
+        "commit": null
+      },
+      "save": null,
+      "effects": [],
+      "forced_movement": null,
+      "fully_executable": false,
+      "standalone_use_feature_rejected": true,
+      "classification": "supporting_context",
+      "deferred_reason": "choice container; concrete Primal Strike option carries a separate activity"
+    },
+    {
+      "feature_slug": "elemental-fury-primal-strike",
+      "activity_id": "lHdiTksQmeJBFrf7",
+      "option_id": null,
+      "inventory_role": "rider",
+      "trigger": "final_hit",
+      "qualification": "any_weapon",
+      "execution_phase": "after_damage",
+      "target_role": "attack_target",
+      "once_per_turn": false,
+      "choice_group": null,
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [],
+        "feature_uses": null,
+        "sneak_dice_cost": 0,
+        "inherit_damage_type": false,
+        "commit": null
+      },
+      "save": null,
+      "effects": [],
+      "forced_movement": null,
+      "fully_executable": false,
+      "standalone_use_feature_rejected": true,
+      "classification": "deferred_rider",
+      "deferred_reason": "requires weapon-or-Wild-Shape qualification, on-own-turn gate and elemental damage choice"
+    },
+    {
+      "feature_slug": "fires-burn",
+      "activity_id": "002cv19dj8WGzSl2",
+      "option_id": null,
+      "inventory_role": "rider",
+      "trigger": "final_hit",
+      "qualification": "any_attack",
+      "execution_phase": "after_damage",
+      "target_role": "attack_target",
+      "once_per_turn": false,
+      "choice_group": null,
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [
+          {
+            "type": "itemUses",
+            "target": "",
+            "value": "1",
+            "scaling": {
+              "mode": "",
+              "formula": ""
+            }
+          }
+        ],
+        "feature_uses": {
+          "max": "@prof",
+          "spent": 0,
+          "recovery": [
+            {
+              "period": "lr",
+              "type": "recoverAll",
+              "formula": ""
+            }
+          ]
+        },
+        "sneak_dice_cost": 0,
+        "inherit_damage_type": false,
+        "commit": null
+      },
+      "save": null,
+      "effects": [],
+      "forced_movement": null,
+      "fully_executable": false,
+      "standalone_use_feature_rejected": true,
+      "classification": "deferred_rider",
+      "deferred_reason": "requires positive triggering damage and linked species resource damage rider"
+    },
+    {
+      "feature_slug": "foe-slayer",
+      "activity_id": "GG4mc3Bw4ArJEUJY",
+      "option_id": null,
+      "inventory_role": "passive",
+      "trigger": "final_hit",
+      "qualification": "any_attack",
+      "execution_phase": "damage_preparation",
+      "target_role": "attack_target",
+      "once_per_turn": false,
+      "choice_group": null,
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [],
+        "feature_uses": null,
+        "sneak_dice_cost": 0,
+        "inherit_damage_type": false,
+        "commit": null
+      },
+      "save": null,
+      "effects": [],
+      "forced_movement": null,
+      "fully_executable": false,
+      "standalone_use_feature_rejected": true,
+      "classification": "supporting_context",
+      "deferred_reason": "Hunter's Mark damage-die upgrade requires active marked-target binding"
+    },
+    {
+      "feature_slug": "frenzy",
+      "activity_id": "myPBq8xozti108Mc",
+      "option_id": null,
+      "inventory_role": "rider",
+      "trigger": "reckless_hit",
+      "qualification": "strength",
+      "execution_phase": "damage_preparation",
+      "target_role": "attack_target",
+      "once_per_turn": false,
+      "choice_group": null,
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [],
+        "feature_uses": null,
+        "sneak_dice_cost": 0,
+        "inherit_damage_type": true,
+        "commit": null
+      },
+      "save": null,
+      "effects": [],
+      "forced_movement": null,
+      "fully_executable": false,
+      "standalone_use_feature_rejected": true,
+      "classification": "deferred_rider",
+      "deferred_reason": "requires first-attack Reckless decision, Strength Advantage and incoming Advantage lifecycle; also requires active Rage and first qualifying target per own turn"
+    },
+    {
+      "feature_slug": "frosts-chill",
+      "activity_id": "6goWQaWLexUqgig8",
+      "option_id": null,
+      "inventory_role": "rider",
+      "trigger": "final_hit",
+      "qualification": "any_attack",
+      "execution_phase": "after_damage",
+      "target_role": "attack_target",
+      "once_per_turn": false,
+      "choice_group": null,
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [
+          {
+            "type": "itemUses",
+            "target": "",
+            "value": "1",
+            "scaling": {
+              "mode": "",
+              "formula": ""
+            }
+          }
+        ],
+        "feature_uses": {
+          "max": "@prof",
+          "spent": 0,
+          "recovery": [
+            {
+              "period": "lr",
+              "type": "recoverAll",
+              "formula": ""
+            }
+          ]
+        },
+        "sneak_dice_cost": 0,
+        "inherit_damage_type": false,
+        "commit": null
+      },
+      "save": null,
+      "effects": [],
+      "forced_movement": null,
+      "fully_executable": false,
+      "standalone_use_feature_rejected": true,
+      "classification": "deferred_rider",
+      "deferred_reason": "requires positive triggering damage and linked species resource damage/speed rider"
+    },
+    {
+      "feature_slug": "giant-ancestry",
+      "activity_id": null,
+      "option_id": null,
+      "inventory_role": "foundation",
+      "trigger": "final_hit",
+      "qualification": "any_attack",
+      "execution_phase": "after_damage",
+      "target_role": "attack_target",
+      "once_per_turn": false,
+      "choice_group": null,
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [],
+        "feature_uses": null,
+        "sneak_dice_cost": 0,
+        "inherit_damage_type": false,
+        "commit": null
+      },
+      "save": null,
+      "effects": [],
+      "forced_movement": null,
+      "fully_executable": false,
+      "standalone_use_feature_rejected": true,
+      "classification": "supporting_context",
+      "deferred_reason": "species choice container; concrete Fire/Frost/Hill options carry separate activities"
+    },
+    {
+      "feature_slug": "heightened-focus",
+      "activity_id": "XLma1NEOJNEBD6mH",
+      "option_id": null,
+      "inventory_role": "producer",
+      "trigger": "flurry_hit",
+      "qualification": "flurry_unarmed",
+      "execution_phase": "after_damage",
+      "target_role": "attack_target",
+      "once_per_turn": false,
+      "choice_group": null,
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [
+          {
+            "type": "itemUses",
+            "target": "Compendium.dnd5e.classes24.Item.phbmnkMonksFocus",
+            "value": "1",
+            "scaling": {
+              "mode": "",
+              "formula": ""
+            }
+          }
+        ],
+        "feature_uses": null,
+        "sneak_dice_cost": 0,
+        "inherit_damage_type": false,
+        "commit": null
+      },
+      "save": null,
+      "effects": [],
+      "forced_movement": null,
+      "fully_executable": false,
+      "standalone_use_feature_rejected": true,
+      "classification": "supporting_context",
+      "deferred_reason": "Flurry funding upgrade; full Heightened Focus shared effects remain deferred"
+    },
+    {
+      "feature_slug": "hills-tumble",
+      "activity_id": "I2wKOUDxhIb5hHb7",
+      "option_id": null,
+      "inventory_role": "rider",
+      "trigger": "final_hit",
+      "qualification": "any_attack",
+      "execution_phase": "after_damage",
+      "target_role": "attack_target",
+      "once_per_turn": false,
+      "choice_group": null,
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [
+          {
+            "type": "itemUses",
+            "target": "",
+            "value": "1",
+            "scaling": {
+              "mode": "",
+              "formula": ""
+            }
+          }
+        ],
+        "feature_uses": {
+          "max": "@prof",
+          "spent": 0,
+          "recovery": [
+            {
+              "period": "lr",
+              "type": "recoverAll",
+              "formula": ""
+            }
+          ]
+        },
+        "sneak_dice_cost": 0,
+        "inherit_damage_type": false,
+        "commit": null
+      },
+      "save": null,
+      "effects": [],
+      "forced_movement": null,
+      "fully_executable": false,
+      "standalone_use_feature_rejected": true,
+      "classification": "deferred_rider",
+      "deferred_reason": "requires positive triggering damage and authoritative target size Large or smaller"
+    },
+    {
+      "feature_slug": "hunters-prey",
+      "activity_id": "Ek6m8ZY5Df7Mp6DO",
+      "option_id": null,
+      "inventory_role": "rider",
+      "trigger": "final_hit",
+      "qualification": "any_weapon",
+      "execution_phase": "after_damage",
+      "target_role": "attack_target",
+      "once_per_turn": false,
+      "choice_group": null,
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [],
+        "feature_uses": null,
+        "sneak_dice_cost": 0,
+        "inherit_damage_type": false,
+        "commit": null
+      },
+      "save": null,
+      "effects": [],
+      "forced_movement": null,
+      "fully_executable": false,
+      "standalone_use_feature_rejected": true,
+      "classification": "deferred_rider",
+      "deferred_reason": "requires validated Colossus Slayer option and target missing-HP qualification"
+    },
+    {
+      "feature_slug": "hurl-through-hell",
+      "activity_id": "vIY5Deb2vCh5POdP",
+      "option_id": null,
+      "inventory_role": "rider",
+      "trigger": "final_hit",
+      "qualification": "any_attack",
+      "execution_phase": "after_damage",
+      "target_role": "attack_target",
+      "once_per_turn": false,
+      "choice_group": null,
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [
+          {
+            "type": "itemUses",
+            "target": "",
+            "value": "1",
+            "scaling": {
+              "mode": "",
+              "formula": ""
+            }
+          }
+        ],
+        "feature_uses": {
+          "max": "1",
+          "spent": 0,
+          "recovery": [
+            {
+              "period": "lr",
+              "type": "recoverAll",
+              "formula": ""
+            }
+          ]
+        },
+        "sneak_dice_cost": 0,
+        "inherit_damage_type": false,
+        "commit": null
+      },
+      "save": {
+        "ability": [
+          "cha"
+        ],
+        "dc": {
+          "calculation": "spellcasting",
+          "formula": ""
+        },
+        "ignore_cover": false
+      },
+      "effects": [],
+      "forced_movement": null,
+      "fully_executable": false,
+      "standalone_use_feature_rejected": true,
+      "classification": "deferred_rider",
+      "deferred_reason": "requires banishment/return lifecycle and Fiend damage exclusion"
+    },
+    {
+      "feature_slug": "improved-brutal-strike",
+      "activity_id": "UmRlsf4QWW98I4FS",
+      "option_id": null,
+      "inventory_role": "rider",
+      "trigger": "reckless_hit",
+      "qualification": "strength",
+      "execution_phase": "after_damage",
+      "target_role": "attack_target",
+      "once_per_turn": false,
+      "choice_group": "brutal-strike",
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [],
+        "feature_uses": null,
+        "sneak_dice_cost": 0,
+        "inherit_damage_type": false,
+        "commit": null
+      },
+      "save": null,
+      "effects": [],
+      "forced_movement": null,
+      "fully_executable": false,
+      "standalone_use_feature_rejected": true,
+      "classification": "deferred_rider",
+      "deferred_reason": "requires first-attack Reckless decision, Strength Advantage and incoming Advantage lifecycle; also requires next attack by another creature +5 consumption"
+    },
+    {
+      "feature_slug": "improved-brutal-strike",
+      "activity_id": "I30qGlPDcyKwz65H",
+      "option_id": null,
+      "inventory_role": "rider",
+      "trigger": "reckless_hit",
+      "qualification": "strength",
+      "execution_phase": "after_damage",
+      "target_role": "attack_target",
+      "once_per_turn": false,
+      "choice_group": "brutal-strike",
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [],
+        "feature_uses": null,
+        "sneak_dice_cost": 0,
+        "inherit_damage_type": false,
+        "commit": null
+      },
+      "save": null,
+      "effects": [],
+      "forced_movement": null,
+      "fully_executable": false,
+      "standalone_use_feature_rejected": true,
+      "classification": "deferred_rider",
+      "deferred_reason": "requires first-attack Reckless decision, Strength Advantage and incoming Advantage lifecycle; also requires next-save Disadvantage consumption"
+    },
+    {
+      "feature_slug": "improved-brutal-strike-2",
+      "activity_id": null,
+      "option_id": null,
+      "inventory_role": "foundation",
+      "trigger": "reckless_hit",
+      "qualification": "strength",
+      "execution_phase": "damage_preparation",
+      "target_role": "attack_target",
+      "once_per_turn": false,
+      "choice_group": "brutal-strike",
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [],
+        "feature_uses": null,
+        "sneak_dice_cost": 0,
+        "inherit_damage_type": false,
+        "commit": null
+      },
+      "save": null,
+      "effects": [],
+      "forced_movement": null,
+      "fully_executable": false,
+      "standalone_use_feature_rejected": true,
+      "classification": "supporting_context",
+      "deferred_reason": "requires first-attack Reckless decision, Strength Advantage and incoming Advantage lifecycle; scales damage and permits two distinct options"
+    },
+    {
+      "feature_slug": "improved-cunning-strike",
+      "activity_id": null,
+      "option_id": null,
+      "inventory_role": "foundation",
+      "trigger": "sneak_attack_damage",
+      "qualification": "finesse_or_ranged",
+      "execution_phase": "damage_preparation",
+      "target_role": "attack_target",
+      "once_per_turn": false,
+      "choice_group": "cunning-strike",
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [],
+        "feature_uses": null,
+        "sneak_dice_cost": 0,
+        "inherit_damage_type": false,
+        "commit": null
+      },
+      "save": null,
+      "effects": [],
+      "forced_movement": null,
+      "fully_executable": false,
+      "standalone_use_feature_rejected": true,
+      "classification": "supporting_context",
+      "deferred_reason": "choice-capacity modifier; consumed by owned concrete riders rather than standalone execution"
+    },
+    {
+      "feature_slug": "lifedrinker",
+      "activity_id": "LDIKT3JVs25qBVuL",
+      "option_id": null,
+      "inventory_role": "rider",
+      "trigger": "final_hit",
+      "qualification": "pact_weapon",
+      "execution_phase": "after_damage",
+      "target_role": "attack_target",
+      "once_per_turn": false,
+      "choice_group": null,
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [],
+        "feature_uses": null,
+        "sneak_dice_cost": 0,
+        "inherit_damage_type": false,
+        "commit": null
+      },
+      "save": null,
+      "effects": [],
+      "forced_movement": null,
+      "fully_executable": false,
+      "standalone_use_feature_rejected": true,
+      "classification": "deferred_rider",
+      "deferred_reason": "requires authoritative pact-weapon binding and selected damage type"
+    },
+    {
+      "feature_slug": "lifedrinker",
+      "activity_id": "emx17h6kO4xmSqC6",
+      "option_id": null,
+      "inventory_role": "rider",
+      "trigger": "final_hit",
+      "qualification": "pact_weapon",
+      "execution_phase": "after_damage",
+      "target_role": "attack_target",
+      "once_per_turn": false,
+      "choice_group": null,
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [
+          {
+            "type": "hitDice",
+            "target": "largest",
+            "value": "1",
+            "scaling": {
+              "mode": "",
+              "formula": ""
+            }
+          }
+        ],
+        "feature_uses": null,
+        "sneak_dice_cost": 0,
+        "inherit_damage_type": false,
+        "commit": null
+      },
+      "save": null,
+      "effects": [],
+      "forced_movement": null,
+      "fully_executable": false,
+      "standalone_use_feature_rejected": true,
+      "classification": "deferred_rider",
+      "deferred_reason": "requires pact-weapon binding, typed Hit Die spend and linked damage/healing choice"
+    },
+    {
+      "feature_slug": "lifedrinker",
+      "activity_id": "oMHxbcnQh38wZEKU",
+      "option_id": null,
+      "inventory_role": "rider",
+      "trigger": "final_hit",
+      "qualification": "pact_weapon",
+      "execution_phase": "after_damage",
+      "target_role": "attack_target",
+      "once_per_turn": false,
+      "choice_group": null,
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [
+          {
+            "type": "hitDice",
+            "target": "smallest",
+            "value": "1",
+            "scaling": {
+              "mode": "",
+              "formula": ""
+            }
+          }
+        ],
+        "feature_uses": null,
+        "sneak_dice_cost": 0,
+        "inherit_damage_type": false,
+        "commit": null
+      },
+      "save": null,
+      "effects": [],
+      "forced_movement": null,
+      "fully_executable": false,
+      "standalone_use_feature_rejected": true,
+      "classification": "deferred_rider",
+      "deferred_reason": "requires pact-weapon binding, typed Hit Die spend and linked damage/healing choice"
+    },
+    {
+      "feature_slug": "monks-focus",
+      "activity_id": "2ghJTBhilLrFn9xT",
+      "option_id": null,
+      "inventory_role": "producer",
+      "trigger": "flurry_hit",
+      "qualification": "flurry_unarmed",
+      "execution_phase": "after_damage",
+      "target_role": "attack_target",
+      "once_per_turn": false,
+      "choice_group": null,
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [
+          {
+            "type": "itemUses",
+            "target": "",
+            "value": "1",
+            "scaling": {
+              "mode": "",
+              "formula": ""
+            }
+          }
+        ],
+        "feature_uses": {
+          "max": "@scale.monk.focus",
+          "spent": 0,
+          "recovery": [
+            {
+              "period": "sr",
+              "type": "recoverAll",
+              "formula": ""
+            }
+          ]
+        },
+        "sneak_dice_cost": 0,
+        "inherit_damage_type": false,
+        "commit": null
+      },
+      "save": null,
+      "effects": [],
+      "forced_movement": null,
+      "fully_executable": false,
+      "standalone_use_feature_rejected": false,
+      "classification": "supporting_context",
+      "deferred_reason": "Flurry attack-funding producer; concrete hit options live on Open Hand Technique"
+    },
+    {
+      "feature_slug": "open-hand-technique",
+      "activity_id": "1jdSaWanuRrdkVs3",
+      "option_id": null,
+      "inventory_role": "rider",
+      "trigger": "flurry_hit",
+      "qualification": "flurry_unarmed",
+      "execution_phase": "after_damage",
+      "target_role": "attack_target",
+      "once_per_turn": false,
+      "choice_group": "open-hand-technique",
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [],
+        "feature_uses": null,
+        "sneak_dice_cost": 0,
+        "inherit_damage_type": false,
+        "commit": "qualifying_final_hit"
+      },
+      "save": null,
+      "effects": [
+        {
+          "effect_id": "uQ474o5Wsv3sEAJK",
+          "outcome": "always",
+          "expiry": "target_next_turn_start"
+        }
+      ],
+      "forced_movement": null,
+      "fully_executable": true,
+      "standalone_use_feature_rejected": true,
+      "classification": "executable_rider",
+      "deferred_reason": null
+    },
+    {
+      "feature_slug": "open-hand-technique",
+      "activity_id": "XoaS0RtDCGAqrQsf",
+      "option_id": null,
+      "inventory_role": "rider",
+      "trigger": "flurry_hit",
+      "qualification": "flurry_unarmed",
+      "execution_phase": "after_damage",
+      "target_role": "attack_target",
+      "once_per_turn": false,
+      "choice_group": "open-hand-technique",
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [],
+        "feature_uses": null,
+        "sneak_dice_cost": 0,
+        "inherit_damage_type": false,
+        "commit": "qualifying_final_hit"
+      },
+      "save": {
+        "ability": [
+          "str"
+        ],
+        "dc": {
+          "calculation": "wis",
+          "formula": ""
+        },
+        "ignore_cover": false
+      },
+      "effects": [],
+      "forced_movement": {
+        "max_distance_ft": 15,
+        "requires_distance_choice": true,
+        "on_save": "failure"
+      },
+      "fully_executable": true,
+      "standalone_use_feature_rejected": true,
+      "classification": "executable_rider",
+      "deferred_reason": null
+    },
+    {
+      "feature_slug": "open-hand-technique",
+      "activity_id": "5Qgc0K3TfuonkPIG",
+      "option_id": null,
+      "inventory_role": "rider",
+      "trigger": "flurry_hit",
+      "qualification": "flurry_unarmed",
+      "execution_phase": "after_damage",
+      "target_role": "attack_target",
+      "once_per_turn": false,
+      "choice_group": "open-hand-technique",
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [],
+        "feature_uses": null,
+        "sneak_dice_cost": 0,
+        "inherit_damage_type": false,
+        "commit": "qualifying_final_hit"
+      },
+      "save": {
+        "ability": [
+          "dex"
+        ],
+        "dc": {
+          "calculation": "wis",
+          "formula": ""
+        },
+        "ignore_cover": false
+      },
+      "effects": [
+        {
+          "effect_id": "E1A8QE6kPsLgqTAP",
+          "outcome": "failure",
+          "expiry": "none"
+        }
+      ],
+      "forced_movement": null,
+      "fully_executable": true,
+      "standalone_use_feature_rejected": true,
+      "classification": "executable_rider",
+      "deferred_reason": null
+    },
+    {
+      "feature_slug": "quivering-palm",
+      "activity_id": "lBn87Q4yyJXWzLqg",
+      "option_id": null,
+      "inventory_role": "rider",
+      "trigger": "final_hit",
+      "qualification": "unarmed",
+      "execution_phase": "after_damage",
+      "target_role": "attack_target",
+      "once_per_turn": false,
+      "choice_group": null,
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [],
+        "feature_uses": null,
+        "sneak_dice_cost": 0,
+        "inherit_damage_type": false,
+        "commit": null
+      },
+      "save": {
+        "ability": [
+          "con"
+        ],
+        "dc": {
+          "calculation": "wis",
+          "formula": ""
+        },
+        "ignore_cover": false
+      },
+      "effects": [],
+      "forced_movement": null,
+      "fully_executable": false,
+      "standalone_use_feature_rejected": true,
+      "classification": "deferred_rider",
+      "deferred_reason": "requires previously bound vibration target and selected Attack-action replacement or Action release"
+    },
+    {
+      "feature_slug": "quivering-palm",
+      "activity_id": "O1mQr2rPpzRpB3yJ",
+      "option_id": null,
+      "inventory_role": "rider",
+      "trigger": "final_hit",
+      "qualification": "unarmed",
+      "execution_phase": "after_damage",
+      "target_role": "attack_target",
+      "once_per_turn": false,
+      "choice_group": null,
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [
+          {
+            "type": "itemUses",
+            "target": "Compendium.dnd5e.classes24.Item.phbmnkMonksFocus",
+            "value": "4",
+            "scaling": {
+              "mode": "",
+              "formula": ""
+            }
+          }
+        ],
+        "feature_uses": null,
+        "sneak_dice_cost": 0,
+        "inherit_damage_type": false,
+        "commit": null
+      },
+      "save": null,
+      "effects": [],
+      "forced_movement": null,
+      "fully_executable": false,
+      "standalone_use_feature_rejected": true,
+      "classification": "deferred_rider",
+      "deferred_reason": "requires one-target vibration binding, plane identity and later selected release lifecycle"
+    },
+    {
+      "feature_slug": "radiant-strikes",
+      "activity_id": null,
+      "option_id": null,
+      "inventory_role": "passive",
+      "trigger": "final_hit",
+      "qualification": "melee_weapon_or_unarmed",
+      "execution_phase": "damage_preparation",
+      "target_role": "attack_target",
+      "once_per_turn": false,
+      "choice_group": null,
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [],
+        "feature_uses": null,
+        "sneak_dice_cost": 0,
+        "inherit_damage_type": false,
+        "commit": null
+      },
+      "save": null,
+      "effects": [],
+      "forced_movement": null,
+      "fully_executable": false,
+      "standalone_use_feature_rejected": true,
+      "classification": "supporting_context",
+      "deferred_reason": "passive damage projection exists; complete inherited melee-weapon versus unarmed qualification is not a declared rider"
+    },
+    {
+      "feature_slug": "reckless-attack",
+      "activity_id": null,
+      "option_id": null,
+      "inventory_role": "foundation",
+      "trigger": "reckless_hit",
+      "qualification": "strength",
+      "execution_phase": "damage_preparation",
+      "target_role": "attack_target",
+      "once_per_turn": false,
+      "choice_group": null,
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [],
+        "feature_uses": null,
+        "sneak_dice_cost": 0,
+        "inherit_damage_type": false,
+        "commit": null
+      },
+      "save": null,
+      "effects": [],
+      "forced_movement": null,
+      "fully_executable": false,
+      "standalone_use_feature_rejected": true,
+      "classification": "supporting_context",
+      "deferred_reason": "requires first-attack Reckless decision, Strength Advantage and incoming Advantage lifecycle"
+    },
+    {
+      "feature_slug": "remarkable-athlete",
+      "activity_id": null,
+      "option_id": null,
+      "inventory_role": "passive",
+      "trigger": "final_hit",
+      "qualification": "any_attack",
+      "execution_phase": "after_damage",
+      "target_role": "attack_target",
+      "once_per_turn": false,
+      "choice_group": null,
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [],
+        "feature_uses": null,
+        "sneak_dice_cost": 0,
+        "inherit_damage_type": false,
+        "commit": null
+      },
+      "save": null,
+      "effects": [],
+      "forced_movement": null,
+      "fully_executable": false,
+      "standalone_use_feature_rejected": true,
+      "classification": "supporting_context",
+      "deferred_reason": "critical-hit movement requires a selected half-Speed post-hit movement grant without Opportunity Attacks"
+    },
+    {
+      "feature_slug": "repelling-blast",
+      "activity_id": "OXhI1TDQxORrGAgc",
+      "option_id": null,
+      "inventory_role": "rider",
+      "trigger": "final_hit",
+      "qualification": "spell_attack",
+      "execution_phase": "after_damage",
+      "target_role": "attack_target",
+      "once_per_turn": false,
+      "choice_group": null,
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [],
+        "feature_uses": null,
+        "sneak_dice_cost": 0,
+        "inherit_damage_type": false,
+        "commit": null
+      },
+      "save": null,
+      "effects": [],
+      "forced_movement": null,
+      "fully_executable": false,
+      "standalone_use_feature_rejected": true,
+      "classification": "deferred_rider",
+      "deferred_reason": "requires validated selected cantrip invocation binding and authoritative target size"
+    },
+    {
+      "feature_slug": "sacred-weapon",
+      "activity_id": "Ew70lNTD8dR3vREt",
+      "option_id": null,
+      "inventory_role": "passive",
+      "trigger": "final_hit",
+      "qualification": "any_weapon",
+      "execution_phase": "damage_preparation",
+      "target_role": "attack_target",
+      "once_per_turn": false,
+      "choice_group": null,
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [
+          {
+            "type": "itemUses",
+            "target": "feat:channel-divinity-paladin",
+            "value": "1",
+            "scaling": {
+              "mode": "",
+              "formula": ""
+            }
+          }
+        ],
+        "feature_uses": null,
+        "sneak_dice_cost": 0,
+        "inherit_damage_type": false,
+        "commit": null
+      },
+      "save": null,
+      "effects": [],
+      "forced_movement": null,
+      "fully_executable": false,
+      "standalone_use_feature_rejected": true,
+      "classification": "supporting_context",
+      "deferred_reason": "pre-attack weapon enchantment requires bound melee weapon and per-hit Radiant damage choice"
+    },
+    {
+      "feature_slug": "sneak-attack",
+      "activity_id": "a1T6nHaqmvbLpyJr",
+      "option_id": null,
+      "inventory_role": "rider",
+      "trigger": "final_hit",
+      "qualification": "finesse_or_ranged",
+      "execution_phase": "damage_preparation",
+      "target_role": "attack_target",
+      "once_per_turn": true,
+      "choice_group": null,
+      "automatic": true,
+      "cost_model": {
+        "resource_targets": [],
+        "feature_uses": null,
+        "sneak_dice_cost": 0,
+        "inherit_damage_type": true,
+        "commit": "qualifying_final_hit"
+      },
+      "save": null,
+      "effects": [],
+      "forced_movement": null,
+      "fully_executable": true,
+      "standalone_use_feature_rejected": true,
+      "classification": "executable_rider",
+      "deferred_reason": null
+    },
+    {
+      "feature_slug": "stunning-strike",
+      "activity_id": "Xto99a8Zt46VLwaR",
+      "option_id": null,
+      "inventory_role": "rider",
+      "trigger": "final_hit",
+      "qualification": "monk_weapon_or_unarmed",
+      "execution_phase": "final_hit_before_damage",
+      "target_role": "attack_target",
+      "once_per_turn": true,
+      "choice_group": null,
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [
+          {
+            "type": "itemUses",
+            "target": "Compendium.dnd5e.classes24.Item.phbmnkMonksFocus",
+            "value": "1",
+            "scaling": {
+              "mode": "",
+              "formula": ""
+            }
+          }
+        ],
+        "feature_uses": null,
+        "sneak_dice_cost": 0,
+        "inherit_damage_type": false,
+        "commit": "qualifying_final_hit"
+      },
+      "save": {
+        "ability": [
+          "con"
+        ],
+        "dc": {
+          "calculation": "wis",
+          "formula": ""
+        },
+        "ignore_cover": false
+      },
+      "effects": [
+        {
+          "effect_id": "vofnieSTB0l8rpRg",
+          "outcome": "failure",
+          "expiry": "source_next_turn_start"
+        },
+        {
+          "effect_id": "cj9HhBNKtF6iOsH4",
+          "outcome": "success",
+          "expiry": "source_next_turn_start"
+        }
+      ],
+      "forced_movement": null,
+      "fully_executable": true,
+      "standalone_use_feature_rejected": true,
+      "classification": "executable_rider",
+      "deferred_reason": null
+    },
+    {
+      "feature_slug": "superior-hunters-prey",
+      "activity_id": "yqOAxbsX16RkOx06",
+      "option_id": null,
+      "inventory_role": "passive",
+      "trigger": "final_hit",
+      "qualification": "any_attack",
+      "execution_phase": "after_damage",
+      "target_role": "attack_target",
+      "once_per_turn": false,
+      "choice_group": null,
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [],
+        "feature_uses": null,
+        "sneak_dice_cost": 0,
+        "inherit_damage_type": false,
+        "commit": null
+      },
+      "save": null,
+      "effects": [],
+      "forced_movement": null,
+      "fully_executable": false,
+      "standalone_use_feature_rejected": true,
+      "classification": "supporting_context",
+      "deferred_reason": "requires attributed Hunter's Mark triggering damage and chosen second visible target"
+    },
+    {
+      "feature_slug": "uncanny-dodge",
+      "activity_id": "7krJIcGhZl9RqzYl",
+      "option_id": null,
+      "inventory_role": "defensive",
+      "trigger": "final_hit",
+      "qualification": "any_attack",
+      "execution_phase": "final_hit_before_damage",
+      "target_role": "attack_target",
+      "once_per_turn": false,
+      "choice_group": null,
+      "automatic": false,
+      "cost_model": {
+        "resource_targets": [],
+        "feature_uses": null,
+        "sneak_dice_cost": 0,
+        "inherit_damage_type": false,
+        "commit": null
+      },
+      "save": null,
+      "effects": [],
+      "forced_movement": null,
+      "fully_executable": false,
+      "standalone_use_feature_rejected": true,
+      "classification": "supporting_context",
+      "deferred_reason": "incoming-hit reaction requires attacker visibility and triggering damage-instance halving"
+    }
+  ]
+}

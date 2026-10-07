@@ -54,6 +54,28 @@ _SRD_DAMAGE_TYPES: Final[frozenset[str]] = frozenset(get_args(DamageType))
 _PHYSICAL_TYPES: Final[frozenset[str]] = frozenset({"bludgeoning", "piercing", "slashing"})
 
 
+def _damage_immunities(target: Combatant, ctx: ActivityResolutionContext) -> set[str]:
+    sidecar = ctx.passive_damage_modifiers.get(target.entity_id, {})
+    return set(target.damage_immunities) | set(sidecar.get("immunities", ()))
+
+
+def damage_type_can_apply(
+    target: Combatant, damage_type: str, ctx: ActivityResolutionContext
+) -> bool:
+    """Whether a known type can deal damage, without rolling its amount.
+
+    Attack riders use this same immunity/negation policy before sacrificing
+    damage dice. Resistance may still reduce a later rolled amount to zero.
+    """
+    immunities = _damage_immunities(target, ctx)
+    return (
+        damage_type in _SRD_DAMAGE_TYPES
+        and target.entity_id not in ctx.negated_spell_damage_targets
+        and damage_type not in immunities
+        and "all" not in immunities
+    )
+
+
 def _effective_resistances(
     target: Combatant, sidecar: dict[str, list[str]], *, magical: bool
 ) -> set[str]:
@@ -121,7 +143,7 @@ def apply_damage(
     """
     sidecar = ctx.passive_damage_modifiers.get(target.entity_id, {})
     resistances = _effective_resistances(target, sidecar, magical=magical)
-    immunities = set(target.damage_immunities) | set(sidecar.get("immunities", ()))
+    immunities = _damage_immunities(target, ctx)
     vulnerabilities = set(sidecar.get("vulnerabilities", ()))
 
     total_dealt = 0

@@ -221,6 +221,25 @@
     }
   ],
   "advancement": [],
+  "attack_riders": {
+    "vIY5Deb2vCh5POdP": {
+      "automatic": false,
+      "choice_group": null,
+      "deferred_options": {},
+      "deferred_reason": "requires banishment/return lifecycle and Fiend damage exclusion",
+      "effects": [],
+      "forced_movement": null,
+      "inherit_damage_type": false,
+      "inventory_role": "rider",
+      "once_per_turn": false,
+      "phase": "after_damage",
+      "qualification": "any_attack",
+      "related_activity_ids": [],
+      "sneak_dice_cost": 0,
+      "target_role": "attack_target",
+      "trigger": "final_hit"
+    }
+  },
   "description": "Once per turn when you hit a creature with an attack roll, you can try to instantly transport the target through the Lower Planes. The target must succeed on a Charisma saving throw against your spell save DC, or the target disappears and hurtles through a nightmare landscape. The target takes 8d10 Psychic damage if it isn't a Fiend, and it has the &amp;Reference[Incapacitated] condition until the end of your next turn, when it returns to the space it previously occupied or the nearest unoccupied space.\n\nOnce you use this feature, you can't use it again until you finish a Long Rest unless you expend a Pact Magic spell slot (no action required) to restore your use of it.\n\nFoundry Note\n\nThis feature includes one limited use.\n\nThe Regain Use activity will expend a Pact Magic spell slot and restore a use of this feature.",
   "entry_kind": "feature",
   "feature_type": "subclass_feature",

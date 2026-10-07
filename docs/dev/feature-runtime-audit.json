@@ -1,7 +1,9 @@
 {
   "counts": {
+    "attack_rider_deferred": 25,
+    "attack_rider_executable": 6,
     "fully_resolvable": 17,
-    "semantic_special_case": 130,
+    "semantic_special_case": 99,
     "unsupported_preflight": 44
   },
   "reachable_activities": 191,
@@ -13,7 +15,10 @@
       "classification": "semantic_special_case",
       "reason": "requires counted visible targets and break-on-damage conditions",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "action-surge",
@@ -22,7 +27,10 @@
       "classification": "fully_resolvable",
       "reason": "typed activity and required carriers validated",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": true,
+      "rider_executable": false
     },
     {
       "slug": "adrenaline-rush",
@@ -31,7 +39,10 @@
       "classification": "fully_resolvable",
       "reason": "typed activity and required carriers validated",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": true,
+      "rider_executable": false
     },
     {
       "slug": "arcane-recovery",
@@ -40,7 +51,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": "Unsupported formula token at ' / 2)'",
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "archdruid",
@@ -49,7 +63,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": "amount cost has no scaling carrier"
+      "resource_error": "amount cost has no scaling carrier",
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "archdruid",
@@ -58,7 +75,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": "resource recovery/zero costs need a separate semantic operation"
+      "resource_error": "resource recovery/zero costs need a separate semantic operation",
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "armor-of-shadows",
@@ -67,7 +87,10 @@
       "classification": "unsupported_preflight",
       "reason": "activity has no executable feature semantic carrier",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "ascendant-step",
@@ -76,7 +99,10 @@
       "classification": "unsupported_preflight",
       "reason": "activity has no executable feature semantic carrier",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "aura-of-courage",
@@ -85,7 +111,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "aura-of-protection",
@@ -94,7 +123,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "bardic-inspiration",
@@ -103,7 +135,10 @@
       "classification": "fully_resolvable",
       "reason": "typed activity and required carriers validated",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": true,
+      "rider_executable": false
     },
     {
       "slug": "blessed-healer",
@@ -112,25 +147,34 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": "Unhandled roll-data token: '@scaling'",
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "blessed-strikes-divine-strike",
       "activity_id": "uYVz8MBW0EZ2X0zD",
       "owner": "cleric",
-      "classification": "semantic_special_case",
-      "reason": "unsupported activation/payment category",
+      "classification": "attack_rider_deferred",
+      "reason": "standalone use_feature rejected; attack rider deferred: requires on-own-turn qualification and validated Divine Strike choice/scaling",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "attack_triggered_rider",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "blessed-strikes-divine-strike",
       "activity_id": "MbCGfaQAeW2rzNWb",
       "owner": "cleric",
-      "classification": "semantic_special_case",
-      "reason": "unsupported activation/payment category",
+      "classification": "attack_rider_deferred",
+      "reason": "standalone use_feature rejected; attack rider deferred: requires on-own-turn qualification and validated Divine Strike choice/scaling",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "attack_triggered_rider",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "blessed-strikes-potent-spellcasting",
@@ -139,7 +183,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "breath-weapon",
@@ -148,7 +195,10 @@
       "classification": "semantic_special_case",
       "reason": "requires Attack replacement and an ancestry-bound damage type",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "breath-weapon",
@@ -157,16 +207,22 @@
       "classification": "semantic_special_case",
       "reason": "requires Attack replacement and an ancestry-bound damage type",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "brutal-strike",
       "activity_id": "nN5gsB6AcSQ4uQPN",
       "owner": "barbarian",
-      "classification": "semantic_special_case",
-      "reason": "requires an authoritative hit/rider binding and its lifecycle",
+      "classification": "attack_rider_deferred",
+      "reason": "standalone use_feature rejected; attack rider deferred: requires first-attack Reckless decision, Strength Advantage and incoming Advantage lifecycle",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "attack_triggered_rider",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "careful-spell",
@@ -175,7 +231,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "channel-divinity-cleric",
@@ -184,7 +243,10 @@
       "classification": "fully_resolvable",
       "reason": "typed activity and required carriers validated",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": true,
+      "rider_executable": false
     },
     {
       "slug": "channel-divinity-cleric",
@@ -193,7 +255,10 @@
       "classification": "fully_resolvable",
       "reason": "typed activity and required carriers validated",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": true,
+      "rider_executable": false
     },
     {
       "slug": "channel-divinity-cleric",
@@ -202,7 +267,10 @@
       "classification": "semantic_special_case",
       "reason": "Turn Undead requires undead targeting, flee and break-on-damage semantics",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "channel-divinity-paladin",
@@ -211,7 +279,10 @@
       "classification": "unsupported_preflight",
       "reason": "activity has no executable feature semantic carrier",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "clouds-jaunt",
@@ -220,7 +291,10 @@
       "classification": "unsupported_preflight",
       "reason": "activity has no executable feature semantic carrier",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "countercharm",
@@ -229,7 +303,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "cunning-action",
@@ -238,7 +315,10 @@
       "classification": "semantic_special_case",
       "reason": "use the dedicated dash/disengage/hide intent with use_bonus_action",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "cunning-action",
@@ -247,7 +327,10 @@
       "classification": "semantic_special_case",
       "reason": "use the dedicated dash/disengage/hide intent with use_bonus_action",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "cunning-action",
@@ -256,43 +339,58 @@
       "classification": "semantic_special_case",
       "reason": "use the dedicated dash/disengage/hide intent with use_bonus_action",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "cunning-strike",
       "activity_id": "n64fvJMT9fPUy7DH",
       "owner": "rogue",
-      "classification": "semantic_special_case",
-      "reason": "unsupported activation/payment category",
+      "classification": "attack_rider_deferred",
+      "reason": "standalone use_feature rejected; attack rider deferred: requires authoritative Poisoner's Kit inventory and repeated end-turn save lifecycle",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "attack_triggered_rider",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "cunning-strike",
       "activity_id": "dWcCw1vTWRMx4YzD",
       "owner": "rogue",
-      "classification": "semantic_special_case",
-      "reason": "unsupported activation/payment category",
+      "classification": "attack_rider_deferred",
+      "reason": "standalone use_feature rejected; attack rider deferred: requires authoritative target size Large or smaller",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "attack_triggered_rider",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "cunning-strike",
       "activity_id": "jR7KqMuPOZYUCDyO",
       "owner": "rogue",
-      "classification": "semantic_special_case",
-      "reason": "unsupported activation/payment category",
+      "classification": "attack_rider_deferred",
+      "reason": "standalone use_feature rejected; attack rider deferred: legacy Cunning Sneak Attack damage helper is replaced by authoritative dice sacrifice",
       "formula_error": "Unhandled roll-data token: '@scaling'",
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "attack_triggered_rider",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "cunning-strike",
       "activity_id": "m2bRZ1YeD3yf9nV7",
       "owner": "rogue",
-      "classification": "semantic_special_case",
-      "reason": "unsupported activation/payment category",
+      "classification": "attack_rider_deferred",
+      "reason": "standalone use_feature rejected; attack rider deferred: requires immediate selected half-Speed movement with OA exemption limited to that movement",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "attack_triggered_rider",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "cutting-words",
@@ -301,7 +399,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "dark-ones-blessing",
@@ -310,7 +411,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "dark-ones-own-luck",
@@ -319,7 +423,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "defensive-tactics",
@@ -328,7 +435,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "deflect-attacks",
@@ -337,7 +447,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "deflect-attacks",
@@ -346,7 +459,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "deflect-energy",
@@ -355,7 +471,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "deflect-energy",
@@ -364,34 +483,46 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "devious-strikes",
       "activity_id": "4TnBjQTJzt9UjUos",
       "owner": "rogue",
-      "classification": "semantic_special_case",
-      "reason": "unsupported activation/payment category",
+      "classification": "attack_rider_deferred",
+      "reason": "standalone use_feature rejected; attack rider deferred: requires authoritative move/action/Bonus Action mutual restriction on next turn",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "attack_triggered_rider",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "devious-strikes",
       "activity_id": "3eq7lcmpkJJBU2KO",
       "owner": "rogue",
-      "classification": "semantic_special_case",
-      "reason": "unsupported activation/payment category",
+      "classification": "attack_rider_deferred",
+      "reason": "standalone use_feature rejected; attack rider deferred: requires generic break-on-damage and repeated end-turn save lifecycle",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "attack_triggered_rider",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "devious-strikes",
       "activity_id": "ki4lIPVGNA0HjEzH",
       "owner": "rogue",
-      "classification": "semantic_special_case",
-      "reason": "unsupported activation/payment category",
+      "classification": "attack_rider_executable",
+      "reason": "standalone use_feature rejected; attack-triggered execution supported",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "attack_triggered_rider",
+      "standalone_executable": false,
+      "rider_executable": true
     },
     {
       "slug": "disciple-of-life",
@@ -400,7 +531,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": "Unhandled roll-data token: '@scaling'",
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "disciplined-survivor",
@@ -409,7 +543,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "distant-spell",
@@ -418,7 +555,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "divine-intervention",
@@ -427,7 +567,10 @@
       "classification": "unsupported_preflight",
       "reason": "activity has no executable feature semantic carrier",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "draconic-flight",
@@ -436,7 +579,10 @@
       "classification": "unsupported_preflight",
       "reason": "activity has no executable feature semantic carrier",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "dragon-companion",
@@ -445,7 +591,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "dragon-wings",
@@ -454,7 +603,10 @@
       "classification": "unsupported_preflight",
       "reason": "activity has no executable feature semantic carrier",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "dragon-wings",
@@ -463,7 +615,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": "resource recovery/zero costs need a separate semantic operation"
+      "resource_error": "resource recovery/zero costs need a separate semantic operation",
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "eldritch-master",
@@ -472,16 +627,22 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": "unsupported consumption type: attribute"
+      "resource_error": "unsupported consumption type: attribute",
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "eldritch-smite",
       "activity_id": "CXJlzDUkMYU9w9i9",
       "owner": "warlock",
-      "classification": "semantic_special_case",
-      "reason": "unsupported activation/payment category",
+      "classification": "attack_rider_deferred",
+      "reason": "standalone use_feature rejected; attack rider deferred: requires authoritative pact-weapon binding, Pact Magic slot and target size Huge or smaller",
       "formula_error": "Unhandled roll-data token: '@spells.pact.level'",
-      "resource_error": "unsupported consumption type: attribute"
+      "resource_error": "unsupported consumption type: attribute",
+      "execution_path": "attack_triggered_rider",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "eldritch-spear",
@@ -490,7 +651,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "elemental-affinity",
@@ -499,7 +663,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "elemental-affinity",
@@ -508,7 +675,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "elemental-affinity",
@@ -517,7 +687,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "elemental-affinity",
@@ -526,7 +699,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "elemental-affinity",
@@ -535,16 +711,22 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "elemental-fury-primal-strike",
       "activity_id": "lHdiTksQmeJBFrf7",
       "owner": "druid",
-      "classification": "semantic_special_case",
-      "reason": "unsupported activation/payment category",
+      "classification": "attack_rider_deferred",
+      "reason": "standalone use_feature rejected; attack rider deferred: requires weapon-or-Wild-Shape qualification, on-own-turn gate and elemental damage choice",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "attack_triggered_rider",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "empowered-evocation",
@@ -553,7 +735,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "empowered-spell",
@@ -562,7 +747,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "empowered-strikes",
@@ -571,7 +759,10 @@
       "classification": "unsupported_preflight",
       "reason": "activity has no executable feature semantic carrier",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "extended-spell",
@@ -580,7 +771,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "fast-hands",
@@ -589,7 +783,10 @@
       "classification": "fully_resolvable",
       "reason": "typed activity and required carriers validated",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": true,
+      "rider_executable": false
     },
     {
       "slug": "fast-hands",
@@ -598,7 +795,10 @@
       "classification": "fully_resolvable",
       "reason": "typed activity and required carriers validated",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": true,
+      "rider_executable": false
     },
     {
       "slug": "fast-hands",
@@ -607,7 +807,10 @@
       "classification": "unsupported_preflight",
       "reason": "activity has no executable feature semantic carrier",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "favored-enemy",
@@ -616,7 +819,10 @@
       "classification": "unsupported_preflight",
       "reason": "activity has no executable feature semantic carrier",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "fiendish-vigor",
@@ -625,16 +831,22 @@
       "classification": "fully_resolvable",
       "reason": "typed activity and required carriers validated",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": true,
+      "rider_executable": false
     },
     {
       "slug": "fires-burn",
       "activity_id": "002cv19dj8WGzSl2",
       "owner": "goliath",
-      "classification": "semantic_special_case",
-      "reason": "unsupported activation/payment category",
+      "classification": "attack_rider_deferred",
+      "reason": "standalone use_feature rejected; attack rider deferred: requires positive triggering damage and linked species resource damage rider",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "attack_triggered_rider",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "foe-slayer",
@@ -643,7 +855,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "font-of-inspiration",
@@ -652,7 +867,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": "resource recovery/zero costs need a separate semantic operation"
+      "resource_error": "resource recovery/zero costs need a separate semantic operation",
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "font-of-magic",
@@ -661,7 +879,10 @@
       "classification": "unsupported_preflight",
       "reason": "activity has no executable feature semantic carrier",
       "formula_error": null,
-      "resource_error": "Unhandled roll-data token: '@scaling'"
+      "resource_error": "Unhandled roll-data token: '@scaling'",
+      "execution_path": "standalone_activity",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "font-of-magic",
@@ -670,25 +891,34 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": "unsupported consumption type: spellSlots"
+      "resource_error": "unsupported consumption type: spellSlots",
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "frenzy",
       "activity_id": "myPBq8xozti108Mc",
       "owner": "berserker",
-      "classification": "semantic_special_case",
-      "reason": "unsupported activation/payment category",
+      "classification": "attack_rider_deferred",
+      "reason": "standalone use_feature rejected; attack rider deferred: requires first-attack Reckless decision, Strength Advantage and incoming Advantage lifecycle; also requires active Rage and first qualifying target per own turn",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "attack_triggered_rider",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "frosts-chill",
       "activity_id": "6goWQaWLexUqgig8",
       "owner": "goliath",
-      "classification": "semantic_special_case",
-      "reason": "unsupported activation/payment category",
+      "classification": "attack_rider_deferred",
+      "reason": "standalone use_feature rejected; attack rider deferred: requires positive triggering damage and linked species resource damage/speed rider",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "attack_triggered_rider",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "gaze-of-two-minds",
@@ -697,7 +927,10 @@
       "classification": "unsupported_preflight",
       "reason": "activity has no executable feature semantic carrier",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "gift-of-the-depths",
@@ -706,7 +939,10 @@
       "classification": "unsupported_preflight",
       "reason": "activity has no executable feature semantic carrier",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "gift-of-the-protectors",
@@ -715,7 +951,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": "unsupported consumption type: activityUses"
+      "resource_error": "unsupported consumption type: activityUses",
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "gift-of-the-protectors",
@@ -724,7 +963,10 @@
       "classification": "unsupported_preflight",
       "reason": "activity has no executable feature semantic carrier",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "gift-of-the-protectors",
@@ -733,7 +975,10 @@
       "classification": "unsupported_preflight",
       "reason": "activity has no executable feature semantic carrier",
       "formula_error": null,
-      "resource_error": "resource recovery/zero costs need a separate semantic operation"
+      "resource_error": "resource recovery/zero costs need a separate semantic operation",
+      "execution_path": "standalone_activity",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "greater-divine-intervention",
@@ -742,7 +987,10 @@
       "classification": "unsupported_preflight",
       "reason": "activity has no executable feature semantic carrier",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "heightened-focus",
@@ -751,7 +999,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "heightened-focus",
@@ -760,7 +1011,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "heightened-spell",
@@ -769,16 +1023,22 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "hills-tumble",
       "activity_id": "I2wKOUDxhIb5hHb7",
       "owner": "goliath",
-      "classification": "semantic_special_case",
-      "reason": "unsupported activation/payment category",
+      "classification": "attack_rider_deferred",
+      "reason": "standalone use_feature rejected; attack rider deferred: requires positive triggering damage and authoritative target size Large or smaller",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "attack_triggered_rider",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "holy-nimbus",
@@ -787,7 +1047,10 @@
       "classification": "unsupported_preflight",
       "reason": "activity has no executable feature semantic carrier",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "holy-nimbus",
@@ -796,25 +1059,34 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": "resource recovery/zero costs need a separate semantic operation"
+      "resource_error": "resource recovery/zero costs need a separate semantic operation",
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "hunters-prey",
       "activity_id": "Ek6m8ZY5Df7Mp6DO",
       "owner": "hunter",
-      "classification": "semantic_special_case",
-      "reason": "unsupported activation/payment category",
+      "classification": "attack_rider_deferred",
+      "reason": "standalone use_feature rejected; attack rider deferred: requires validated Colossus Slayer option and target missing-HP qualification",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "attack_triggered_rider",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "hurl-through-hell",
       "activity_id": "vIY5Deb2vCh5POdP",
       "owner": "fiend",
-      "classification": "semantic_special_case",
-      "reason": "unsupported activation/payment category",
+      "classification": "attack_rider_deferred",
+      "reason": "standalone use_feature rejected; attack rider deferred: requires banishment/return lifecycle and Fiend damage exclusion",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "attack_triggered_rider",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "hurl-through-hell",
@@ -823,7 +1095,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": "resource recovery/zero costs need a separate semantic operation"
+      "resource_error": "resource recovery/zero costs need a separate semantic operation",
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "improved-blessed-strikes",
@@ -832,25 +1107,34 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "improved-brutal-strike",
       "activity_id": "UmRlsf4QWW98I4FS",
       "owner": "barbarian",
-      "classification": "semantic_special_case",
-      "reason": "unsupported activation/payment category",
+      "classification": "attack_rider_deferred",
+      "reason": "standalone use_feature rejected; attack rider deferred: requires first-attack Reckless decision, Strength Advantage and incoming Advantage lifecycle; also requires next attack by another creature +5 consumption",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "attack_triggered_rider",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "improved-brutal-strike",
       "activity_id": "I30qGlPDcyKwz65H",
       "owner": "barbarian",
-      "classification": "semantic_special_case",
-      "reason": "unsupported activation/payment category",
+      "classification": "attack_rider_deferred",
+      "reason": "standalone use_feature rejected; attack rider deferred: requires first-attack Reckless decision, Strength Advantage and incoming Advantage lifecycle; also requires next-save Disadvantage consumption",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "attack_triggered_rider",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "indomitable",
@@ -859,7 +1143,10 @@
       "classification": "semantic_special_case",
       "reason": "requires a damage, failed-test, initiative or rest trigger",
       "formula_error": null,
-      "resource_error": "limited-use activity has no declared cost"
+      "resource_error": "limited-use activity has no declared cost",
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "innate-sorcery",
@@ -868,7 +1155,10 @@
       "classification": "unsupported_preflight",
       "reason": "activity has no executable feature semantic carrier",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "intimidating-presence",
@@ -877,7 +1167,10 @@
       "classification": "semantic_special_case",
       "reason": "requires a one-minute condition and repeated end-of-turn saves",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "intimidating-presence",
@@ -886,7 +1179,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": "resource recovery/zero costs need a separate semantic operation"
+      "resource_error": "resource recovery/zero costs need a separate semantic operation",
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "investment-of-the-chain-master",
@@ -895,7 +1191,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": "unsupported consumption type: attribute"
+      "resource_error": "unsupported consumption type: attribute",
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "investment-of-the-chain-master",
@@ -904,7 +1203,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": "unsupported consumption type: attribute"
+      "resource_error": "unsupported consumption type: attribute",
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "investment-of-the-chain-master",
@@ -913,7 +1215,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "lands-aid",
@@ -922,7 +1227,10 @@
       "classification": "semantic_special_case",
       "reason": "requires linked damage area and selected healing target",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "lands-aid",
@@ -931,7 +1239,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "large-form",
@@ -940,7 +1251,10 @@
       "classification": "unsupported_preflight",
       "reason": "activity has no executable feature semantic carrier",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "lay-on-hands",
@@ -949,7 +1263,10 @@
       "classification": "fully_resolvable",
       "reason": "typed activity and required carriers validated",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": true,
+      "rider_executable": false
     },
     {
       "slug": "lay-on-hands",
@@ -958,34 +1275,46 @@
       "classification": "fully_resolvable",
       "reason": "typed activity and required carriers validated",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": true,
+      "rider_executable": false
     },
     {
       "slug": "lifedrinker",
       "activity_id": "LDIKT3JVs25qBVuL",
       "owner": "warlock",
-      "classification": "semantic_special_case",
-      "reason": "unsupported activation/payment category",
+      "classification": "attack_rider_deferred",
+      "reason": "standalone use_feature rejected; attack rider deferred: requires authoritative pact-weapon binding and selected damage type",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "attack_triggered_rider",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "lifedrinker",
       "activity_id": "emx17h6kO4xmSqC6",
       "owner": "warlock",
-      "classification": "semantic_special_case",
-      "reason": "unsupported activation/payment category",
+      "classification": "attack_rider_deferred",
+      "reason": "standalone use_feature rejected; attack rider deferred: requires pact-weapon binding, typed Hit Die spend and linked damage/healing choice",
       "formula_error": "Unhandled roll-data token: '@attributes.hd.largestAvailable'",
-      "resource_error": "unsupported consumption type: hitDice"
+      "resource_error": "unsupported consumption type: hitDice",
+      "execution_path": "attack_triggered_rider",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "lifedrinker",
       "activity_id": "oMHxbcnQh38wZEKU",
       "owner": "warlock",
-      "classification": "semantic_special_case",
-      "reason": "unsupported activation/payment category",
+      "classification": "attack_rider_deferred",
+      "reason": "standalone use_feature rejected; attack rider deferred: requires pact-weapon binding, typed Hit Die spend and linked damage/healing choice",
       "formula_error": "Unhandled roll-data token: '@attributes.hd.smallestAvailable'",
-      "resource_error": "unsupported consumption type: hitDice"
+      "resource_error": "unsupported consumption type: hitDice",
+      "execution_path": "attack_triggered_rider",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "magical-cunning",
@@ -994,7 +1323,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": "unsupported consumption type: attribute"
+      "resource_error": "unsupported consumption type: attribute",
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "martial-arts",
@@ -1003,7 +1335,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": "@mod requires a governing ability but none was supplied for '@mod'",
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "martial-arts",
@@ -1012,7 +1347,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": "@mod requires a governing ability but none was supplied for '@mod'",
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "mask-of-many-faces",
@@ -1021,7 +1359,10 @@
       "classification": "unsupported_preflight",
       "reason": "activity has no executable feature semantic carrier",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "master-of-myriad-forms",
@@ -1030,7 +1371,10 @@
       "classification": "unsupported_preflight",
       "reason": "activity has no executable feature semantic carrier",
       "formula_error": "Unhandled roll-data token: '@attributes.movement.walk'",
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "master-of-myriad-forms",
@@ -1039,7 +1383,10 @@
       "classification": "unsupported_preflight",
       "reason": "activity has no executable feature semantic carrier",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "master-of-myriad-forms",
@@ -1048,7 +1395,10 @@
       "classification": "unsupported_preflight",
       "reason": "activity has no executable feature semantic carrier",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "master-of-myriad-forms",
@@ -1057,7 +1407,10 @@
       "classification": "unsupported_preflight",
       "reason": "activity has no executable feature semantic carrier",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "master-of-myriad-forms",
@@ -1066,7 +1419,10 @@
       "classification": "unsupported_preflight",
       "reason": "activity has no executable feature semantic carrier",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "master-of-myriad-forms",
@@ -1075,7 +1431,10 @@
       "classification": "unsupported_preflight",
       "reason": "activity has no executable feature semantic carrier",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "misty-visions",
@@ -1084,7 +1443,10 @@
       "classification": "unsupported_preflight",
       "reason": "activity has no executable feature semantic carrier",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "monks-focus",
@@ -1093,7 +1455,10 @@
       "classification": "fully_resolvable",
       "reason": "typed activity and required carriers validated",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": true,
+      "rider_executable": false
     },
     {
       "slug": "monks-focus",
@@ -1102,7 +1467,10 @@
       "classification": "fully_resolvable",
       "reason": "typed activity and required carriers validated",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": true,
+      "rider_executable": false
     },
     {
       "slug": "monks-focus",
@@ -1111,7 +1479,10 @@
       "classification": "fully_resolvable",
       "reason": "typed activity and required carriers validated",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": true,
+      "rider_executable": false
     },
     {
       "slug": "monks-focus",
@@ -1120,7 +1491,10 @@
       "classification": "semantic_special_case",
       "reason": "Step of the Wind requires Dash/Disengage and doubled jump distance",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "natural-recovery",
@@ -1129,7 +1503,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": "unsupported consumption type: activityUses"
+      "resource_error": "unsupported consumption type: activityUses",
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "natural-recovery",
@@ -1138,7 +1515,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": "unsupported consumption type: activityUses"
+      "resource_error": "unsupported consumption type: activityUses",
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "natures-sanctuary",
@@ -1147,7 +1527,10 @@
       "classification": "unsupported_preflight",
       "reason": "activity has no executable feature semantic carrier",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "natures-sanctuary",
@@ -1156,7 +1539,10 @@
       "classification": "unsupported_preflight",
       "reason": "activity has no executable feature semantic carrier",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "natures-veil",
@@ -1165,7 +1551,10 @@
       "classification": "unsupported_preflight",
       "reason": "activity has no executable feature semantic carrier",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "one-with-shadows",
@@ -1174,34 +1563,46 @@
       "classification": "unsupported_preflight",
       "reason": "activity has no executable feature semantic carrier",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "open-hand-technique",
       "activity_id": "1jdSaWanuRrdkVs3",
       "owner": "hand",
-      "classification": "semantic_special_case",
-      "reason": "unsupported activation/payment category",
+      "classification": "attack_rider_executable",
+      "reason": "standalone use_feature rejected; attack-triggered execution supported",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "attack_triggered_rider",
+      "standalone_executable": false,
+      "rider_executable": true
     },
     {
       "slug": "open-hand-technique",
       "activity_id": "XoaS0RtDCGAqrQsf",
       "owner": "hand",
-      "classification": "semantic_special_case",
-      "reason": "unsupported activation/payment category",
+      "classification": "attack_rider_executable",
+      "reason": "standalone use_feature rejected; attack-triggered execution supported",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "attack_triggered_rider",
+      "standalone_executable": false,
+      "rider_executable": true
     },
     {
       "slug": "open-hand-technique",
       "activity_id": "5Qgc0K3TfuonkPIG",
       "owner": "hand",
-      "classification": "semantic_special_case",
-      "reason": "unsupported activation/payment category",
+      "classification": "attack_rider_executable",
+      "reason": "standalone use_feature rejected; attack-triggered execution supported",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "attack_triggered_rider",
+      "standalone_executable": false,
+      "rider_executable": true
     },
     {
       "slug": "otherworldly-leap",
@@ -1210,7 +1611,10 @@
       "classification": "unsupported_preflight",
       "reason": "activity has no executable feature semantic carrier",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "overchannel",
@@ -1219,7 +1623,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "overchannel",
@@ -1228,7 +1635,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": "untyped damage/healing part",
-      "resource_error": "resource recovery/zero costs need a separate semantic operation"
+      "resource_error": "resource recovery/zero costs need a separate semantic operation",
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "pact-of-the-blade",
@@ -1237,7 +1647,10 @@
       "classification": "unsupported_preflight",
       "reason": "activity has no executable feature semantic carrier",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "pact-of-the-blade",
@@ -1246,7 +1659,10 @@
       "classification": "unsupported_preflight",
       "reason": "activity has no executable feature semantic carrier",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "pact-of-the-chain",
@@ -1255,7 +1671,10 @@
       "classification": "unsupported_preflight",
       "reason": "activity has no executable feature semantic carrier",
       "formula_error": null,
-      "resource_error": "unsupported consumption type: attribute"
+      "resource_error": "unsupported consumption type: attribute",
+      "execution_path": "standalone_activity",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "pact-of-the-chain",
@@ -1264,7 +1683,10 @@
       "classification": "unsupported_preflight",
       "reason": "activity has no executable feature semantic carrier",
       "formula_error": null,
-      "resource_error": "unsupported consumption type: attribute"
+      "resource_error": "unsupported consumption type: attribute",
+      "execution_path": "standalone_activity",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "peerless-skill",
@@ -1273,7 +1695,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "persistent-rage",
@@ -1282,7 +1707,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": "Unresolved @scale token (absent from carrier): '@scale.barbarian.rage'"
+      "resource_error": "Unresolved @scale token (absent from carrier): '@scale.barbarian.rage'",
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "preserve-life",
@@ -1291,7 +1719,10 @@
       "classification": "semantic_special_case",
       "reason": "requires divided healing, self inclusion and half-maximum HP cap",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "quickened-spell",
@@ -1300,25 +1731,34 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "quivering-palm",
       "activity_id": "lBn87Q4yyJXWzLqg",
       "owner": "hand",
-      "classification": "semantic_special_case",
-      "reason": "requires an authoritative hit/rider binding and its lifecycle",
+      "classification": "attack_rider_deferred",
+      "reason": "standalone use_feature rejected; attack rider deferred: requires previously bound vibration target and selected Attack-action replacement or Action release",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "attack_triggered_rider",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "quivering-palm",
       "activity_id": "O1mQr2rPpzRpB3yJ",
       "owner": "hand",
-      "classification": "semantic_special_case",
-      "reason": "unsupported activation/payment category",
+      "classification": "attack_rider_deferred",
+      "reason": "standalone use_feature rejected; attack rider deferred: requires one-target vibration binding, plane identity and later selected release lifecycle",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "attack_triggered_rider",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "rage",
@@ -1327,7 +1767,10 @@
       "classification": "fully_resolvable",
       "reason": "typed activity and required carriers validated",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": true,
+      "rider_executable": false
     },
     {
       "slug": "relentless-endurance",
@@ -1336,7 +1779,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "relentless-rage",
@@ -1345,7 +1791,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "relentless-rage",
@@ -1354,16 +1803,22 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "repelling-blast",
       "activity_id": "OXhI1TDQxORrGAgc",
       "owner": "warlock",
-      "classification": "semantic_special_case",
-      "reason": "unsupported activation/payment category",
+      "classification": "attack_rider_deferred",
+      "reason": "standalone use_feature rejected; attack rider deferred: requires validated selected cantrip invocation binding and authoritative target size",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "attack_triggered_rider",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "restoring-touch",
@@ -1372,7 +1827,10 @@
       "classification": "unsupported_preflight",
       "reason": "activity has no executable feature semantic carrier",
       "formula_error": null,
-      "resource_error": "Unhandled roll-data token: '@scaling'"
+      "resource_error": "Unhandled roll-data token: '@scaling'",
+      "execution_path": "standalone_activity",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "retaliation",
@@ -1381,7 +1839,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "sacred-weapon",
@@ -1390,7 +1851,10 @@
       "classification": "semantic_special_case",
       "reason": "activation requires an unmodeled trigger/reaction/rest",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "sear-undead",
@@ -1399,7 +1863,10 @@
       "classification": "semantic_special_case",
       "reason": "requires Turn Undead eligibility and combined turn/damage semantics",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "second-wind",
@@ -1408,7 +1875,10 @@
       "classification": "fully_resolvable",
       "reason": "typed activity and required carriers validated",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": true,
+      "rider_executable": false
     },
     {
       "slug": "seeking-spell",
@@ -1417,7 +1887,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "signature-spells",
@@ -1426,7 +1899,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "signature-spells",
@@ -1435,7 +1911,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": "unsupported consumption type: activityUses"
+      "resource_error": "unsupported consumption type: activityUses",
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "signature-spells",
@@ -1444,7 +1923,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": "unsupported consumption type: activityUses"
+      "resource_error": "unsupported consumption type: activityUses",
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "slow-fall",
@@ -1453,16 +1935,22 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "sneak-attack",
       "activity_id": "a1T6nHaqmvbLpyJr",
       "owner": "rogue",
-      "classification": "semantic_special_case",
-      "reason": "unsupported activation/payment category",
+      "classification": "attack_rider_executable",
+      "reason": "standalone use_feature rejected; attack-triggered execution supported",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "attack_triggered_rider",
+      "standalone_executable": false,
+      "rider_executable": true
     },
     {
       "slug": "sorcerous-restoration",
@@ -1471,7 +1959,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": "Unsupported formula token at ' / 2))'"
+      "resource_error": "Unsupported formula token at ' / 2))'",
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "sorcery-incarnate",
@@ -1480,7 +1971,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": "resource recovery/zero costs need a separate semantic operation"
+      "resource_error": "resource recovery/zero costs need a separate semantic operation",
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "spell-mastery",
@@ -1489,7 +1983,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "steady-aim",
@@ -1498,7 +1995,10 @@
       "classification": "unsupported_preflight",
       "reason": "activity has no executable feature semantic carrier",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "stonecunning",
@@ -1507,7 +2007,10 @@
       "classification": "unsupported_preflight",
       "reason": "activity has no executable feature semantic carrier",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "stones-endurance",
@@ -1516,7 +2019,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "storms-thunder",
@@ -1525,7 +2031,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "stroke-of-luck",
@@ -1534,16 +2043,22 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "stunning-strike",
       "activity_id": "Xto99a8Zt46VLwaR",
       "owner": "monk",
-      "classification": "semantic_special_case",
-      "reason": "unsupported activation/payment category",
+      "classification": "attack_rider_executable",
+      "reason": "standalone use_feature rejected; attack-triggered execution supported",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "attack_triggered_rider",
+      "standalone_executable": false,
+      "rider_executable": true
     },
     {
       "slug": "subtle-spell",
@@ -1552,7 +2067,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "superior-defense",
@@ -1561,7 +2079,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "superior-hunters-defense",
@@ -1570,7 +2091,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "superior-hunters-prey",
@@ -1579,7 +2103,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "survivor",
@@ -1588,7 +2115,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "tactical-mind",
@@ -1597,7 +2127,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "tireless",
@@ -1606,7 +2139,10 @@
       "classification": "unsupported_preflight",
       "reason": "activity-local use pools have no runtime carrier",
       "formula_error": null,
-      "resource_error": "unsupported consumption type: activityUses"
+      "resource_error": "unsupported consumption type: activityUses",
+      "execution_path": "standalone_activity",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "tireless",
@@ -1615,7 +2151,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": "unsupported consumption type: attribute"
+      "resource_error": "unsupported consumption type: attribute",
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "transmuted-spell",
@@ -1624,7 +2163,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "twinned-spell",
@@ -1633,7 +2175,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "uncanny-dodge",
@@ -1642,7 +2187,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "uncanny-metabolism",
@@ -1651,7 +2199,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": "resource recovery/zero costs need a separate semantic operation"
+      "resource_error": "resource recovery/zero costs need a separate semantic operation",
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "visions-of-distant-realms",
@@ -1660,7 +2211,10 @@
       "classification": "unsupported_preflight",
       "reason": "activity has no executable feature semantic carrier",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "whispers-of-the-grave",
@@ -1669,7 +2223,10 @@
       "classification": "unsupported_preflight",
       "reason": "activity has no executable feature semantic carrier",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "wholeness-of-body",
@@ -1678,7 +2235,10 @@
       "classification": "fully_resolvable",
       "reason": "typed activity and required carriers validated",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": true,
+      "rider_executable": false
     },
     {
       "slug": "wild-companion",
@@ -1687,7 +2247,10 @@
       "classification": "unsupported_preflight",
       "reason": "activity has no executable feature semantic carrier",
       "formula_error": null,
-      "resource_error": "unsupported consumption type: spellSlots"
+      "resource_error": "unsupported consumption type: spellSlots",
+      "execution_path": "standalone_activity",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "wild-companion",
@@ -1696,7 +2259,10 @@
       "classification": "unsupported_preflight",
       "reason": "activity has no executable feature semantic carrier",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "wild-resurgence",
@@ -1705,7 +2271,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": "unsupported consumption type: spellSlots"
+      "resource_error": "unsupported consumption type: spellSlots",
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "wild-resurgence",
@@ -1714,7 +2283,10 @@
       "classification": "semantic_special_case",
       "reason": "unsupported activation/payment category",
       "formula_error": null,
-      "resource_error": "resource recovery/zero costs need a separate semantic operation"
+      "resource_error": "resource recovery/zero costs need a separate semantic operation",
+      "execution_path": "other_event_triggered",
+      "standalone_executable": false,
+      "rider_executable": false
     },
     {
       "slug": "wild-shape",
@@ -1723,7 +2295,10 @@
       "classification": "fully_resolvable",
       "reason": "typed activity and required carriers validated",
       "formula_error": null,
-      "resource_error": null
+      "resource_error": null,
+      "execution_path": "standalone_activity",
+      "standalone_executable": true,
+      "rider_executable": false
     }
   ]
 }

@@ -34,7 +34,13 @@ from dnd5e_engine.activities.formula import resolve_damage_block, resolve_roll_d
 from dnd5e_engine.activities.save import _governing_ability, _resolve_dc, _resolve_save_ability
 from dnd5e_engine.events import DamageType
 
-AuditClassification = Literal["fully_resolvable", "unsupported_preflight", "semantic_special_case"]
+AuditClassification = Literal[
+    "fully_resolvable",
+    "unsupported_preflight",
+    "semantic_special_case",
+    "attack_rider_executable",
+    "attack_rider_deferred",
+]
 FeatureOperation = Literal["activity"] | FeatureRuntimeOperation
 
 
@@ -151,6 +157,16 @@ _SPECIAL: dict[str, str] = {
 
 
 def feature_operation(feature: Feature, activity: Activity) -> FeatureOperation:
+    if rider := feature.attack_riders.get(activity.id):
+        classification: AuditClassification = (
+            "attack_rider_deferred" if rider.deferred_reason else "attack_rider_executable"
+        )
+        rider_reason = (
+            f"standalone use_feature rejected; attack rider deferred: {rider.deferred_reason}"
+            if rider.deferred_reason
+            else "standalone use_feature rejected; attack-triggered execution supported"
+        )
+        raise FeaturePreflightError(rider_reason, classification=classification)
     if reason := _SPECIAL.get(feature.slug):
         raise FeaturePreflightError(reason, classification="semantic_special_case")
     key = (feature.slug, activity.id)
@@ -319,6 +335,8 @@ def preflight_feature(
     spent: Mapping[str, int],
 ) -> FeatureInvocation:
     activity = invocation.activities[0]
+    if activity.id in feature.attack_riders:
+        feature_operation(feature, activity)
     if activity.activation.type not in (
         "action",
         "bonus",

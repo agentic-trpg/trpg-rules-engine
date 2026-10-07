@@ -204,6 +204,42 @@
     }
   ],
   "advancement": [],
+  "attack_riders": {
+    "MbCGfaQAeW2rzNWb": {
+      "automatic": false,
+      "choice_group": null,
+      "deferred_options": {},
+      "deferred_reason": "requires on-own-turn qualification and validated Divine Strike choice/scaling",
+      "effects": [],
+      "forced_movement": null,
+      "inherit_damage_type": false,
+      "inventory_role": "rider",
+      "once_per_turn": false,
+      "phase": "after_damage",
+      "qualification": "any_weapon",
+      "related_activity_ids": [],
+      "sneak_dice_cost": 0,
+      "target_role": "attack_target",
+      "trigger": "final_hit"
+    },
+    "uYVz8MBW0EZ2X0zD": {
+      "automatic": false,
+      "choice_group": null,
+      "deferred_options": {},
+      "deferred_reason": "requires on-own-turn qualification and validated Divine Strike choice/scaling",
+      "effects": [],
+      "forced_movement": null,
+      "inherit_damage_type": false,
+      "inventory_role": "rider",
+      "once_per_turn": false,
+      "phase": "after_damage",
+      "qualification": "any_weapon",
+      "related_activity_ids": [],
+      "sneak_dice_cost": 0,
+      "target_role": "attack_target",
+      "trigger": "final_hit"
+    }
+  },
   "description": "Once on each of your turns when you hit a creature with an attack roll using a weapon, you can cause the target to take an extra 1d8 Necrotic or Radiant damage (your choice).\n\nFoundry Note\n\nThis feature's damage will automatically increase when you gain Improved Blessed Strikes.",
   "entry_kind": "feature",
   "feature_type": "class_feature",

@@ -563,6 +563,8 @@ def _damage_opportunity(live: _LiveCombat, damage: DamageInstanceContext) -> Non
 def attach_reaction_hooks(
     live: _LiveCombat, ctx: ActivityResolutionContext
 ) -> ActivityResolutionContext:
+    from dnd5e_engine.live_attack_riders import attach_attack_riders
+
     baseline = {
         target.entity_id: _ac_changes(live.active_effects.get(target.entity_id, []))
         for target in [*ctx.targets, *([ctx.cleave_candidate] if ctx.cleave_candidate else [])]
@@ -572,10 +574,13 @@ def attach_reaction_hooks(
         live.damage_instance_sequence += 1
         return f"damage:{live.damage_instance_sequence}:{ctx.caster.entity_id}:{target_id}"
 
-    return replace(
-        ctx,
-        attack_hit_reaction=lambda attack: _attack_opportunity(live, attack, baseline),
-        damage_instance_id_provider=next_instance,
-        damage_instance_resolved=lambda damage: _damage_opportunity(live, damage),
-        attack_continuation_allowed=lambda: can_continue_resolution(live, ctx.caster.entity_id),
+    return attach_attack_riders(
+        live,
+        replace(
+            ctx,
+            attack_hit_reaction=lambda attack: _attack_opportunity(live, attack, baseline),
+            damage_instance_id_provider=next_instance,
+            damage_instance_resolved=lambda damage: _damage_opportunity(live, damage),
+            attack_continuation_allowed=lambda: can_continue_resolution(live, ctx.caster.entity_id),
+        ),
     )

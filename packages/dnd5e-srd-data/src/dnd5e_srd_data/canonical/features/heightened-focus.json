@@ -187,6 +187,25 @@
     }
   ],
   "advancement": [],
+  "attack_rider_context": {
+    "automatic": false,
+    "choice_group": null,
+    "deferred_options": {},
+    "deferred_reason": "Flurry funding upgrade; full Heightened Focus shared effects remain deferred",
+    "effects": [],
+    "forced_movement": null,
+    "inherit_damage_type": false,
+    "inventory_role": "producer",
+    "once_per_turn": false,
+    "phase": "after_damage",
+    "qualification": "flurry_unarmed",
+    "related_activity_ids": [
+      "XLma1NEOJNEBD6mH"
+    ],
+    "sneak_dice_cost": 0,
+    "target_role": "attack_target",
+    "trigger": "flurry_hit"
+  },
   "description": "Your Flurry of Blows, Patient Defense, and Step of the Wind gain the following benefits.\n\nFlurry of Blows. You can expend 1 Focus Point to use Flurry of Blows and make three Unarmed Strikes with it instead of two.\n\nPatient Defense. When you expend a Focus Point to use Patient Defense, you gain a number of Temporary Hit Points equal to two rolls of your Martial Arts die.\n\nStep of the Wind. When you expend a Focus Point to use Step of the Wind, you can choose a willing creature within 5 feet of yourself that is Large or smaller. You move the creature with you until the end of your turn. The creature's movement doesn't provoke Opportunity Attacks.\n\nFoundry Note\n\nThe Flurry of Blows activity will expend 1 Focus Point and you can then make three Unarmed Strikes.\n\nThe Patient Defense activity will roll the Temporary Hit Points for you.",
   "entry_kind": "feature",
   "feature_type": "class_feature",

@@ -24,10 +24,13 @@ choice pools. The classifications are:
 |---|---:|---|
 | `fully_resolvable` | 17 | The supported invocation passes pure preflight; normal live target/economy gates still apply. |
 | `unsupported_preflight` | 44 | Refused before payment or draws: unsupported operation, formula/carrier or resource shape. |
-| `semantic_special_case` | 130 | Refused before payment or draws: missing triggering event, rider, lifecycle or action semantics. |
+| `semantic_special_case` | 99 | Refused before payment or draws: missing triggering event, lifecycle or action semantics. |
+| `attack_rider_executable` | 6 | Standalone invocation refuses; the authoritative attack path supports the rider. |
+| `attack_rider_deferred` | 25 | Standalone invocation refuses; the attack option is explicitly deferred with its missing clauses. |
 
 Each row records the feature slug, activity ID, actual granting owner, reason,
-and independent formula/resource diagnostics. The latter are collected even for
+and independent formula/resource diagnostics, plus `execution_path`,
+`standalone_executable` and `rider_executable`. The latter diagnostics are collected even for
 semantically rejected activities. The audit is a level-20 coverage fixture, not
 a proof of every possible actor/target state. Live tests run **all 191 rows**;
 additional tests vary class levels, multiclass ownership, selected choices,
@@ -116,22 +119,25 @@ and remains deferred. A scan of current canonical effects found **zero
 
 ## Deliberate remaining limits
 
-- **Stunning Strike:** the generic resource path resolves its canonical reference
-  to one Monk Focus point, including availability and multicost tests. The live
-  invocation still rejects: there is no authoritative hit binding, and the
-  canonical success rider has neither correct save polarity nor speed/next-hit
-  semantics. This batch does **not** claim a usable, charged Stunning Strike.
+- **Attack-bound execution:** standalone Stunning Strike, Sneak Attack, Open Hand
+  Technique and Devious Strikes Obscure continue to reject. Their typed attack
+  path is described in [attack feature riders](attack-feature-riders.md) and the
+  [option audit](attack-rider-audit.json). This distinction prevents standalone
+  damage, saves or resource payments from bypassing an actual qualifying hit.
 - **Step of the Wind:** the corpus includes only the Focus variant. Combined
   Dash/Disengage plus doubled jump distance lacks a full carrier, so it rejects;
   no free variant was invented.
-- **Brutal/Cunning Strike, Devious Strikes and other hit riders:** no standalone
-  damage or saves bypass their missing attack binding.
+- **Remaining optional riders:** Cunning Strike Poison/Trip/Withdraw, Devious
+  Strikes Daze/Knock Out, Reckless/Brutal Strike and other corpus riders remain
+  deferred per option. Obscure is a Dexterity save ending at the end of the
+  target's next turn; one supported option does not imply a complete feature.
 - **Preserve Life:** formula support does not provide pool division, self
   inclusion or a half-maximum HP cap; the invocation rejects.
 - **Breath Weapon / Intimidating Presence:** Attack replacement and ancestry-bound
   damage, or repeated saves/condition duration, respectively, remain deferred.
-- **Persistent Rage recovery, Font/Superior Inspiration and reactions:** no new
-  initiative/rest trigger or reaction architecture. Bardic Inspiration's save
+- **Persistent Rage recovery and Font/Superior Inspiration:** initiative/rest
+  triggers remain deferred. The separate [reaction subsystem](reaction-queue.md)
+  provides typed pre-arm auto-fire. Bardic Inspiration's save
   and spell-attack redemption also remain deferred.
 
 The corpus test asserts byte-equivalent serialized rules state and RNG for

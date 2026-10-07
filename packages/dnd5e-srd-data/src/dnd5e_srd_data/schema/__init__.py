@@ -96,10 +96,17 @@ from dnd5e_srd_data.schema.condition import (
 )
 from dnd5e_srd_data.schema.feat import Feat, FeatCategory, FeatPrerequisite
 from dnd5e_srd_data.schema.feature import (
+    AttackRiderPhase,
+    AttackRiderQualification,
+    AttackRiderSemantics,
+    AttackRiderTrigger,
     Feature,
     FeatureType,
     FeatureUses,
     RecoveryRule,
+    RiderEffectExpiry,
+    RiderEffectSpec,
+    RiderForcedMovement,
 )
 from dnd5e_srd_data.schema.item import (
     Armor,
@@ -155,6 +162,10 @@ __all__ = [
     "AttackCriticalBlock",
     "AttackDamageBlock",
     "AttackDamageCriticalBlock",
+    "AttackRiderPhase",
+    "AttackRiderQualification",
+    "AttackRiderSemantics",
+    "AttackRiderTrigger",
     "AttackTypeBlock",
     "Background",
     "BackgroundAbilityChoice",
@@ -226,6 +237,9 @@ __all__ = [
     "ReactionTriggerKind",
     "RecoveryRule",
     "ReviewState",
+    "RiderEffectExpiry",
+    "RiderEffectSpec",
+    "RiderForcedMovement",
     "RollBlock",
     "SaveActivity",
     "SaveBlock",

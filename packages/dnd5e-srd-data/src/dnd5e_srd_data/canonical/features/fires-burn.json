@@ -113,6 +113,25 @@
     }
   ],
   "advancement": [],
+  "attack_riders": {
+    "002cv19dj8WGzSl2": {
+      "automatic": false,
+      "choice_group": null,
+      "deferred_options": {},
+      "deferred_reason": "requires positive triggering damage and linked species resource damage rider",
+      "effects": [],
+      "forced_movement": null,
+      "inherit_damage_type": false,
+      "inventory_role": "rider",
+      "once_per_turn": false,
+      "phase": "after_damage",
+      "qualification": "any_attack",
+      "related_activity_ids": [],
+      "sneak_dice_cost": 0,
+      "target_role": "attack_target",
+      "trigger": "final_hit"
+    }
+  },
   "description": "When you hit a target with an attack roll and deal damage to it, you can also deal 1d10 Fire damage to that target.",
   "entry_kind": "feature",
   "feature_type": "species_trait",

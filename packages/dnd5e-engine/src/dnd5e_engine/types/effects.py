@@ -78,6 +78,13 @@ class ActiveEffectChange(BaseModel):
       ac.bonus, ac.override   — AC modifications
       speed.override         — scalar zero-speed override from condition
                                 projection, consumed by project_speed()
+      speed.multiplier       — multiply-mode positive scalar on effective Speed
+      speed.reduction        — add-mode scalar subtracted from effective Speed
+      flags.cannot_make_opportunity_attacks
+                              — override-mode True suppresses OA selection
+      flags.attack.next_advantage, attack.next_bonus
+                              — target-held next-attack advantage / scalar bonus;
+                                consumed on the matching roll, even on a miss
       d20_test.penalty_per_level, speed.penalty_per_level
                               — integer overrides from canonical condition
                                 clauses; consumers multiply by runtime level
@@ -128,6 +135,11 @@ class ActiveEffect(BaseModel):
     the end of your next turn" — the engine expires the effect at that
     actor's next turn end, granting a one-turn grace when the effect was
     applied during that actor's own turn.
+
+    Bound attack riders carry ``rider_expiry_actor_id``,
+    ``rider_expiry_phase`` (start/end) and ``rider_applied_turn_serial``.
+    Their declared turn boundary owns expiry instead of duration counters;
+    the full (target_id, id, origin) identity owns one-use consumption.
 
     Pure Pydantic model. Zero I/O. Engine-owned during combat;
     the host does not persist instances of this class between combats

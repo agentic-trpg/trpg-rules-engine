@@ -3,9 +3,9 @@ from __future__ import annotations
 import random
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
-from dnd5e_engine.events import CombatEvent, DamageType
+from dnd5e_engine.events import AdvantageMode, AdvantageSource, CombatEvent, DamageType
 from dnd5e_engine.types.checks import CheckActorState, CheckRequest
 from dnd5e_engine.types.combat import Combatant
 
@@ -53,6 +53,63 @@ class AttackHitContext:
     is_opportunity_attack: bool
 
 
+AttackOrigin = Literal[
+    "action",
+    "light_offhand",
+    "nick",
+    "flurry",
+    "martial_arts_bonus",
+    "construct",
+    "opportunity",
+    "monster",
+    "spell",
+    "default",
+]
+WeaponCategory = Literal["simple_melee", "simple_ranged", "martial_melee", "martial_ranged"]
+
+
+@dataclass(frozen=True)
+class AttackRollModifier:
+    """One matching roll's already-consumed modifier, before its d20 draw."""
+
+    advantage_sources: tuple[AdvantageSource, ...] = ()
+    disadvantage_sources: tuple[AdvantageSource, ...] = ()
+    flat_bonus: int = 0
+
+
+@dataclass(frozen=True)
+class AttackResolutionContext:
+    """Authoritative final hit and Sneak Attack plan for generic riders.
+
+    Preparation runs after hit-changing reactions and before damage dice.
+    Resolution receives the same plan after damage, with the applied dice
+    sacrifice and actual damage filled in. No host intent is reinterpreted.
+    """
+
+    attacker_id: str
+    target_id: str
+    source_activity_id: str
+    weapon_slug: str | None
+    weapon_category: WeaponCategory | None
+    unarmed: bool
+    governing_ability: str | None
+    advantage_mode: AdvantageMode
+    advantage_sources: tuple[AdvantageSource, ...]
+    disadvantage_sources: tuple[AdvantageSource, ...]
+    is_hit: bool
+    is_crit: bool
+    attack_origin: AttackOrigin
+    turn_serial: int
+    sneak_eligible: bool
+    sneak_will_fire: bool
+    sneak_dice_count: int
+    damage_types: tuple[str, ...]
+    monk_weapon: bool = False
+    sneak_dice_sacrificed: int = 0
+    remaining_sneak_dice_count: int = 0
+    damage_dealt: int = 0
+
+
 @dataclass(frozen=True)
 class DamageInstanceContext:
     """One target's complete damage instance, after all typed parts fold."""
@@ -86,6 +143,12 @@ class ActivityResolutionContext:
     # Damage reactions can kill/incapacitate an attacker between attacks in
     # one shared context. Live state decides whether another roll may begin.
     attack_continuation_allowed: Callable[[], bool] | None = None
+    attack_origin: AttackOrigin = "default"
+    turn_serial: int = 0
+    attack_roll_modifier: Callable[[str, str], AttackRollModifier] | None = None
+    attack_rider_prepare: Callable[[AttackResolutionContext], int] | None = None
+    attack_rider_resolved: Callable[[AttackResolutionContext], None] | None = None
+    sneak_attack_commit: Callable[[str, str], None] | None = None
     # A live combat supplies one deterministic sequence across contexts. The
     # local fallback is shared by dataclasses.replace, including cast wrappers.
     damage_instance_id_provider: Callable[[str, str | None], str] | None = None

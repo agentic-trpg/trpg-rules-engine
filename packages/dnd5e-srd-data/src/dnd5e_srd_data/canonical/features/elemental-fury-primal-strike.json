@@ -106,6 +106,25 @@
     }
   ],
   "advancement": [],
+  "attack_riders": {
+    "lHdiTksQmeJBFrf7": {
+      "automatic": false,
+      "choice_group": null,
+      "deferred_options": {},
+      "deferred_reason": "requires weapon-or-Wild-Shape qualification, on-own-turn gate and elemental damage choice",
+      "effects": [],
+      "forced_movement": null,
+      "inherit_damage_type": false,
+      "inventory_role": "rider",
+      "once_per_turn": false,
+      "phase": "after_damage",
+      "qualification": "any_weapon",
+      "related_activity_ids": [],
+      "sneak_dice_cost": 0,
+      "target_role": "attack_target",
+      "trigger": "final_hit"
+    }
+  },
   "description": "Once on each of your turns when you hit a creature with an attack roll using a weapon or a Beast form's attack in Wild Shape, you can cause the target to take an extra 1d8 [[/damage 1d8 type=cold]]{cold}, [[/damage 1d8 type=fire]]{fire}, [[/damage 1d8 type=lightning]]{lightning}, or [[/damage 1d8 type=thunder]]{thunder} damage (choose when you hit).\n\nFoundry Note\n\nThis feature's damage will automatically increase when you gain Improved Elemental Fury. If using the activity you will be able to select the damage type when rolling. It will default to your previously chosen damage type.",
   "entry_kind": "feature",
   "feature_type": "class_feature",

@@ -90,11 +90,6 @@ from dnd5e_engine.activities.actor_stats import (
     save_modifier,
     skill_ability,
 )
-from dnd5e_engine.activities.attack import (
-    attacker_advantage_flags,
-    sneak_attack_dice,
-    sneak_attack_triggers,
-)
 from dnd5e_engine.activities.build_context import build_activity_context, spell_attack_magnitudes
 from dnd5e_engine.activities.conjuration import (
     CONJURATION_ALLOWLIST,
@@ -153,6 +148,7 @@ from dnd5e_engine.areas import (
     is_harmful,
     select_affected,
 )
+from dnd5e_engine.attack_riders import AttackRiderRequest
 from dnd5e_engine.death_saves import DeathSaveState, roll_death_save
 from dnd5e_engine.events import (
     Ability,
@@ -208,6 +204,17 @@ from dnd5e_engine.feature_runtime import (
     FeatureInvocation as _FeatureInvocation,
 )
 from dnd5e_engine.lib_loader import get_lib_loader
+from dnd5e_engine.live_attack_riders import (
+    attach_attack_riders,
+    attack_origin,
+    expire_rider_effects,
+    observe_rider_event,
+    prepare_intent_riders,
+    prevents_opportunity_attacks,
+    register_rider_hooks,
+    reject_nonattack_riders,
+    rider_speed,
+)
 from dnd5e_engine.live_checks import (
     observe_check,
     preflight_activity_checks,
@@ -358,6 +365,7 @@ class PlayerIntent(BaseModel):
     # ``None`` (the common case) leaves single-activity features unchanged and
     # keeps the safe no-op reject for a multi-activity feature (never guess).
     activity_id: str | None = None
+    attack_riders: tuple[AttackRiderRequest, ...] = ()
     slot_level: int | None = None
     # Charges to spend on a variable-cost item invocation (wand upcast).
     # Validated by the use_item charge gate against consumption.scaling.
@@ -1877,55 +1885,6 @@ def _apply_forced_movement_riders(
             push_combatant(live, ev.target_id, origin_cell, rider.distance_ft)
 
 
-def _record_sneak_attack_spent(
-    live: _LiveCombat,
-    caster: Combatant,
-    weapon: Weapon | None,
-    targets: Sequence[Combatant],
-    actx: ActivityResolutionContext,
-    pre_event_count: int,
-) -> None:
-    """SRD §Sneak Attack, "Once per turn" — flip the caster's per-turn
-    ``sneak_attack_spent_this_turn`` flag once a rider has actually fired.
-
-    The rider folds inside the pure resolver; recording the actor-state is the
-    orchestrator's job. A rider fired iff this was a weapon attack, the caster
-    has Sneak Attack dice, was not already spent, and at least one damaged
-    target satisfied the trigger (``sneak_attack_triggers`` — the SAME predicate
-    the resolver gated the fold on, reused here so the two never diverge).
-
-    ``weapon`` is the swung weapon — ``None`` for anything but a weapon
-    attack, which spends nothing. The flag clears at every ``TurnStarted``
-    (``_emit_apply_turn_started``), so an opportunity attack on another
-    creature's turn can deal Sneak Attack again.
-    """
-    if weapon is None:
-        return
-    if caster.sneak_attack_spent_this_turn or sneak_attack_dice(actx) is None:
-        return
-    has_advantage, has_disadvantage = attacker_advantage_flags(actx)
-    damaged_ids = {
-        e.target_id for e in live.event_log[pre_event_count:] if isinstance(e, DamageApplied)
-    }
-    fired = any(
-        target.entity_id in damaged_ids
-        and sneak_attack_triggers(
-            actx,
-            weapon,
-            target,
-            attacker_has_advantage=has_advantage,
-            attacker_has_disadvantage=has_disadvantage,
-        )
-        for target in targets
-    )
-    if not fired:
-        return
-    for idx, c in enumerate(live.initiative):
-        if c.entity_id == caster.entity_id:
-            live.initiative[idx] = c.model_copy(update={"sneak_attack_spent_this_turn": True})
-            break
-
-
 def _path_total_distance(topology: SpatialTopology, path: Sequence[str]) -> int | None:
     """Sum a shortest-path's edge distances; ``None`` if any step is missing.
 
@@ -2991,6 +2950,7 @@ def _resolve_monster_attack_activities(
         # is a recorded follow-up.
         spell_book={},
         is_opportunity_attack=is_opportunity_attack,
+        attack_origin="opportunity" if is_opportunity_attack else "monster",
         **_monster_context_kwargs(live, actor, target_list, payload),
     )
     actx = attach_reaction_hooks(live, actx)
@@ -3344,6 +3304,7 @@ class _LiveCombat:
     active_reaction_responses: list[ActiveReactionResponse] = field(default_factory=list)
     reaction_resolution_depth: int = 0
     damage_instance_sequence: int = 0
+    rider_uses: set[tuple[str, str, int]] = field(default_factory=set)
     processed_zero_hp_damage_instances: set[tuple[str, str]] = field(default_factory=set)
     # SRD §Reactions / one-round buffs — a reaction-applied effect (Shield)
     # fires DURING another actor's turn, so the generic caster-turn-end
@@ -3696,6 +3657,7 @@ def _effective_speed(c: Combatant, live: _LiveCombat | None = None) -> int:
     if live is not None and live.slow_marks.get(c.entity_id):
         speed = max(0, speed - 10)
     if live is not None:
+        speed = rider_speed(live, c.entity_id, speed)
         speed = area_speed(live, c.entity_id, speed)
     return speed
 
@@ -4966,6 +4928,7 @@ def _emit(live: _LiveCombat, event: CombatEvent) -> None:
             )
             return
     observe_reaction_lifecycle(live, event)
+    observe_rider_event(live, event)
     live.event_log.append(event)
     live.timed_activities.observe(event)
     live.event_queue.put_nowait(event)
@@ -5025,6 +4988,8 @@ def _emit_apply_turn_started(live: _LiveCombat, event: TurnStarted) -> None:
     budgets on the initiative slot."""
     live.current_actor_id = event.actor_id
     live.turn_serial += 1
+    live.rider_uses.clear()
+    expire_rider_effects(live, event.actor_id, "start")
     before_turn_start(live, event.actor_id)
     # SRD §Action Economy — refresh the actor's per-turn budgets on the
     # start of their own turn. The reaction line ("You regain your
@@ -5475,7 +5440,9 @@ def _emit_apply_effect_applied(live: _LiveCombat, event: EffectApplied) -> None:
     applied = event.effect
     live.active_effects.setdefault(applied.target_id, []).append(applied)
     added = _attach_effect_statuses(live, applied)
-    if applied.statuses:
+    if applied.statuses or any(
+        change.key in ("speed.multiplier", "speed.reduction") for change in applied.changes
+    ):
         _clamp_movement_budget(live, applied.target_id)
     # SRD spell-slot consumption: spell effects with concentration imply
     # a slot was spent. The slot level is not on the event today (follow-up
@@ -7052,6 +7019,7 @@ def _register_default_turn_hooks(live: _LiveCombat) -> None:
     )
     live.lifecycle.register("turn_end", _hook_expire_vex_grants, key="engine:vex-expiry")
     live.lifecycle.register("turn_end", _hook_rage_extension, key="engine:rage-extension")
+    register_rider_hooks(live)
 
 
 def _tick_durations_at_turn_end(live: _LiveCombat, actor_id: str) -> None:
@@ -9841,6 +9809,7 @@ def _resolve_construct_attack(
         base_spell_level=spec.base_level,
         spellcasting_ability=ability,
         concentration=False,
+        attack_origin="construct",
         source_passive_effects=[],
         spell_book={},
         active_effects=tuple(live.active_effects.get(owner.entity_id, [])),
@@ -11989,10 +11958,14 @@ async def submit_player_intent(
     after restoring every live field and the RNG. Normal refusals keep their
     authoritative rejection events. The pure preflight remains the primary gate.
     """
-    if intent.intent_type != "use_feature":
+    live = _get_live(handle)
+    if intent.attack_riders:
+        _validate_intent_preconditions(live, handle, actor_id, intent=intent)
+        if reject_nonattack_riders(live, actor_id, intent):
+            return
+    if intent.intent_type != "use_feature" and not intent.attack_riders:
         await _submit_player_intent(handle, actor_id, intent)
         return
-    live = _get_live(handle)
     queue = live.event_queue
     listeners = live.event_listeners
     original_rng = live.rng
@@ -12110,6 +12083,10 @@ async def _submit_player_intent(
         attack_weapon,
         repeats_construct=_repeated_construct(live, current, intent) is not None,
     )
+    rider_origin = attack_origin(intent, attack_weapon, funding)
+    rider_plans = prepare_intent_riders(live, current, intent, attack_weapon, rider_origin)
+    if rider_plans is None:
+        return
 
     # Pre-resolution reject gates — each checked BEFORE any action budget is
     # consumed, so a rejection spends no Action/Bonus Action/slot and leaves
@@ -12440,6 +12417,7 @@ async def _submit_player_intent(
             ),
         )
         actx = attach_reaction_hooks(live, actx)
+        actx = attach_attack_riders(live, actx, rider_plans, origin=rider_origin)
         if cast_spell is not None:
             resolve_spell_activities(live, cast_spell, actx, intent=intent)
         else:
@@ -12476,14 +12454,6 @@ async def _submit_player_intent(
         # context was built before this removal, so the C12 advantage
         # fold already applied) — this only affects the NEXT action.
         _break_hide_on_attack_or_verbal_cast(live, current, intent, cast_spell)
-
-        # SRD §Sneak Attack, "Once per turn" — record that the rider fired so a
-        # (future) second qualifying attack this turn is capped. The rider folds
-        # inside the pure resolver; the orchestrator owns the actor-state write.
-        # A rider fired iff the caster was sneak-eligible for a hit target this
-        # resolution (finesse/ranged weapon + Advantage or an adjacent ally),
-        # was not already spent, and at least one target took damage.
-        _record_sneak_attack_spent(live, current, fetched_weapon, targets, actx, pre_event_count)
 
         # SRD 5.2 §Spell Descriptions — typed forced-movement riders (e.g.
         # Thunderwave's "pushed 10 feet away from you") fire after the
@@ -12587,6 +12557,8 @@ def _opportunity_attackers(
         ) or not _is_enemy(live, reactor_id, mover_id):
             continue
         if not can_take_reaction(live, reactor):
+            continue
+        if prevents_opportunity_attacks(live, reactor_id):
             continue
         reactor_cell = live.actor_zone.get(reactor_id)
         attack = _opportunity_attack_of(live, reactor) if reactor_cell is not None else None
@@ -12811,7 +12783,6 @@ def _resolve_opportunity_attack(live: _LiveCombat, reactor: Combatant, mover: Co
     _consume_attack_roll_grants(live, reactor, targets, pre_event_count)
     _fold_mastery_procs(live, reactor.entity_id, actx)
     _break_hide(live, reactor.entity_id)
-    _record_sneak_attack_spent(live, reactor, weapon, targets, actx, pre_event_count)
     _fold_resolution_outcome(live, reactor, spell=None, actx=actx, pre_event_count=pre_event_count)
     _sync_legendary_resistance(live, pre_event_count)
 

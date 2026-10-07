@@ -84,6 +84,25 @@
     }
   ],
   "advancement": [],
+  "attack_rider_context": {
+    "automatic": false,
+    "choice_group": null,
+    "deferred_options": {},
+    "deferred_reason": "incoming-hit reaction requires attacker visibility and triggering damage-instance halving",
+    "effects": [],
+    "forced_movement": null,
+    "inherit_damage_type": false,
+    "inventory_role": "defensive",
+    "once_per_turn": false,
+    "phase": "final_hit_before_damage",
+    "qualification": "any_attack",
+    "related_activity_ids": [
+      "7krJIcGhZl9RqzYl"
+    ],
+    "sneak_dice_cost": 0,
+    "target_role": "attack_target",
+    "trigger": "final_hit"
+  },
   "description": "When an attacker that you can see hits you with an attack roll, you can take a Reaction to halve the attack's damage against you (round down).\n\nFoundry Note\n\nWith your token selected you can either right click on the damage roll's chat card and select \u00a0Apply Half Damage or click the \"1/2\" button and then the \u00a0Apply button.",
   "entry_kind": "feature",
   "feature_type": "class_feature",

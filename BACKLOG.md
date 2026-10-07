@@ -202,11 +202,13 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   decision per spec §5 C17.
   (`packages/dnd5e-engine/src/dnd5e_engine/spellcasting.py`,
   `packages/dnd5e-engine/src/dnd5e_engine/events.py::SpellCast`)
-- **Rules that suppress or alter an opportunity attack are not modelled
-  (2026-10-03, C24).** The trigger knows only Disengage, sight, Charmed and
-  Incapacitated. Unmodelled: the Agile trait (Deer, Rat: "doesn't provoke an
+- **Remaining rules that suppress or alter an opportunity attack
+  (2026-10-03, C24; narrowed 2026-10-08).** Open Hand Technique's Addle now
+  suppresses the target's opportunity attacks until its next turn starts,
+  through the shared typed effect consumer. Unmodelled: the Agile trait
+  (Deer, Rat: "doesn't provoke an
   Opportunity Attack when it moves out of an enemy's reach"); "can't make
-  Opportunity Attacks" riders (Shocking Grasp, Open Hand Technique's Addle,
+  Opportunity Attacks" riders (Shocking Grasp,
   Improved Brutal Strike's Staggering Blow, Mace of Terror); moves "without
   provoking Opportunity Attacks" (Tactical Shift, Cunning Strike's Withdraw,
   Brutal Strike's Forceful Blow, Remarkable Athlete); Disadvantage on
@@ -214,17 +216,6 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   Speed). Flyby and Nimble Escape are recorded under "Typed traits are
   hydrated".
   (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_opportunity_attackers`)
-- **The Cleave chain's damage routes through `_apply_on_hit_damage`, which
-  folds Sneak Attack BEFORE the orchestrator writes the once-per-turn cap
-  — the chained hit is structurally unguarded against a second Sneak
-  Attack fold on the same turn** (2026-09-02, C15 final-review F7). Not
-  reachable today: no shipped Cleave weapon (greataxe, halberd) carries
-  Finesse or a ranged category, so `sneak_attack_triggers`'s qualifying-
-  weapon gate always excludes them — but nothing in `_resolve_cleave_chain`
-  itself re-checks `ctx.sneak_attack_spent` between the main hit and the
-  chained one, so a future data change (a Finesse/ranged weapon gaining
-  the `cleave` mastery) would silently double-fold the rider.
-  (`packages/dnd5e-engine/src/dnd5e_engine/activities/attack.py::_resolve_cleave_chain`)
 - **A cast longer than a turn resolves as an Action (2026-09-25, C21a;
   amended 2026-09-26, C21b).** `_classify_action_cost` special-cases only
   Bonus Action and Reaction casts, so a 1-minute or 1-hour cast resolves
@@ -533,8 +524,10 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   estimate is retired. The pre-change numeric resolver audit found 20 failures
   among 77 damage/heal/save activities; that count did not prove public API
   reachability. The new deterministic audit covers all 191 reachable canonical
-  activities: 17 `fully_resolvable`, 44 `unsupported_preflight`, and 130
-  `semantic_special_case`. Every rejected invocation is checked before action,
+  activities: 17 `fully_resolvable`, 44 `unsupported_preflight`, 99
+  `semantic_special_case`, six `attack_rider_executable` and 25
+  `attack_rider_deferred` (updated 2026-10-08). Executable riders still reject
+  standalone invocation. Every rejected invocation is checked before action,
   resource or RNG consumption. See [the contract](docs/dev/feature-runtime.md)
   and [slug/activity/reason rows](docs/dev/feature-runtime-audit.json).
   Closed shared gaps: selected feature build-to-combat projection, owner-class
@@ -544,12 +537,6 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
 - **Heal bonus producer audit (2026-10-07).** Current canonical effects contain
   zero `system.bonuses.heal.*` producers. A generic consumer is deferred until
   there is a typed producer/contract; no feature-specific bonus shortcut was added.
-- **Stunning Strike needs complete hit/rider semantics (2026-10-07).** Its exact
-  Foundry reference resolves through the shared resource lookup to one Monk Focus
-  point. The live invocation rejects before payment: hit binding, once-per-turn
-  eligibility, source-turn expiry, and the successful-save speed/next-attack rider
-  are not represented. Canonical also marks both riders as failed-save effects.
-  Resource pricing alone does not make Stunning Strike executable.
 - **Step of the Wind remains deferred (2026-10-07).** The corpus contains only
   the Focus variant. Its doubled jump distance has no carrier; preflight rejects
   rather than applying only Dash/Disengage. Patient Defense's free Disengage and
@@ -560,10 +547,26 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   `use_item` conservatively count as Magic actions. The restricted extra Action
   therefore cannot fund them. Attack/Magic ordering and refused casts preserve
   the appropriate budgets.
-- **Attack riders require hit binding (2026-10-07).** Brutal Strike, Cunning
-  Strike, Devious Strikes and other trigger-bound activities reject before
-  payment. Brutal Strike can no longer deal standalone damage without Reckless
-  Attack or a hit. Implement them through a future shared rider-selection seam.
+- **Remaining attack rider options (narrowed 2026-10-08).** Shared typed attack
+  binding, Stunning Strike, Open Hand Addle/Push/Topple and Devious Obscure are
+  executable. Sneak Attack commits inside damage resolution before Cleave or
+  another attack can select it again. The full [rider inventory](docs/dev/attack-rider-audit.json)
+  distinguishes six executable riders, 26 deferred options and 19 supporting
+  contexts; see [the contract](docs/dev/attack-feature-riders.md).
+  Cunning Poison still needs authoritative Poisoner's Kit inventory and repeated
+  end-turn saves; Trip needs target size; Withdraw needs immediate half-Speed
+  movement with a move-scoped OA exemption. Devious Daze needs mutually exclusive
+  movement/Action/Bonus Action restrictions, and Knock Out needs break-on-damage
+  plus repeated saves. These complete options reject before payment.
+- **Reckless Attack / Brutal Strike foundation (2026-10-08).** The own-turn
+  first-attack STR declaration, forgoing Reckless advantage before rolling,
+  no-remaining-disadvantage gate and incoming-attack advantage lifetime remain
+  absent. Brutal damage and Hamstring, Forceful, Staggering and Sundering all
+  remain deferred. Forceful also needs immediate half-Speed follow movement;
+  Staggering next-save disadvantage consumption; Sundering a one-use `+5` for
+  the next other attacker. Existing generic effect consumers alone do not close
+  these options. Other inventoried riders retain their exact missing qualifiers,
+  costs, target and lifecycle clauses in the audit.
 - **Breath Weapon and Intimidating Presence (2026-10-07).** Canonical feature
   invocation now rejects. Breath Weapon lacks Attack replacement and ancestry-bound
   damage selection; Intimidating Presence lacks repeated end-of-turn saves and

@@ -103,6 +103,23 @@ def test_published_spell_counts_match_the_corpus(
     assert int(conc.group(1)) == spell_stats["inert_concentration"]
 
 
+def test_feature_audit_counts_separate_standalone_and_bound_attack_execution(
+    matrix_text: str,
+) -> None:
+    from dnd5e_engine.feature_audit import audit_document
+
+    audit = audit_document(BundledAssetLoader())
+    for classification, phrase in (
+        ("fully_resolvable", "standalone resolvable"),
+        ("unsupported_preflight", "unsupported"),
+        ("semantic_special_case", "semantic cases"),
+        ("attack_rider_executable", "executable attack riders"),
+        ("attack_rider_deferred", "deferred attack activities"),
+    ):
+        assert f"{audit['counts'][classification]} {phrase}" in matrix_text
+    assert "An executable rider still rejects standalone `use_feature`" in matrix_text
+
+
 def test_named_inert_concentration_spells_really_are_inert(canonical_dir: Path) -> None:
     """The page names specific staples as inert; verify each actually is."""
     for slug in (
@@ -294,6 +311,131 @@ def _monster_magnitudes_resolve() -> bool:
         and resolve_roll_data("@skills.ath.passive", ctx) == "12"
         and aboleth is not None
         and aboleth.initiative_modifier == 7
+    )
+
+
+def _attack_rider_options_resolve(
+    feature_slug: str,
+    activity_ids: tuple[str, ...],
+    *,
+    class_slug: str,
+    level: int,
+    flurry: bool = False,
+) -> bool:
+    """Exercise the typed, draw-free planner with real class/subclass grants."""
+    from dnd5e_engine.activities.build_context import build_activity_context
+    from dnd5e_engine.activities.scale import build_scale_values
+    from dnd5e_engine.attack_riders import AttackRiderRequest, plan_attack_riders
+    from dnd5e_engine.feature_runtime import DrawFreeRandom, FeaturePreflightError
+    from dnd5e_engine.types.combat import Combatant
+
+    loader = BundledAssetLoader()
+    actor = Combatant(
+        entity_id="char:probe",
+        entity_type="Character",
+        name="Probe",
+        initiative=20,
+        hp_current=100,
+        class_slug=class_slug,
+        character_level=level,
+        subclass_slug="hand" if flurry else None,
+        dexterity=18,
+        wisdom=18,
+    )
+    weapon = loader.get_weapon("dagger" if class_slug == "rogue" else "quarterstaff")
+    assert weapon is not None
+    if flurry:
+        weapon = weapon.model_copy(update={"slug": "unarmed-strike"})
+    ctx = build_activity_context(
+        actor,
+        [],
+        rng=DrawFreeRandom(0),
+        slot_level=None,
+        base_spell_level=None,
+        concentration=False,
+        event_emitter=lambda _: None,
+        spellcasting_ability=None,
+        source_passive_effects=[],
+        spell_book={},
+        passive_damage_modifiers={},
+        save_modifiers={},
+        class_levels={class_slug: level},
+        scale_values=build_scale_values(
+            class_slug=class_slug,
+            subclass_slug=actor.subclass_slug,
+            species_slug=None,
+            level=level,
+            loader=loader,
+        ),
+        is_feature_invocation=True,
+    )
+    feature = loader.get_feature(feature_slug)
+    assert feature is not None
+    for activity_id in activity_ids:
+        semantics = feature.attack_riders.get(activity_id)
+        if semantics is None:
+            return False
+        request = AttackRiderRequest(
+            feature_id=feature_slug,
+            activity_id=activity_id,
+            push_distance_ft=15 if semantics.forced_movement else None,
+        )
+        try:
+            plans = plan_attack_riders(
+                actor,
+                (request,),
+                weapon=weapon,
+                origin="flurry" if flurry else "action",
+                ctx=ctx,
+                loader=loader,
+                spent={},
+                used_features=set(),
+                cell_size_ft=5,
+            )
+        except FeaturePreflightError:
+            return False
+        if len(plans) != 1:
+            return False
+    return (
+        "prepare_intent_riders(live," in _src("orchestrator.py")
+        and "attach_attack_riders(live," in _src("orchestrator.py")
+        and "resolve_activity(" in _src("live_attack_riders.py")
+    )
+
+
+def _cunning_rider_scope_matches() -> bool:
+    return _attack_rider_options_resolve(
+        "devious-strikes",
+        ("ki4lIPVGNA0HjEzH",),
+        class_slug="rogue",
+        level=14,
+    ) and all(
+        not _attack_rider_options_resolve(slug, (activity,), class_slug="rogue", level=14)
+        for slug, activity in (
+            ("cunning-strike", "n64fvJMT9fPUy7DH"),
+            ("cunning-strike", "dWcCw1vTWRMx4YzD"),
+            ("cunning-strike", "m2bRZ1YeD3yf9nV7"),
+            ("devious-strikes", "4TnBjQTJzt9UjUos"),
+            ("devious-strikes", "3eq7lcmpkJJBU2KO"),
+        )
+    )
+
+
+def _brutal_rider_scope_matches() -> bool:
+    loader = BundledAssetLoader()
+    reckless = loader.get_feature("reckless-attack")
+    return (
+        reckless is not None
+        and reckless.attack_rider_context is not None
+        and reckless.attack_rider_context.deferred_reason is not None
+        and all(
+            not _attack_rider_options_resolve(slug, (activity,), class_slug="barbarian", level=17)
+            for slug, activity in (
+                ("brutal-strike", "nN5gsB6AcSQ4uQPN"),
+                ("improved-brutal-strike", "UmRlsf4QWW98I4FS"),
+                ("improved-brutal-strike", "I30qGlPDcyKwz65H"),
+            )
+        )
     )
 
 
@@ -749,6 +891,30 @@ _PROBES: dict[str, tuple[Any, str]] = {
         ),
         "(C20)",
     ),
+    "| Stunning Strike |": (
+        lambda: _attack_rider_options_resolve(
+            "stunning-strike", ("Xto99a8Zt46VLwaR",), class_slug="monk", level=5
+        ),
+        "✅ Resolved",
+    ),
+    "| Open Hand Technique |": (
+        lambda: _attack_rider_options_resolve(
+            "open-hand-technique",
+            ("1jdSaWanuRrdkVs3", "XoaS0RtDCGAqrQsf", "5Qgc0K3TfuonkPIG"),
+            class_slug="monk",
+            level=5,
+            flurry=True,
+        ),
+        "✅ Resolved",
+    ),
+    "| Cunning Strike / Devious Strikes |": (
+        _cunning_rider_scope_matches,
+        "⚠️ Partial",
+    ),
+    "| Reckless Attack / Brutal Strike |": (
+        _brutal_rider_scope_matches,
+        "❌ Deferred",
+    ),
     # C20: Rage ends unless extended (and on Incapacitated).
     "| Rage |": (
         lambda: (
@@ -936,7 +1102,12 @@ _PROBES: dict[str, tuple[Any, str]] = {
         "⚠️ Partial",
     ),
     "| Sneak Attack |": (
-        lambda: "def sneak_attack_triggers(" in _src("activities/attack.py"),
+        lambda: (
+            "def sneak_attack_triggers(" in _src("activities/attack.py")
+            and "ctx.sneak_attack_commit(plan.attacker_id, plan.target_id)"
+            in _src("activities/attack.py")
+            and "sneak_attack_commit=commit_sneak" in _src("live_attack_riders.py")
+        ),
         "✅",
     ),
     "Short/long rest, hit dice, feature & item recharge": (

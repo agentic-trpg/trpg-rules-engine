@@ -225,6 +225,26 @@
     }
   ],
   "advancement": [],
+  "attack_rider_context": {
+    "automatic": false,
+    "choice_group": null,
+    "deferred_options": {},
+    "deferred_reason": "incoming-hit reaction requires damage reduction and redirected elemental damage lifecycle",
+    "effects": [],
+    "forced_movement": null,
+    "inherit_damage_type": false,
+    "inventory_role": "defensive",
+    "once_per_turn": false,
+    "phase": "final_hit_before_damage",
+    "qualification": "any_attack",
+    "related_activity_ids": [
+      "F7NbTRmkUTDDZxj7",
+      "AnEiO80Ga3etD595"
+    ],
+    "sneak_dice_cost": 0,
+    "target_role": "attack_target",
+    "trigger": "final_hit"
+  },
   "description": "You can now use your Deflect Attacks feature against attacks that deal any damage type, not just Bludgeoning, Piercing, or Slashing.\n\nThe Reduce activity can be used to heal yourself to reduce the total damage if it's not enough to reduce it to 0.\n\nThe Redirect activity can be used to roll damage and consume a use of your Focus Points if you can reduce it to 0. You can select the type of damage in the roll dialog. The dice increase automatically as you level up.",
   "entry_kind": "feature",
   "feature_type": "class_feature",

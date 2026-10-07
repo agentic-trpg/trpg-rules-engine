@@ -297,6 +297,7 @@ def _pay(live: _LiveCombat, attack: AttackResolutionContext, plan: AttackRiderPl
 
 def _resolve(live: _LiveCombat, attack: AttackResolutionContext, plan: AttackRiderPlan) -> None:
     from dnd5e_engine import orchestrator as orch
+    from dnd5e_engine.activities.effects import bind_effect_lifecycle
     from dnd5e_engine.live_reactions import attach_reaction_hooks
 
     actor = orch._find_combatant(live, attack.attacker_id)
@@ -343,6 +344,23 @@ def _resolve(live: _LiveCombat, attack: AttackResolutionContext, plan: AttackRid
             )
             updates.update(duration=ActiveEffectDuration(), flags=flags)
         effect = effect.model_copy(update=updates)
+        statuses = applicable_effect_statuses(target, effect.statuses)
+        if binding.lifecycle is not None:
+            # A suppressed condition cannot own a repeat-save/damage lifecycle.
+            # The save and its already-paid Sneak Attack dice still occurred.
+            if effect.statuses and not statuses and not effect.changes:
+                continue
+            effect = bind_effect_lifecycle(
+                effect,
+                binding.lifecycle,
+                source_id=actor.entity_id,
+                source_kind="feature",
+                source_slug=plan.feature.slug,
+                activity_id=plan.activity.id,
+                save_ability=save.ability if save else None,
+                save_dc=save.dc if save else None,
+                is_magical=False,
+            )
         for existing in list(live.active_effects.get(target.entity_id, [])):
             if existing.id == effect.id and existing.origin == effect.origin:
                 orch._emit(
@@ -355,7 +373,7 @@ def _resolve(live: _LiveCombat, attack: AttackResolutionContext, plan: AttackRid
                     ),
                 )
         orch._emit(live, EffectApplied(effect=effect))
-        for status in applicable_effect_statuses(target, effect.statuses):
+        for status in statuses:
             orch._emit(
                 live,
                 ConditionApplied(

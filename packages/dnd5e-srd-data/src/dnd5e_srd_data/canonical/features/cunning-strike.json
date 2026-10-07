@@ -38,6 +38,17 @@
             "max": null,
             "min": null
           },
+          "lifecycle": {
+            "expire_on_positive_damage": false,
+            "expiry_boundary": null,
+            "maximum_rounds": 10,
+            "one_use_modifiers": [],
+            "repeat_save": {
+              "on_success": "expire_effect",
+              "phase": "target_turn_end",
+              "save_source": "triggering_activity"
+            }
+          },
           "on_save": false,
           "riders": null
         }
@@ -460,8 +471,25 @@
       "automatic": false,
       "choice_group": "cunning-strike",
       "deferred_options": {},
-      "deferred_reason": "requires authoritative Poisoner's Kit inventory and repeated end-turn save lifecycle",
-      "effects": [],
+      "deferred_reason": null,
+      "effects": [
+        {
+          "effect_id": "RazTM6biKVtNtjEW",
+          "expiry": "none",
+          "lifecycle": {
+            "expire_on_positive_damage": false,
+            "expiry_boundary": null,
+            "maximum_rounds": 10,
+            "one_use_modifiers": [],
+            "repeat_save": {
+              "on_success": "expire_effect",
+              "phase": "target_turn_end",
+              "save_source": "triggering_activity"
+            }
+          },
+          "outcome": "failure"
+        }
+      ],
       "forced_movement": null,
       "inherit_damage_type": false,
       "inventory_role": "rider",
@@ -469,6 +497,9 @@
       "phase": "after_damage",
       "qualification": "finesse_or_ranged",
       "related_activity_ids": [],
+      "requires_carried_items": [
+        "poisoners-kit"
+      ],
       "sneak_dice_cost": 1,
       "target_role": "attack_target",
       "trigger": "sneak_attack_damage"

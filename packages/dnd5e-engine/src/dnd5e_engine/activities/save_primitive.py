@@ -135,6 +135,13 @@ def roll_save(
     ``SaveRolled`` (the event field set differs per call site). Empty
     sidecars reproduce the prior single-d20 + per-ability-mod behavior exactly.
     """
+    # An automatic failure is still a saving throw. Consume the one-use clause
+    # once, even though no d20 is drawn and no advantage mode applies.
+    next_disadvantage = (
+        ctx.consume_next_save_modifier(target.entity_id)
+        if ctx.consume_next_save_modifier is not None
+        else False
+    )
     if _is_auto_fail(ctx, target, ability):
         return _convert_if_legendary_resistance_armed(
             ctx,
@@ -149,7 +156,14 @@ def roll_save(
     # Draw ORDER matters for determinism: the d20 first, the Bless/Bane bonus
     # dice after (folding those dice into the primitive's flat modifier would
     # mean rolling them BEFORE the d20 and would shift the seeded stream).
-    roll = _roll_save_d20(ctx, target, ability, modifier, target_index=target_index)
+    roll = _roll_save_d20(
+        ctx,
+        target,
+        ability,
+        modifier,
+        target_index=target_index,
+        next_disadvantage=next_disadvantage,
+    )
     total = roll.total + _passive_save_bonus(ctx, target)
     return _convert_if_legendary_resistance_armed(
         ctx,
@@ -221,6 +235,7 @@ def _roll_save_d20(
     modifier: int,
     *,
     target_index: int,
+    next_disadvantage: bool = False,
 ) -> D20Result:
     """The save's D20 Test, honoring ``variables["force_save_d20"]`` + adv/dis.
 
@@ -259,18 +274,18 @@ def _roll_save_d20(
     # SRD 5.2 stat-block trait "Magic Resistance": "has Advantage on saving
     # throws against spells and other magical effects". ``base_spell_level``
     # is set by every spell-cast path (cantrips included, level 0) and is
-    # ``None`` for weapon attacks and features — the engine's "this save is
-    # spell-sourced" signal. Adds a draw ONLY when the trait is present.
+    # ``None`` for weapon attacks and features. Explicit magical provenance
+    # additionally supports captured repeat saves and other magical effects;
+    # a feature's SaveActivity kind alone is never evidence of magic.
     advantage: tuple[AdvantageSource, ...] = ("condition:target",) if has_adv else ()
     if (
-        ctx.base_spell_level is not None
-        and MonsterTraitMechanic.MAGIC_RESISTANCE in target.trait_mechanics
-    ):
+        ctx.base_spell_level is not None or ctx.save_is_magical
+    ) and MonsterTraitMechanic.MAGIC_RESISTANCE in target.trait_mechanics:
         advantage = (*advantage, "trait")
-    sources = AdvantageSources(
-        advantage=advantage,
-        disadvantage=("condition:target",) if has_dis else (),
-    )
+    disadvantage: tuple[AdvantageSource, ...] = ("condition:target",) if has_dis else ()
+    if next_disadvantage:
+        disadvantage = (*disadvantage, "effect")
+    sources = AdvantageSources(advantage=advantage, disadvantage=disadvantage)
     return roll_d20_test(ctx.rng, modifier, sources, forced_natural=forced_natural)
 
 

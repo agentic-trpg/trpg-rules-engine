@@ -151,7 +151,6 @@ _SPECIAL: dict[str, str] = {
     "sear-undead": "requires Turn Undead eligibility and combined turn/damage semantics",
     "lands-aid": "requires linked damage area and selected healing target",
     "hurl-through-hell": "requires a hit binding, banishment and return lifecycle",
-    "intimidating-presence": "requires a one-minute condition and repeated end-of-turn saves",
     "breath-weapon": "requires Attack replacement and an ancestry-bound damage type",
 }
 
@@ -307,6 +306,12 @@ def validate_feature_formulas(
             validate_expression(resolved.scaling.formula)
     effects = {effect.id: effect for effect in feature.passive_effects}
     for ref in getattr(activity, "effects", ()):
+        if (
+            ref.lifecycle is not None
+            and ref.lifecycle.repeat_save is not None
+            and not isinstance(activity, SaveActivity)
+        ):
+            raise FeaturePreflightError("repeat-save lifecycle requires a triggering save")
         effect = effects.get(ref.id)
         if effect is None:
             raise FeaturePreflightError(f"missing effect rider: {ref.id}")

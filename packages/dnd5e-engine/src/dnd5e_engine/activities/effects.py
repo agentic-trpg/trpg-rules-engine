@@ -24,6 +24,7 @@ from collections.abc import Collection, Mapping
 from typing import TYPE_CHECKING, Any, get_args
 
 from dnd5e_engine.activities.formula import resolve_roll_data
+from dnd5e_engine.effect_lifecycle import EffectLifecycleApplication, EffectSourceKind
 from dnd5e_engine.events import ConditionApplied, ConditionType, EffectApplied
 from dnd5e_engine.rules.conditions import active_condition_names, project_condition_immunities
 from dnd5e_engine.types.combat import Combatant
@@ -40,6 +41,7 @@ if TYPE_CHECKING:
         PassiveEffectChange,
         _ActivityBaseWithEffects,
     )
+    from dnd5e_srd_data.schema.lifecycle import EffectLifecycleSpec
 
     from .context import ActivityResolutionContext
 
@@ -229,6 +231,34 @@ def passive_effect_to_active_effect(
     )
 
 
+def bind_effect_lifecycle(
+    effect: ActiveEffect,
+    spec: EffectLifecycleSpec,
+    *,
+    source_id: str,
+    source_kind: EffectSourceKind,
+    source_slug: str,
+    activity_id: str,
+    save_ability: str | None = None,
+    save_dc: int | None = None,
+    is_magical: bool = False,
+) -> ActiveEffect:
+    """Validate and capture canonical metadata before emitting an effect."""
+    application = EffectLifecycleApplication.model_validate(
+        dict(
+            spec=spec.model_copy(deep=True),
+            source_id=source_id,
+            source_kind=source_kind,
+            source_slug=source_slug,
+            activity_id=activity_id,
+            save_ability=save_ability,
+            save_dc=save_dc,
+            is_magical=is_magical,
+        )
+    )
+    return effect.model_copy(update={"lifecycle": application})
+
+
 def apply_activity_effects(
     activity: _ActivityBaseWithEffects,
     ctx: ActivityResolutionContext,
@@ -237,6 +267,8 @@ def apply_activity_effects(
     save_succeeded: bool | None,
     cast_level: int,
     extra_flags: Mapping[str, Any] | None = None,
+    save_ability: str | None = None,
+    save_dc: int | None = None,
 ) -> None:
     """Apply an activity's effect riders to ``target``, emitting events.
 
@@ -247,8 +279,8 @@ def apply_activity_effects(
     followed by one ``ConditionApplied`` per status that names a valid SRD
     condition.
 
-    The EffectApplied-then-ConditionApplied emit order lets the orchestrator
-    associate repeat saves with the effect's actual condition lineage.
+    Explicit lifecycle metadata captures the activity's save before emission;
+    event adjacency never infers a repeat-save contract.
 
     ``save_succeeded`` is the target's save outcome for save activities (``None``
     for non-save kinds, which apply unconditionally). ``cast_level`` is the slot
@@ -292,6 +324,24 @@ def apply_activity_effects(
             ctx=ctx,
             extra_flags=extra_flags,
         )
+        if ref.lifecycle is not None:
+            if (
+                pe.statuses
+                and not pe.changes
+                and not applicable_effect_statuses(target, ae.statuses)
+            ):
+                continue
+            ae = bind_effect_lifecycle(
+                ae,
+                ref.lifecycle,
+                source_id=ctx.caster.entity_id,
+                source_kind=ctx.lifecycle_source_kind,
+                source_slug=ctx.lifecycle_source_slug,
+                activity_id=activity.id,
+                save_ability=save_ability,
+                save_dc=save_dc,
+                is_magical=ctx.base_spell_level is not None or ctx.save_is_magical,
+            )
         ctx.event_emitter(EffectApplied(effect=ae))
 
         # Conditions land AFTER the EffectApplied using the same deterministic

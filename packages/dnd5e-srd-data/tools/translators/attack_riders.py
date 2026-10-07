@@ -12,6 +12,7 @@ from dnd5e_srd_data.schema.feature import (
     RiderForcedMovement,
 )
 from dnd5e_srd_data.schema.monster import CreatureSize
+from tools.translators.effect_lifecycle import reviewed_effect_lifecycle
 
 _RECKLESS = (
     "requires first-attack Reckless decision, Strength Advantage and incoming Advantage lifecycle"
@@ -66,8 +67,15 @@ _RIDERS: dict[tuple[str, str], AttackRiderSemantics] = {
         phase="after_damage",
         choice_group="cunning-strike",
         sneak_dice_cost=1,
-        deferred_reason=(
-            "requires authoritative Poisoner's Kit inventory and repeated end-turn save lifecycle"
+        requires_carried_items=("poisoners-kit",),
+        effects=(
+            RiderEffectSpec(
+                effect_id="RazTM6biKVtNtjEW",
+                outcome="failure",
+                lifecycle=reviewed_effect_lifecycle(
+                    "feature", "cunning-strike", "n64fvJMT9fPUy7DH", "RazTM6biKVtNtjEW"
+                ),
+            ),
         ),
     ),
     ("cunning-strike", "dWcCw1vTWRMx4YzD"): AttackRiderSemantics(
@@ -115,7 +123,15 @@ _RIDERS: dict[tuple[str, str], AttackRiderSemantics] = {
         phase="after_damage",
         choice_group="cunning-strike",
         sneak_dice_cost=6,
-        deferred_reason="requires generic break-on-damage and repeated end-turn save lifecycle",
+        effects=(
+            RiderEffectSpec(
+                effect_id="C2IGgt4PnRMxZVey",
+                outcome="failure",
+                lifecycle=reviewed_effect_lifecycle(
+                    "feature", "devious-strikes", "3eq7lcmpkJJBU2KO", "C2IGgt4PnRMxZVey"
+                ),
+            ),
+        ),
     ),
     ("devious-strikes", "ki4lIPVGNA0HjEzH"): AttackRiderSemantics(
         trigger="sneak_attack_damage",

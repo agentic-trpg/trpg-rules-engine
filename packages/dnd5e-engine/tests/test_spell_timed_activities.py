@@ -71,7 +71,7 @@ def test_weird_resolves_initial_save_once_then_recurs_at_target_turn_end():
     assert len(events(live, SaveRolled)) == 1
     assert len(_damage(live)) == 1
     assert len(live.timed_activities.pending) == 1
-    assert not live.repeat_save_on_turn_end  # no competing generic repeat save
+    assert not live.effect_lifecycles  # no competing generic repeat save
     pending = live.timed_activities.pending[0]
     assert pending.spell.slug == "weird"
     assert pending.activity.id == "nuStSySOEkwOUnXf"

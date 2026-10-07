@@ -118,6 +118,12 @@ from dnd5e_srd_data.schema.item import (
     Weapon,
     WeaponProperty,
 )
+from dnd5e_srd_data.schema.lifecycle import (
+    EffectExpiryBoundary,
+    EffectLifecycleSpec,
+    OneUseModifier,
+    RepeatSaveSpec,
+)
 from dnd5e_srd_data.schema.monster import (
     AbilityScores,
     CreatureSize,
@@ -197,7 +203,9 @@ __all__ = [
     "DamageScalingBlock",
     "DescriptionBlock",
     "DurationBlock",
+    "EffectExpiryBoundary",
     "EffectLevelBlock",
+    "EffectLifecycleSpec",
     "EnchantActivity",
     "EnchantEffectRiders",
     "EnchantEnchantBlock",
@@ -223,6 +231,7 @@ __all__ = [
     "MonsterTrait",
     "MonsterTraitMechanic",
     "Movement",
+    "OneUseModifier",
     "PassiveEffect",
     "PassiveEffectChange",
     "PersistentAreaSpec",
@@ -236,6 +245,7 @@ __all__ = [
     "ReactionSemantics",
     "ReactionTriggerKind",
     "RecoveryRule",
+    "RepeatSaveSpec",
     "ReviewState",
     "RiderEffectExpiry",
     "RiderEffectSpec",

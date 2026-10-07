@@ -32,6 +32,7 @@ from dnd5e_engine.specs import (
 )
 from dnd5e_engine.types.conditions import ActiveCondition
 from tests.e2e.harness import adjacent_cells, grid_scene
+from tests.lifecycle_support import seed_repeat_save
 
 _HOLD_IDENTITY = ("char:hero", "effect:hold_person", "cast:hold-person:mon:foe")
 _HERO_CELL, _FOE_CELL = adjacent_cells(2)
@@ -90,15 +91,7 @@ def _seed_pending_repeat_save(live) -> None:
     """One pending Hold Person repeat save on the hero, DC 30 so it never
     succeeds — the spec therefore stays pending and every attempt is visible
     in the stream as its own ``SaveRolled``."""
-    live.repeat_save_on_turn_end[_HOLD_IDENTITY] = [
-        {
-            "ability": "wis",
-            "dc": 30,
-            "effect_name": "Hold Person",
-            "condition": "paralyzed",
-            "caster_id": "mon:foe",
-        }
-    ]
+    seed_repeat_save(live, _HOLD_IDENTITY)
 
 
 def _repeat_saves(live, since: int) -> list[object]:
@@ -201,8 +194,7 @@ def test_repeat_save_uses_migrated_scopes_with_exact_rng_and_event_order(
                 live.initiative[index] = target
                 break
         _seed_pending_repeat_save(live)
-        live.repeat_save_on_turn_end[_HOLD_IDENTITY][0]["ability"] = ability
-        live.repeat_save_on_turn_end[_HOLD_IDENTITY][0]["condition"] = condition
+        seed_repeat_save(live, _HOLD_IDENTITY, ability=ability)
         reference = random.Random()
         reference.setstate(live.rng.getstate())
         auto_fail = condition != "restrained" and ability in {"str", "dex"}

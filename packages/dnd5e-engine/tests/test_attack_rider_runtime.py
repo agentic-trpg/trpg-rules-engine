@@ -1047,11 +1047,9 @@ def test_sneak_attack_is_not_spent_by_a_miss_or_remaining_disadvantage(mode):
 @pytest.mark.parametrize(
     "feature,activity,class_slug,level",
     [
-        ("cunning-strike", "n64fvJMT9fPUy7DH", "rogue", 14),
         ("cunning-strike", "m2bRZ1YeD3yf9nV7", "rogue", 14),
         ("cunning-strike", "jR7KqMuPOZYUCDyO", "rogue", 14),
         ("devious-strikes", "4TnBjQTJzt9UjUos", "rogue", 14),
-        ("devious-strikes", "3eq7lcmpkJJBU2KO", "rogue", 14),
         ("brutal-strike", "nN5gsB6AcSQ4uQPN", "barbarian", 17),
         ("improved-brutal-strike", "UmRlsf4QWW98I4FS", "barbarian", 17),
         ("improved-brutal-strike", "I30qGlPDcyKwz65H", "barbarian", 17),
@@ -1245,6 +1243,8 @@ def test_rider_audit_is_deterministic_matches_golden_and_separates_entrypoints()
         TOPPLE,
         OBSCURE,
         TRIP,
+        ("cunning-strike", "n64fvJMT9fPUy7DH"),
+        ("devious-strikes", "3eq7lcmpkJJBU2KO"),
         ("sneak-attack", "a1T6nHaqmvbLpyJr"),
     }
     for row in first["rows"]:

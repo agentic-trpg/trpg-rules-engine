@@ -129,7 +129,13 @@ def resolve_save(activity: SaveActivity, ctx: ActivityResolutionContext) -> None
 
         _apply_save_damage(activity, ctx, target, shared_parts, succeeded=succeeded)
         apply_activity_effects(
-            activity, ctx, target, save_succeeded=succeeded, cast_level=cast_level
+            activity,
+            ctx,
+            target,
+            save_succeeded=succeeded,
+            cast_level=cast_level,
+            save_ability=ability,
+            save_dc=dc,
         )
 
 

@@ -106,6 +106,8 @@ def resolve_cast(activity: CastActivity, ctx: ActivityResolutionContext) -> None
         spellcasting_ability=activity.spell.ability or ctx.spellcasting_ability,
         slot_level=cast_level,
         base_spell_level=spell.level,
+        lifecycle_source_kind="spell",
+        lifecycle_source_slug=spell.slug,
         concentration=spell.concentration,
         source_passive_effects=spell.passive_effects,
         save_dc_override=(

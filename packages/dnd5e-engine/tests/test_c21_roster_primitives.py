@@ -34,6 +34,7 @@ from dnd5e_engine.orchestrator import (
 from dnd5e_engine.spatial import cell_id
 from dnd5e_engine.types.combat import Combatant
 from tests.c21_support import act, events, foe, monster_turn, pc, roster, start
+from tests.lifecycle_support import seed_repeat_save
 
 HERO = "char:hero"
 NEW = "mon:newcomer"
@@ -239,8 +240,8 @@ def test_a_departed_creature_leaves_no_per_entity_state() -> None:
     live.concentration_rounds_remaining[NEW] = 10
     live.conditions_by_effect[bless_on_new] = ["prone"]
     live.conditions_by_effect[held_other] = ["paralyzed"]
-    live.repeat_save_on_turn_end[(NEW, "effect:hold", f"cast:hold:{HERO}")] = [{"ability": "wis"}]
-    live.repeat_save_on_turn_end[held_other] = [{"ability": "wis"}]
+    seed_repeat_save(live, (NEW, "effect:hold", f"cast:hold:{HERO}"), source_id=HERO)
+    seed_repeat_save(live, held_other, source_id=HERO)
     for owner_id in (NEW, HERO):
         register_pending_reaction(
             live, owner_id, PlayerIntent(intent_type="ready", spell_id="counterspell")
@@ -290,7 +291,7 @@ def test_a_departed_creature_leaves_no_per_entity_state() -> None:
     _leave_roster(live, NEW, "zero_hp")
 
     assert [name for name in PURGED if NEW in getattr(live, name)] == []
-    for identities in (live.conditions_by_effect, live.repeat_save_on_turn_end):
+    for identities in (live.conditions_by_effect, live.effect_lifecycles):
         assert not [key for key in identities if key[0] == NEW]
     assert live.help_grants == {"mon:a": [HERO]}
     assert live.vex_grants == {HERO: {"mon:a": 1}}
@@ -300,7 +301,7 @@ def test_a_departed_creature_leaves_no_per_entity_state() -> None:
     assert list(live.constructs) == [f"construct:{HERO}:spiritual-weapon"]
     assert live.concentration_chain[HERO] == [bless_on_new]
     assert held_other in live.conditions_by_effect
-    assert held_other in live.repeat_save_on_turn_end
+    assert held_other in live.effect_lifecycles
 
 
 def test_monster_turn_start_runs_for_each_monster_after_a_mid_round_removal() -> None:

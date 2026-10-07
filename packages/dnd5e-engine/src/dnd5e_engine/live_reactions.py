@@ -121,7 +121,7 @@ def _context(
             entity: {key: value for key, value in entry.items() if key != "passive_spell_dc_bonus"}
             for entity, entry in damage_modifiers.items()
         }
-    return build_activity_context(
+    ctx = build_activity_context(
         reactor,
         targets,
         rng=DrawFreeRandom() if draw_free else live.rng,
@@ -145,6 +145,7 @@ def _context(
         ],
         undead_fortitude_holds=live.undead_fortitude_holds,
     )
+    return replace(ctx, lifecycle_source_kind="spell", lifecycle_source_slug=spell.slug)
 
 
 def _validate_payload(spell: Spell, activity: Activity, ctx: ActivityResolutionContext) -> None:
@@ -545,6 +546,9 @@ def _attack_opportunity(
 
 
 def _damage_opportunity(live: _LiveCombat, damage: DamageInstanceContext) -> None:
+    from dnd5e_engine.live_effect_lifecycle import damage_instance_completed
+
+    damage_instance_completed(live, damage)
     if damage.amount <= 0:
         return
     fire_reaction(
@@ -564,6 +568,7 @@ def attach_reaction_hooks(
     live: _LiveCombat, ctx: ActivityResolutionContext
 ) -> ActivityResolutionContext:
     from dnd5e_engine.live_attack_riders import attach_attack_riders
+    from dnd5e_engine.live_save_modifiers import consume_next_save_modifier
 
     baseline = {
         target.entity_id: _ac_changes(live.active_effects.get(target.entity_id, []))
@@ -581,6 +586,9 @@ def attach_reaction_hooks(
             attack_hit_reaction=lambda attack: _attack_opportunity(live, attack, baseline),
             damage_instance_id_provider=next_instance,
             damage_instance_resolved=lambda damage: _damage_opportunity(live, damage),
+            consume_next_save_modifier=lambda target_id: consume_next_save_modifier(
+                live, target_id
+            ),
             attack_continuation_allowed=lambda: can_continue_resolution(live, ctx.caster.entity_id),
         ),
     )

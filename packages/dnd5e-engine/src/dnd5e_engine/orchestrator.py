@@ -82,7 +82,7 @@ from dnd5e_srd_data.schema.spell import (
 )
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from dnd5e_engine import live_movement
+from dnd5e_engine import live_effect_lifecycle, live_movement
 from dnd5e_engine.activities.actor_stats import (
     ABILITY_CODES,
     ability_modifier_of,
@@ -151,10 +151,9 @@ from dnd5e_engine.areas import (
 )
 from dnd5e_engine.attack_riders import AttackRiderRequest
 from dnd5e_engine.death_saves import DeathSaveState, roll_death_save
+from dnd5e_engine.effect_lifecycle import EffectIdentity, OngoingEffectLifecycle
 from dnd5e_engine.events import (
     Ability,
-    AdvantageMode,
-    AdvantageSource,
     AreaTargeted,
     AttackFailed,
     AttackRolled,
@@ -3194,17 +3193,9 @@ class _LiveCombat:
     # It is the ownership authority for expiry, including same-id effects with
     # distinct origins (ActiveCondition.source_effect_id carries only the id).
     conditions_by_effect: dict[tuple[str, str, str], list[str]] = field(default_factory=dict)
-    # SRD §Hold Person — end-of-turn repeat-save specs. Keyed by the
-    # Foundry-shaped identity tuple ``(target_id, effect.id, effect.origin)``;
-    # value is the list of pending saves the target rolls at the end
-    # of each of their turns. Each spec carries the ability, DC, the
-    # condition the spell applied, the source ``effect_name`` (for
-    # ``ConcentrationDropped`` projection), and the caster_id (used to
-    # clear ``concentration_chain`` on success). Populated by
-    # ``_record_effect_lifecycle_links``; consumed by ``_run_end_of_turn_saves``.
-    repeat_save_on_turn_end: dict[tuple[str, str, str], list[dict[str, Any]]] = field(
-        default_factory=dict
-    )
+    # Explicit canonical metadata; full identity owns every registration.
+    effect_lifecycles: dict[EffectIdentity, OngoingEffectLifecycle] = field(default_factory=dict)
+    lifecycle_damage: dict[tuple[str, str], int] = field(default_factory=dict)
     # Per-call event subscribers — ``start_combat`` and ``end_combat`` push a
     # local list's ``append`` here to capture events emitted during their
     # body, then pop it on return. This is how those entry points surface
@@ -3858,7 +3849,7 @@ def _drop_concentration(
     ``live.conditions_by_effect[(target_id, effect_id, origin)]`` (the
     persistent actual effect→condition lineage the orchestrator maintains in
     lieu of the transient ``ctx.parent_chain``). Clears both on
-    completion + removes any matching ``repeat_save_on_turn_end`` specs
+    completion + removes any matching typed lifecycle registrations
     so a paralyzed target whose source effect is gone stops rolling
     end-of-turn saves on the next turn.
 
@@ -3871,6 +3862,7 @@ def _drop_concentration(
     live.persistent_areas.concentration_ended(live, caster_id, duration=reason == "duration")
     for target_id, effect_id, origin in entries:
         identity = (target_id, effect_id, origin)
+        lifecycle_managed = identity in live.effect_lifecycles
         conditions = list(live.conditions_by_effect.get(identity, []))
         # ``ConcentrationDropped.effect_name`` carries the effect *id*
         # (``effect:<slug>``) — the single representation the rest of the
@@ -3894,6 +3886,8 @@ def _drop_concentration(
             ),
         )
         for cond in conditions:
+            if lifecycle_managed:
+                continue
             if cond in live.active_conditions.get(target_id, set()):
                 continue
             # Cast back to the literal type expected by ConditionRemoved.
@@ -3905,7 +3899,7 @@ def _drop_concentration(
                 ),
             )
         # Drop any pending repeat-save spec keyed off this expired effect.
-        live.repeat_save_on_turn_end.pop(identity, None)
+        live.effect_lifecycles.pop(identity, None)
     live.concentration_chain.pop(caster_id, None)
     live.concentration_rounds_remaining.pop(caster_id, None)
     # Clear ``Combatant.concentration_effect_id`` so subsequent hydration
@@ -4087,26 +4081,11 @@ def _roll_unarmed_option_save(
     target_id = target.entity_id
     dc = _unarmed_option_dc(attacker)
     ability = _resolve_grapple_save_ability(target)
-    save_proj = project_passive_save_modifiers(_condition_names(target))
-    ability_upper = ability.upper()
-    if ability_upper in save_proj.get("passive_save_auto_fail", []):
-        roll_total, succeeded = 0, False
-        mode: AdvantageMode = "normal"
-        natural: int | None = None
-        roll_modifier = 0
-        roll_sources: list[AdvantageSource] = []
-    else:
-        modifier = save_modifier(target, ability).total + d20_test_penalty(target.conditions)
-        dis: tuple[AdvantageSource, ...] = (
-            ("condition:target",) if ability_upper in save_proj.get("passive_save_dis", []) else ()
-        )
-        roll = roll_d20_test(live.rng, modifier, AdvantageSources(disadvantage=dis))
-        roll_total, succeeded = roll.total, roll.total >= dc
-        mode, natural, roll_modifier = roll.mode, roll.kept, roll.modifier
-        roll_sources = list(roll.sources)
-    lr_remaining = None if succeeded else _consume_armed_legendary_resistance(live, target)
-    if lr_remaining is not None:
-        succeeded = True
+    roll = live_effect_lifecycle.roll_live_save(live, target, ability, dc)
+    roll_total, succeeded = roll.total, roll.succeeded
+    mode, natural, roll_modifier = roll.mode, roll.natural, roll.modifier
+    roll_sources = list(roll.sources)
+    lr_remaining = roll.legendary_resistance_remaining
     event = SaveRolled(
         target_id=target_id,
         ability=ability,
@@ -4120,7 +4099,8 @@ def _roll_unarmed_option_save(
     )
     _emit(live, event)
     if lr_remaining is not None:
-        _emit_legendary_resistance_used(live, target_id, lr_remaining)
+        _emit(live, LegendaryResistanceUsed(actor_id=target_id, uses_remaining=lr_remaining))
+        _sync_legendary_resistance(live, len(live.event_log) - 1)
     return event
 
 
@@ -4835,6 +4815,7 @@ def _emit(live: _LiveCombat, event: CombatEvent) -> None:
             return
     observe_reaction_lifecycle(live, event)
     observe_rider_event(live, event)
+    live_effect_lifecycle.observe_modifier_consumption(live, event)
     live.event_log.append(event)
     live.timed_activities.observe(event)
     live.event_queue.put_nowait(event)
@@ -4898,6 +4879,7 @@ def _emit_apply_turn_started(live: _LiveCombat, event: TurnStarted) -> None:
     live.rider_uses.clear()
     expire_rider_effects(live, event.actor_id, "start")
     before_turn_start(live, event.actor_id)
+    live_effect_lifecycle.expire_at_boundary(live, event.actor_id, "start")
     live.movement_ledgers[event.actor_id] = MovementLedger()
     # SRD §Action Economy — refresh the actor's per-turn budgets on the
     # start of their own turn. The reaction line ("You regain your
@@ -5071,6 +5053,7 @@ def _emit_apply_damage(live: _LiveCombat, event: DamageApplied) -> None:
         if c.entity_id == event.target_id:
             live.initiative[idx] = c.model_copy(update=update_payload)
             break
+    live_effect_lifecycle.record_damage(live, event.target_id, event.damage_instance_id, remaining)
     # SRD §Concentration on Damage — *"You must make a Constitution
     # saving throw … DC = 10 or half the damage taken, whichever is
     # higher. On a failed save, the spell ends."* If the damaged
@@ -5095,27 +5078,11 @@ def _emit_apply_damage(live: _LiveCombat, event: DamageApplied) -> None:
         # missing combatant degrades to an unmodified save rather than
         # aborting damage application mid-flight.
         # SRD 5.2 Exhaustion — the concentration CON save is a D20 Test.
-        modifier = (
-            save_modifier(concentrator, "con").total + d20_test_penalty(concentrator.conditions)
-            if concentrator
-            else 0
-        )
-        roll = roll_d20_test(live.rng, modifier, AdvantageSources())
-        roll_total = roll.total
-        succeeded = roll_total >= dc
-        # C18 §Monster action economy — Legendary Resistance: the
-        # concentration check bypasses ``activities/save_primitive.roll_save``
-        # (it rolls its own d20 above), so the conversion is decided before
-        # its ``ConcentrationCheck`` carries ``succeeded`` and
-        # ``LegendaryResistanceUsed`` is emitted after it — via the same
-        # shared helpers the repeat save uses.
-        lr_remaining = (
-            _consume_armed_legendary_resistance(live, concentrator)
-            if not succeeded and concentrator is not None
-            else None
-        )
-        if lr_remaining is not None:
-            succeeded = True
+        if concentrator is None:
+            return
+        roll = live_effect_lifecycle.roll_live_save(live, concentrator, "con", dc)
+        roll_total, succeeded = roll.total, roll.succeeded
+        lr_remaining = roll.legendary_resistance_remaining
         _emit(
             live,
             ConcentrationCheck(
@@ -5124,13 +5091,16 @@ def _emit_apply_damage(live: _LiveCombat, event: DamageApplied) -> None:
                 roll_total=roll_total,
                 succeeded=succeeded,
                 advantage=roll.mode,
-                natural=roll.kept,
+                natural=roll.natural,
                 modifier=roll.modifier,
                 sources=list(roll.sources),
             ),
         )
         if lr_remaining is not None:
-            _emit_legendary_resistance_used(live, event.target_id, lr_remaining)
+            _emit(
+                live, LegendaryResistanceUsed(actor_id=event.target_id, uses_remaining=lr_remaining)
+            )
+            _sync_legendary_resistance(live, len(live.event_log) - 1)
         if not succeeded:
             _drop_concentration(live, event.target_id)
     if new_hp <= 0 and event.target_id not in live.dead_ids:
@@ -5337,17 +5307,40 @@ def _remove_condition_sources(live: _LiveCombat, target_id: str, condition: str)
             live.active_effects[target_id][index] = effect.model_copy(
                 update={"statuses": effect.statuses - {condition}}
             )
+    affected: list[EffectIdentity] = []
     for identity, conditions in live.conditions_by_effect.items():
         if identity[0] == target_id and condition in conditions:
             live.conditions_by_effect[identity] = [c for c in conditions if c != condition]
+            affected.append(identity)
+    for identity in affected:
+        if live.conditions_by_effect.get(identity):
+            continue
+        managed_effect = next(
+            (
+                effect
+                for effect in live.active_effects.get(target_id, [])
+                if (target_id, effect.id, effect.origin) == identity
+            ),
+            None,
+        )
+        if managed_effect is not None and not managed_effect.changes:
+            live_effect_lifecycle.expire_effect(live, identity, "remove_ieffect")
 
 
 def _emit_apply_effect_applied(live: _LiveCombat, event: EffectApplied) -> None:
     """Track the unchanged effect, attach its permitted statuses, and record
     concentration spell-slot expenditure for PCs."""
     applied = event.effect
-    live.active_effects.setdefault(applied.target_id, []).append(applied)
+    target_effects = live.active_effects.setdefault(applied.target_id, [])
+    if applied.lifecycle is not None:
+        target_effects[:] = [
+            effect
+            for effect in target_effects
+            if (effect.id, effect.origin) != (applied.id, applied.origin)
+        ]
+    target_effects.append(applied)
     added = _attach_effect_statuses(live, applied)
+    live_effect_lifecycle.register_effect(live, applied)
     if applied.statuses or any(
         change.key in ("speed.multiplier", "speed.reduction") for change in applied.changes
     ):
@@ -5377,13 +5370,16 @@ def _emit_apply_effect_expired(live: _LiveCombat, event: EffectExpired) -> None:
     distinct origins sharing an effect id.
     """
     target_effects = live.active_effects.get(event.target_id, [])
+    identity = (event.target_id, event.effect_id, event.origin)
     for i, eff in enumerate(target_effects):
         if eff.id == event.effect_id and eff.origin == event.origin:
             target_effects.pop(i)
             break
-    identity = (event.target_id, event.effect_id, event.origin)
     identity_still_active = any(
         eff.id == event.effect_id and eff.origin == event.origin for eff in target_effects
+    )
+    managed = (
+        False if identity_still_active else live_effect_lifecycle.forget_effect(live, identity)
     )
     statuses = [] if identity_still_active else live.conditions_by_effect.pop(identity, [])
     if statuses:
@@ -5427,6 +5423,10 @@ def _emit_apply_effect_expired(live: _LiveCombat, event: EffectExpired) -> None:
     _end_anchor_dependents(live, event)
     _revert_transform_on_expiry(live, event)
     _clamp_movement_budget(live, event.target_id)
+    if managed:
+        for status in statuses:
+            if status not in live.active_conditions.get(event.target_id, set()):
+                _emit(live, ConditionRemoved(target_id=event.target_id, condition=status))
 
 
 def _maybe_roll_death_save(live: _LiveCombat) -> None:
@@ -5457,7 +5457,13 @@ def _maybe_roll_death_save(live: _LiveCombat) -> None:
     if actor.death_saves and actor.death_saves.get("is_stable"):
         return
     # PC is at 0 HP — roll one death save.
-    result = roll_death_save(actor, live.rng)
+    from dnd5e_engine.live_save_modifiers import consume_next_save_modifier
+
+    result = roll_death_save(
+        actor,
+        live.rng,
+        consume_next_save_modifier=lambda target_id: consume_next_save_modifier(live, target_id),
+    )
     for ev in result.events:
         _emit(live, ev)
     # Replace the combatant in initiative with the updated copy.
@@ -5523,6 +5529,7 @@ def _record_death(live: _LiveCombat, event: Death, *, killer_id: str | None) -> 
     # inside the _emit fold: the cascade emits no DamageApplied/Death, so
     # it cannot recurse into death synthesis.
     _drop_concentration(live, event.target_id)
+    live_effect_lifecycle.actor_departed(live, event.target_id)
     _release_grapple_victims_of(live, event.target_id)
     # SRD 5.2 Wild Shape: "...or die"; shape-shifting: "You revert to your true
     # form if you die."
@@ -6504,42 +6511,17 @@ def _record_effect_lifecycle_links(
     *,
     concentration_max_rounds: int | None = None,
 ) -> None:
-    """Project this turn's effect-application events into persistent lifecycle state.
+    """Maintain existing concentration chains, never infer repeat-save semantics.
 
-    The ieffect2 handler's ``ctx.parent_chain`` is per-evaluation; the
-    cross-turn cascade walks (concentration drop → expire dependent
-    effects → remove sourced conditions) need a persistent index. We
-    walk the slice of ``live.event_log`` produced by this evaluator
-    call and fold three pieces of structure into ``_LiveCombat``:
-
-    * ``concentration_chain[caster_id][effect_name] = [target_ids]`` —
-      every ``EffectApplied(is_concentration=True)`` emitted while
-      ``caster`` was the active actor is owned by that caster. The
-      damage-driven concentration save in ``_emit`` consults this map
-      to decide whether to roll a save; ``_drop_concentration`` walks
-      it to cascade EffectExpired across every target.
-
-    * ``conditions_by_effect[(target_id, effect_id, origin)]`` already
-      records actual status attachments from the synchronous effect fold.
-      The *(EffectApplied, ConditionApplied)* pairing associates repeat saves
-      only with conditions present in that lineage; it never guesses ownership
-      from raw statuses or unrelated direct condition events.
-
-    * ``repeat_save_on_turn_end[target_id]`` — when a save just failed
-      against the same target inside the same evaluator call and a
-      condition was then applied with a concurrent
-      ``EffectApplied(is_concentration=True)``, the target rolls a
-      repeat save at the end of each of its turns (SRD §Hold Person:
-      *"At the end of each of its turns, the target repeats the save,
-      ending the spell on itself on a success."*). We record the
-      ability + DC from the original failed save so the end-of-turn
-      hook can re-roll without re-parsing the IR.
-
-    Linkage scope: only events emitted by THIS evaluator call (the
-    ``pre_event_count`` slice). Events from prior turns have already
-    been folded in; re-walking them would double-count.
+    Effect lifecycle registration is synchronous with typed EffectApplied. This
+    adapter retains only the established caster-keyed concentration behavior.
     """
     new_events = live.event_log[pre_event_count:]
+    active_identities = {
+        (target_id, effect.id, effect.origin)
+        for target_id, effects in live.active_effects.items()
+        for effect in effects
+    }
     # SRD 5.2 §Concentration — "You lose Concentration on an effect the
     # moment you start casting a spell that requires Concentration."
     # (Foundry mixin.mjs:470-476 ends the oldest effect before beginning
@@ -6553,7 +6535,9 @@ def _record_effect_lifecycle_links(
     new_conc_identities = [
         (ev.effect.target_id, ev.effect.id, ev.effect.origin)
         for ev in new_events
-        if isinstance(ev, EffectApplied) and ev.effect.flags.get("concentration")
+        if isinstance(ev, EffectApplied)
+        and ev.effect.flags.get("concentration")
+        and (ev.effect.target_id, ev.effect.id, ev.effect.origin) in active_identities
     ]
     if new_conc_identities:
         prior = [
@@ -6568,58 +6552,26 @@ def _record_effect_lifecycle_links(
             live.concentration_rounds_remaining[caster.entity_id] = concentration_max_rounds
         else:
             live.concentration_rounds_remaining.pop(caster.entity_id, None)
-    # Per-target tracking within this slice.
-    last_failed_save_by_target: dict[str, SaveRolled] = {}
-    last_effect_by_target: dict[str, ActiveEffect] = {}
     for ev in new_events:
-        if isinstance(ev, SaveRolled) and not ev.succeeded:
-            last_failed_save_by_target[ev.target_id] = ev
-            continue
-        if isinstance(ev, EffectApplied):
+        if (
+            isinstance(ev, EffectApplied)
+            and ev.effect.flags.get("concentration")
+            and (ev.effect.target_id, ev.effect.id, ev.effect.origin) in active_identities
+        ):
             applied = ev.effect
-            if applied.flags.get("concentration"):
-                chain = live.concentration_chain.setdefault(caster.entity_id, [])
-                identity = (applied.target_id, applied.id, applied.origin)
-                if identity not in chain:
-                    chain.append(identity)
-            last_effect_by_target[applied.target_id] = applied
-            continue
-        if isinstance(ev, ConditionApplied):
-            eff = last_effect_by_target.get(ev.target_id)
-            if eff is None:
-                continue
-            key = (ev.target_id, eff.id, eff.origin)
-            if ev.condition not in live.conditions_by_effect.get(key, []):
-                continue
-            failed_save = last_failed_save_by_target.get(ev.target_id)
-            # Repeat-save lineage requires:
-            #   - a same-evaluation failed save on this target (the
-            #     spell's gating save, which the SRD repeat-save flow
-            #     mirrors at end-of-turn),
-            #   - the concurrent EffectApplied is a concentration effect
-            #     (SRD §Hold Person / §Hold Monster / §Dominate Person are
-            #     all concentration spells with the repeat-save clause).
-            # Non-concentration condition applies (e.g. ghoul claw →
-            # paralyzed, which is SRD instantaneous and has no repeat-save
-            # mechanic) are skipped.
-            if (
-                failed_save is not None
-                and eff.flags.get("concentration")
-                and not live.timed_activities.owns_repeat(key)
-            ):
-                live.repeat_save_on_turn_end.setdefault(key, []).append(
-                    {
-                        "ability": failed_save.ability,
-                        "dc": failed_save.dc,
-                        "effect_name": eff.name,
-                        "condition": ev.condition,
-                        "caster_id": caster.entity_id,
-                        "applied_on_own_turn": (
-                            live.turn_serial if live.current_actor_id == ev.target_id else None
-                        ),
-                    }
-                )
-            continue
+            chain = live.concentration_chain.setdefault(caster.entity_id, [])
+            identity = (applied.target_id, applied.id, applied.origin)
+            if identity not in chain:
+                chain.append(identity)
+    if (
+        not new_conc_identities
+        and not live.concentration_chain.get(caster.entity_id)
+        and any(
+            isinstance(ev, EffectApplied) and ev.effect.flags.get("concentration")
+            for ev in new_events
+        )
+    ):
+        _update_combatant(live, caster.entity_id, concentration_effect_id=None)
     # _writeback_concentration ran before this fold and pointed
     # concentration_effect_id at the new effect; _drop_concentration's
     # inline clear (correct for every other drop path) wiped it. Restore.
@@ -6897,9 +6849,9 @@ def _register_default_turn_hooks(live: _LiveCombat) -> None:
     hooks: it reads only the ending turn's own events and Bonus-Action mark,
     and it runs after the ``rounds`` tick, so the corpus Rage's ``rounds: 10``
     stays the outer cap.
-    ``engine:timed-activities-end`` runs before legacy repeat saves and expiry.
+    ``engine:timed-activities-end`` runs before typed repeat saves and expiry.
     ``engine:repeat-save`` follows it among the ``turn_end`` hooks: the
-    SRD repeat save (Hold Person / Hold Monster / Dominate Person) must resolve
+    SRD repeat save (Hold Person / Hold Monster) must resolve
     while its source effect is still live, so it runs before
     ``engine:duration-tick`` could expire that effect on the same boundary.
     Before F3a-follow-up this ran as a hand-placed call at two sites *above* the
@@ -6920,6 +6872,11 @@ def _register_default_turn_hooks(live: _LiveCombat) -> None:
     register_area_hooks(live)
     register_timed_activity_hooks(live)
     live.lifecycle.register("turn_end", _hook_run_end_of_turn_saves, key="engine:repeat-save")
+    live.lifecycle.register(
+        "turn_end",
+        lambda combat, actor: live_effect_lifecycle.expire_at_boundary(combat, actor, "end"),
+        key="engine:typed-effect-expiry",
+    )
     live.lifecycle.register("turn_end", _hook_tick_durations, key="engine:duration-tick")
     live.lifecycle.register(
         "turn_end", _hook_expire_timed_effects, key="engine:timed-effect-expiry"
@@ -6969,6 +6926,8 @@ def _tick_durations_at_turn_end(live: _LiveCombat, actor_id: str) -> None:
     # fallback.
     for target_id, target_effects in list(live.active_effects.items()):
         for idx, eff in enumerate(list(target_effects)):
+            if (target_id, eff.id, eff.origin) in live.effect_lifecycles:
+                continue
             if eff.duration.rounds is None:
                 continue
             # Concentration-gated effects (Bless, Bane, Faerie Fire, Hold
@@ -7130,7 +7089,10 @@ def _expire_timed_effects_at_turn_end(live: _LiveCombat, actor_id: str) -> None:
     to_expire: list[tuple[str, str, str]] = []
     for target_id, target_effects in list(live.active_effects.items()):
         for idx, eff in enumerate(list(target_effects)):
-            if eff.flags.get("concentration"):
+            if (
+                eff.flags.get("concentration")
+                or (target_id, eff.id, eff.origin) in live.effect_lifecycles
+            ):
                 continue
             duration = eff.duration
             expired = False
@@ -7195,150 +7157,8 @@ def _expire_timed_effects_at_turn_end(live: _LiveCombat, actor_id: str) -> None:
 
 
 def _run_end_of_turn_saves(live: _LiveCombat, actor_id: str) -> None:
-    """SRD §Hold Person / §Hold Monster / §Dominate Person — *"At the end
-    of each of its turns, the target repeats the save, ending the spell
-    on itself on a success."*
-
-    Walks ``live.repeat_save_on_turn_end[actor_id]`` and rolls one save
-    per pending spec. Emit order per spec: ``SaveRolled`` first, then
-    on success an ``EffectExpired(reason=duration)`` for the source
-    effect + ``ConditionRemoved`` for the applied condition (mirrors
-    the cascade ``_drop_concentration`` performs on concentration drop,
-    minus the ConcentrationDropped event — the caster keeps their
-    concentration if the target shakes free on their own turn). Also
-    clears the matching entry from ``concentration_chain[caster_id]``
-    so the caster's concentration tracking reflects the target's exit.
-
-    The repeat save applies the target's real ability modifier +
-    proficiency bonus (F1c, via ``actor_stats.save_modifier``), matching
-    the IR-level Save handler's per-target sidecar projection, and the d20
-    goes through the shared ``roll_d20_test`` primitive (F2c) with no
-    advantage source — a single draw, as before.
-    """
-    # Collect every repeat-save spec keyed on the actor_id-prefixed
-    # identity tuples. Identity is (target_id, effect.id, effect.origin)
-    # post-Phase-6 rekey.
-    pending_keys = [k for k in live.repeat_save_on_turn_end if k[0] == actor_id]
-    if not pending_keys:
-        return
-    # One lookup for the whole call: every spec here re-saves for ``actor_id``
-    # (the creature whose turn is ending), so the combatant is invariant across
-    # both loops. The ``else 0`` below cannot fire in practice — this function
-    # is only reached from the turn-advance path for a combatant that is in
-    # ``live.initiative`` — but ``_run_end_of_turn_saves`` runs inside the
-    # non-throwing turn-boundary contract, so a missing combatant degrades to an
-    # unmodified save rather than aborting the turn.
-    target = _find_combatant(live, actor_id)
-    for identity in pending_keys:
-        target_id, effect_id, origin = identity
-        specs = live.repeat_save_on_turn_end.get(identity, [])
-        surviving: list[dict[str, Any]] = []
-        for spec in specs:
-            if spec.get("applied_on_own_turn") == live.turn_serial:
-                surviving.append(spec)
-                continue
-            ability = spec["ability"]
-            dc = int(spec["dc"])
-            condition = str(spec["condition"])
-            caster_id = str(spec["caster_id"])
-            # SRD 5.2 Conditions on the repeat save: the same auto-fail /
-            # disadvantage projection the activity save path gets, plus the
-            # Exhaustion D20-Test penalty. An unconditioned target projects
-            # nothing, so the seeded stream is unmoved.
-            save_proj = project_passive_save_modifiers(_condition_names(target)) if target else {}
-            ability_upper = ability.upper()
-            if ability_upper in save_proj.get("passive_save_auto_fail", []):
-                # SRD 5.2 Paralyzed / Stunned / Petrified / Unconscious —
-                # automatic failure, no d20 drawn (mirrors save_primitive).
-                roll_total, succeeded = 0, False
-                mode: AdvantageMode = "normal"
-                natural: int | None = None
-                roll_modifier = 0
-                roll_sources: list[AdvantageSource] = []
-            else:
-                modifier = (
-                    save_modifier(target, ability).total + d20_test_penalty(target.conditions)
-                    if target
-                    else 0
-                )
-                dis: tuple[AdvantageSource, ...] = (
-                    ("condition:target",)
-                    if ability_upper in save_proj.get("passive_save_dis", [])
-                    else ()
-                )
-                roll = roll_d20_test(live.rng, modifier, AdvantageSources(disadvantage=dis))
-                roll_total, succeeded = roll.total, roll.total >= dc
-                mode, natural, roll_modifier = roll.mode, roll.kept, roll.modifier
-                roll_sources = list(roll.sources)
-            # C18 §Monster action economy — Legendary Resistance: this save
-            # bypasses ``activities/save_primitive.roll_save`` entirely (it
-            # rolls its own d20 above), so the conversion is decided here,
-            # BEFORE ``SaveRolled`` is emitted, via the shared orchestrator-
-            # level helper (``_consume_armed_legendary_resistance`` — also
-            # used by the concentration check); ``LegendaryResistanceUsed``
-            # follows the ``SaveRolled``.
-            lr_remaining = (
-                _consume_armed_legendary_resistance(live, target)
-                if not succeeded and target is not None
-                else None
-            )
-            if lr_remaining is not None:
-                succeeded = True
-            _emit(
-                live,
-                SaveRolled(
-                    target_id=actor_id,
-                    ability=ability,
-                    dc=dc,
-                    roll_total=roll_total,
-                    succeeded=succeeded,
-                    advantage=mode,
-                    natural=natural,
-                    modifier=roll_modifier,
-                    sources=roll_sources,
-                ),
-            )
-            if lr_remaining is not None:
-                _emit_legendary_resistance_used(live, actor_id, lr_remaining)
-            if not succeeded:
-                surviving.append(spec)
-                continue
-            # Save succeeded — the spell ends on the target. Expire the
-            # effect and remove its sourced condition. The caster's
-            # concentration_chain entry for this target is pruned so a
-            # future damage-driven CON save knows the target no longer
-            # carries this effect (the caster's concentration itself
-            # persists if other targets remain — SRD §Hold Person
-            # higher-slot casts target multiple humanoids).
-            _emit(
-                live,
-                EffectExpired(
-                    target_id=actor_id,
-                    effect_id=effect_id,
-                    origin=origin,
-                    reason="duration",
-                ),
-            )
-            if condition not in live.active_conditions.get(actor_id, set()):
-                _emit(
-                    live,
-                    ConditionRemoved(
-                        target_id=actor_id,
-                        condition=condition,
-                    ),
-                )
-            chain = live.concentration_chain.get(caster_id)
-            if chain is not None:
-                survivors = [entry for entry in chain if entry != (target_id, effect_id, origin)]
-                if survivors:
-                    live.concentration_chain[caster_id] = survivors
-                else:
-                    live.concentration_chain.pop(caster_id, None)
-                    live.concentration_rounds_remaining.pop(caster_id, None)
-        if surviving:
-            live.repeat_save_on_turn_end[identity] = surviving
-        else:
-            live.repeat_save_on_turn_end.pop(identity, None)
+    """Thin turn hook into the typed lifecycle subsystem."""
+    live_effect_lifecycle.run_repeats(live, actor_id)
 
 
 # ── Public seam ─────────────────────────────────────────────────────────────
@@ -7453,6 +7273,7 @@ def _build_pc_combatants(
                 concentration_effect_id=pc.concentration_effect_id,
                 creature_type=pc.creature_type,
                 creature_size=pc.creature_size,
+                carried_item_slugs=tuple(dict.fromkeys(pc.equipment)),
                 damage_resistances=list(pc.damage_resistances),
                 damage_immunities=list(pc.damage_immunities),
                 damage_vulnerabilities=list(pc.damage_vulnerabilities),
@@ -7721,6 +7542,7 @@ def _seed_active_effects(live: _LiveCombat, active_effects: Sequence[ActiveEffec
         # The same attachment fold as runtime: actual lineage and both stores
         # agree, while the raw effect (including suppressed statuses) survives.
         _attach_effect_statuses(live, eff)
+        live_effect_lifecycle.register_effect(live, eff)
 
 
 def _reconcile_seeded_condition_lifecycle(live: _LiveCombat) -> None:
@@ -7965,9 +7787,8 @@ async def start_combat(
     # would have set via _record_effect_lifecycle_links. Without this,
     # a seeded concentration effect (Bless cast pre-combat, Hold Person
     # carried over) would never trigger concentration-drop on caster damage
-    # and end-of-turn repeat saves would never fire. repeat_save_on_turn_end
-    # is NOT seeded here — it requires a failed-save record we don't have
-    # at seed time; the next runtime save will repopulate as needed.
+    # Typed lifecycle state seeds only when the effect explicitly carries its
+    # apply-time metadata, including captured save ability and DC.
     _seed_active_effects(live, active_effects)
 
     # C12 — a Character HYDRATED into combat already at 0 HP is Unconscious
@@ -9050,7 +8871,7 @@ def _purge_entity_state(live: _LiveCombat, entity_id: str) -> None:
     live.rage_bonus_extensions.discard(entity_id)
     by_identity: tuple[dict[tuple[str, str, str], Any], ...] = (
         live.conditions_by_effect,
-        live.repeat_save_on_turn_end,
+        live.effect_lifecycles,
     )
     for identities in by_identity:
         for identity in [key for key in identities if key[0] == entity_id]:
@@ -9124,6 +8945,7 @@ def _leave_roster(live: _LiveCombat, entity_id: str, reason: CombatantLeftReason
     if _find_combatant(live, entity_id) is None:
         return
     _drop_concentration(live, entity_id)
+    live_effect_lifecycle.actor_departed(live, entity_id)
     _release_grapple_victims_of(live, entity_id)
     departed = _find_combatant(live, entity_id)
     if departed is not None:
@@ -12226,6 +12048,12 @@ async def _submit_player_intent(
         )
         actx = replace(
             actx,
+            lifecycle_source_slug=intent.feature_id or intent.spell_id or intent.item_id or "",
+            lifecycle_source_kind="feature"
+            if intent.feature_id
+            else "spell"
+            if cast_spell
+            else "item",
             source_uses=feature_invocation.source_uses if feature_invocation else None,
             spell_dispatch=lambda spell, child_ctx: resolve_spell_activities(
                 live, spell, child_ctx, intent=intent

@@ -28,14 +28,15 @@ multi-type application).
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 from typing import TYPE_CHECKING, Final, cast, get_args
 
 from dnd5e_srd_data.schema.monster import MonsterTraitMechanic
 
 from dnd5e_engine.activities.actor_stats import save_modifier
 from dnd5e_engine.activities.context import DamageInstanceContext
-from dnd5e_engine.activities.d20 import AdvantageSources, roll_d20_test
-from dnd5e_engine.events import DamageApplied, DamageType, SaveRolled
+from dnd5e_engine.activities.save_primitive import roll_save
+from dnd5e_engine.events import DamageApplied, DamageType, LegendaryResistanceUsed, SaveRolled
 
 if TYPE_CHECKING:
     from dnd5e_engine.activities.context import ActivityResolutionContext
@@ -184,8 +185,23 @@ def apply_damage(
             and not is_crit
         ):
             dc = 5 + final_amount
-            roll = roll_d20_test(ctx.rng, save_modifier(target, "con").total, AdvantageSources())
-            succeeded = roll.total >= dc
+            # This is the monster trait's own save, independent of the incoming
+            # damage's spell provenance. Pure contexts may omit save sidecars.
+            save_modifiers = {
+                **ctx.passive_save_modifiers,
+                target.entity_id: {
+                    "con": save_modifier(target, "con").total,
+                    **ctx.passive_save_modifiers.get(target.entity_id, {}),
+                },
+            }
+            save_ctx = replace(
+                ctx,
+                base_spell_level=None,
+                save_is_magical=False,
+                passive_save_modifiers=save_modifiers,
+            )
+            roll = roll_save(save_ctx, target, "con", dc, ignore_cover=True)
+            succeeded = roll.succeeded
             ctx.event_emitter(
                 SaveRolled(
                     target_id=target.entity_id,
@@ -194,11 +210,18 @@ def apply_damage(
                     roll_total=roll.total,
                     succeeded=succeeded,
                     advantage=roll.mode,
-                    natural=roll.kept,
+                    natural=roll.natural,
                     modifier=roll.modifier,
                     sources=list(roll.sources),
                 )
             )
+            if roll.legendary_resistance_remaining is not None:
+                ctx.event_emitter(
+                    LegendaryResistanceUsed(
+                        actor_id=target.entity_id,
+                        uses_remaining=roll.legendary_resistance_remaining,
+                    )
+                )
             if succeeded:
                 target.hp_current = 1
                 is_overkill = False

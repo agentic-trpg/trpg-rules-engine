@@ -134,6 +134,8 @@ def resolve_spell_activities(
         ctx = attach_reaction_hooks(live, ctx)
     ctx = replace(
         ctx,
+        lifecycle_source_slug=spell.slug,
+        lifecycle_source_kind="spell",
         negated_spell_damage_targets=targeted_spell_opportunities(
             live, ctx.caster, spell, ctx.targets
         ),
@@ -284,7 +286,9 @@ def _execute(
         spell_book=orch._build_cast_spell_book(pending.spell.activities),
         **orch._monster_context_kwargs(live, caster, [target], payload),
     )
-    ctx = attach_reaction_hooks(live, ctx)
+    ctx = attach_reaction_hooks(
+        live, replace(ctx, lifecycle_source_kind="spell", lifecycle_source_slug=pending.spell.slug)
+    )
     resolve_activity(pending.activity, ctx)
     orch._sync_legendary_resistance(live, before)
     if pending.concentration and live.concentration_chain.get(caster.entity_id):

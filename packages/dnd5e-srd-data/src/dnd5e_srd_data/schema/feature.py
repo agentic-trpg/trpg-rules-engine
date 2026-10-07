@@ -15,6 +15,7 @@ from pydantic import (
 
 from dnd5e_srd_data.schema.advancement import AdvancementEntry
 from dnd5e_srd_data.schema.common import Activity, PassiveEffect, Provenance, ReviewState
+from dnd5e_srd_data.schema.lifecycle import EffectLifecycleSpec
 from dnd5e_srd_data.schema.monster import CreatureSize
 
 FeatureType = Literal["class_feature", "subclass_feature", "species_trait"]
@@ -45,6 +46,14 @@ class RiderEffectSpec(BaseModel, frozen=True):
     effect_id: str
     outcome: Literal["always", "failure", "success"] = "always"
     expiry: RiderEffectExpiry = "none"
+    lifecycle: EffectLifecycleSpec | None = None
+
+    @model_serializer(mode="wrap")
+    def _serialize_binding(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        if self.lifecycle is None:
+            data.pop("lifecycle", None)
+        return data
 
 
 class RiderForcedMovement(BaseModel, frozen=True):
@@ -72,6 +81,7 @@ class AttackRiderSemantics(BaseModel, frozen=True):
     sneak_dice_cost: NonNegativeInt = 0
     inherit_damage_type: bool = False
     effects: tuple[RiderEffectSpec, ...] = ()
+    requires_carried_items: tuple[str, ...] = ()
     forced_movement: RiderForcedMovement | None = None
     automatic: bool = False
     deferred_reason: str | None = None
@@ -84,6 +94,8 @@ class AttackRiderSemantics(BaseModel, frozen=True):
         data: dict[str, Any] = handler(self)
         if self.target_size_max is None:
             data.pop("target_size_max", None)
+        if not self.requires_carried_items:
+            data.pop("requires_carried_items", None)
         return data
 
 

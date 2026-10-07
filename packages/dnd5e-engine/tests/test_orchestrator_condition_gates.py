@@ -30,6 +30,7 @@ from dnd5e_engine.orchestrator import (
 )
 from dnd5e_engine.specs import EncounterMemberSpec, PartyMemberSpec
 from tests.e2e.harness import cell, events_of, grid_scene, run_async
+from tests.lifecycle_support import seed_repeat_save
 
 
 def _hero(**kw: Any) -> PartyMemberSpec:
@@ -268,9 +269,13 @@ def test_end_of_turn_repeat_save_honours_auto_fail_and_restrained_disadvantage()
         [_status("char:hero", "paralyzed")],
     )
     live = _get_live(start.handle)
-    live.repeat_save_on_turn_end[("char:hero", "effect:hold", "cast:hold-person:mon:foe")] = [
-        {"ability": "wis", "dc": 13, "condition": "paralyzed", "caster_id": "mon:foe"}
-    ]
+    seed_repeat_save(
+        live,
+        ("char:hero", "effect:hold", "cast:hold-person:mon:foe"),
+        ability="wis",
+        dc=13,
+        source_id="mon:foe",
+    )
     # ``pass`` is legal while Incapacitated and ends the turn.
     run_async(
         submit_player_intent(
@@ -290,9 +295,13 @@ def test_end_of_turn_repeat_save_honours_auto_fail_and_restrained_disadvantage()
         [_status("char:hero", "restrained")],
     )
     live2 = _get_live(start2.handle)
-    live2.repeat_save_on_turn_end[("char:hero", "effect:web", "cast:web:mon:foe")] = [
-        {"ability": "dex", "dc": 13, "condition": "restrained", "caster_id": "mon:foe"}
-    ]
+    seed_repeat_save(
+        live2,
+        ("char:hero", "effect:web", "cast:web:mon:foe"),
+        ability="dex",
+        dc=13,
+        source_id="mon:foe",
+    )
     run_async(
         submit_player_intent(
             start2.handle, actor_id="char:hero", intent=PlayerIntent(intent_type="pass")
@@ -309,9 +318,13 @@ def test_end_of_turn_repeat_save_honours_auto_fail_and_restrained_disadvantage()
         [_status("char:hero", "paralyzed")],
     )
     live3 = _get_live(start3.handle)
-    live3.repeat_save_on_turn_end[("char:hero", "effect:hold2", "cast:hold-person:mon:foe")] = [
-        {"ability": "str", "dc": 13, "condition": "paralyzed", "caster_id": "mon:foe"}
-    ]
+    seed_repeat_save(
+        live3,
+        ("char:hero", "effect:hold2", "cast:hold-person:mon:foe"),
+        ability="str",
+        dc=13,
+        source_id="mon:foe",
+    )
     run_async(
         submit_player_intent(
             start3.handle, actor_id="char:hero", intent=PlayerIntent(intent_type="pass")
@@ -740,9 +753,13 @@ def test_condition_immunity_does_not_auto_fail_saves() -> None:
         [_status("char:hero", "paralyzed")],
     )
     live = _get_live(start.handle)
-    live.repeat_save_on_turn_end[("char:hero", "effect:hold", "cast:hold-person:mon:foe")] = [
-        {"ability": "str", "dc": 13, "condition": "paralyzed", "caster_id": "mon:foe"}
-    ]
+    seed_repeat_save(
+        live,
+        ("char:hero", "effect:hold", "cast:hold-person:mon:foe"),
+        ability="str",
+        dc=13,
+        source_id="mon:foe",
+    )
     run_async(
         submit_player_intent(
             start.handle, actor_id="char:hero", intent=PlayerIntent(intent_type="pass")

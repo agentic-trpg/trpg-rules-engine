@@ -96,6 +96,7 @@ def _validate_effects(
                 scalar(parse_expression(str(change.value), allow_dice=False))
             elif change.key in (
                 "flags.attack.next_advantage",
+                "flags.save.next_disadvantage",
                 "flags.cannot_make_opportunity_attacks",
             ):
                 if change.mode != "override" or not (
@@ -140,6 +141,12 @@ def _validate_rider_carrier(activity: Activity, semantics: AttackRiderSemantics)
         raise FeaturePreflightError("utility rider formula has no execution carrier")
     if {ref.id for ref in activity.effects} - {binding.effect_id for binding in semantics.effects}:
         raise FeaturePreflightError("rider effect reference has no reviewed outcome binding")
+    for binding in semantics.effects:
+        if binding.lifecycle is not None:
+            if binding.expiry != "none":
+                raise FeaturePreflightError("rider effect has competing expiry owners")
+            if binding.lifecycle.repeat_save is not None and not isinstance(activity, SaveActivity):
+                raise FeaturePreflightError("repeat-save lifecycle requires a triggering save")
     if (
         semantics.trigger not in ("final_hit", "sneak_attack_damage", "flurry_hit")
         or semantics.phase not in ("final_hit_before_damage", "after_damage")
@@ -234,6 +241,16 @@ def _validated_payments(
         raise FeaturePreflightError(str(error)) from error
 
 
+def _validate_required_items(
+    actor: Combatant, semantics: AttackRiderSemantics, loader: AssetLoader
+) -> None:
+    for item_slug in semantics.requires_carried_items:
+        if loader.get_item(item_slug) is None:
+            raise FeaturePreflightError("required carried item has no canonical identity")
+        if item_slug not in actor.carried_item_slugs:
+            raise FeaturePreflightError("rider requires a carried item")
+
+
 def plan_attack_riders(
     actor: Combatant,
     requests: tuple[AttackRiderRequest, ...],
@@ -260,6 +277,7 @@ def plan_attack_riders(
     plans = []
     for request in requests:
         feature, activity, semantics = _requested_rider(owned, request)
+        _validate_required_items(actor, semantics, loader)
         if semantics.target_size_max is not None and (
             target_size is None or not size_at_most(target_size, semantics.target_size_max)
         ):

@@ -68,6 +68,8 @@ parse feature names, descriptions, qualifiers or activation prose.
 | Open Hand: Topple | `5Qgc0K3TfuonkPIG` | On that paid Flurry hit, a failed DEX save against `8 + PB + WIS` imposes Prone through the ordinary condition/effect events. |
 | Cunning Strike: Trip | `dWcCw1vTWRMx4YzD` | An eligible Sneak Attack sacrifices one d6 against a Large-or-smaller target. A failed DEX save against `8 + PB + DEX` imposes Prone. The sacrifice remains paid on a successful save; a larger target is refused before attack payment or dice. |
 | Devious Strikes: Obscure | `ki4lIPVGNA0HjEzH` | An eligible Sneak Attack sacrifices three of its d6s. A failed DEX save against `8 + PB + DEX` imposes Blinded until the end of the target's next turn. The sacrifice remains paid on a successful save. |
+| Cunning Strike: Poison | `n64fvJMT9fPUy7DH` | A carried canonical `poisoners-kit` and eligible Sneak Attack are required before payment. Sacrifices one d6; failed CON against `8 + PB + DEX` imposes Poisoned for ten rounds with captured end-turn repeats. Successful saves still pay the sacrifice; immunity suppresses condition/lifecycle registration. |
+| Devious Strikes: Knock Out | `3eq7lcmpkJJBU2KO` | Sacrifices six eligible Sneak Attack d6s; failed CON against `8 + PB + DEX` imposes Unconscious for ten rounds with captured end-turn repeats, ending after a complete positive damage instance. Zero, immune and Shield-negated damage do not break it. |
 
 Open Hand options require the owning Monk subclass and paid Flurry provenance.
 A normal Attack action or Martial Arts Bonus Unarmed Strike cannot invoke them.
@@ -87,15 +89,13 @@ does not make the complete option executable.
 
 | Feature / option | Missing contract |
 |---|---|
-| Cunning Strike: Poison | An authoritative carried Poisoner's Kit requirement and the repeated end-of-turn save lifecycle. Applying Poisoned alone is insufficient. |
 | Cunning Strike: Withdraw | Complete immediate movement up to half Speed and an opportunity-attack exemption scoped to that movement. The typed `MovementGrant` is a foundation; a persistent Disengage marker is insufficient. |
 | Cunning Strike: standalone Sneak Attack damage activity | This is a data carrier for dice sacrifice, not permission to deal Sneak Attack damage without an eligible attack hit. |
 | Devious Strikes: Daze | The target's next-turn choice of movement, Action or Bonus Action, allowing only one of those. An inert duration marker is insufficient. |
-| Devious Strikes: Knock Out | One-minute Unconscious, removal on any damage, and a repeated end-of-turn save. A one-turn condition is insufficient. |
 | Reckless Attack | The own-turn first-attack STR declaration, ongoing attack advantage, and advantage for incoming attacks until the source's next turn. |
 | Brutal Strike: damage / Hamstring Blow | The complete Reckless Attack prerequisite, forgoing its advantage before rolling, no remaining disadvantage, qualifying STR attack, one selected hit and source-turn restriction. Hamstring's typed Speed reduction alone is insufficient. |
 | Brutal Strike: Forceful Blow | Those Brutal Strike prerequisites plus the immediate half-Speed follow movement. A push alone is insufficient. |
-| Improved Brutal Strike: Staggering Blow | Those Brutal Strike prerequisites plus a one-use next-save disadvantage and opportunity-attack suppression. |
+| Improved Brutal Strike: Staggering Blow | Those Brutal Strike prerequisites remain missing. Generic next-save disadvantage consumption and opportunity-attack suppression do not complete the option. |
 | Improved Brutal Strike: Sundering Blow | Those Brutal Strike prerequisites plus a one-use `+5` attack bonus for the next **other** attacker. |
 
 The full inventory also keeps Divine Strike's own-turn/choice scaling,
@@ -111,7 +111,7 @@ Quivering Palm needs vibration binding and its later release lifecycle.
 Hurl Through Hell needs banishment/return and the Fiend damage exclusion.
 Each activity's exact missing clauses remain in the linked audit.
 
-Stunning Strike and the listed Open Hand/Trip/Obscure activities still reject
+Stunning Strike and the listed Open Hand/Trip/Poison/Obscure/Knock Out activities still reject
 standalone `use_feature`; their executable entrypoint is the bound attack.
 The standalone [feature audit](feature-runtime.md) therefore distinguishes
 standalone rejection from attack-rider execution.
@@ -124,8 +124,8 @@ phases, executable status and specific deferred reasons. Ingestion owns the
 exact canonical mappings. Unknown declarations do not gain semantics by
 matching human-readable text.
 
-The inventory has 51 rows from 36 feature documents: seven executable riders,
-25 deferred rider options and 19 supporting contexts. The seven executable rows
+The inventory has 51 rows from 36 feature documents: nine executable riders,
+23 deferred rider options and 19 supporting contexts. The nine executable rows
 include automatic Sneak Attack. Funding producers, defensive reactions and
 passive/foundation records are inventoried separately and are not counted as
 newly executable outgoing riders.
@@ -144,3 +144,7 @@ exercises the public attack declaration, authoritative class/subclass grants,
 preflight state preservation, final-hit reaction ordering, save outcomes,
 resource and Sneak Attack commits, effect expiry, forced movement and replay
 determinism. The capability matrix probes the same typed support boundary.
+
+Poison and Knock Out use the shared [typed effect lifecycle](effect-lifecycle.md),
+which captures initial save ability/DC and source provenance, preserves full
+effect identities and owns repetition, finite duration and damage expiry.

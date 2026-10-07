@@ -21,6 +21,7 @@ this module is the event-producing wrapper above it.
 from __future__ import annotations
 
 import random
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -152,20 +153,30 @@ class DeathSaveResult:
     outcome: DeathSaveOutcome
 
 
-def _roll_d20(rng: random.Random, modifier: int = 0) -> D20Result:
+def _roll_d20(
+    rng: random.Random, modifier: int = 0, *, next_save_disadvantage: bool = False
+) -> D20Result:
     """The death save's D20 Test through the shared primitive (F2c).
 
-    SRD §Dying — a death saving throw draws one d20 with no advantage source
-    the engine models today, so ``activities/d20.py::roll_d20_test`` is called
-    with an empty ``AdvantageSources``: exactly one ``rng.randint(1, 20)``
-    draw, identical to the pre-F2c stream. ``modifier`` is the SRD 5.2
+    SRD §Dying — without a one-use effect, a death saving throw draws one d20.
+    A consumed next-save disadvantage clause draws two and keeps the lower.
+    ``modifier`` is the SRD 5.2
     Exhaustion penalty (a death save is a saving throw, hence a D20 Test); a
     flat modifier never adds a draw, so an unexhausted PC's stream is unmoved.
     """
-    return roll_d20_test(rng, modifier, AdvantageSources())
+    return roll_d20_test(
+        rng,
+        modifier,
+        AdvantageSources(disadvantage=("effect",) if next_save_disadvantage else ()),
+    )
 
 
-def roll_death_save(combatant: Combatant, rng: random.Random) -> DeathSaveResult:
+def roll_death_save(
+    combatant: Combatant,
+    rng: random.Random,
+    *,
+    consume_next_save_modifier: Callable[[str], bool] | None = None,
+) -> DeathSaveResult:
     """Roll a single death save for ``combatant`` and return the resulting
     events + updated combatant state.
 
@@ -185,7 +196,16 @@ def roll_death_save(combatant: Combatant, rng: random.Random) -> DeathSaveResult
 
     # The Exhaustion penalty reduces the TOTAL; the nat-1 / nat-20 special
     # outcomes still read the KEPT die (SRD 5.2 Exhaustion + §Dying).
-    roll = _roll_d20(rng, d20_test_penalty(combatant.conditions))
+    next_save_disadvantage = (
+        consume_next_save_modifier(combatant.entity_id)
+        if consume_next_save_modifier is not None
+        else False
+    )
+    roll = _roll_d20(
+        rng,
+        d20_test_penalty(combatant.conditions),
+        next_save_disadvantage=next_save_disadvantage,
+    )
     natural = roll.kept
     is_critical = natural in (1, 20)
     success = natural == 20 or (natural != 1 and roll.total >= 10)

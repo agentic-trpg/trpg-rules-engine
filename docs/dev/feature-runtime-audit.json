@@ -1,9 +1,9 @@
 {
   "counts": {
-    "attack_rider_deferred": 24,
-    "attack_rider_executable": 7,
-    "fully_resolvable": 17,
-    "semantic_special_case": 99,
+    "attack_rider_deferred": 22,
+    "attack_rider_executable": 9,
+    "fully_resolvable": 18,
+    "semantic_special_case": 98,
     "unsupported_preflight": 44
   },
   "reachable_activities": 191,
@@ -348,13 +348,13 @@
       "slug": "cunning-strike",
       "activity_id": "n64fvJMT9fPUy7DH",
       "owner": "rogue",
-      "classification": "attack_rider_deferred",
-      "reason": "standalone use_feature rejected; attack rider deferred: requires authoritative Poisoner's Kit inventory and repeated end-turn save lifecycle",
+      "classification": "attack_rider_executable",
+      "reason": "standalone use_feature rejected; attack-triggered execution supported",
       "formula_error": null,
       "resource_error": null,
       "execution_path": "attack_triggered_rider",
       "standalone_executable": false,
-      "rider_executable": false
+      "rider_executable": true
     },
     {
       "slug": "cunning-strike",
@@ -504,13 +504,13 @@
       "slug": "devious-strikes",
       "activity_id": "3eq7lcmpkJJBU2KO",
       "owner": "rogue",
-      "classification": "attack_rider_deferred",
-      "reason": "standalone use_feature rejected; attack rider deferred: requires generic break-on-damage and repeated end-turn save lifecycle",
+      "classification": "attack_rider_executable",
+      "reason": "standalone use_feature rejected; attack-triggered execution supported",
       "formula_error": null,
       "resource_error": null,
       "execution_path": "attack_triggered_rider",
       "standalone_executable": false,
-      "rider_executable": false
+      "rider_executable": true
     },
     {
       "slug": "devious-strikes",
@@ -1164,12 +1164,12 @@
       "slug": "intimidating-presence",
       "activity_id": "ZRHT8mOlea6T8XpP",
       "owner": "berserker",
-      "classification": "semantic_special_case",
-      "reason": "requires a one-minute condition and repeated end-of-turn saves",
+      "classification": "fully_resolvable",
+      "reason": "typed activity and required carriers validated",
       "formula_error": null,
       "resource_error": null,
-      "execution_path": "other_event_triggered",
-      "standalone_executable": false,
+      "execution_path": "standalone_activity",
+      "standalone_executable": true,
       "rider_executable": false
     },
     {

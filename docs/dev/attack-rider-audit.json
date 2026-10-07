@@ -1,7 +1,7 @@
 {
   "counts": {
-    "deferred_rider": 25,
-    "executable_rider": 7,
+    "deferred_rider": 23,
+    "executable_rider": 9,
     "supporting_context": 19
   },
   "role_counts": {
@@ -180,7 +180,7 @@
         "feature_uses": null,
         "sneak_dice_cost": 1,
         "inherit_damage_type": false,
-        "commit": null
+        "commit": "qualifying_final_hit"
       },
       "save": {
         "ability": [
@@ -192,12 +192,29 @@
         },
         "ignore_cover": false
       },
-      "effects": [],
+      "effects": [
+        {
+          "effect_id": "RazTM6biKVtNtjEW",
+          "outcome": "failure",
+          "expiry": "none",
+          "lifecycle": {
+            "repeat_save": {
+              "phase": "target_turn_end",
+              "save_source": "triggering_activity",
+              "on_success": "expire_effect"
+            },
+            "maximum_rounds": 10,
+            "expiry_boundary": null,
+            "expire_on_positive_damage": false,
+            "one_use_modifiers": []
+          }
+        }
+      ],
       "forced_movement": null,
-      "fully_executable": false,
+      "fully_executable": true,
       "standalone_use_feature_rejected": true,
-      "classification": "deferred_rider",
-      "deferred_reason": "requires authoritative Poisoner's Kit inventory and repeated end-turn save lifecycle"
+      "classification": "executable_rider",
+      "deferred_reason": null
     },
     {
       "feature_slug": "cunning-strike",
@@ -531,7 +548,7 @@
         "feature_uses": null,
         "sneak_dice_cost": 6,
         "inherit_damage_type": false,
-        "commit": null
+        "commit": "qualifying_final_hit"
       },
       "save": {
         "ability": [
@@ -543,12 +560,29 @@
         },
         "ignore_cover": false
       },
-      "effects": [],
+      "effects": [
+        {
+          "effect_id": "C2IGgt4PnRMxZVey",
+          "outcome": "failure",
+          "expiry": "none",
+          "lifecycle": {
+            "repeat_save": {
+              "phase": "target_turn_end",
+              "save_source": "triggering_activity",
+              "on_success": "expire_effect"
+            },
+            "maximum_rounds": 10,
+            "expiry_boundary": null,
+            "expire_on_positive_damage": true,
+            "one_use_modifiers": []
+          }
+        }
+      ],
       "forced_movement": null,
-      "fully_executable": false,
+      "fully_executable": true,
       "standalone_use_feature_rejected": true,
-      "classification": "deferred_rider",
-      "deferred_reason": "requires generic break-on-damage and repeated end-turn save lifecycle"
+      "classification": "executable_rider",
+      "deferred_reason": null
     },
     {
       "feature_slug": "devious-strikes",

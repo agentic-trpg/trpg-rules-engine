@@ -87,6 +87,8 @@ AdvantageSource = Literal[
 ]
 
 EffectExpiryReason = Literal[
+    "save_succeeded",
+    "damaged",
     "heavy_armor",
     "duration",
     "concentration_drop",
@@ -323,7 +325,10 @@ class EffectModifiersConsumed(BaseModel):
     target_id: str
     effect_id: str
     origin: str
-    keys: tuple[Literal["flags.attack.next_advantage", "attack.next_bonus"], ...]
+    keys: tuple[
+        Literal["flags.attack.next_advantage", "attack.next_bonus", "flags.save.next_disadvantage"],
+        ...,
+    ]
 
 
 class SaveRolled(BaseModel):

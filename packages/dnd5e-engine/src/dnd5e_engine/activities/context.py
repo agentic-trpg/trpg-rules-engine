@@ -149,6 +149,9 @@ class ActivityResolutionContext:
     attack_origin: AttackOrigin = "default"
     turn_serial: int = 0
     attack_roll_modifier: Callable[[str, str], AttackRollModifier] | None = None
+    # Called once when a saving throw occurs, including condition auto-failure.
+    # A true result contributes already-consumed, target-side disadvantage.
+    consume_next_save_modifier: Callable[[str], bool] | None = None
     attack_rider_prepare: Callable[[AttackResolutionContext], int] | None = None
     attack_rider_resolved: Callable[[AttackResolutionContext], None] | None = None
     sneak_attack_commit: Callable[[str, str], None] | None = None
@@ -168,10 +171,15 @@ class ActivityResolutionContext:
     is_proficient_attack: bool = True
     # The casting spell's concentration flag (``Spell.concentration``). Threaded
     # into each rider ``ActiveEffect.flags`` as ``{"concentration": True}`` so the
-    # orchestrator (Piece 3) can key concentration-drop + repeat-save lineage off
-    # it. Supplied by golden fixtures now; threaded by the orchestrator (from the
-    # spell's typed ``concentration``) at cutover. Inert for non-spell activities.
+    # orchestrator can attach the concentration-drop chain. Repeat-save
+    # registration requires a separate explicit effect lifecycle binding.
+    # Inert for non-spell activities.
     concentration: bool = False
+    # Explicit provenance for non-spell magical saves and captured repeat saves.
+    # Ordinary feature activities remain nonmagical regardless of activity kind.
+    save_is_magical: bool = False
+    lifecycle_source_slug: str = ""
+    lifecycle_source_kind: Literal["spell", "feature", "item", "monster"] = "monster"
     slot_level: int | None = None
     # The spell's BASE level (lowest castable slot). Upcast scaling adds
     # ``max(0, slot_level - base_spell_level)`` steps. Supplied by golden

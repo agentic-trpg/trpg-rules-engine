@@ -100,15 +100,20 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   Dragon keeps Foundry's flat 3 — so a monster fought in its own lair gets
   no extra uses.
   (`packages/dnd5e-srd-data/src/dnd5e_srd_data/canonical/monsters/`)
-- **Magic Resistance still does not reach the orchestrator-level save
-  paths** (2026-09-03, C18 — unchanged from the prior "Typed traits" entry).
-  The end-of-turn repeat save, the damage-triggered concentration check, and
-  the Grapple/Shove Unarmed Strike save all bypass the typed activity
-  resolver (`activities/save_primitive.py`) where Magic Resistance's
-  advantage is granted; C18 wired Legendary Resistance's *conversion* onto
-  all three via `_consume_armed_legendary_resistance`, but Magic Resistance's
-  advantage grant was not threaded onto the same three paths.
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py`)
+- **Typed effect lifecycle and shared saves (2026-10-08).** Reviewed exact
+  effect bindings now register captured save ability/DC, source identity and
+  magical provenance. Hold Person/Hold Monster, Cunning Poison, Devious Knock
+  Out and Intimidating Presence repeat through the same save primitive as
+  ordinary activities; Grapple/Shove, concentration and Undead Fortitude also
+  share target modifiers, conditions, Exhaustion, effect bonus dice and armed
+  Legendary Resistance. Magic Resistance applies to captured magical repeat
+  saves; mundane Grapple/Shove and maintaining concentration are not magical
+  saves. Next-save disadvantage consumes only its own clause, including on
+  automatic failure and death saves. Standalone legacy `check.resolve_check`
+  saving throws still lack live effect-state consumption. The deterministic
+  [lifecycle inventory](docs/dev/effect-lifecycle-audit.json) retains 147
+  deferred/candidate rows; this does not complete every ongoing spell or item.
+  See [the lifecycle contract](docs/dev/effect-lifecycle.md).
 - **Recharge state does not persist across combats** (2026-09-03, C18).
   `MonsterActionUses` (recharge_spent, uses_remaining) lives on
   `_LiveCombat`, discarded at `end_combat` like every other combat-scoped
@@ -499,8 +504,8 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   estimate is retired. The pre-change numeric resolver audit found 20 failures
   among 77 damage/heal/save activities; that count did not prove public API
   reachability. The new deterministic audit covers all 191 reachable canonical
-  activities: 17 `fully_resolvable`, 44 `unsupported_preflight`, 99
-  `semantic_special_case`, six `attack_rider_executable` and 25
+  activities: 18 `fully_resolvable`, 44 `unsupported_preflight`, 98
+  `semantic_special_case`, nine `attack_rider_executable` and 22
   `attack_rider_deferred` (updated 2026-10-08). Executable riders still reject
   standalone invocation. Every rejected invocation is checked before action,
   resource or RNG consumption. See [the contract](docs/dev/feature-runtime.md)
@@ -523,29 +528,34 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   therefore cannot fund them. Attack/Magic ordering and refused casts preserve
   the appropriate budgets.
 - **Remaining attack rider options (narrowed 2026-10-08).** Shared typed attack
-  binding, Stunning Strike, Open Hand Addle/Push/Topple, Cunning Trip and Devious Obscure are
-  executable. Sneak Attack commits inside damage resolution before Cleave or
-  another attack can select it again. The full [rider inventory](docs/dev/attack-rider-audit.json)
-  distinguishes seven executable riders, 25 deferred options and 19 supporting
-  contexts; see [the contract](docs/dev/attack-feature-riders.md).
-  Cunning Poison still needs authoritative Poisoner's Kit inventory and repeated
-  end-turn saves; Withdraw needs complete immediate half-Speed
-  movement with a move-scoped OA exemption. Devious Daze needs mutually exclusive
-  movement/Action/Bonus Action restrictions, and Knock Out needs break-on-damage
-  plus repeated saves. These complete options reject before payment.
+  binding, Stunning Strike, Open Hand Addle/Push/Topple, Cunning Trip/Poison and
+  Devious Obscure/Knock Out are executable. Sneak Attack commits inside damage
+  resolution before Cleave or another attack can select it again. The full
+  [rider inventory](docs/dev/attack-rider-audit.json) distinguishes nine
+  executable riders, 23 deferred options and 19 supporting contexts; see
+  [the contract](docs/dev/attack-feature-riders.md). Poison requires an actual
+  carried canonical Poisoner's Kit and one Sneak die; Knock Out costs six
+  dice. Both use captured CON saves and ten-round target timers; Knock Out also
+  ends after a complete positive damage instance. Withdraw still needs complete
+  immediate half-Speed movement with a move-scoped OA exemption. Daze needs
+  mutually exclusive movement/Action/Bonus Action restrictions. Those complete
+  options continue to reject before payment.
 - **Reckless Attack / Brutal Strike foundation (2026-10-08).** The own-turn
   first-attack STR declaration, forgoing Reckless advantage before rolling,
   no-remaining-disadvantage gate and incoming-attack advantage lifetime remain
   absent. Brutal damage and Hamstring, Forceful, Staggering and Sundering all
   remain deferred. Forceful also needs immediate half-Speed follow movement;
-  Staggering next-save disadvantage consumption; Sundering a one-use `+5` for
+  Staggering retains the missing Reckless/Brutal foundation despite generic
+  next-save consumption now being available; Sundering needs a one-use `+5` for
   the next other attacker. Existing generic effect consumers alone do not close
   these options. Other inventoried riders retain their exact missing qualifiers,
   costs, target and lifecycle clauses in the audit.
-- **Breath Weapon and Intimidating Presence (2026-10-07).** Canonical feature
-  invocation now rejects. Breath Weapon lacks Attack replacement and ancestry-bound
-  damage selection; Intimidating Presence lacks repeated end-of-turn saves and
-  the correct one-minute condition duration. Numeric DC support is insufficient.
+- **Breath Weapon remains deferred (narrowed 2026-10-08).** Canonical invocation
+  lacks Attack replacement and ancestry-bound damage selection. Intimidating
+  Presence's initial Bonus Action, selected 30-foot Emanation, STR/PB save DC,
+  own one-use Long-Rest pool and ten-round repeat-save Frightened lifecycle are
+  executable. Its separate Rage Recharge activity remains deferred because the
+  empty canonical restore target is not an authoritative resource transfer.
 - **Bardic Inspiration follow-ups (narrowed 2026-10-07).** Grant range and the
   recipient's sight/hearing now gate payment. Weapon attacks and ability checks
   retain their redemption paths. Spell-attack/save redemption and redemption
@@ -1041,10 +1051,10 @@ now calls the engine rather than standing in for it. Residual gaps:
 - **Typed traits are hydrated; only Flyby, Nimble Escape, Keen Senses and
   Aggressive are still unconsumed (amended 2026-09-03, C18).**
   `Combatant.trait_mechanics` carries the 14 `MonsterTraitMechanic` values
-  (C22). Magic Resistance grants save advantage against spell-sourced saves
-  only ("other magical effects" — magic-item and spell-like monster saves —
-  are not yet recognised, and the orchestrator-level save paths — repeat
-  save, concentration, Grapple/Shove — still do not read it). C18 landed
+  (C22). Magic Resistance grants save advantage against spells and explicitly
+  magical sources, including captured typed repeat saves (2026-10-08). Ordinary
+  feature saves, Grapple/Shove and concentration maintenance are nonmagical.
+  Unmapped magical producers remain deferred. C18 landed
   Pack Tactics (attack advantage), Sunlight Sensitivity (attack and all ability-check
   disadvantage in sunlight; typed check pipeline 2026-10-07), Undead Fortitude
   (CON save to hold at 1 HP), Swarm (no HP/temp-HP gain) and Legendary
@@ -1114,13 +1124,6 @@ a cluster; they are consolidated here so they are not re-discovered.
   single `current_turn_start_index` computed once in `_begin_turn` and have
   both hooks read it.
   (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_begin_turn`)
-- **The two orchestrator-level save paths skip effect-derived save bonuses.**
-  The concentration check and the end-of-turn repeat save now honour the
-  condition projections (auto-fail, Restrained DEX disadvantage, exhaustion)
-  but still not the effect-derived `passive_save_bonus` (Bless/Bane). The
-  repeat-save path also honours `passive_save_dis` but not `passive_save_adv`.
-  Unowned since C13.
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py`)
 - **A turn-start or round-start hook that removes a creature would strand
   the turn (2026-09-27, C23).** A current actor that leaves the initiative
   order hands its turn on through `_hand_off_departed_turn` once the intent

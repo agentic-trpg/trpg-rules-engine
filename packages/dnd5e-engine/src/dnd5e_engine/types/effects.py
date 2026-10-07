@@ -20,6 +20,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
+from dnd5e_engine.effect_lifecycle import EffectLifecycleApplication
+
 ChangeMode = Literal["custom", "multiply", "add", "downgrade", "upgrade", "override"]
 
 
@@ -158,6 +160,9 @@ class ActiveEffect(BaseModel):
     changes: list[ActiveEffectChange] = Field(default_factory=list)
     statuses: set[str] = Field(default_factory=set)
     flags: dict[str, Any] = Field(default_factory=dict)
+    lifecycle: EffectLifecycleApplication | None = Field(
+        default=None, exclude_if=lambda v: v is None
+    )
 
     @field_serializer("statuses")
     def _statuses_sorted(self, statuses: set[str]) -> list[str]:

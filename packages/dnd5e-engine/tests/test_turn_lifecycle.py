@@ -289,6 +289,9 @@ def test_hooks_registered_by_the_engine_are_present_and_ordered():
     * ``engine:timed-effect-expiry`` must stay AFTER ``engine:duration-tick``
       (the round tick claims an effect's ``rounds`` counter before the seconds
       branch can look at it);
+    * ``engine:typed-effect-expiry`` follows repeat saves and precedes the
+      legacy duration tick. A successful repeat wins before its finite cap;
+      typed ownership prevents legacy display counters from ticking it again.
     * ``engine:concentration-expiry`` (C13) must stay LAST among the pre-C15
       hooks — a same-boundary repeat save must still roll against a live
       effect before the concentration cap can cascade its own drop.
@@ -322,6 +325,7 @@ def test_hooks_registered_by_the_engine_are_present_and_ordered():
             "engine:persistent-area-end",
             "engine:timed-activities-end",
             "engine:repeat-save",
+            "engine:typed-effect-expiry",
             "engine:duration-tick",
             "engine:timed-effect-expiry",
             "engine:concentration-expiry",

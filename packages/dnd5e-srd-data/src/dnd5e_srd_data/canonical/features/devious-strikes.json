@@ -138,6 +138,17 @@
             "max": null,
             "min": null
           },
+          "lifecycle": {
+            "expire_on_positive_damage": true,
+            "expiry_boundary": null,
+            "maximum_rounds": 10,
+            "one_use_modifiers": [],
+            "repeat_save": {
+              "on_success": "expire_effect",
+              "phase": "target_turn_end",
+              "save_source": "triggering_activity"
+            }
+          },
           "on_save": false,
           "riders": null
         }
@@ -307,8 +318,25 @@
       "automatic": false,
       "choice_group": "cunning-strike",
       "deferred_options": {},
-      "deferred_reason": "requires generic break-on-damage and repeated end-turn save lifecycle",
-      "effects": [],
+      "deferred_reason": null,
+      "effects": [
+        {
+          "effect_id": "C2IGgt4PnRMxZVey",
+          "expiry": "none",
+          "lifecycle": {
+            "expire_on_positive_damage": true,
+            "expiry_boundary": null,
+            "maximum_rounds": 10,
+            "one_use_modifiers": [],
+            "repeat_save": {
+              "on_success": "expire_effect",
+              "phase": "target_turn_end",
+              "save_source": "triggering_activity"
+            }
+          },
+          "outcome": "failure"
+        }
+      ],
       "forced_movement": null,
       "inherit_damage_type": false,
       "inventory_role": "rider",

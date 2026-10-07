@@ -321,6 +321,7 @@ def _attack_rider_options_resolve(
     class_slug: str,
     level: int,
     flurry: bool = False,
+    carried_items: tuple[str, ...] = (),
 ) -> bool:
     """Exercise the typed, draw-free planner with real class/subclass grants."""
     from dnd5e_srd_data.schema.monster import CreatureSize
@@ -343,6 +344,7 @@ def _attack_rider_options_resolve(
         subclass_slug="hand" if flurry else None,
         dexterity=18,
         wisdom=18,
+        carried_item_slugs=carried_items,
     )
     weapon = loader.get_weapon("dagger" if class_slug == "rogue" else "quarterstaff")
     assert weapon is not None
@@ -417,13 +419,24 @@ def _cunning_rider_scope_matches() -> bool:
         and _attack_rider_options_resolve(
             "cunning-strike", ("dWcCw1vTWRMx4YzD",), class_slug="rogue", level=14
         )
+        and _attack_rider_options_resolve(
+            "cunning-strike",
+            ("n64fvJMT9fPUy7DH",),
+            class_slug="rogue",
+            level=14,
+            carried_items=("poisoners-kit",),
+        )
+        and not _attack_rider_options_resolve(
+            "cunning-strike", ("n64fvJMT9fPUy7DH",), class_slug="rogue", level=14
+        )
+        and _attack_rider_options_resolve(
+            "devious-strikes", ("3eq7lcmpkJJBU2KO",), class_slug="rogue", level=14
+        )
         and all(
             not _attack_rider_options_resolve(slug, (activity,), class_slug="rogue", level=14)
             for slug, activity in (
-                ("cunning-strike", "n64fvJMT9fPUy7DH"),
                 ("cunning-strike", "m2bRZ1YeD3yf9nV7"),
                 ("devious-strikes", "4TnBjQTJzt9UjUos"),
-                ("devious-strikes", "3eq7lcmpkJJBU2KO"),
             )
         )
     )
@@ -464,6 +477,113 @@ def _physical_movement_contract_resolves() -> bool:
     )
 
 
+def _typed_lifecycle_contract_resolves() -> bool:
+    from dnd5e_srd_data.schema.lifecycle import EffectLifecycleSpec, RepeatSaveSpec
+
+    from dnd5e_engine.effect_lifecycle import EffectLifecycleApplication, OngoingEffectLifecycle
+
+    application = EffectLifecycleApplication(
+        spec=EffectLifecycleSpec(repeat_save=RepeatSaveSpec(), maximum_rounds=10),
+        source_id="char:source",
+        source_kind="feature",
+        source_slug="canonical-source",
+        activity_id="canonical-activity",
+        save_ability="con",
+        save_dc=15,
+    )
+    state = OngoingEffectLifecycle.from_application(
+        ("mon:target", "effect:canonical", "feature:source"),
+        application,
+        7,
+        2,
+    )
+    return (
+        state.repeats_at("mon:target", 7)
+        and not state.repeated(7).repeats_at("mon:target", 7)
+        and not state.expires_at("mon:target", "end", 8, 11)
+        and state.expires_at("mon:target", "end", 8, 12)
+        and "roll_save(ctx, target," in _src("live_effect_lifecycle.py")
+        and "register_effect(live, eff)" in _src("orchestrator.py")
+        and "damage_instance_completed(live, damage)" in _src("live_reactions.py")
+        and "consume_next_save_modifier" in _src("activities/save_primitive.py")
+    )
+
+
+def _intimidating_presence_scope_matches() -> bool:
+    from dnd5e_engine.feature_runtime import FeaturePreflightError, feature_operation
+
+    feature = BundledAssetLoader().get_feature("intimidating-presence")
+    assert feature is not None
+    initial, recharge = feature.activities
+    spec = initial.effects[0].lifecycle
+    try:
+        feature_operation(feature, recharge)
+    except FeaturePreflightError:
+        recharge_deferred = True
+    else:
+        recharge_deferred = False
+    return (
+        feature_operation(feature, initial) == "activity"
+        and spec is not None
+        and spec.maximum_rounds == 10
+        and spec.repeat_save is not None
+        and feature.uses is not None
+        and feature.uses.max == "1"
+        and recharge_deferred
+    )
+
+
+def _damage_expiry_contract_resolves() -> bool:
+    feature = BundledAssetLoader().get_feature("devious-strikes")
+    assert feature is not None
+    semantics = feature.attack_riders["3eq7lcmpkJJBU2KO"]
+    return (
+        any(
+            binding.lifecycle is not None and binding.lifecycle.expire_on_positive_damage
+            for binding in semantics.effects
+        )
+        and "damage_instance_completed(live, damage)" in _src("live_reactions.py")
+        and "if amount > 0:" in _src("live_effect_lifecycle.py")
+        and 'expire_effect(live, identity, "damaged")' in _src("live_effect_lifecycle.py")
+    )
+
+
+def _magic_resistance_repeat_contract_resolves() -> bool:
+    from random import Random
+
+    from dnd5e_srd_data.schema.monster import MonsterTraitMechanic
+
+    from dnd5e_engine.activities.context import ActivityResolutionContext
+    from dnd5e_engine.activities.save_primitive import roll_save
+    from dnd5e_engine.types.combat import Combatant
+
+    target = Combatant(
+        entity_id="mon:probe",
+        entity_type="Monster",
+        name="Probe",
+        initiative=1,
+        hp_current=10,
+        hp_max=10,
+        trait_mechanics=[MonsterTraitMechanic.MAGIC_RESISTANCE],
+    )
+    ctx = ActivityResolutionContext(
+        rng=Random(7),
+        caster=target,
+        targets=[target],
+        event_emitter=lambda _: None,
+        caster_abilities={},
+        base_spell_level=None,
+        save_is_magical=True,
+    )
+    result = roll_save(ctx, target, "wis", 15)
+    return (
+        result.mode == "advantage"
+        and result.sources == ("trait",)
+        and "is_magical=app.is_magical" in _src("live_effect_lifecycle.py")
+        and "save_is_magical=is_magical" in _src("live_effect_lifecycle.py")
+    )
+
+
 _PROBES: dict[str, tuple[Any, str]] = {
     "Ability & skill checks": (
         lambda: (
@@ -493,7 +613,12 @@ _PROBES: dict[str, tuple[Any, str]] = {
     ),
     # F1c/F1d: every save path adds a real ability + proficiency modifier.
     "Saving throws, half-on-save": (
-        lambda: "save_modifier(" in _src("orchestrator.py"),
+        lambda: (
+            "roll_live_save(live, concentrator," in _src("orchestrator.py")
+            and "roll_live_save(live, target," in _src("orchestrator.py")
+            and "roll_save(save_ctx, target," in _src("activities/apply.py")
+            and "passive_save_bonus" in _src("activities/save_primitive.py")
+        ),
         "✅",
     ),
     # F2b: activity attacks build typed AdvantageSources instead of the old
@@ -942,6 +1067,42 @@ _PROBES: dict[str, tuple[Any, str]] = {
     "| Reckless Attack / Brutal Strike |": (
         _brutal_rider_scope_matches,
         "❌ Deferred",
+    ),
+    "| Intimidating Presence |": (_intimidating_presence_scope_matches, "⚠️ Partial"),
+    "| Cunning Strike Poison |": (
+        lambda: _attack_rider_options_resolve(
+            "cunning-strike",
+            ("n64fvJMT9fPUy7DH",),
+            class_slug="rogue",
+            level=14,
+            carried_items=("poisoners-kit",),
+        ),
+        "✅ Resolved option",
+    ),
+    "| Devious Knock Out |": (
+        lambda: _attack_rider_options_resolve(
+            "devious-strikes",
+            ("3eq7lcmpkJJBU2KO",),
+            class_slug="rogue",
+            level=14,
+        ),
+        "✅ Resolved option",
+    ),
+    "| Typed repeat-save lifecycle |": (
+        _typed_lifecycle_contract_resolves,
+        "✅ Resolved for reviewed bindings",
+    ),
+    "| Expire-on-damage |": (
+        _damage_expiry_contract_resolves,
+        "✅ Resolved for typed bindings",
+    ),
+    "| Magic Resistance on repeat save |": (
+        _magic_resistance_repeat_contract_resolves,
+        "✅ Resolved for typed repeats",
+    ),
+    "| Typed effect lifecycle and conditional expiry |": (
+        _typed_lifecycle_contract_resolves,
+        "⚠️ Partial",
     ),
     # C20: Rage ends unless extended (and on Incapacitated).
     "| Rage |": (

@@ -96,6 +96,10 @@ from tools.translators.attack_riders import (
     attack_rider_effects,
     attack_riders,
 )
+from tools.translators.effect_lifecycle import (
+    effect_lifecycle_activities,
+    effect_lifecycle_effects,
+)
 from tools.translators.feature_runtime import (
     feature_runtime_activities,
     feature_runtime_effects,
@@ -2381,20 +2385,24 @@ def translate_spell_yaml(
         duration=_spell_duration(system.get("duration") or {}),
         materials=_spell_materials(system.get("materials") or {}),
         preparation=_spell_preparation(system.get("preparation") or {}),
-        activities=apply_reaction_semantics(
+        activities=effect_lifecycle_activities(
+            "spell",
             slug,
-            apply_persistent_areas(
+            apply_reaction_semantics(
                 slug,
-                _description(doc),
-                apply_spell_timing(
+                apply_persistent_areas(
                     slug,
                     _description(doc),
-                    _apply_affects_corrections(
+                    apply_spell_timing(
                         slug,
-                        _apply_spell_save_cover_overrides(
+                        _description(doc),
+                        _apply_affects_corrections(
                             slug,
-                            _apply_spell_damage_type_corrections(
-                                slug, _translate_activities(system)
+                            _apply_spell_save_cover_overrides(
+                                slug,
+                                _apply_spell_damage_type_corrections(
+                                    slug, _translate_activities(system)
+                                ),
                             ),
                         ),
                     ),
@@ -3105,8 +3113,12 @@ def translate_feature_yaml(
     system = doc.get("system") or {}
     feature_type, source_slug = _feature_type_and_source(yaml_path)
     slug = _feature_slug(doc, yaml_path)
-    activities = attack_rider_activities(
-        slug, feature_runtime_activities(slug, _translate_activities(system))
+    activities = effect_lifecycle_activities(
+        "feature",
+        slug,
+        attack_rider_activities(
+            slug, feature_runtime_activities(slug, _translate_activities(system))
+        ),
     )
     return Feature(
         slug=slug,
@@ -3121,8 +3133,10 @@ def translate_feature_yaml(
         attack_riders=attack_riders(slug, [a.id for a in activities]),
         attack_rider_choice_limits=attack_rider_choice_limits(slug),
         attack_rider_context=attack_rider_context(slug),
-        passive_effects=attack_rider_effects(
-            slug, feature_runtime_effects(slug, _passive_effects(doc))
+        passive_effects=effect_lifecycle_effects(
+            "feature",
+            slug,
+            attack_rider_effects(slug, feature_runtime_effects(slug, _passive_effects(doc))),
         ),
         advancement=_advancement(system),
         uses=_feature_uses(system),

@@ -36,6 +36,8 @@ from pydantic import (
     model_serializer,
 )
 
+from dnd5e_srd_data.schema.lifecycle import EffectLifecycleSpec
+
 # ---------------------------------------------------------------------------
 # Provenance / review state
 # ---------------------------------------------------------------------------
@@ -418,8 +420,16 @@ class AppliedEffectRef(BaseModel, frozen=True):
     level: EffectLevelBlock = Field(default_factory=EffectLevelBlock)
     on_save: bool | None = None
     riders: EnchantEffectRiders | None = None
+    lifecycle: EffectLifecycleSpec | None = None
 
     model_config = {"populate_by_name": True}
+
+    @model_serializer(mode="wrap")
+    def _serialize_effect_ref(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        if self.lifecycle is None:
+            data.pop("lifecycle", None)
+        return data
 
 
 # ---------------------------------------------------------------------------

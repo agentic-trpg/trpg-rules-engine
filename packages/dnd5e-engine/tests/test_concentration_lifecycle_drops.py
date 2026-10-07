@@ -124,7 +124,8 @@ def test_drop_cascades_once_for_simultaneous_condition_and_death() -> None:
 def _links_with_new_conc_effect(live: _LiveCombat, caster: Combatant, effect_id: str) -> None:
     """Simulate this turn's evaluator slice: one new concentration EffectApplied."""
     pre = len(live.event_log)
-    live.event_log.append(
+    orch._emit(
+        live,
         EffectApplied(
             effect=ActiveEffect(
                 id=effect_id,
@@ -134,7 +135,7 @@ def _links_with_new_conc_effect(live: _LiveCombat, caster: Combatant, effect_id:
                 duration=ActiveEffectDuration(seconds=60),
                 flags={"concentration": True},
             )
-        )
+        ),
     )
     orch._record_effect_lifecycle_links(live, caster, pre)
 
@@ -175,7 +176,8 @@ def test_multi_target_single_cast_keeps_all_identities() -> None:
     live.initiative.append(caster)
     pre = len(live.event_log)
     for tid in ("char:a", "char:b", "char:c"):
-        live.event_log.append(
+        orch._emit(
+            live,
             EffectApplied(
                 effect=ActiveEffect(
                     id="effect:bless",
@@ -185,7 +187,7 @@ def test_multi_target_single_cast_keeps_all_identities() -> None:
                     duration=ActiveEffectDuration(seconds=60),
                     flags={"concentration": True},
                 )
-            )
+            ),
         )
     orch._record_effect_lifecycle_links(live, caster, pre)
     dropped, _ = _drop_events(live)
@@ -197,7 +199,8 @@ def test_non_concentration_cast_leaves_existing_concentration_alone() -> None:
     live = _concentrating_live()
     caster = live.initiative[0]
     pre = len(live.event_log)
-    live.event_log.append(
+    orch._emit(
+        live,
         EffectApplied(
             effect=ActiveEffect(
                 id="effect:shield",
@@ -207,7 +210,7 @@ def test_non_concentration_cast_leaves_existing_concentration_alone() -> None:
                 duration=ActiveEffectDuration(rounds=1),
                 flags={},
             )
-        )
+        ),
     )
     orch._record_effect_lifecycle_links(live, caster, pre)
     dropped, _ = _drop_events(live)

@@ -22,6 +22,7 @@ from dnd5e_engine.lib_loader import get_lib_loader
 from dnd5e_engine.orchestrator import _LiveCombat
 from dnd5e_engine.types.combat import Combatant
 from dnd5e_engine.types.effects import ActiveEffect, ActiveEffectDuration
+from tests.lifecycle_support import seed_repeat_save
 
 
 def test_concentration_max_rounds_from_typed_spell_duration() -> None:
@@ -121,7 +122,8 @@ def test_capless_cast_clears_inherited_counter() -> None:
     live.concentration_chain.pop("char:a", None)
     caster = live.initiative[0]
     pre_event_count = len(live.event_log)
-    live.event_log.append(
+    orch._emit(
+        live,
         EffectApplied(
             effect=ActiveEffect(
                 id="effect:shield-of-faith",
@@ -131,7 +133,7 @@ def test_capless_cast_clears_inherited_counter() -> None:
                 duration=ActiveEffectDuration(seconds=600),
                 flags={"concentration": True},
             )
-        )
+        ),
     )
     orch._record_effect_lifecycle_links(
         live, caster, pre_event_count, concentration_max_rounds=None
@@ -154,15 +156,7 @@ def test_repeat_save_success_clears_counter() -> None:
     live.rng = random.Random(1)
     caster = live.initiative[0]
     identity = ("char:a", "effect:bless", "cast:bless:char:a")
-    live.repeat_save_on_turn_end[identity] = [
-        {
-            "ability": "wis",
-            "dc": -1,  # guarantee success on any d20 draw
-            "effect_name": "Bless",
-            "condition": "paralyzed",
-            "caster_id": caster.entity_id,
-        }
-    ]
+    seed_repeat_save(live, identity, dc=-1, source_id=caster.entity_id)
     orch._run_end_of_turn_saves(live, "char:a")
     assert "char:a" not in live.concentration_chain
     assert "char:a" not in live.concentration_rounds_remaining

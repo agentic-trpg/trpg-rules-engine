@@ -79,9 +79,10 @@ concentration drop, and target death/departure cancel related work without
 RNG. Non-concentration work can outlive its caster; an area record survives
 an individual creature's death or departure.
 
-The monotonically increasing turn serial prevents a newly applied self effect
-from repeating or expiring on the casting turn when it requires the next turn
-end. Legacy repeat-save producers use the same current-turn exclusion.
+The monotonically increasing turn serial prevents next-turn work from expiring
+on the casting turn. Typed effect repeat saves instead run at **each** target
+turn end, including the applying turn's end; their captured save and expiry
+contracts are described in [typed effect lifecycle](effect-lifecycle.md).
 Turn-start removal hands off to the next initiative slot, including a round
 wrap, without ending a departed actor's turn twice.
 

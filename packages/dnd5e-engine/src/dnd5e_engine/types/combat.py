@@ -213,6 +213,9 @@ class Combatant(BaseModel):
     # SRD 5.2 Fighting Style feats in play (``PartyMemberSpec.feats`` plus
     # ``fighting_style``), read by the attack resolver. Empty for monsters.
     fighting_styles: tuple[FightingStyle, ...] = ()
+    # Canonical item slugs carried by the creature; no inventory quantities.
+    # Projected from PartyMemberSpec.equipment at the live hydration seam.
+    carried_item_slugs: tuple[str, ...] = ()
     # SRD 5.2 armor worn and Shield wielded, from ``PartyMemberSpec.equipment``
     # (armor and Shields listed there are worn). Martial Arts needs neither.
     worn_armor: WornArmor | None = None

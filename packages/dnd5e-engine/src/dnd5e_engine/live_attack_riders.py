@@ -2,19 +2,39 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from fractions import Fraction
 from typing import TYPE_CHECKING, Any, Literal, cast
 
+from dnd5e_srd_data.schema.common import DamageActivity
+
 from dnd5e_engine.activities.arithmetic import parse_expression, scalar
 from dnd5e_engine.activities.build_context import build_activity_context
-from dnd5e_engine.activities.context import AttackResolutionContext, AttackRollModifier
+from dnd5e_engine.activities.context import (
+    AttackDamageContribution,
+    AttackPreRollContext,
+    AttackResolutionContext,
+    AttackRiderPreparation,
+    AttackRollModifier,
+)
+from dnd5e_engine.activities.dice import damage_part_to_expr
 from dnd5e_engine.activities.effects import (
     applicable_effect_statuses,
     passive_effect_to_active_effect,
 )
+from dnd5e_engine.activities.formula import resolve_damage_block
 from dnd5e_engine.activities.resolver import resolve_activity
-from dnd5e_engine.attack_riders import AttackRiderPlan, matches_rider, plan_attack_riders
+from dnd5e_engine.attack_declarations import (
+    apply_declaration,
+    declaration_active,
+    validate_declaration,
+)
+from dnd5e_engine.attack_riders import (
+    AttackRiderPlan,
+    automatic_attack_riders,
+    matches_rider,
+    plan_attack_riders,
+)
 from dnd5e_engine.events import (
     AttackFailed,
     AttackRiderTriggered,
@@ -29,11 +49,17 @@ from dnd5e_engine.feature_repertoire import feature_repertoire
 from dnd5e_engine.feature_runtime import DrawFreeRandom, FeaturePreflightError
 from dnd5e_engine.lib_loader import get_lib_loader
 from dnd5e_engine.live_features import validate_feature_sidecars
+from dnd5e_engine.movement import MovementChoice, MovementGrant
 from dnd5e_engine.spatial import GridTopology
 from dnd5e_engine.types.effects import ActiveEffectDuration
 
 if TYPE_CHECKING:
-    from dnd5e_srd_data.schema.feature import Feature
+    from dnd5e_srd_data.schema.feature import (
+        AttackRiderOptionSemantics,
+        AttackRiderSemantics,
+        Feature,
+        RiderMovementGrant,
+    )
     from dnd5e_srd_data.schema.item import Weapon
 
     from dnd5e_engine.activities.context import ActivityResolutionContext, AttackOrigin
@@ -82,6 +108,24 @@ def _context(
     )
 
 
+def _movement_grant(
+    live: _LiveCombat,
+    actor: Combatant,
+    target_id: str,
+    plan: AttackRiderPlan,
+    semantics: RiderMovementGrant,
+) -> MovementGrant:
+    from dnd5e_engine.live_movement import effective_speed
+
+    return MovementGrant(
+        max_distance_ft=effective_speed(actor, "walk", live) // 2,
+        source_id=f"rider:{plan.feature.slug}:{plan.activity.id}",
+        direction="toward_target" if semantics.direction == "straight_toward_target" else "any",
+        target_id=target_id if semantics.direction != "any" else None,
+        provokes_opportunity_attacks=semantics.provokes_opportunity_attacks,
+    )
+
+
 def preflight_attack_riders(
     live: _LiveCombat,
     actor: Combatant,
@@ -91,11 +135,13 @@ def preflight_attack_riders(
 ) -> tuple[AttackRiderPlan, ...]:
     from dnd5e_engine import orchestrator as orch
 
-    if not intent.attack_riders:
+    if not intent.attack_riders and not intent.reckless_attack:
         return ()
     if intent.intent_type != "attack":
         raise FeaturePreflightError("riders require an attack intent")
     validate_feature_sidecars(live, actor)
+    if intent.reckless_attack:
+        validate_declaration(live, actor, "reckless_attack")
     if any(
         request.push_distance_ft is not None for request in intent.attack_riders
     ) and not isinstance(live.topology, GridTopology):
@@ -107,7 +153,7 @@ def preflight_attack_riders(
         for entity, slug, serial in live.rider_uses
         if entity == actor.entity_id and serial == live.turn_serial
     }
-    return plan_attack_riders(
+    plans = plan_attack_riders(
         actor,
         intent.attack_riders,
         weapon=weapon,
@@ -122,6 +168,38 @@ def preflight_attack_riders(
         cell_size_ft=live.topology.cell_size_ft if isinstance(live.topology, GridTopology) else 1,
         target_size=target.creature_size if target is not None else None,
     )
+    for plan in plans:
+        if plan.semantics.own_turn and live.current_actor_id != actor.entity_id:
+            raise FeaturePreflightError("rider requires the attacker's own turn")
+        if plan.semantics.requires_reckless and not (
+            intent.reckless_attack or declaration_active(live, actor, "reckless_attack")
+        ):
+            raise FeaturePreflightError("rider requires an active attack declaration")
+        movement_specs: list[AttackRiderSemantics | AttackRiderOptionSemantics] = [
+            plan.semantics,
+            *(o.semantics for o in plan.options),
+        ]
+        if any(s.forced_movement or s.movement_grant for s in movement_specs) and not isinstance(
+            live.topology, GridTopology
+        ):
+            raise FeaturePreflightError("rider movement requires grid geometry")
+        for semantics in movement_specs:
+            if semantics.movement_grant is not None:
+                from dnd5e_engine.live_movement import preflight_movement_grant
+
+                preflight_movement_grant(
+                    live,
+                    actor.entity_id,
+                    _movement_grant(
+                        live,
+                        actor,
+                        target.entity_id if target else "",
+                        plan,
+                        semantics.movement_grant,
+                    ),
+                    plan.request.movement_choice or MovementChoice(),
+                )
+    return plans
 
 
 def attack_origin(
@@ -148,7 +226,7 @@ def _reject(live: _LiveCombat, actor_id: str, intent: PlayerIntent) -> None:
 
 
 def reject_nonattack_riders(live: _LiveCombat, actor_id: str, intent: PlayerIntent) -> bool:
-    if intent.attack_riders and intent.intent_type != "attack":
+    if (intent.attack_riders or intent.reckless_attack) and intent.intent_type != "attack":
         _reject(live, actor_id, intent)
         return True
     return False
@@ -263,7 +341,17 @@ def _roll_modifier(live: _LiveCombat, attacker_id: str, target_id: str) -> Attac
                 advantage = True
                 keys.append("flags.attack.next_advantage")
             elif change.key == "attack.next_bonus" and change.mode == "add":
-                bonuses[effect.id] = scalar(parse_expression(str(change.value), allow_dice=False))
+                spec = effect.lifecycle.spec if effect.lifecycle else None
+                if (
+                    spec is not None
+                    and spec.next_attack_scope == "other_creature"
+                    and (effect.lifecycle is not None and effect.lifecycle.source_id == attacker_id)
+                ):
+                    continue
+                group = (spec.next_attack_bonus_group if spec else None) or effect.id
+                if group in bonuses:
+                    continue
+                bonuses[group] = scalar(parse_expression(str(change.value), allow_dice=False))
                 keys.append("attack.next_bonus")
         if keys:
             orch._emit(
@@ -277,10 +365,16 @@ def _roll_modifier(live: _LiveCombat, attacker_id: str, target_id: str) -> Attac
     )
 
 
-def _pay(live: _LiveCombat, attack: AttackResolutionContext, plan: AttackRiderPlan) -> bool:
+def _pay(
+    live: _LiveCombat, attack: AttackResolutionContext | AttackPreRollContext, plan: AttackRiderPlan
+) -> bool:
     from dnd5e_engine import orchestrator as orch
 
-    key = (attack.attacker_id, plan.feature.slug, live.turn_serial)
+    key = (
+        attack.attacker_id,
+        plan.semantics.shared_damage_group or plan.feature.slug,
+        live.turn_serial,
+    )
     if plan.semantics.once_per_turn and key in live.rider_uses:
         return False
     if any(
@@ -295,7 +389,13 @@ def _pay(live: _LiveCombat, attack: AttackResolutionContext, plan: AttackRiderPl
     return True
 
 
-def _resolve(live: _LiveCombat, attack: AttackResolutionContext, plan: AttackRiderPlan) -> None:
+def _resolve(
+    live: _LiveCombat,
+    attack: AttackResolutionContext,
+    plan: AttackRiderPlan,
+    *,
+    emit_trigger: bool = True,
+) -> None:
     from dnd5e_engine import orchestrator as orch
     from dnd5e_engine.activities.effects import bind_effect_lifecycle
     from dnd5e_engine.live_reactions import attach_reaction_hooks
@@ -308,7 +408,8 @@ def _resolve(live: _LiveCombat, attack: AttackResolutionContext, plan: AttackRid
     start = len(live.event_log)
     # Foundry on_save does not distinguish success-only from failure-only.
     # Reviewed outcome bindings below own all effects of this rider.
-    resolve_activity(plan.activity.model_copy(update={"effects": []}), ctx)
+    if not isinstance(plan.activity, DamageActivity):
+        resolve_activity(plan.activity.model_copy(update={"effects": []}), ctx)
     save = next(
         (
             event
@@ -384,7 +485,37 @@ def _resolve(live: _LiveCombat, attack: AttackResolutionContext, plan: AttackRid
     if movement is not None and (movement.on_save == "always" or movement.on_save == outcome):
         origin = live.actor_zone.get(actor.entity_id)
         if origin is not None:
-            orch.push_combatant(live, target.entity_id, origin, plan.request.push_distance_ft or 0)
+            orch.push_combatant(
+                live,
+                target.entity_id,
+                origin,
+                (plan.request.push_distance_ft or 0)
+                if movement.requires_distance_choice
+                else movement.max_distance_ft,
+            )
+    if plan.semantics.movement_grant is not None:
+        _execute_grant(live, actor.entity_id, target.entity_id, plan, plan.semantics.movement_grant)
+    for option in plan.options:
+        option_plan = replace(
+            plan,
+            feature=option.feature,
+            activity=next(
+                a for a in option.feature.activities if a.id == option.semantics.activity_id
+            ),
+            semantics=plan.semantics.model_copy(
+                update={
+                    "effects": option.semantics.effects,
+                    "forced_movement": option.semantics.forced_movement,
+                    "movement_grant": option.semantics.movement_grant,
+                }
+            ),
+            options=(),
+            damage_activity=None,
+            damage_feature=None,
+        )
+        _resolve(live, attack, option_plan, emit_trigger=False)
+    if not emit_trigger:
+        return
     orch._emit(
         live,
         AttackRiderTriggered(
@@ -401,8 +532,105 @@ def _resolve(live: _LiveCombat, attack: AttackResolutionContext, plan: AttackRid
             ),
             sacrificed_sneak_dice=plan.semantics.sneak_dice_cost,
             save_outcome=outcome,
+            option_ids=tuple(option.option_id for option in plan.options),
+            damage_activity_id=plan.damage_activity.id if plan.damage_activity else None,
+            damage_formula=" + ".join(
+                damage_part_to_expr(
+                    resolve_damage_block(part, ctx, ability=attack.governing_ability)
+                )
+                for part in plan.damage_activity.damage.parts
+            )
+            if plan.damage_activity
+            else None,
         ),
     )
+
+
+def _execute_grant(
+    live: _LiveCombat,
+    actor_id: str,
+    target_id: str,
+    plan: AttackRiderPlan,
+    semantics: RiderMovementGrant,
+) -> None:
+    from dnd5e_engine import orchestrator as orch
+    from dnd5e_engine.live_movement import execute_movement_grant
+
+    actor = orch._find_combatant(live, actor_id)
+    if actor is not None and plan.request.movement_choice is not None:
+        execute_movement_grant(
+            live,
+            actor_id,
+            _movement_grant(live, actor, target_id, plan, semantics),
+            plan.request.movement_choice,
+        )
+
+
+def _rider_gates(live: _LiveCombat, plan: AttackRiderPlan, attacker: Combatant) -> bool:
+    from dnd5e_engine import orchestrator as orch
+
+    semantics = plan.semantics
+    return (
+        (not semantics.own_turn or live.current_actor_id == attacker.entity_id)
+        and (
+            not semantics.requires_reckless or declaration_active(live, attacker, "reckless_attack")
+        )
+        and (not semantics.requires_rage or orch._rage_effect(live, attacker.entity_id) is not None)
+    )
+
+
+@dataclass
+class _PreRollChoices:
+    live: _LiveCombat
+    source_ctx: ActivityResolutionContext
+    plans: tuple[AttackRiderPlan, ...]
+    reckless_attack: bool
+    decisions_committed: bool = False
+    current_roll_committed: bool = False
+
+    def __call__(self, attack: AttackPreRollContext) -> AttackRollModifier:
+        from dnd5e_engine import orchestrator as orch
+        from dnd5e_engine.activities.attack import attack_effect_sources
+
+        self.current_roll_committed = False
+        if self.decisions_committed:
+            return AttackRollModifier()
+        attacker = orch._find_combatant(self.live, attack.attacker_id)
+        if attacker is None:
+            raise FeaturePreflightError("attacker departed before its declared roll")
+        if self.reckless_attack:
+            apply_declaration(
+                self.live,
+                attacker,
+                "reckless_attack",
+                _context(self.live, attacker, [], preflight=True),
+            )
+        chosen = [plan for plan in self.plans if plan.semantics.pre_roll_commit]
+        for plan in chosen:
+            if (
+                not _rider_gates(self.live, plan, attacker)
+                or attack.governing_ability != "str"
+                or attack.weapon_slug is None
+                or (plan.semantics.forgo_advantage and attack.disadvantage_sources)
+            ):
+                raise FeaturePreflightError("chosen attack cannot commit its pre-roll rider")
+        paid_groups: set[str] = set()
+        for plan in chosen:
+            group = plan.semantics.shared_damage_group or plan.feature.slug
+            if group not in paid_groups and not _pay(self.live, attack, plan):
+                raise FeaturePreflightError("pre-roll rider choice is already spent")
+            paid_groups.add(group)
+        if chosen:
+            self.current_roll_committed = True
+        self.decisions_committed = True
+        effect_sources = attack_effect_sources(
+            self.source_ctx, attack.target_id, attack.governing_ability
+        )
+        return AttackRollModifier(
+            advantage_sources=effect_sources.advantage,
+            disadvantage_sources=effect_sources.disadvantage,
+            forgo_all_advantage=any(plan.semantics.forgo_advantage for plan in chosen),
+        )
 
 
 def attach_attack_riders(
@@ -411,27 +639,70 @@ def attach_attack_riders(
     plans: tuple[AttackRiderPlan, ...] = (),
     *,
     origin: AttackOrigin | None = None,
+    reckless_attack: bool = False,
 ) -> ActivityResolutionContext:
     """Bind resolver facts to payments, saves and effects in stable order."""
     from dnd5e_engine import orchestrator as orch
 
     pending: dict[tuple[str, str], list[AttackRiderPlan]] = {}
     current_attack: list[AttackResolutionContext] = []
+    choices = _PreRollChoices(
+        live,
+        replace(ctx, attack_active_effects=lambda actor_id: live.active_effects.get(actor_id, [])),
+        plans,
+        reckless_attack,
+    )
+    actor = orch._find_combatant(live, ctx.caster.entity_id)
+    automatic = (
+        automatic_attack_riders(actor, _context(live, actor, [], preflight=True), get_lib_loader())
+        if actor is not None
+        else ()
+    )
 
-    def prepare(attack: AttackResolutionContext) -> int:
+    def prepare(attack: AttackResolutionContext) -> AttackRiderPreparation:
         current_attack[:] = [attack]
         selected = []
-        for plan in plans:
+        contributions = []
+        damage_groups: set[str] = set()
+        attacker = orch._find_combatant(live, attack.attacker_id)
+        for plan in (*plans, *automatic):
             if not matches_rider(plan, attack):
                 continue
-            if not _pay(live, attack, plan):
+            if attacker is None or not _rider_gates(live, plan, attacker):
                 continue
+            if plan.semantics.pre_roll_commit:
+                if not choices.current_roll_committed:
+                    continue
+            elif not _pay(live, attack, plan):
+                continue
+            if plan.damage_activity is not None:
+                group = (
+                    plan.semantics.shared_damage_group or f"{plan.feature.slug}:{plan.activity.id}"
+                )
+                if group not in damage_groups:
+                    contributions.append(
+                        AttackDamageContribution(
+                            activity=plan.damage_activity,
+                            source_id=(
+                                f"rider:{(plan.damage_feature or plan.feature).slug}:"
+                                f"{plan.damage_activity.id}"
+                            ),
+                            inherit_damage_type=True,
+                            shared_damage_group=plan.semantics.shared_damage_group,
+                        )
+                    )
+                    damage_groups.add(group)
+                else:
+                    plan = replace(plan, damage_activity=None, damage_feature=None)
             if plan.semantics.phase == "final_hit_before_damage":
                 _resolve(live, attack, plan)
             else:
                 selected.append(plan)
         pending[(attack.source_activity_id, attack.target_id)] = selected
-        return sum(plan.semantics.sneak_dice_cost for plan in selected)
+        return AttackRiderPreparation(
+            sneak_dice_sacrificed=sum(plan.semantics.sneak_dice_cost for plan in selected),
+            damage_contributions=tuple(contributions),
+        )
 
     def resolved(attack: AttackResolutionContext) -> None:
         for plan in pending.pop((attack.source_activity_id, attack.target_id), []):
@@ -447,7 +718,7 @@ def attach_attack_riders(
             if feature is None:
                 continue
             for activity_id, semantics in feature.attack_riders.items():
-                if semantics.automatic:
+                if semantics.automatic and semantics.native_damage:
                     orch._emit(
                         live,
                         AttackRiderTriggered(
@@ -466,6 +737,8 @@ def attach_attack_riders(
         attack_origin=origin or ("opportunity" if ctx.is_opportunity_attack else ctx.attack_origin),
         turn_serial=live.turn_serial,
         attack_roll_modifier=lambda attacker, target: _roll_modifier(live, attacker, target),
+        attack_pre_roll=choices,
+        attack_active_effects=lambda actor_id: live.active_effects.get(actor_id, []),
         attack_rider_prepare=prepare,
         attack_rider_resolved=resolved,
         sneak_attack_commit=commit_sneak,

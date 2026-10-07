@@ -16,6 +16,34 @@ _MAPPINGS: dict[tuple[LifecycleSourceKind, str, str, str], EffectLifecycleSpec] 
         repeat_save=RepeatSaveSpec(), maximum_rounds=10, expire_on_positive_damage=True
     ),
     ("feature", "intimidating-presence", "ZRHT8mOlea6T8XpP", "3LofAPFLZJMQJirN"): _MINUTE_REPEAT,
+    ("feature", "reckless-attack", "", "XA0GhXVB54U2IuRP"): EffectLifecycleSpec(
+        expiry_boundary="source_next_turn_start"
+    ),
+    ("feature", "brutal-strike", "nN5gsB6AcSQ4uQPN", "bg9jWpPRIJ0Q2vPY"): EffectLifecycleSpec(
+        expiry_boundary="source_next_turn_start",
+        stacking="latest_only",
+        stacking_group="hamstring-blow",
+    ),
+    (
+        "feature",
+        "improved-brutal-strike",
+        "I30qGlPDcyKwz65H",
+        "L9N4evZo1jt46dap",
+    ): EffectLifecycleSpec(
+        expiry_boundary="source_next_turn_start",
+        one_use_modifiers=("next_save_disadvantage",),
+    ),
+    (
+        "feature",
+        "improved-brutal-strike",
+        "UmRlsf4QWW98I4FS",
+        "tUyuyTQGmpUqMcFe",
+    ): EffectLifecycleSpec(
+        expiry_boundary="source_next_turn_start",
+        one_use_modifiers=("next_attack_bonus_other_creature",),
+        next_attack_scope="other_creature",
+        next_attack_bonus_group="sundering-blow",
+    ),
 }
 
 

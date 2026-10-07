@@ -454,11 +454,17 @@
       "automatic": false,
       "choice_group": "cunning-strike",
       "deferred_options": {},
-      "deferred_reason": "requires immediate selected half-Speed movement with OA exemption limited to that movement",
+      "deferred_reason": null,
       "effects": [],
       "forced_movement": null,
       "inherit_damage_type": false,
       "inventory_role": "rider",
+      "movement_grant": {
+        "direction": "any",
+        "maximum_speed_fraction": "half",
+        "movement_mode": "walk",
+        "provokes_opportunity_attacks": false
+      },
       "once_per_turn": false,
       "phase": "after_damage",
       "qualification": "finesse_or_ranged",

@@ -16,8 +16,8 @@ from pathlib import Path
 from typing import Any
 
 from dnd5e_srd_data.loader import AssetLoader, BundledAssetLoader
-from dnd5e_srd_data.schema.common import Activity, SaveActivity
-from dnd5e_srd_data.schema.feature import AttackRiderSemantics, Feature
+from dnd5e_srd_data.schema.common import Activity, DamageActivity, SaveActivity
+from dnd5e_srd_data.schema.feature import AttackRiderOptionSemantics, AttackRiderSemantics, Feature
 
 from dnd5e_engine.feature_runtime import FeaturePreflightError, feature_operation
 
@@ -28,13 +28,17 @@ def _row(
     semantics: AttackRiderSemantics,
     *,
     option_id: str | None = None,
+    option: AttackRiderOptionSemantics | None = None,
     deferred_reason: str | None = None,
 ) -> dict[str, Any]:
     reason = deferred_reason or semantics.deferred_reason
     executable = semantics.inventory_role == "rider" and reason is None and activity is not None
+    foundation = semantics.inventory_role == "foundation" and reason is None
     classification = (
         "executable_rider"
         if executable
+        else "executable_foundation"
+        if foundation
         else "deferred_rider"
         if semantics.inventory_role == "rider"
         else "supporting_context"
@@ -60,6 +64,17 @@ def _row(
         "once_per_turn": semantics.once_per_turn,
         "choice_group": semantics.choice_group,
         "automatic": semantics.automatic,
+        "native_damage": semantics.native_damage,
+        "pre_roll_commit": semantics.pre_roll_commit,
+        "forgo_advantage": semantics.forgo_advantage,
+        "requires_reckless": semantics.requires_reckless,
+        "requires_rage": semantics.requires_rage,
+        "own_turn": semantics.own_turn,
+        "shared_damage_group": semantics.shared_damage_group,
+        "declaration": semantics.declaration,
+        "choice_limit_granted": feature.attack_rider_choice_limits.get(
+            semantics.choice_group or ""
+        ),
         "cost_model": {
             "resource_targets": [
                 target.model_dump(mode="json") for target in activity.consumption.targets
@@ -69,16 +84,31 @@ def _row(
             "feature_uses": feature.uses.model_dump(mode="json") if feature.uses else None,
             "sneak_dice_cost": semantics.sneak_dice_cost,
             "inherit_damage_type": semantics.inherit_damage_type,
-            "commit": "qualifying_final_hit" if executable else None,
+            "commit": ("pre_roll" if semantics.pre_roll_commit else "qualifying_final_hit")
+            if executable
+            else None,
         },
         "save": activity.save.model_dump(mode="json")
         if isinstance(activity, SaveActivity)
         else None,
-        "effects": [binding.model_dump(mode="json") for binding in semantics.effects],
+        "effects": [
+            binding.model_dump(mode="json")
+            for binding in (option.effects if option else semantics.effects)
+        ],
         "forced_movement": (
-            semantics.forced_movement.model_dump(mode="json") if semantics.forced_movement else None
+            movement.model_dump(mode="json")
+            if (movement := option.forced_movement if option else semantics.forced_movement)
+            else None
         ),
-        "fully_executable": executable,
+        "movement_grant": (
+            grant.model_dump(mode="json")
+            if (grant := option.movement_grant if option else semantics.movement_grant)
+            else None
+        ),
+        "damage": activity.damage.model_dump(mode="json")
+        if isinstance(activity, DamageActivity)
+        else None,
+        "fully_executable": executable or foundation,
         "standalone_use_feature_rejected": standalone_rejected,
         "classification": classification,
         "deferred_reason": reason,
@@ -99,7 +129,18 @@ def audit_document(loader: AssetLoader) -> dict[str, Any]:
             if semantics is None:
                 continue
             activity_count += 1
-            if semantics.deferred_options:
+            if semantics.option_ids:
+                for option_id in semantics.option_ids:
+                    rows.append(
+                        _row(
+                            feature,
+                            activity,
+                            semantics,
+                            option_id=option_id,
+                            option=feature.attack_rider_options[option_id],
+                        )
+                    )
+            elif semantics.deferred_options:
                 for option_id, reason in semantics.deferred_options.items():
                     rows.append(
                         _row(

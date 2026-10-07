@@ -104,12 +104,42 @@ entry path. A forced separation beyond reach releases Grappled and removes its
 source effect and `conditions_by_effect` lineage. Incapacitation and either
 participant leaving combat use the existing shared cleanup path.
 
-## Foundation and remaining scope
+## Scoped immediate movement
 
-A typed scoped movement grant records a maximum distance, source, direction,
-opportunity-attack behavior and immediate/current-turn lifetime. This is an
-extension seam, not a completed Withdraw or Brutal Forceful execution path. It
-does not impose a persistent Disengage flag.
+`MovementGrant` records a maximum cost allowance, source, direction,
+opportunity-attack behavior and immediate/current-turn lifetime.
+`live_movement.execute_movement_grant` executes immediate grants through the
+ordinary step path. Cunning Strike's Withdraw uses any legal walking direction;
+Brutal Forceful uses a straight path toward the target after its fixed push.
+Both cap the grant at half current effective walking Speed. Dash and ordinary
+movement remaining do not increase this cap. Terrain and grapple drag consume
+the independent grant allowance without charging or replenishing the ordinary
+`MovementLedger`. Effects that change Speed still update its remaining-movement
+projection normally.
+
+Declare `AttackRiderRequest.movement_choice=MovementChoice(destination_cell=...)`
+or a directed `distance_ft` before attack resolution. Extra mechanics are
+forbidden; the host chooses no Speed fraction, OA policy or direction rule.
+Omitting the choice, or selecting zero distance, declines optional movement.
+Withdraw still sacrifices its one Sneak Attack die on a qualifying hit when
+zero movement is chosen; misses pay no sacrifice and grant no movement.
+
+Unrestricted preflight validates the complete weighted route, destination,
+occupancy, drag and initial affordability before attack dice. Directed preflight
+checks the declared cap and grid bounds; Forceful computes the actual path
+after the push, using the target's actual final cell. The grid supports straight
+axis or 45-degree rays without detours. A noncollinear ray permits no follow
+movement. Occupied cells cannot be entered as a final destination, and only
+complete affordable cell steps execute.
+
+Each grant step reuses normal occupancy, drag, persistent-area entry and
+grapple-range reconciliation. Death, zero Speed or forced relocation stops the
+remaining steps and preserves completed movement. A dynamic post-push obstacle
+does not undo the completed attack. OA exemption is scoped to this execution;
+the grant creates no persistent Disengage flag, and later ordinary movement
+can provoke normally.
+
+## Remaining scope
 
 Jump distance, Step of the Wind's complete jump behavior, elevation, 3-D flying
 or burrowing, creature footprints and Grapple's free-hand requirement remain
@@ -119,4 +149,4 @@ distinguish those feature boundaries from the shared movement foundation.
 
 Runtime regression coverage lives in
 `packages/dnd5e-engine/tests/test_physical_movement_runtime.py`, alongside the
-existing opportunity-attack, persistent-area, Grapple/Shove and spatial suites.
+scoped grant, opportunity-attack, persistent-area, Grapple/Shove and spatial suites.

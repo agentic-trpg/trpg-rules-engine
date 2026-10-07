@@ -13,7 +13,7 @@ from fractions import Fraction
 from typing import Literal
 
 from dnd5e_srd_data.schema.monster import CreatureSize
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from dnd5e_engine.activities.passive_stats import CombatantMovementModes
 from dnd5e_engine.size import size_rank, two_or_more_sizes_apart
@@ -60,7 +60,7 @@ class MovementLedger(BaseModel):
 
 
 class MovementGrant(BaseModel):
-    """A scoped movement allowance; feature-specific execution is separate."""
+    """An independent movement-cost allowance with a scoped direction/OA policy."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -75,6 +75,32 @@ class MovementGrant(BaseModel):
     def _direction_has_target(self) -> MovementGrant:
         if self.direction != "any" and not self.target_id:
             raise ValueError("directed movement requires a target_id")
+        return self
+
+
+class MovementChoice(BaseModel):
+    """A declared destination or directed distance, never a host-authored grant.
+
+    Omitted fields and distance zero explicitly decline optional movement.
+    Nonzero unrestricted movement requires a destination at live preflight.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    destination_cell: str | None = None
+    distance_ft: int | None = Field(default=None, strict=True, ge=0)
+
+    @field_validator("destination_cell")
+    @classmethod
+    def _canonical_cell(cls, value: str | None) -> str | None:
+        from dnd5e_engine.spatial import cell_id, parse_cell
+
+        return cell_id(*parse_cell(value)) if value is not None else None
+
+    @model_validator(mode="after")
+    def _one_choice(self) -> MovementChoice:
+        if self.destination_cell is not None and self.distance_ft is not None:
+            raise ValueError("choose a movement destination or distance, not both")
         return self
 
 

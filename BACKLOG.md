@@ -111,7 +111,7 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   saves. Next-save disadvantage consumes only its own clause, including on
   automatic failure and death saves. Standalone legacy `check.resolve_check`
   saving throws still lack live effect-state consumption. The deterministic
-  [lifecycle inventory](docs/dev/effect-lifecycle-audit.json) retains 147
+  [lifecycle inventory](docs/dev/effect-lifecycle-audit.json) retains 146
   deferred/candidate rows; this does not complete every ongoing spell or item.
   See [the lifecycle contract](docs/dev/effect-lifecycle.md).
 - **Recharge state does not persist across combats** (2026-09-03, C18).
@@ -204,13 +204,13 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
 - **Remaining rules that suppress or alter an opportunity attack
   (2026-10-03, C24; narrowed 2026-10-08).** Open Hand Technique's Addle now
   suppresses the target's opportunity attacks until its next turn starts,
-  through the shared typed effect consumer. Unmodelled: the Agile trait
+  through the shared typed effect consumer. Staggering Blow suppresses OA until
+  source next-turn start; Withdraw and Forceful follow movement now use an
+  immediate grant with a scoped OA exemption. Unmodelled: the Agile trait
   (Deer, Rat: "doesn't provoke an
   Opportunity Attack when it moves out of an enemy's reach"); "can't make
-  Opportunity Attacks" riders (Shocking Grasp,
-  Improved Brutal Strike's Staggering Blow, Mace of Terror); moves "without
-  provoking Opportunity Attacks" (Tactical Shift, Cunning Strike's Withdraw,
-  Brutal Strike's Forceful Blow, Remarkable Athlete); Disadvantage on
+  Opportunity Attacks" riders (Shocking Grasp, Mace of Terror); moves "without
+  provoking Opportunity Attacks" (Tactical Shift, Remarkable Athlete); Disadvantage on
   opportunity attacks against a creature (Hunter's Escape the Horde, Boots of
   Speed). Flyby and Nimble Escape are recorded under "Typed traits are
   hydrated".
@@ -275,9 +275,10 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_summon_placement`)
 - **Jumping remains deferred (narrowed 2026-10-08).** Long/high jumps, jump
   distance choices and Step of the Wind's complete jump behavior still need
-  typed execution. The scoped `MovementGrant` value provides direction,
-  distance, OA behavior and lifetime, but does not execute Withdraw or Brutal
-  Forceful on its own. See [the movement contract](docs/dev/movement-positioning.md).
+  typed execution. Scoped `MovementGrant` now executes Withdraw and Brutal
+  Forceful follow movement using the shared weighted step/drag/area path and an
+  independent allowance. This does not implement jump rules, Tactical Shift or
+  Remarkable Athlete. See [the movement contract](docs/dev/movement-positioning.md).
 
 ## Event stream observability (2026-08-22)
 
@@ -505,7 +506,7 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   among 77 damage/heal/save activities; that count did not prove public API
   reachability. The new deterministic audit covers all 191 reachable canonical
   activities: 18 `fully_resolvable`, 44 `unsupported_preflight`, 98
-  `semantic_special_case`, nine `attack_rider_executable` and 22
+  `semantic_special_case`, 14 `attack_rider_executable` and 17
   `attack_rider_deferred` (updated 2026-10-08). Executable riders still reject
   standalone invocation. Every rejected invocation is checked before action,
   resource or RNG consumption. See [the contract](docs/dev/feature-runtime.md)
@@ -529,26 +530,33 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   the appropriate budgets.
 - **Remaining attack rider options (narrowed 2026-10-08).** Shared typed attack
   binding, Stunning Strike, Open Hand Addle/Push/Topple, Cunning Trip/Poison and
-  Devious Obscure/Knock Out are executable. Sneak Attack commits inside damage
+  Devious Obscure/Knock Out, Withdraw and the Brutal family are executable.
+  Automatic Frenzy joins Sneak Attack through shared damage contributions.
+  Sneak Attack commits inside damage
   resolution before Cleave or another attack can select it again. The full
-  [rider inventory](docs/dev/attack-rider-audit.json) distinguishes nine
-  executable riders, 23 deferred options and 19 supporting contexts; see
+  [rider inventory](docs/dev/attack-rider-audit.json) distinguishes 15
+  executable riders, 17 deferred options, two executable foundations and 17
+  supporting contexts; see
   [the contract](docs/dev/attack-feature-riders.md). Poison requires an actual
   carried canonical Poisoner's Kit and one Sneak die; Knock Out costs six
   dice. Both use captured CON saves and ten-round target timers; Knock Out also
-  ends after a complete positive damage instance. Withdraw still needs complete
-  immediate half-Speed movement with a move-scoped OA exemption. Daze needs
-  mutually exclusive movement/Action/Bonus Action restrictions. Those complete
-  options continue to reject before payment.
-- **Reckless Attack / Brutal Strike foundation (2026-10-08).** The own-turn
-  first-attack STR declaration, forgoing Reckless advantage before rolling,
-  no-remaining-disadvantage gate and incoming-attack advantage lifetime remain
-  absent. Brutal damage and Hamstring, Forceful, Staggering and Sundering all
-  remain deferred. Forceful also needs immediate half-Speed follow movement;
-  Staggering retains the missing Reckless/Brutal foundation despite generic
-  next-save consumption now being available; Sundering needs a one-use `+5` for
-  the next other attacker. Existing generic effect consumers alone do not close
-  these options. Other inventoried riders retain their exact missing qualifiers,
+  ends after a complete positive damage instance. Withdraw sacrifices one die
+  for immediate half-effective-Speed walking with a move-scoped OA exemption
+  and independent allowance. Daze still needs mutually exclusive
+  movement/Action/Bonus Action restrictions and continues to reject before payment.
+- **Closed Reckless / Brutal / Frenzy and scoped movement (2026-10-08).**
+  First-own-turn actual attack-roll declaration applies typed STR-only outgoing
+  and all incoming advantage until source next-turn start. Brutal commits its
+  once-per-turn choice before rolling, rejects every disadvantage source and
+  forgoes all advantage only for the chosen roll. Its four owned options execute
+  through the shared planner: fixed Forceful push plus optional scoped follow;
+  latest-only all-Speed Hamstring; next-save Staggering with independent OA
+  suppression; and nonstacking Sundering for the next other attacker, consuming
+  only the selected grant. Improved Brutal Strike (2) permits two distinct
+  options with shared scaled damage once. Frenzy requires live Rage/Reckless
+  and commits on the first qualifying own-turn final hit. Both extra damage
+  contributions fold into the original damage instance with canonical critical
+  policy. Other inventoried riders retain their exact missing qualifiers,
   costs, target and lifecycle clauses in the audit.
 - **Breath Weapon remains deferred (narrowed 2026-10-08).** Canonical invocation
   lacks Attack replacement and ancestry-bound damage selection. Intimidating

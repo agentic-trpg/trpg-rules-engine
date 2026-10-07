@@ -7,16 +7,15 @@ per activity/option, preserving every clause instead of executing fragments.
 
 from dnd5e_srd_data.schema.common import Activity, PassiveEffect, PassiveEffectChange
 from dnd5e_srd_data.schema.feature import (
+    AttackRiderOptionSemantics,
     AttackRiderSemantics,
     RiderEffectSpec,
     RiderForcedMovement,
+    RiderMovementGrant,
 )
 from dnd5e_srd_data.schema.monster import CreatureSize
 from tools.translators.effect_lifecycle import reviewed_effect_lifecycle
 
-_RECKLESS = (
-    "requires first-attack Reckless decision, Strength Advantage and incoming Advantage lifecycle"
-)
 _RIDERS: dict[tuple[str, str], AttackRiderSemantics] = {
     ("sneak-attack", "a1T6nHaqmvbLpyJr"): AttackRiderSemantics(
         trigger="final_hit",
@@ -25,6 +24,7 @@ _RIDERS: dict[tuple[str, str], AttackRiderSemantics] = {
         once_per_turn=True,
         inherit_damage_type=True,
         automatic=True,
+        native_damage=True,
     ),
     ("stunning-strike", "Xto99a8Zt46VLwaR"): AttackRiderSemantics(
         trigger="final_hit",
@@ -102,10 +102,7 @@ _RIDERS: dict[tuple[str, str], AttackRiderSemantics] = {
         phase="after_damage",
         choice_group="cunning-strike",
         sneak_dice_cost=1,
-        deferred_reason=(
-            "requires immediate selected half-Speed movement with OA "
-            "exemption limited to that movement"
-        ),
+        movement_grant=RiderMovementGrant(direction="any"),
     ),
     ("devious-strikes", "4TnBjQTJzt9UjUos"): AttackRiderSemantics(
         trigger="sneak_attack_damage",
@@ -151,32 +148,39 @@ _RIDERS: dict[tuple[str, str], AttackRiderSemantics] = {
         phase="damage_preparation",
         choice_group="brutal-strike",
         inherit_damage_type=True,
-        deferred_reason=_RECKLESS,
-        deferred_options={
-            "forceful-blow": (
-                f"{_RECKLESS}; also requires selected straight-toward "
-                "half-Speed follow movement without OA"
-            ),
-            "hamstring-blow": (
-                f"{_RECKLESS}; latest-only speed reduction awaits complete foundation"
-            ),
-        },
+        once_per_turn=True,
+        own_turn=True,
+        requires_reckless=True,
+        pre_roll_commit=True,
+        forgo_advantage=True,
+        shared_damage_group="brutal-strike",
+        option_ids=("forceful-blow", "hamstring-blow"),
     ),
     ("improved-brutal-strike", "UmRlsf4QWW98I4FS"): AttackRiderSemantics(
         trigger="reckless_hit",
         qualification="strength",
         phase="after_damage",
         choice_group="brutal-strike",
-        deferred_reason=(
-            f"{_RECKLESS}; also requires next attack by another creature +5 consumption"
-        ),
+        once_per_turn=True,
+        own_turn=True,
+        requires_reckless=True,
+        pre_roll_commit=True,
+        forgo_advantage=True,
+        shared_damage_group="brutal-strike",
+        option_ids=("sundering-blow",),
     ),
     ("improved-brutal-strike", "I30qGlPDcyKwz65H"): AttackRiderSemantics(
         trigger="reckless_hit",
         qualification="strength",
         phase="after_damage",
         choice_group="brutal-strike",
-        deferred_reason=f"{_RECKLESS}; also requires next-save Disadvantage consumption",
+        once_per_turn=True,
+        own_turn=True,
+        requires_reckless=True,
+        pre_roll_commit=True,
+        forgo_advantage=True,
+        shared_damage_group="brutal-strike",
+        option_ids=("staggering-blow",),
     ),
 }
 
@@ -295,24 +299,35 @@ _RIDERS[("frenzy", "myPBq8xozti108Mc")] = AttackRiderSemantics(
     qualification="strength",
     phase="damage_preparation",
     inherit_damage_type=True,
-    deferred_reason=(
-        f"{_RECKLESS}; also requires active Rage and first qualifying target per own turn"
-    ),
+    automatic=True,
+    once_per_turn=True,
+    own_turn=True,
+    requires_reckless=True,
+    requires_rage=True,
 )
 
 _CONTEXTS: dict[str, AttackRiderSemantics] = {
     "reckless-attack": AttackRiderSemantics(
         trigger="reckless_hit",
-        qualification="strength",
+        qualification="any_attack",
         phase="damage_preparation",
-        deferred_reason=_RECKLESS,
+        target_role="attacker",
+        own_turn=True,
+        declaration="reckless_attack",
+        effects=(
+            RiderEffectSpec(
+                effect_id="XA0GhXVB54U2IuRP",
+                lifecycle=reviewed_effect_lifecycle(
+                    "feature", "reckless-attack", "", "XA0GhXVB54U2IuRP"
+                ),
+            ),
+        ),
     ),
     "improved-brutal-strike-2": AttackRiderSemantics(
         trigger="reckless_hit",
         qualification="strength",
         phase="damage_preparation",
         choice_group="brutal-strike",
-        deferred_reason=f"{_RECKLESS}; scales damage and permits two distinct options",
     ),
     "improved-cunning-strike": AttackRiderSemantics(
         trigger="sneak_attack_damage",
@@ -474,6 +489,63 @@ _CONTEXTS.update(
     }
 )
 
+_OPTIONS: dict[tuple[str, str], AttackRiderOptionSemantics] = {
+    ("brutal-strike", "forceful-blow"): AttackRiderOptionSemantics(
+        activity_id="nN5gsB6AcSQ4uQPN",
+        choice_group="brutal-strike",
+        forced_movement=RiderForcedMovement(
+            max_distance_ft=15, requires_distance_choice=False, on_save="always"
+        ),
+        movement_grant=RiderMovementGrant(direction="straight_toward_target"),
+    ),
+    ("brutal-strike", "hamstring-blow"): AttackRiderOptionSemantics(
+        activity_id="nN5gsB6AcSQ4uQPN",
+        choice_group="brutal-strike",
+        effects=(
+            RiderEffectSpec(
+                effect_id="bg9jWpPRIJ0Q2vPY",
+                lifecycle=reviewed_effect_lifecycle(
+                    "feature", "brutal-strike", "nN5gsB6AcSQ4uQPN", "bg9jWpPRIJ0Q2vPY"
+                ),
+            ),
+        ),
+    ),
+    ("improved-brutal-strike", "staggering-blow"): AttackRiderOptionSemantics(
+        activity_id="I30qGlPDcyKwz65H",
+        choice_group="brutal-strike",
+        effects=(
+            RiderEffectSpec(
+                effect_id="L9N4evZo1jt46dap",
+                lifecycle=reviewed_effect_lifecycle(
+                    "feature", "improved-brutal-strike", "I30qGlPDcyKwz65H", "L9N4evZo1jt46dap"
+                ),
+            ),
+        ),
+    ),
+    ("improved-brutal-strike", "sundering-blow"): AttackRiderOptionSemantics(
+        activity_id="UmRlsf4QWW98I4FS",
+        choice_group="brutal-strike",
+        effects=(
+            RiderEffectSpec(
+                effect_id="tUyuyTQGmpUqMcFe",
+                lifecycle=reviewed_effect_lifecycle(
+                    "feature", "improved-brutal-strike", "UmRlsf4QWW98I4FS", "tUyuyTQGmpUqMcFe"
+                ),
+            ),
+        ),
+    ),
+}
+
+
+def attack_rider_options(
+    slug: str, activity_ids: list[str]
+) -> dict[str, AttackRiderOptionSemantics]:
+    return {
+        option_id: option.model_copy(deep=True)
+        for (feature_slug, option_id), option in _OPTIONS.items()
+        if feature_slug == slug and option.activity_id in activity_ids
+    }
+
 
 def attack_riders(slug: str, activity_ids: list[str]) -> dict[str, AttackRiderSemantics]:
     return {
@@ -489,6 +561,8 @@ def attack_rider_context(slug: str) -> AttackRiderSemantics | None:
 
 
 def attack_rider_choice_limits(slug: str) -> dict[str, int]:
+    if slug == "brutal-strike":
+        return {"brutal-strike": 1}
     if slug == "improved-cunning-strike":
         return {"cunning-strike": 2}
     if slug == "improved-brutal-strike-2":
@@ -497,6 +571,15 @@ def attack_rider_choice_limits(slug: str) -> dict[str, int]:
 
 
 def attack_rider_activities(slug: str, activities: list[Activity]) -> list[Activity]:
+    if slug == "brutal-strike":
+        return [
+            activity.model_copy(
+                update={"activation": activity.activation.model_copy(update={"type": ""})}
+            )
+            if activity.id == "nN5gsB6AcSQ4uQPN"
+            else activity
+            for activity in activities
+        ]
     if slug != "stunning-strike":
         return activities
     return [
@@ -525,12 +608,33 @@ def attack_rider_effects(slug: str, effects: list[PassiveEffect]) -> list[Passiv
         ("open-hand-technique", "uQ474o5Wsv3sEAJK"): (
             PassiveEffectChange(key="flags.cannot_make_opportunity_attacks", mode=5, value="true"),
         ),
+        ("reckless-attack", "XA0GhXVB54U2IuRP"): (
+            PassiveEffectChange(key="flags.advantage.attack.strength", mode=5, value="true"),
+            PassiveEffectChange(key="flags.advantage.attack_against", mode=5, value="true"),
+        ),
+        ("brutal-strike", "bg9jWpPRIJ0Q2vPY"): (
+            PassiveEffectChange(key="speed.reduction", mode=2, value="15"),
+        ),
+        ("improved-brutal-strike", "L9N4evZo1jt46dap"): (
+            PassiveEffectChange(key="flags.save.next_disadvantage", mode=5, value="true"),
+            PassiveEffectChange(key="flags.cannot_make_opportunity_attacks", mode=5, value="true"),
+        ),
+        ("improved-brutal-strike", "tUyuyTQGmpUqMcFe"): (
+            PassiveEffectChange(key="attack.next_bonus", mode=2, value="5"),
+        ),
     }
     return [
         effect.model_copy(
             update={
                 "changes": [
-                    *effect.changes,
+                    *(
+                        change
+                        for change in effect.changes
+                        if not (
+                            (slug, effect.id) == ("brutal-strike", "bg9jWpPRIJ0Q2vPY")
+                            and change.key == "system.attributes.movement.walk"
+                        )
+                    ),
                     *(
                         change.model_copy(deep=True)
                         for change in additions

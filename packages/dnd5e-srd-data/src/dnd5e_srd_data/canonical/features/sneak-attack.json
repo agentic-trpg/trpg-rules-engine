@@ -125,6 +125,7 @@
       "forced_movement": null,
       "inherit_damage_type": true,
       "inventory_role": "rider",
+      "native_damage": true,
       "once_per_turn": true,
       "phase": "damage_preparation",
       "qualification": "finesse_or_ranged",

@@ -94,6 +94,7 @@ from tools.translators.attack_riders import (
     attack_rider_choice_limits,
     attack_rider_context,
     attack_rider_effects,
+    attack_rider_options,
     attack_riders,
 )
 from tools.translators.effect_lifecycle import (
@@ -3133,6 +3134,7 @@ def translate_feature_yaml(
         attack_riders=attack_riders(slug, [a.id for a in activities]),
         attack_rider_choice_limits=attack_rider_choice_limits(slug),
         attack_rider_context=attack_rider_context(slug),
+        attack_rider_options=attack_rider_options(slug, [a.id for a in activities]),
         passive_effects=effect_lifecycle_effects(
             "feature",
             slug,

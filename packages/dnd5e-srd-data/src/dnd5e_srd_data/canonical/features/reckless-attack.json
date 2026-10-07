@@ -4,18 +4,33 @@
   "attack_rider_context": {
     "automatic": false,
     "choice_group": null,
+    "declaration": "reckless_attack",
     "deferred_options": {},
-    "deferred_reason": "requires first-attack Reckless decision, Strength Advantage and incoming Advantage lifecycle",
-    "effects": [],
+    "deferred_reason": null,
+    "effects": [
+      {
+        "effect_id": "XA0GhXVB54U2IuRP",
+        "expiry": "none",
+        "lifecycle": {
+          "expire_on_positive_damage": false,
+          "expiry_boundary": "source_next_turn_start",
+          "maximum_rounds": null,
+          "one_use_modifiers": [],
+          "repeat_save": null
+        },
+        "outcome": "always"
+      }
+    ],
     "forced_movement": null,
     "inherit_damage_type": false,
     "inventory_role": "foundation",
     "once_per_turn": false,
+    "own_turn": true,
     "phase": "damage_preparation",
-    "qualification": "strength",
+    "qualification": "any_attack",
     "related_activity_ids": [],
     "sneak_dice_cost": 0,
-    "target_role": "attack_target",
+    "target_role": "attacker",
     "trigger": "reckless_hit"
   },
   "description": "You can throw aside all concern for defense to attack with increased ferocity. When you make your first attack roll on your turn, you can decide to attack recklessly. Doing so gives you Advantage on attack rolls using Strength until the start of your next turn, but attack rolls against you have Advantage during that time.\n\nFoundry Note\n\nThis feature includes an Active Effect for tracking whether you are reckless or not but it does not automate Advantage on your attacks or attacks against you.",
@@ -25,7 +40,20 @@
   "name": "Reckless Attack",
   "passive_effects": [
     {
-      "changes": [],
+      "changes": [
+        {
+          "key": "flags.advantage.attack.strength",
+          "mode": 5,
+          "priority": null,
+          "value": "true"
+        },
+        {
+          "key": "flags.advantage.attack_against",
+          "mode": 5,
+          "priority": null,
+          "value": "true"
+        }
+      ],
       "description": "",
       "disabled": false,
       "duration": {

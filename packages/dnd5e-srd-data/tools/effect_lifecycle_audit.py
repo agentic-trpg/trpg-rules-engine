@@ -66,8 +66,6 @@ _REVIEWED_REASONS = {
     "removal; a turn-end fragment is insufficient",
     "hypnotic-pattern": "requires damage-break and explicit action-to-awaken lifecycle; "
     "concentration alone does not create repeat saves",
-    "improved-brutal-strike": "next-save consumption is a shared primitive; the complete "
-    "Reckless/Brutal prerequisite remains deferred",
     "irresistible-dance": "repeat save requires an Action; successful initial save has a "
     "separate next-turn effect",
     "ivory-goats": "requires summoned-goat fear source, immunity-on-success and item "
@@ -200,6 +198,22 @@ def _typed_rows(kind: str, source: BaseModel) -> tuple[list[dict[str, Any]], set
                     consumer=consumer,
                 )
             )
+    if isinstance(source, Feature) and source.attack_rider_context is not None:
+        for index, binding in enumerate(source.attack_rider_context.effects):
+            if binding.lifecycle is None or binding.effect_id in managed:
+                continue
+            managed.add(binding.effect_id)
+            rows.append(
+                _row(
+                    kind,
+                    source,
+                    activity_id=None,
+                    effect_id=binding.effect_id,
+                    path=f"/attack_rider_context/effects/{index}",
+                    spec=binding.lifecycle,
+                    consumer="typed_attack_foundation_lifecycle",
+                )
+            )
     return rows, managed
 
 
@@ -265,9 +279,11 @@ def audit_document(loader: AssetLoader) -> dict[str, Any]:
             "duration": "deadline is applied_round + maximum_rounds; target "
             "turn end checks repeat first, then duration; "
             "application round is not a full round",
-            "one_use": "next_save_disadvantage is an available typed primitive; "
-            "deferred Brutal options are not enabled by that "
-            "fragment",
+            "one_use": "Staggering binds next_save_disadvantage; Sundering binds "
+            "next_attack_bonus_other_creature with other-creature scope and "
+            "a nonstacking bonus group; consumption removes only the used clause",
+            "stacking": "Hamstring uses the typed latest_only target group "
+            "across all sources; next boundaries use exact source identity",
             "scope": "canonical spells/features/items; lifecycle support is "
             "distinct from complete spell/feature/item execution",
             "stable_boundaries": "existing typed Shield and rider boundaries "

@@ -129,6 +129,8 @@ def test_lifecycle_ingestion_requires_exact_source_activity_and_effect_identity(
         {"maximum_rounds": -1},
         {"one_use_modifiers": ["all_saves"]},
         {"duration_from_description": True},
+        {"stacking": "add_all"},
+        {"next_attack_scope": "anybody"},
     ],
 )
 def test_lifecycle_metadata_is_closed(raw):
@@ -154,7 +156,18 @@ def test_new_metadata_is_additive_and_omitted_from_unreviewed_bindings():
 
 @pytest.mark.parametrize(
     "slug",
-    ["hold-person", "hold-monster", "cunning-strike", "devious-strikes", "intimidating-presence"],
+    [
+        "hold-person",
+        "hold-monster",
+        "cunning-strike",
+        "devious-strikes",
+        "intimidating-presence",
+        "reckless-attack",
+        "brutal-strike",
+        "improved-brutal-strike",
+        "improved-brutal-strike-2",
+        "frenzy",
+    ],
 )
 def test_reviewed_canonical_documents_reproduce_the_pinned_translator(slug):
     loader = BundledAssetLoader()
@@ -177,9 +190,9 @@ def test_lifecycle_audit_is_deterministic_matches_golden_and_keeps_deferrals_exp
         "typed_repeat_save": 5,
         "typed_expire_on_positive_damage": 1,
         "finite_reviewed_duration": 3,
-        "typed_one_use_modifier": 0,
-        "supported_lifecycle": 10,
-        "deferred": 147,
+        "typed_one_use_modifier": 2,
+        "supported_lifecycle": 14,
+        "deferred": 146,
     }
     assert {row["source_kind"] for row in first["rows"]} == {"spell", "feature", "item"}
     for row in first["rows"]:

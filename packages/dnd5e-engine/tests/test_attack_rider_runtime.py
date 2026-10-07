@@ -1055,11 +1055,17 @@ def test_sneak_attack_is_not_spent_by_a_miss_or_remaining_disadvantage(mode):
         ("improved-brutal-strike", "I30qGlPDcyKwz65H", "barbarian", 17),
     ],
 )
-def test_deferred_options_are_refused_as_bound_riders(feature, activity, class_slug, level):
+def test_option_support_and_required_bindings_are_enforced(feature, activity, class_slug, level):
     handle, live = start([_rogue(class_slug=class_slug, character_level=level), _ally()], seed=4)
     before, offset = _snapshot(live), len(live.event_log)
     _attack(handle, _request((feature, activity)), weapon="dagger")
-    _assert_preflight_unchanged(live, before, offset)
+    if activity == "m2bRZ1YeD3yf9nV7":
+        [trigger] = [e for e in events(live, AttackRiderTriggered) if e.activity_id == activity]
+        assert trigger.activity_id == activity
+        assert trigger.sacrificed_sneak_dice == 1
+        assert combatant(live).sneak_attack_spent_this_turn
+    else:
+        _assert_preflight_unchanged(live, before, offset)
 
 
 @pytest.mark.parametrize(
@@ -1246,6 +1252,13 @@ def test_rider_audit_is_deterministic_matches_golden_and_separates_entrypoints()
         ("cunning-strike", "n64fvJMT9fPUy7DH"),
         ("devious-strikes", "3eq7lcmpkJJBU2KO"),
         ("sneak-attack", "a1T6nHaqmvbLpyJr"),
+        ("brutal-strike", "nN5gsB6AcSQ4uQPN"),
+        ("improved-brutal-strike", "UmRlsf4QWW98I4FS"),
+        ("improved-brutal-strike", "I30qGlPDcyKwz65H"),
+        ("frenzy", "myPBq8xozti108Mc"),
+        ("cunning-strike", "m2bRZ1YeD3yf9nV7"),
+        ("reckless-attack", None),
+        ("improved-brutal-strike-2", None),
     }
     for row in first["rows"]:
         assert row["trigger"]

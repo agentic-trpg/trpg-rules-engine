@@ -25,8 +25,8 @@ choice pools. The classifications are:
 | `fully_resolvable` | 18 | The supported invocation passes pure preflight; normal live target/economy gates still apply. |
 | `unsupported_preflight` | 44 | Refused before payment or draws: unsupported operation, formula/carrier or resource shape. |
 | `semantic_special_case` | 98 | Refused before payment or draws: missing triggering event, lifecycle or action semantics. |
-| `attack_rider_executable` | 9 | Standalone invocation refuses; the authoritative attack path supports the rider. |
-| `attack_rider_deferred` | 22 | Standalone invocation refuses; the attack option is explicitly deferred with its missing clauses. |
+| `attack_rider_executable` | 14 | Standalone invocation refuses; the authoritative attack path supports the rider. |
+| `attack_rider_deferred` | 17 | Standalone invocation refuses; the attack option is explicitly deferred with its missing clauses. |
 
 Each row records the feature slug, activity ID, actual granting owner, reason,
 and independent formula/resource diagnostics, plus `execution_path`,
@@ -120,7 +120,8 @@ and remains deferred. A scan of current canonical effects found **zero
 ## Deliberate remaining limits
 
 - **Attack-bound execution:** standalone Stunning Strike, Sneak Attack, Open Hand
-  Technique, Cunning Strike Trip/Poison and Devious Strikes Obscure/Knock Out continue to reject. Their typed attack
+  Technique, Cunning Strike Trip/Poison/Withdraw, Devious Strikes Obscure/Knock Out,
+  Brutal/Improved Brutal and Frenzy continue to reject. Their typed attack
   path is described in [attack feature riders](attack-feature-riders.md) and the
   [option audit](attack-rider-audit.json). This distinction prevents standalone
   damage, saves or resource payments from bypassing an actual qualifying hit.
@@ -129,9 +130,10 @@ and remains deferred. A scan of current canonical effects found **zero
 - **Step of the Wind:** the corpus includes only the Focus variant. Combined
   Dash/Disengage plus doubled jump distance lacks a full carrier, so it rejects;
   no free variant was invented.
-- **Remaining optional riders:** Cunning Strike Withdraw, Devious
-  Strikes Daze, Reckless/Brutal Strike and other corpus riders remain
-  deferred per option. Obscure is a Dexterity save ending at the end of the
+- **Remaining optional riders:** Devious Strikes Daze and other corpus riders
+  remain deferred per option. Reckless uses the first-own-turn attack declaration;
+  Brutal's four options, automatic Frenzy and scoped Withdraw use the shared
+  attack path. Obscure is a Dexterity save ending at the end of the
   target's next turn; one supported option does not imply a complete feature.
 - **Preserve Life:** formula support does not provide pool division, self
   inclusion or a half-maximum HP cap; the invocation rejects.

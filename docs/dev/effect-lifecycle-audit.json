@@ -2,14 +2,13 @@
   "counts": {
     "damage_break_candidate": 23,
     "deferred": 84,
-    "executable_typed_lifecycle": 5,
-    "one_use_modifier_candidate": 1,
+    "executable_typed_lifecycle": 7,
     "repeated_save_candidate": 39,
-    "typed_duration_only": 5
+    "typed_duration_only": 7
   },
-  "inventory_rows": 157,
+  "inventory_rows": 160,
   "source_counts": {
-    "feature": 14,
+    "feature": 17,
     "item": 38,
     "spell": 105
   },
@@ -17,15 +16,16 @@
     "typed_repeat_save": 5,
     "typed_expire_on_positive_damage": 1,
     "finite_reviewed_duration": 3,
-    "typed_one_use_modifier": 0,
-    "supported_lifecycle": 10,
-    "deferred": 147
+    "typed_one_use_modifier": 2,
+    "supported_lifecycle": 14,
+    "deferred": 146
   },
   "inventory_notes": {
     "authority": "only reviewed typed metadata grants lifecycle execution; concentration and failed saves do not imply repetition",
     "discovery": "ingestion-only prose candidate discovery plus exact typed refs and finite condition display durations; runtime reads no prose",
     "duration": "deadline is applied_round + maximum_rounds; target turn end checks repeat first, then duration; application round is not a full round",
-    "one_use": "next_save_disadvantage is an available typed primitive; deferred Brutal options are not enabled by that fragment",
+    "one_use": "Staggering binds next_save_disadvantage; Sundering binds next_attack_bonus_other_creature with other-creature scope and a nonstacking bonus group; consumption removes only the used clause",
+    "stacking": "Hamstring uses the typed latest_only target group across all sources; next boundaries use exact source identity",
     "scope": "canonical spells/features/items; lifecycle support is distinct from complete spell/feature/item execution",
     "stable_boundaries": "existing typed Shield and rider boundaries remain executable under their current adapters"
   },
@@ -2049,6 +2049,31 @@
     },
     {
       "source_kind": "feature",
+      "source_slug": "brutal-strike",
+      "activity_id": "nN5gsB6AcSQ4uQPN",
+      "effect_id": "bg9jWpPRIJ0Q2vPY",
+      "path": "/activities/0/effects/0",
+      "lifecycle": {
+        "repeat_save": null,
+        "maximum_rounds": null,
+        "expiry_boundary": "source_next_turn_start",
+        "expire_on_positive_damage": false,
+        "one_use_modifiers": [],
+        "stacking": "latest_only",
+        "stacking_group": "hamstring-blow"
+      },
+      "consumer": "typed_effect_lifecycle",
+      "repeat_save_candidate": false,
+      "damage_break_candidate": false,
+      "one_use_modifier_candidate": false,
+      "finite_reviewed_duration": false,
+      "display_duration": null,
+      "fully_executable": true,
+      "classification": "typed_duration_only",
+      "deferred_reason": null
+    },
+    {
+      "source_kind": "feature",
       "source_slug": "channel-divinity-cleric",
       "activity_id": "aOptL5pMaj3WtR8S",
       "effect_id": "iUeSbfduM7K8XrCF",
@@ -2146,19 +2171,54 @@
     {
       "source_kind": "feature",
       "source_slug": "improved-brutal-strike",
-      "activity_id": null,
-      "effect_id": null,
-      "path": "/description",
-      "lifecycle": null,
-      "consumer": null,
+      "activity_id": "UmRlsf4QWW98I4FS",
+      "effect_id": "tUyuyTQGmpUqMcFe",
+      "path": "/activities/0/effects/0",
+      "lifecycle": {
+        "repeat_save": null,
+        "maximum_rounds": null,
+        "expiry_boundary": "source_next_turn_start",
+        "expire_on_positive_damage": false,
+        "one_use_modifiers": [
+          "next_attack_bonus_other_creature"
+        ],
+        "next_attack_scope": "other_creature",
+        "next_attack_bonus_group": "sundering-blow"
+      },
+      "consumer": "typed_effect_lifecycle",
       "repeat_save_candidate": false,
       "damage_break_candidate": false,
       "one_use_modifier_candidate": true,
       "finite_reviewed_duration": false,
       "display_duration": null,
-      "fully_executable": false,
-      "classification": "one_use_modifier_candidate",
-      "deferred_reason": "next-save consumption is a shared primitive; the complete Reckless/Brutal prerequisite remains deferred"
+      "fully_executable": true,
+      "classification": "executable_typed_lifecycle",
+      "deferred_reason": null
+    },
+    {
+      "source_kind": "feature",
+      "source_slug": "improved-brutal-strike",
+      "activity_id": "I30qGlPDcyKwz65H",
+      "effect_id": "L9N4evZo1jt46dap",
+      "path": "/activities/1/effects/0",
+      "lifecycle": {
+        "repeat_save": null,
+        "maximum_rounds": null,
+        "expiry_boundary": "source_next_turn_start",
+        "expire_on_positive_damage": false,
+        "one_use_modifiers": [
+          "next_save_disadvantage"
+        ]
+      },
+      "consumer": "typed_effect_lifecycle",
+      "repeat_save_candidate": false,
+      "damage_break_candidate": false,
+      "one_use_modifier_candidate": true,
+      "finite_reviewed_duration": false,
+      "display_duration": null,
+      "fully_executable": true,
+      "classification": "executable_typed_lifecycle",
+      "deferred_reason": null
     },
     {
       "source_kind": "feature",
@@ -2258,6 +2318,29 @@
         "one_use_modifiers": []
       },
       "consumer": "existing_typed_rider_boundary",
+      "repeat_save_candidate": false,
+      "damage_break_candidate": false,
+      "one_use_modifier_candidate": false,
+      "finite_reviewed_duration": false,
+      "display_duration": null,
+      "fully_executable": true,
+      "classification": "typed_duration_only",
+      "deferred_reason": null
+    },
+    {
+      "source_kind": "feature",
+      "source_slug": "reckless-attack",
+      "activity_id": null,
+      "effect_id": "XA0GhXVB54U2IuRP",
+      "path": "/attack_rider_context/effects/0",
+      "lifecycle": {
+        "repeat_save": null,
+        "maximum_rounds": null,
+        "expiry_boundary": "source_next_turn_start",
+        "expire_on_positive_damage": false,
+        "one_use_modifiers": []
+      },
+      "consumer": "typed_attack_foundation_lifecycle",
       "repeat_save_candidate": false,
       "damage_break_candidate": false,
       "one_use_modifier_candidate": false,

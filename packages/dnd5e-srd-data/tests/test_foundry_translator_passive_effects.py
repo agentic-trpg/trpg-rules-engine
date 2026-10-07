@@ -61,6 +61,15 @@ def test_every_feature_effect_change_round_trips():
             continue
         feat = translate_feature_yaml(path, **_INGEST)
         got = {(c.key, c.mode, c.value) for e in feat.passive_effects for c in e.changes}
+        if feat.slug == "brutal-strike":
+            # The reviewed all-Speed rule replaces this exact walk-only source
+            # change; retaining both would charge walking twice.
+            legacy = ("system.attributes.movement.walk", 2, "-15")
+            replacement = ("speed.reduction", 2, "15")
+            assert legacy in raw_changes and legacy not in got
+            effect = next(e for e in feat.passive_effects if e.id == "bg9jWpPRIJ0Q2vPY")
+            assert [(c.key, c.mode, c.value) for c in effect.changes] == [replacement]
+            raw_changes = [replacement if change == legacy else change for change in raw_changes]
         missing = [rc for rc in raw_changes if rc not in got]
         if missing:
             failures.append((path.name, missing))

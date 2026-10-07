@@ -8,11 +8,13 @@ import yaml
 from pydantic import ValidationError
 
 from dnd5e_srd_data.loader import BundledAssetLoader
-from dnd5e_srd_data.schema.common import UtilityActivity
+from dnd5e_srd_data.schema.common import DamageActivity, UtilityActivity
 from dnd5e_srd_data.schema.feature import (
+    AttackRiderOptionSemantics,
     AttackRiderSemantics,
     RiderEffectSpec,
     RiderForcedMovement,
+    RiderMovementGrant,
 )
 from dnd5e_srd_data.schema.monster import CreatureSize
 from tools.translators.attack_riders import (
@@ -20,6 +22,7 @@ from tools.translators.attack_riders import (
     attack_rider_choice_limits,
     attack_rider_context,
     attack_rider_effects,
+    attack_rider_options,
     attack_riders,
 )
 from tools.translators.foundry import translate_feature_yaml
@@ -33,6 +36,7 @@ def test_every_shipped_attack_binding_matches_exact_ingestion():
         assert feature.attack_riders == attack_riders(slug, ids)
         assert feature.attack_rider_context == attack_rider_context(slug)
         assert feature.attack_rider_choice_limits == attack_rider_choice_limits(slug)
+        assert feature.attack_rider_options == attack_rider_options(slug, ids)
         assert feature.activities == attack_rider_activities(slug, list(feature.activities))
         assert feature.passive_effects == attack_rider_effects(slug, feature.passive_effects)
         for semantics in feature.attack_riders.values():
@@ -43,6 +47,7 @@ def test_every_shipped_attack_binding_matches_exact_ingestion():
     assert attack_riders("stunning-strike", ["unknown"]) == {}
     assert attack_riders("unknown", ["Xto99a8Zt46VLwaR"]) == {}
     assert attack_rider_context("unknown") is None
+    assert attack_rider_options("brutal-strike", ["unknown"]) == {}
 
 
 def test_all_corpus_hit_sneak_flurry_reckless_phrases_were_reviewed():
@@ -221,4 +226,129 @@ def test_metadata_templates_and_input_activities_are_not_mutated():
     assert attack_rider_activities("stunning-strike", [activity]) == [activity]
     assert activity.model_dump(mode="json") == UtilityActivity(id="unrelated").model_dump(
         mode="json"
+    )
+
+
+def test_reckless_foundation_declares_strength_and_incoming_advantage_without_prose():
+    feature = BundledAssetLoader().get_feature("reckless-attack")
+    assert feature.activities == []
+    foundation = feature.attack_rider_context
+    assert foundation.inventory_role == "foundation" and foundation.deferred_reason is None
+    assert foundation.qualification == "any_attack" and foundation.own_turn
+    assert foundation.target_role == "attacker"
+    assert foundation.declaration == "reckless_attack"
+    [binding] = foundation.effects
+    assert binding.effect_id == "XA0GhXVB54U2IuRP"
+    assert binding.lifecycle.expiry_boundary == "source_next_turn_start"
+    [effect] = feature.passive_effects
+    assert [(c.key, c.mode, c.value) for c in effect.changes] == [
+        ("flags.advantage.attack.strength", 5, "true"),
+        ("flags.advantage.attack_against", 5, "true"),
+    ]
+
+
+def test_brutal_pool_crosses_features_while_damage_remains_one_canonical_activity():
+    loader = BundledAssetLoader()
+    base = loader.get_feature("brutal-strike")
+    improved = loader.get_feature("improved-brutal-strike")
+    pool = {**base.attack_rider_options, **improved.attack_rider_options}
+    assert set(pool) == {"forceful-blow", "hamstring-blow", "staggering-blow", "sundering-blow"}
+    assert base.attack_rider_choice_limits == {"brutal-strike": 1}
+    assert loader.get_feature("improved-brutal-strike-2").attack_rider_choice_limits == {
+        "brutal-strike": 2
+    }
+    [damage] = base.activities
+    assert isinstance(damage, DamageActivity) and damage.activation.type == ""
+    assert damage.damage.parts[0].custom.formula == "@scale.barbarian.brutal-strike"
+    assert damage.damage.critical.allow is False
+    for feature in (base, improved):
+        for activity in feature.activities:
+            rider = feature.attack_riders[activity.id]
+            assert rider.shared_damage_group == "brutal-strike"
+            assert rider.pre_roll_commit and rider.forgo_advantage and rider.once_per_turn
+            assert rider.own_turn and rider.requires_reckless
+            assert rider.deferred_reason is None and rider.deferred_options == {}
+            assert set(rider.option_ids) <= pool.keys()
+    forceful = pool["forceful-blow"]
+    assert forceful.forced_movement == RiderForcedMovement(
+        max_distance_ft=15, requires_distance_choice=False, on_save="always"
+    )
+    assert forceful.movement_grant == RiderMovementGrant(direction="straight_toward_target")
+    assert forceful.effects == ()
+    for option_id in ("hamstring-blow", "staggering-blow", "sundering-blow"):
+        [binding] = pool[option_id].effects
+        assert binding.lifecycle.expiry_boundary == "source_next_turn_start"
+        assert binding.expiry == "none"
+    hamstring = pool["hamstring-blow"].effects[0].lifecycle
+    assert hamstring.stacking == "latest_only" and hamstring.stacking_group == "hamstring-blow"
+    stagger = pool["staggering-blow"].effects[0].lifecycle
+    assert stagger.one_use_modifiers == ("next_save_disadvantage",)
+    sunder = pool["sundering-blow"].effects[0].lifecycle
+    assert sunder.one_use_modifiers == ("next_attack_bonus_other_creature",)
+    assert sunder.next_attack_scope == "other_creature"
+    assert sunder.next_attack_bonus_group == "sundering-blow"
+    assert [(c.key, c.mode, c.value) for c in base.passive_effects[0].changes] == [
+        ("speed.reduction", 2, "15")
+    ]
+    effects = {e.id: e for e in improved.passive_effects}
+    assert [(c.key, c.mode, c.value) for c in effects["L9N4evZo1jt46dap"].changes] == [
+        ("flags.save.next_disadvantage", 5, "true"),
+        ("flags.cannot_make_opportunity_attacks", 5, "true"),
+    ]
+    assert [(c.key, c.mode, c.value) for c in effects["tUyuyTQGmpUqMcFe"].changes] == [
+        ("attack.next_bonus", 2, "5")
+    ]
+
+
+def test_frenzy_and_withdraw_have_complete_typed_trigger_and_grant_contracts():
+    loader = BundledAssetLoader()
+    sneak = loader.get_feature("sneak-attack").attack_riders["a1T6nHaqmvbLpyJr"]
+    assert sneak.automatic and sneak.native_damage and sneak.trigger == "final_hit"
+    feature = loader.get_feature("frenzy")
+    [activity] = feature.activities
+    rider = feature.attack_riders[activity.id]
+    assert rider.automatic and rider.once_per_turn and rider.own_turn
+    assert not rider.native_damage
+    assert rider.requires_rage and rider.requires_reckless and rider.inherit_damage_type
+    assert rider.phase == "damage_preparation" and not rider.pre_roll_commit
+    assert rider.qualification == "strength" and rider.deferred_reason is None
+    assert activity.damage.parts[0].custom.formula == "(@scale.barbarian.rage-damage)d6"
+    assert activity.damage.critical.allow is False
+    withdraw = loader.get_feature("cunning-strike").attack_riders["m2bRZ1YeD3yf9nV7"]
+    assert withdraw.sneak_dice_cost == 1 and withdraw.trigger == "sneak_attack_damage"
+    assert withdraw.phase == "after_damage" and withdraw.deferred_reason is None
+    assert withdraw.movement_grant == RiderMovementGrant(direction="any")
+
+
+@pytest.mark.parametrize(
+    "factory,raw",
+    [
+        (RiderMovementGrant, {"direction": "fly"}),
+        (RiderMovementGrant, {"direction": "any", "maximum_speed_fraction": "full"}),
+        (RiderMovementGrant, {"direction": "any", "movement_mode": "fly"}),
+        (RiderMovementGrant, {"direction": "any", "provokes_opportunity_attacks": True}),
+        (RiderMovementGrant, {"direction": "any", "max_distance_ft": 999}),
+        (AttackRiderOptionSemantics, {"activity_id": "x", "choice_group": "x", "damage": 99}),
+    ],
+)
+def test_option_and_scoped_movement_vocabulary_rejects_host_mechanics(factory, raw):
+    with pytest.raises(ValidationError):
+        factory.model_validate(raw)
+
+
+def test_option_templates_clone_nested_lifecycle_and_omit_new_defaults():
+    first = attack_rider_options("brutal-strike", ["nN5gsB6AcSQ4uQPN"])
+    second = attack_rider_options("brutal-strike", ["nN5gsB6AcSQ4uQPN"])
+    assert first == second and first is not second
+    assert first["hamstring-blow"].effects[0] is not second["hamstring-blow"].effects[0]
+    assert (
+        first["hamstring-blow"].effects[0].lifecycle
+        is not second["hamstring-blow"].effects[0].lifecycle
+    )
+    rider = AttackRiderSemantics(
+        trigger="final_hit", qualification="any_attack", phase="after_damage"
+    )
+    assert (
+        not {"option_ids", "requires_reckless", "shared_damage_group", "movement_grant"}
+        & rider.model_dump().keys()
     )

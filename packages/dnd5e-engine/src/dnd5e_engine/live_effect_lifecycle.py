@@ -37,6 +37,30 @@ def register_effect(live: _LiveCombat, effect: ActiveEffect) -> None:
     )
 
 
+def replace_stacking_effects(live: _LiveCombat, effect: ActiveEffect) -> None:
+    """A reviewed latest-only group replaces earlier full identities on one target."""
+    application = effect.lifecycle
+    if application is None or effect.disabled or application.spec.stacking != "latest_only":
+        return
+    from dnd5e_engine import orchestrator as orch
+
+    for previous in list(live.active_effects.get(effect.target_id, [])):
+        if (
+            not previous.disabled
+            and previous.lifecycle is not None
+            and previous.lifecycle.spec.stacking_group == application.spec.stacking_group
+        ):
+            orch._emit(
+                live,
+                EffectExpired(
+                    target_id=effect.target_id,
+                    effect_id=previous.id,
+                    origin=previous.origin,
+                    reason="remove_ieffect",
+                ),
+            )
+
+
 def forget_effect(live: _LiveCombat, identity: EffectIdentity) -> bool:
     """Idempotent full-identity cleanup, including concentration target links."""
     managed = live.effect_lifecycles.pop(identity, None) is not None
@@ -60,13 +84,18 @@ def observe_modifier_consumption(live: _LiveCombat, event: CombatEvent) -> None:
         return
     identity = (event.target_id, event.effect_id, event.origin)
     state = live.effect_lifecycles.get(identity)
-    if state is not None and "flags.save.next_disadvantage" in event.keys:
+    if state is not None:
+        consumed = set()
+        if "flags.save.next_disadvantage" in event.keys:
+            consumed.add("next_save_disadvantage")
+        if "attack.next_bonus" in event.keys:
+            consumed.add("next_attack_bonus_other_creature")
         live.effect_lifecycles[identity] = replace(
             state,
             remaining_one_use_modifiers=tuple(
                 modifier
                 for modifier in state.remaining_one_use_modifiers
-                if modifier != "next_save_disadvantage"
+                if modifier not in consumed
             ),
         )
 

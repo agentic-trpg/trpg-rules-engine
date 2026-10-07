@@ -322,13 +322,20 @@ def _attack_rider_options_resolve(
     level: int,
     flurry: bool = False,
     carried_items: tuple[str, ...] = (),
+    option_ids: tuple[str, ...] = (),
+    automatic: bool = False,
+    subclass_slug: str | None = None,
 ) -> bool:
     """Exercise the typed, draw-free planner with real class/subclass grants."""
     from dnd5e_srd_data.schema.monster import CreatureSize
 
     from dnd5e_engine.activities.build_context import build_activity_context
     from dnd5e_engine.activities.scale import build_scale_values
-    from dnd5e_engine.attack_riders import AttackRiderRequest, plan_attack_riders
+    from dnd5e_engine.attack_riders import (
+        AttackRiderRequest,
+        automatic_attack_riders,
+        plan_attack_riders,
+    )
     from dnd5e_engine.feature_runtime import DrawFreeRandom, FeaturePreflightError
     from dnd5e_engine.types.combat import Combatant
 
@@ -341,7 +348,7 @@ def _attack_rider_options_resolve(
         hp_current=100,
         class_slug=class_slug,
         character_level=level,
-        subclass_slug="hand" if flurry else None,
+        subclass_slug="hand" if flurry else subclass_slug,
         dexterity=18,
         wisdom=18,
         carried_item_slugs=carried_items,
@@ -383,27 +390,32 @@ def _attack_rider_options_resolve(
             feature_id=feature_slug,
             activity_id=activity_id,
             push_distance_ft=15 if semantics.forced_movement else None,
+            option_ids=option_ids or semantics.option_ids[:1],
         )
         try:
-            plans = plan_attack_riders(
-                actor,
-                (request,),
-                weapon=weapon,
-                origin="flurry" if flurry else "action",
-                ctx=ctx,
-                loader=loader,
-                spent={},
-                used_features=set(),
-                cell_size_ft=5,
-                target_size=CreatureSize.MEDIUM,
+            plans = (
+                automatic_attack_riders(actor, ctx, loader)
+                if automatic
+                else plan_attack_riders(
+                    actor,
+                    (request,),
+                    weapon=weapon,
+                    origin="flurry" if flurry else "action",
+                    ctx=ctx,
+                    loader=loader,
+                    spent={},
+                    used_features=set(),
+                    cell_size_ft=5,
+                    target_size=CreatureSize.MEDIUM,
+                )
             )
         except FeaturePreflightError:
             return False
-        if len(plans) != 1:
+        if not any(plan.activity.id == activity_id for plan in plans):
             return False
     return (
-        "prepare_intent_riders(live," in _src("orchestrator.py")
-        and "attach_attack_riders(live," in _src("orchestrator.py")
+        re.search(r"\bprepare_intent_riders\(\s*live,", _src("orchestrator.py")) is not None
+        and re.search(r"\battach_attack_riders\(\s*live,", _src("orchestrator.py")) is not None
         and "resolve_activity(" in _src("live_attack_riders.py")
     )
 
@@ -432,12 +444,11 @@ def _cunning_rider_scope_matches() -> bool:
         and _attack_rider_options_resolve(
             "devious-strikes", ("3eq7lcmpkJJBU2KO",), class_slug="rogue", level=14
         )
-        and all(
-            not _attack_rider_options_resolve(slug, (activity,), class_slug="rogue", level=14)
-            for slug, activity in (
-                ("cunning-strike", "m2bRZ1YeD3yf9nV7"),
-                ("devious-strikes", "4TnBjQTJzt9UjUos"),
-            )
+        and _attack_rider_options_resolve(
+            "cunning-strike", ("m2bRZ1YeD3yf9nV7",), class_slug="rogue", level=14
+        )
+        and not _attack_rider_options_resolve(
+            "devious-strikes", ("4TnBjQTJzt9UjUos",), class_slug="rogue", level=14
         )
     )
 
@@ -448,15 +459,77 @@ def _brutal_rider_scope_matches() -> bool:
     return (
         reckless is not None
         and reckless.attack_rider_context is not None
-        and reckless.attack_rider_context.deferred_reason is not None
+        and reckless.attack_rider_context.deferred_reason is None
+        and reckless.attack_rider_context.declaration == "reckless_attack"
+        and reckless.attack_rider_context.effects[0].lifecycle.expiry_boundary
+        == "source_next_turn_start"
         and all(
-            not _attack_rider_options_resolve(slug, (activity,), class_slug="barbarian", level=17)
+            _attack_rider_options_resolve(slug, (activity,), class_slug="barbarian", level=17)
             for slug, activity in (
                 ("brutal-strike", "nN5gsB6AcSQ4uQPN"),
                 ("improved-brutal-strike", "UmRlsf4QWW98I4FS"),
                 ("improved-brutal-strike", "I30qGlPDcyKwz65H"),
             )
         )
+        and _attack_rider_options_resolve(
+            "brutal-strike",
+            ("nN5gsB6AcSQ4uQPN",),
+            class_slug="barbarian",
+            level=17,
+            option_ids=("staggering-blow", "sundering-blow"),
+        )
+        and not _attack_rider_options_resolve(
+            "brutal-strike",
+            ("nN5gsB6AcSQ4uQPN",),
+            class_slug="barbarian",
+            level=13,
+            option_ids=("staggering-blow", "sundering-blow"),
+        )
+        and "observe_attack_roll(live," in _src("orchestrator.py")
+        and "attack_pre_roll=" in _src("live_attack_riders.py")
+    )
+
+
+def _frenzy_contract_resolves() -> bool:
+    feature = BundledAssetLoader().get_feature("frenzy")
+    if feature is None:
+        return False
+    rider = feature.attack_riders["myPBq8xozti108Mc"]
+    return (
+        rider.automatic
+        and rider.once_per_turn
+        and rider.own_turn
+        and rider.requires_rage
+        and rider.requires_reckless
+        and rider.inherit_damage_type
+        and not rider.pre_roll_commit
+        and _attack_rider_options_resolve(
+            "frenzy",
+            ("myPBq8xozti108Mc",),
+            class_slug="barbarian",
+            level=17,
+            automatic=True,
+            subclass_slug="berserker",
+        )
+        and "damage_contributions=" in _src("live_attack_riders.py")
+    )
+
+
+def _scoped_movement_contract_resolves() -> bool:
+    from dnd5e_engine.live_movement import execute_movement_grant, preflight_movement_grant
+    from dnd5e_engine.movement import MovementChoice
+
+    loader = BundledAssetLoader()
+    withdraw = loader.get_feature("cunning-strike").attack_riders["m2bRZ1YeD3yf9nV7"]
+    forceful = loader.get_feature("brutal-strike").attack_rider_options["forceful-blow"]
+    return (
+        withdraw.movement_grant.direction == "any"
+        and forceful.movement_grant.direction == "straight_toward_target"
+        and callable(execute_movement_grant)
+        and callable(preflight_movement_grant)
+        and MovementChoice(destination_cell=" 1, 2 ").destination_cell == "1,2"
+        and "grant_remaining_ft=remaining" in _src("live_movement.py")
+        and "execute_movement_grant(" in _src("live_attack_riders.py")
     )
 
 
@@ -1066,7 +1139,12 @@ _PROBES: dict[str, tuple[Any, str]] = {
     ),
     "| Reckless Attack / Brutal Strike |": (
         _brutal_rider_scope_matches,
-        "❌ Deferred",
+        "✅ Resolved",
+    ),
+    "| Berserker Frenzy |": (_frenzy_contract_resolves, "✅ Resolved"),
+    "| Scoped post-hit movement |": (
+        _scoped_movement_contract_resolves,
+        "✅ Resolved for Withdraw and Forceful",
     ),
     "| Intimidating Presence |": (_intimidating_presence_scope_matches, "⚠️ Partial"),
     "| Cunning Strike Poison |": (

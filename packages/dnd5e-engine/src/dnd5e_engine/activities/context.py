@@ -12,7 +12,7 @@ from dnd5e_engine.types.checks import CheckActorState, CheckRequest
 from dnd5e_engine.types.combat import Combatant
 
 if TYPE_CHECKING:
-    from dnd5e_srd_data.schema.common import PassiveEffect
+    from dnd5e_srd_data.schema.common import DamageActivity, PassiveEffect
     from dnd5e_srd_data.schema.spell import Spell
 
     from dnd5e_engine.activities.conjuration import (
@@ -77,6 +77,42 @@ class AttackRollModifier:
     advantage_sources: tuple[AdvantageSource, ...] = ()
     disadvantage_sources: tuple[AdvantageSource, ...] = ()
     flat_bonus: int = 0
+    forgo_all_advantage: bool = False
+
+
+@dataclass(frozen=True)
+class AttackPreRollContext:
+    """One legal attack's complete sources, before any attack dice are drawn."""
+
+    attacker_id: str
+    target_id: str
+    source_activity_id: str
+    weapon_slug: str | None
+    weapon_category: WeaponCategory | None
+    unarmed: bool
+    governing_ability: str | None
+    advantage_sources: tuple[AdvantageSource, ...]
+    disadvantage_sources: tuple[AdvantageSource, ...]
+    attack_origin: AttackOrigin
+    turn_serial: int
+
+
+@dataclass(frozen=True)
+class AttackDamageContribution:
+    """A reviewed canonical damage carrier folded into its triggering hit."""
+
+    activity: DamageActivity
+    source_id: str
+    inherit_damage_type: bool = False
+    shared_damage_group: str | None = None
+
+
+@dataclass(frozen=True)
+class AttackRiderPreparation:
+    """Final-hit choices, resolved before any base or extra damage dice."""
+
+    sneak_dice_sacrificed: int = 0
+    damage_contributions: tuple[AttackDamageContribution, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -111,6 +147,7 @@ class AttackResolutionContext:
     sneak_dice_sacrificed: int = 0
     remaining_sneak_dice_count: int = 0
     damage_dealt: int = 0
+    damage_contributions: tuple[AttackDamageContribution, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -149,10 +186,16 @@ class ActivityResolutionContext:
     attack_origin: AttackOrigin = "default"
     turn_serial: int = 0
     attack_roll_modifier: Callable[[str, str], AttackRollModifier] | None = None
+    attack_pre_roll: Callable[[AttackPreRollContext], AttackRollModifier] | None = None
+    # Queried separately for attacker and target on every roll, including a
+    # chained attack, so freshly declared effects never rely on an old snapshot.
+    attack_active_effects: Callable[[str], Sequence[ActiveEffect]] | None = None
     # Called once when a saving throw occurs, including condition auto-failure.
     # A true result contributes already-consumed, target-side disadvantage.
     consume_next_save_modifier: Callable[[str], bool] | None = None
-    attack_rider_prepare: Callable[[AttackResolutionContext], int] | None = None
+    attack_rider_prepare: (
+        Callable[[AttackResolutionContext], int | AttackRiderPreparation] | None
+    ) = None
     attack_rider_resolved: Callable[[AttackResolutionContext], None] | None = None
     sneak_attack_commit: Callable[[str, str], None] | None = None
     # A live combat supplies one deterministic sequence across contexts. The

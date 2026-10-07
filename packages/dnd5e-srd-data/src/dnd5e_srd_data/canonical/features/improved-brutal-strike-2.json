@@ -8,7 +8,7 @@
     "automatic": false,
     "choice_group": "brutal-strike",
     "deferred_options": {},
-    "deferred_reason": "requires first-attack Reckless decision, Strength Advantage and incoming Advantage lifecycle; scales damage and permits two distinct options",
+    "deferred_reason": null,
     "effects": [],
     "forced_movement": null,
     "inherit_damage_type": false,

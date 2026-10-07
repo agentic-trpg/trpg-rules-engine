@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, PositiveInt
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    PositiveInt,
+    SerializerFunctionWrapHandler,
+    model_serializer,
+)
 
 EffectExpiryBoundary = Literal[
     "source_next_turn_start",
@@ -12,7 +18,7 @@ EffectExpiryBoundary = Literal[
     "target_next_turn_start",
     "target_next_turn_end",
 ]
-OneUseModifier = Literal["next_save_disadvantage"]
+OneUseModifier = Literal["next_save_disadvantage", "next_attack_bonus_other_creature"]
 
 
 class RepeatSaveSpec(BaseModel):
@@ -48,3 +54,15 @@ class EffectLifecycleSpec(BaseModel):
     expiry_boundary: EffectExpiryBoundary | None = None
     expire_on_positive_damage: bool = False
     one_use_modifiers: tuple[OneUseModifier, ...] = ()
+    stacking: Literal["latest_only"] | None = None
+    stacking_group: str | None = None
+    next_attack_scope: Literal["other_creature"] | None = None
+    next_attack_bonus_group: str | None = None
+
+    @model_serializer(mode="wrap")
+    def _serialize_lifecycle(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        for key in ("stacking", "stacking_group", "next_attack_scope", "next_attack_bonus_group"):
+            if getattr(self, key) is None:
+                data.pop(key, None)
+        return data

@@ -81,6 +81,7 @@ class Combatant(BaseModel):
     # (``build_context._caster_mod`` / ``_save_dc``, the two opportunity-
     # attack fire sites in ``orchestrator.py``) guards with ``or 0``.
     attack_bonus: int | None = None
+    attack_rolls_made_this_turn: int = Field(default=0, ge=0)
     damage_dice: str = "1d4"  # "XdY+Z" format
     damage_type: str = "bludgeoning"
     behavior_profile: str = "AGGRESSIVE"  # BehaviorProfile value

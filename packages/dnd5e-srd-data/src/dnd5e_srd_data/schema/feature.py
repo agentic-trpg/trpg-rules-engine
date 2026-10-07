@@ -6,6 +6,7 @@ from typing import Any, Literal
 
 from pydantic import (
     BaseModel,
+    ConfigDict,
     Field,
     NonNegativeInt,
     PositiveInt,
@@ -43,6 +44,8 @@ RiderEffectExpiry = Literal[
 
 
 class RiderEffectSpec(BaseModel, frozen=True):
+    model_config = ConfigDict(extra="forbid")
+
     effect_id: str
     outcome: Literal["always", "failure", "success"] = "always"
     expiry: RiderEffectExpiry = "none"
@@ -57,9 +60,34 @@ class RiderEffectSpec(BaseModel, frozen=True):
 
 
 class RiderForcedMovement(BaseModel, frozen=True):
+    model_config = ConfigDict(extra="forbid")
+
     max_distance_ft: NonNegativeInt
     requires_distance_choice: bool = True
     on_save: Literal["always", "failure", "success"] = "failure"
+
+
+class RiderMovementGrant(BaseModel):
+    """A scoped, immediate allowance independent of normal turn movement."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    maximum_speed_fraction: Literal["half"] = "half"
+    direction: Literal["any", "straight_toward_target"]
+    movement_mode: Literal["walk"] = "walk"
+    provokes_opportunity_attacks: Literal[False] = False
+
+
+class AttackRiderOptionSemantics(BaseModel):
+    """An owned option in a cross-feature pool; damage stays on its activity."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    activity_id: str
+    choice_group: str
+    effects: tuple[RiderEffectSpec, ...] = ()
+    forced_movement: RiderForcedMovement | None = None
+    movement_grant: RiderMovementGrant | None = None
 
 
 class AttackRiderSemantics(BaseModel, frozen=True):
@@ -71,6 +99,8 @@ class AttackRiderSemantics(BaseModel, frozen=True):
     executable riders live in ``Feature.attack_riders`` keyed by activity id.
     """
 
+    model_config = ConfigDict(extra="forbid")
+
     trigger: AttackRiderTrigger
     qualification: AttackRiderQualification
     phase: AttackRiderPhase
@@ -80,6 +110,7 @@ class AttackRiderSemantics(BaseModel, frozen=True):
     once_per_turn: bool = False
     sneak_dice_cost: NonNegativeInt = 0
     inherit_damage_type: bool = False
+    native_damage: bool = False
     effects: tuple[RiderEffectSpec, ...] = ()
     requires_carried_items: tuple[str, ...] = ()
     forced_movement: RiderForcedMovement | None = None
@@ -88,6 +119,15 @@ class AttackRiderSemantics(BaseModel, frozen=True):
     deferred_options: dict[str, str] = Field(default_factory=dict)
     inventory_role: Literal["rider", "foundation", "producer", "passive", "defensive"] = "rider"
     related_activity_ids: tuple[str, ...] = ()
+    option_ids: tuple[str, ...] = ()
+    pre_roll_commit: bool = False
+    forgo_advantage: bool = False
+    requires_reckless: bool = False
+    requires_rage: bool = False
+    own_turn: bool = False
+    shared_damage_group: str | None = None
+    movement_grant: RiderMovementGrant | None = None
+    declaration: Literal["reckless_attack"] | None = None
 
     @model_serializer(mode="wrap")
     def _serialize_rider(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
@@ -96,6 +136,20 @@ class AttackRiderSemantics(BaseModel, frozen=True):
             data.pop("target_size_max", None)
         if not self.requires_carried_items:
             data.pop("requires_carried_items", None)
+        for key in (
+            "option_ids",
+            "pre_roll_commit",
+            "forgo_advantage",
+            "requires_reckless",
+            "requires_rage",
+            "own_turn",
+            "shared_damage_group",
+            "movement_grant",
+            "declaration",
+            "native_damage",
+        ):
+            if not getattr(self, key):
+                data.pop(key, None)
         return data
 
 
@@ -165,6 +219,7 @@ class Feature(BaseModel):
     attack_riders: dict[str, AttackRiderSemantics] = Field(default_factory=dict)
     attack_rider_choice_limits: dict[str, PositiveInt] = Field(default_factory=dict)
     attack_rider_context: AttackRiderSemantics | None = None
+    attack_rider_options: dict[str, AttackRiderOptionSemantics] = Field(default_factory=dict)
     provenance: Provenance
     review: ReviewState = Field(default_factory=ReviewState)
 
@@ -183,4 +238,6 @@ class Feature(BaseModel):
             data.pop("attack_rider_choice_limits", None)
         if self.attack_rider_context is None:
             data.pop("attack_rider_context", None)
+        if not self.attack_rider_options:
+            data.pop("attack_rider_options", None)
         return data

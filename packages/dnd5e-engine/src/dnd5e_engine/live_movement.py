@@ -9,10 +9,13 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from itertools import pairwise
+from math import gcd
 from typing import TYPE_CHECKING, Literal
 
 from dnd5e_engine.events import ActorMoved, CombatantMoved, ConditionRemoved, MoveFailed
 from dnd5e_engine.movement import (
+    MovementChoice,
+    MovementGrant,
     MovementLedger,
     MovementMode,
     can_enter_creature_space,
@@ -244,6 +247,7 @@ def _step_plan(
     mode: MovementMode,
     *,
     end_move: bool,
+    grant_remaining_ft: int | None = None,
 ) -> tuple[int, dict[str, str]] | None:
     """Check one step without drawing dice, paying or changing positions."""
     from dnd5e_engine import orchestrator as o
@@ -261,7 +265,12 @@ def _step_plan(
     if end_move and destination in occupants(live, exclude=(actor.entity_id,)):
         return None
     cost = movement_cost(live, actor, start, destination, mode)
-    if cost is None or cost > ledger_for(live, actor).remaining(speed):
+    available = (
+        ledger_for(live, actor).remaining(speed)
+        if grant_remaining_ft is None
+        else grant_remaining_ft
+    )
+    if cost is None or cost > available:
         return None
     dragged = drag_positions(live, actor, start, destination, live.actor_zone)
     if dragged is None:
@@ -338,26 +347,48 @@ def take_step(
     *,
     emit_actor: bool = True,
     end_move: bool = False,
+    grant_remaining_ft: int | None = None,
+    provokes_opportunity_attacks: bool = True,
 ) -> tuple[int, dict[str, str]] | None:
     from dnd5e_engine import orchestrator as o
 
     actor, start = o._find_combatant(live, actor_id), live.actor_zone.get(actor_id)
     if actor is None or start is None:
         return None
-    if _step_plan(live, actor, start, destination, mode, end_move=end_move) is None:
+    if (
+        _step_plan(
+            live,
+            actor,
+            start,
+            destination,
+            mode,
+            end_move=end_move,
+            grant_remaining_ft=grant_remaining_ft,
+        )
+        is None
+    ):
         return None
-    if o._fire_opportunity_attacks_on_step(
+    if provokes_opportunity_attacks and o._fire_opportunity_attacks_on_step(
         live, mover_id=actor_id, from_cell=start, to_cell=destination
     ):
         return None
     actor = o._find_combatant(live, actor_id)
     if actor is None:
         return None
-    planned = _step_plan(live, actor, start, destination, mode, end_move=end_move)
+    planned = _step_plan(
+        live,
+        actor,
+        start,
+        destination,
+        mode,
+        end_move=end_move,
+        grant_remaining_ft=grant_remaining_ft,
+    )
     if planned is None:
         return None
     cost, dragged = planned
-    pay_movement(live, actor, cost, live.topology.cell_size_ft, mode)
+    if grant_remaining_ft is None:
+        pay_movement(live, actor, cost, live.topology.cell_size_ft, mode)
     previous = {actor_id: position_step(live, actor_id, destination)}
     for victim_id, cell in dragged.items():
         previous[victim_id] = position_step(live, victim_id, cell)
@@ -391,6 +422,132 @@ def take_step(
             )
     post_position_steps(live, previous)
     return cost, dragged
+
+
+def _grant_destination_route(live: _LiveCombat, actor: Combatant, destination: str) -> list[str]:
+    start = live.actor_zone[actor.entity_id]
+    return live.topology.lowest_cost_path(
+        start, destination, step_cost=lambda a, b: movement_cost(live, actor, a, b, "walk")
+    )
+
+
+def preflight_movement_grant(
+    live: _LiveCombat, actor_id: str, grant: MovementGrant, choice: MovementChoice | None
+) -> None:
+    """Validate declared movement without events, payment, position or RNG changes.
+
+    Unrestricted grants require the complete current weighted route to fit.
+    Directed grants validate only the theoretical choice: the authoritative
+    target and actual ray are read after preceding push/effect resolution.
+    """
+    from dnd5e_engine import orchestrator as o
+
+    if grant.lifespan != "immediate":
+        raise ValueError("only immediate movement grants are executable")
+    if choice is None or (choice.destination_cell is None and not choice.distance_ft):
+        return
+    actor, start = o._find_combatant(live, actor_id), live.actor_zone.get(actor_id)
+    if actor is None or start is None:
+        raise ValueError("movement grant requires a positioned actor")
+    destination = choice.destination_cell
+    if destination is not None:
+        if not live.topology.is_valid_cell(destination):
+            raise ValueError("movement destination is outside the legal grid")
+        if destination == start:
+            return
+        distance = live.topology.distance_ft(start, destination)
+        if distance is None or distance > grant.max_distance_ft:
+            raise ValueError("movement destination exceeds the grant allowance")
+    elif choice.distance_ft is not None and choice.distance_ft > grant.max_distance_ft:
+        raise ValueError("movement distance exceeds the grant allowance")
+    if grant.direction != "any":
+        return
+    if destination is None:
+        raise ValueError("unrestricted movement requires a destination")
+    route = _grant_destination_route(live, actor, destination)
+    if not route or not _route_static_valid(live, actor, route, "walk"):
+        raise ValueError("movement grant destination has no legal route")
+    total = sum(movement_cost(live, actor, a, b, "walk") or 0 for a, b in pairwise(route))
+    if total > grant.max_distance_ft:
+        raise ValueError("movement route cost exceeds the grant allowance")
+
+
+def _directed_grant_route(
+    live: _LiveCombat, actor_id: str, grant: MovementGrant, choice: MovementChoice
+) -> list[str]:
+    """A strict collinear ray; no pathfinding detour or occupied-cell entry."""
+    start, target = live.actor_zone.get(actor_id), live.actor_zone.get(grant.target_id or "")
+    if start is None or target is None or start == target:
+        return []
+    sc, sr = parse_cell(start)
+    tc, tr = parse_cell(target)
+    dc, dr = tc - sc, tr - sr
+    divisor = gcd(abs(dc), abs(dr))
+    dc, dr = dc // divisor, dr // divisor
+    if max(abs(dc), abs(dr)) != 1:
+        return []
+    if grant.direction == "away_from_target":
+        dc, dr = -dc, -dr
+    destination = choice.destination_cell
+    if destination is not None:
+        cc, cr = parse_cell(destination)
+        delta_col, delta_row = cc - sc, cr - sr
+        if delta_col * dr != delta_row * dc or delta_col * dc + delta_row * dr < 0:
+            return []
+        steps = max(abs(delta_col), abs(delta_row))
+    else:
+        steps = (choice.distance_ft or 0) // live.topology.cell_size_ft
+    steps = min(steps, grant.max_distance_ft // live.topology.cell_size_ft)
+    occupied = occupants(live, exclude=(actor_id,))
+    route = [start]
+    for _ in range(steps):
+        cc, cr = parse_cell(route[-1])
+        destination = cell_id(cc + dc, cr + dr)
+        if destination in occupied or live.topology.edge_distance(route[-1], destination) is None:
+            break
+        route.append(destination)
+    return route
+
+
+def execute_movement_grant(
+    live: _LiveCombat, actor_id: str, grant: MovementGrant, choice: MovementChoice | None
+) -> None:
+    """Execute the affordable immediate prefix with a separate scoped allowance.
+
+    Dynamic obstruction, death, Speed zero or forced relocation ends the grant
+    without undoing its completed steps or an already resolved triggering hit.
+    The caller constructs the current canonical cap immediately before entry.
+    """
+    from dnd5e_engine import orchestrator as o
+
+    if choice is None or (choice.destination_cell is None and not choice.distance_ft):
+        return
+    actor = o._find_combatant(live, actor_id)
+    if actor is None or actor_id not in live.actor_zone or grant.lifespan != "immediate":
+        return
+    route = (
+        _grant_destination_route(live, actor, choice.destination_cell)
+        if grant.direction == "any" and choice.destination_cell is not None
+        else _directed_grant_route(live, actor_id, grant, choice)
+    )
+    if grant.direction == "any":
+        route = _affordable_prefix(live, actor, route, grant.max_distance_ft)
+    remaining = grant.max_distance_ft
+    for index, (previous, destination) in enumerate(pairwise(route), start=1):
+        if live.actor_zone.get(actor_id) != previous:
+            return
+        result = take_step(
+            live,
+            actor_id,
+            destination,
+            "walk",
+            end_move=grant.direction != "any" or index == len(route) - 1,
+            grant_remaining_ft=remaining,
+            provokes_opportunity_attacks=grant.provokes_opportunity_attacks,
+        )
+        if result is None:
+            return
+        remaining -= result[0]
 
 
 def handle_move(live: _LiveCombat, actor: Combatant, intent: PlayerIntent) -> None:

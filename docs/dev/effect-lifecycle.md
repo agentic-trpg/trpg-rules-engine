@@ -25,7 +25,11 @@ the closed `EffectLifecycleSpec`. Its independent clauses are:
 - `maximum_rounds`: a reviewed finite combat duration.
 - `expiry_boundary`: the source's or target's next turn start or end.
 - `expire_on_positive_damage`: removal after a complete positive damage instance.
-- `one_use_modifiers`: typed next-save disadvantage consumption.
+- `one_use_modifiers`: typed next-save disadvantage or other-creature next-attack
+  bonus consumption.
+- `stacking` and `stacking_group`: an exact latest-only target group across sources.
+- `next_attack_scope` and `next_attack_bonus_group`: an other-creature attacker
+  qualifier and stable nonstacking bonus selection group.
 
 `EffectLifecycleApplication` captures source actor, source kind and canonical
 slug, activity ID, initial save ability/DC and magical provenance. The applied
@@ -92,8 +96,14 @@ Disabled effects and false or incorrectly modeled clauses are inert.
 `EffectModifiersConsumed` names the full effect identity and consumed key.
 Only that one-use clause is removed: opportunity-attack suppression, Speed
 changes, conditions and timers remain. Consumption adds the `"effect"` save
-provenance token. Implementing this consumer does not complete Brutal Strike's
-missing Reckless Attack prerequisite or the complete Staggering Blow option.
+provenance token. Staggering Blow is a reviewed producer of this clause and
+retains its opportunity-attack suppression after the next save.
+
+Sundering uses `next_attack_bonus_other_creature` with the exact effect source
+as the excluded attacker and a typed nonstacking bonus group. Source attacks
+neither gain nor consume it. Another creature's next attack gains +5, then
+consumes only the selected clause even on a miss. When several grants apply,
+stable insertion order selects one; the others remain available.
 
 ## Verified producers
 
@@ -103,6 +113,10 @@ missing Reckless Attack prerequisite or the complete Staggering Blow option.
 | Cunning Strike: Poison | An eligible attack with a carried canonical `poisoners-kit` sacrifices one Sneak Attack die. Failed CON against `8 + PB + DEX` imposes Poisoned for ten rounds with end-turn repeats; success still pays the sacrifice. |
 | Devious Strikes: Knock Out | An eligible attack sacrifices six Sneak Attack dice. Failed CON against `8 + PB + DEX` imposes Unconscious for ten rounds with end-turn repeats and complete-instance break-on-positive-damage. |
 | Intimidating Presence | Bonus Action, selected targets in a 30-foot Emanation, WIS against `8 + PB + STR`, Frightened for ten rounds with end-turn repeats; its own once-per-Long-Rest use is authoritative. The separate Rage Recharge activity remains deferred. |
+| Reckless Attack | The typed attack declaration applies STR-only outgoing and all incoming attack advantage until the source's next turn starts. |
+| Hamstring Blow | All effective speeds lose 15 feet until source next-turn start; the latest application replaces the target's older typed stacking-group effect across all sources. |
+| Staggering Blow | Next-save disadvantage is consumed independently of OA suppression; both expire at source next-turn start. |
+| Sundering Blow | Next other-creature attack gets a single +5 from the stable selected grant; its bonus clause consumes independently, with source-next-turn-start expiry. |
 
 Carried item slugs are stable, deduplicated canonical identities from build
 equipment through derived/live state. This narrow carrier provides Poison's
@@ -140,19 +154,18 @@ Run from `packages/dnd5e-srd-data`:
 uv run python -m tools.effect_lifecycle_audit --output ../../docs/dev/effect-lifecycle-audit.json
 ```
 
-The [deterministic inventory](effect-lifecycle-audit.json) has 157 rows:
-105 spell, 14 feature and 38 item rows. Five bindings have executable typed
-repeat lifecycles; five existing typed duration boundaries retain their stable
-adapters. The other 147 rows are explicit deferred or candidate records:
-39 repeat-save candidates, 23 damage-break candidates, one one-use candidate
-and 84 other deferred rows. Candidate discovery during ingestion does not
+The [deterministic inventory](effect-lifecycle-audit.json) has 160 rows:
+105 spell, 17 feature and 38 item rows. Seven bindings have executable typed
+lifecycles; seven typed duration boundaries are supported. The other 146 rows
+are explicit deferred or candidate records: 39 repeat-save candidates,
+23 damage-break candidates and 84 other deferred rows. Candidate discovery during ingestion does not
 authorize runtime execution. Dominate variants' damage-triggered escape saves
 do not become end-of-turn repeats.
 
 There are five typed repeat producers, one typed positive-damage break producer,
-three reviewed finite-duration producers and zero newly enabled canonical
-one-use producers. Generic next-save consumption remains independently tested;
-Brutal/Reckless options are still deferred.
+three reviewed finite-duration producers and two canonical one-use producers:
+Staggering and Sundering. Reckless and Hamstring carry exact next-turn boundaries;
+Hamstring additionally declares its latest-only stacking group.
 
 `test_typed_effect_lifecycle.py` covers registration, exact source identity,
 repeat success/failure, captured spell DC and magic, Legendary Resistance,

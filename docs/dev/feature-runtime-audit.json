@@ -1,7 +1,7 @@
 {
   "counts": {
-    "attack_rider_deferred": 22,
-    "attack_rider_executable": 9,
+    "attack_rider_deferred": 17,
+    "attack_rider_executable": 14,
     "fully_resolvable": 18,
     "semantic_special_case": 98,
     "unsupported_preflight": 44
@@ -216,13 +216,13 @@
       "slug": "brutal-strike",
       "activity_id": "nN5gsB6AcSQ4uQPN",
       "owner": "barbarian",
-      "classification": "attack_rider_deferred",
-      "reason": "standalone use_feature rejected; attack rider deferred: requires first-attack Reckless decision, Strength Advantage and incoming Advantage lifecycle",
+      "classification": "attack_rider_executable",
+      "reason": "standalone use_feature rejected; attack-triggered execution supported",
       "formula_error": null,
       "resource_error": null,
       "execution_path": "attack_triggered_rider",
       "standalone_executable": false,
-      "rider_executable": false
+      "rider_executable": true
     },
     {
       "slug": "careful-spell",
@@ -384,13 +384,13 @@
       "slug": "cunning-strike",
       "activity_id": "m2bRZ1YeD3yf9nV7",
       "owner": "rogue",
-      "classification": "attack_rider_deferred",
-      "reason": "standalone use_feature rejected; attack rider deferred: requires immediate selected half-Speed movement with OA exemption limited to that movement",
+      "classification": "attack_rider_executable",
+      "reason": "standalone use_feature rejected; attack-triggered execution supported",
       "formula_error": null,
       "resource_error": null,
       "execution_path": "attack_triggered_rider",
       "standalone_executable": false,
-      "rider_executable": false
+      "rider_executable": true
     },
     {
       "slug": "cutting-words",
@@ -900,13 +900,13 @@
       "slug": "frenzy",
       "activity_id": "myPBq8xozti108Mc",
       "owner": "berserker",
-      "classification": "attack_rider_deferred",
-      "reason": "standalone use_feature rejected; attack rider deferred: requires first-attack Reckless decision, Strength Advantage and incoming Advantage lifecycle; also requires active Rage and first qualifying target per own turn",
+      "classification": "attack_rider_executable",
+      "reason": "standalone use_feature rejected; attack-triggered execution supported",
       "formula_error": null,
       "resource_error": null,
       "execution_path": "attack_triggered_rider",
       "standalone_executable": false,
-      "rider_executable": false
+      "rider_executable": true
     },
     {
       "slug": "frosts-chill",
@@ -1116,25 +1116,25 @@
       "slug": "improved-brutal-strike",
       "activity_id": "UmRlsf4QWW98I4FS",
       "owner": "barbarian",
-      "classification": "attack_rider_deferred",
-      "reason": "standalone use_feature rejected; attack rider deferred: requires first-attack Reckless decision, Strength Advantage and incoming Advantage lifecycle; also requires next attack by another creature +5 consumption",
+      "classification": "attack_rider_executable",
+      "reason": "standalone use_feature rejected; attack-triggered execution supported",
       "formula_error": null,
       "resource_error": null,
       "execution_path": "attack_triggered_rider",
       "standalone_executable": false,
-      "rider_executable": false
+      "rider_executable": true
     },
     {
       "slug": "improved-brutal-strike",
       "activity_id": "I30qGlPDcyKwz65H",
       "owner": "barbarian",
-      "classification": "attack_rider_deferred",
-      "reason": "standalone use_feature rejected; attack rider deferred: requires first-attack Reckless decision, Strength Advantage and incoming Advantage lifecycle; also requires next-save Disadvantage consumption",
+      "classification": "attack_rider_executable",
+      "reason": "standalone use_feature rejected; attack-triggered execution supported",
       "formula_error": null,
       "resource_error": null,
       "execution_path": "attack_triggered_rider",
       "standalone_executable": false,
-      "rider_executable": false
+      "rider_executable": true
     },
     {
       "slug": "indomitable",

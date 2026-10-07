@@ -34,6 +34,17 @@
             "max": null,
             "min": null
           },
+          "lifecycle": {
+            "expire_on_positive_damage": false,
+            "expiry_boundary": "source_next_turn_start",
+            "maximum_rounds": null,
+            "next_attack_bonus_group": "sundering-blow",
+            "next_attack_scope": "other_creature",
+            "one_use_modifiers": [
+              "next_attack_bonus_other_creature"
+            ],
+            "repeat_save": null
+          },
           "on_save": null,
           "riders": null
         }
@@ -126,6 +137,15 @@
             "max": null,
             "min": null
           },
+          "lifecycle": {
+            "expire_on_positive_damage": false,
+            "expiry_boundary": "source_next_turn_start",
+            "maximum_rounds": null,
+            "one_use_modifiers": [
+              "next_save_disadvantage"
+            ],
+            "repeat_save": null
+          },
           "on_save": null,
           "riders": null
         }
@@ -186,20 +206,76 @@
     }
   ],
   "advancement": [],
+  "attack_rider_options": {
+    "staggering-blow": {
+      "activity_id": "I30qGlPDcyKwz65H",
+      "choice_group": "brutal-strike",
+      "effects": [
+        {
+          "effect_id": "L9N4evZo1jt46dap",
+          "expiry": "none",
+          "lifecycle": {
+            "expire_on_positive_damage": false,
+            "expiry_boundary": "source_next_turn_start",
+            "maximum_rounds": null,
+            "one_use_modifiers": [
+              "next_save_disadvantage"
+            ],
+            "repeat_save": null
+          },
+          "outcome": "always"
+        }
+      ],
+      "forced_movement": null,
+      "movement_grant": null
+    },
+    "sundering-blow": {
+      "activity_id": "UmRlsf4QWW98I4FS",
+      "choice_group": "brutal-strike",
+      "effects": [
+        {
+          "effect_id": "tUyuyTQGmpUqMcFe",
+          "expiry": "none",
+          "lifecycle": {
+            "expire_on_positive_damage": false,
+            "expiry_boundary": "source_next_turn_start",
+            "maximum_rounds": null,
+            "next_attack_bonus_group": "sundering-blow",
+            "next_attack_scope": "other_creature",
+            "one_use_modifiers": [
+              "next_attack_bonus_other_creature"
+            ],
+            "repeat_save": null
+          },
+          "outcome": "always"
+        }
+      ],
+      "forced_movement": null,
+      "movement_grant": null
+    }
+  },
   "attack_riders": {
     "I30qGlPDcyKwz65H": {
       "automatic": false,
       "choice_group": "brutal-strike",
       "deferred_options": {},
-      "deferred_reason": "requires first-attack Reckless decision, Strength Advantage and incoming Advantage lifecycle; also requires next-save Disadvantage consumption",
+      "deferred_reason": null,
       "effects": [],
       "forced_movement": null,
+      "forgo_advantage": true,
       "inherit_damage_type": false,
       "inventory_role": "rider",
-      "once_per_turn": false,
+      "once_per_turn": true,
+      "option_ids": [
+        "staggering-blow"
+      ],
+      "own_turn": true,
       "phase": "after_damage",
+      "pre_roll_commit": true,
       "qualification": "strength",
       "related_activity_ids": [],
+      "requires_reckless": true,
+      "shared_damage_group": "brutal-strike",
       "sneak_dice_cost": 0,
       "target_role": "attack_target",
       "trigger": "reckless_hit"
@@ -208,15 +284,23 @@
       "automatic": false,
       "choice_group": "brutal-strike",
       "deferred_options": {},
-      "deferred_reason": "requires first-attack Reckless decision, Strength Advantage and incoming Advantage lifecycle; also requires next attack by another creature +5 consumption",
+      "deferred_reason": null,
       "effects": [],
       "forced_movement": null,
+      "forgo_advantage": true,
       "inherit_damage_type": false,
       "inventory_role": "rider",
-      "once_per_turn": false,
+      "once_per_turn": true,
+      "option_ids": [
+        "sundering-blow"
+      ],
+      "own_turn": true,
       "phase": "after_damage",
+      "pre_roll_commit": true,
       "qualification": "strength",
       "related_activity_ids": [],
+      "requires_reckless": true,
+      "shared_damage_group": "brutal-strike",
       "sneak_dice_cost": 0,
       "target_role": "attack_target",
       "trigger": "reckless_hit"
@@ -229,7 +313,20 @@
   "name": "Improved Brutal Strike",
   "passive_effects": [
     {
-      "changes": [],
+      "changes": [
+        {
+          "key": "flags.save.next_disadvantage",
+          "mode": 5,
+          "priority": null,
+          "value": "true"
+        },
+        {
+          "key": "flags.cannot_make_opportunity_attacks",
+          "mode": 5,
+          "priority": null,
+          "value": "true"
+        }
+      ],
       "description": "<p>Hit by a staggering blow, this character has Disadvantage on the next Saving Throw it makes, and it can't make Opportunity Attacks until the start of the attacker's next turn.</p>",
       "disabled": false,
       "duration": {
@@ -241,7 +338,14 @@
       "transfer": false
     },
     {
-      "changes": [],
+      "changes": [
+        {
+          "key": "attack.next_bonus",
+          "mode": 2,
+          "priority": null,
+          "value": "5"
+        }
+      ],
       "description": "<p>Hit by a sundering blow, the next attack roll made by another creature against the target gains a +5 bonus to the roll.</p>",
       "disabled": false,
       "duration": {

@@ -316,6 +316,9 @@ class AttackRiderTriggered(BaseModel):
     resource_spent: tuple[RiderResourceSpent, ...] = ()
     sacrificed_sneak_dice: int = Field(default=0, ge=0)
     save_outcome: Literal["success", "failure"] | None = None
+    option_ids: tuple[str, ...] = Field(default=(), exclude_if=lambda v: not v)
+    damage_activity_id: str | None = Field(default=None, exclude_if=lambda v: v is None)
+    damage_formula: str | None = Field(default=None, exclude_if=lambda v: v is None)
 
 
 class EffectModifiersConsumed(BaseModel):

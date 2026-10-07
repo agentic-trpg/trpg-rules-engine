@@ -1,8 +1,9 @@
 {
   "counts": {
-    "deferred_rider": 23,
-    "executable_rider": 9,
-    "supporting_context": 19
+    "deferred_rider": 17,
+    "executable_foundation": 2,
+    "executable_rider": 15,
+    "supporting_context": 17
   },
   "role_counts": {
     "defensive": 6,
@@ -35,6 +36,15 @@
       "once_per_turn": false,
       "choice_group": null,
       "automatic": false,
+      "native_damage": false,
+      "pre_roll_commit": false,
+      "forgo_advantage": false,
+      "requires_reckless": false,
+      "requires_rage": false,
+      "own_turn": false,
+      "shared_damage_group": null,
+      "declaration": null,
+      "choice_limit_granted": null,
       "cost_model": {
         "resource_targets": [],
         "feature_uses": null,
@@ -45,6 +55,8 @@
       "save": null,
       "effects": [],
       "forced_movement": null,
+      "movement_grant": null,
+      "damage": null,
       "fully_executable": false,
       "standalone_use_feature_rejected": true,
       "classification": "supporting_context",
@@ -63,6 +75,15 @@
       "once_per_turn": false,
       "choice_group": null,
       "automatic": false,
+      "native_damage": false,
+      "pre_roll_commit": false,
+      "forgo_advantage": false,
+      "requires_reckless": false,
+      "requires_rage": false,
+      "own_turn": false,
+      "shared_damage_group": null,
+      "declaration": null,
+      "choice_limit_granted": null,
       "cost_model": {
         "resource_targets": [],
         "feature_uses": null,
@@ -73,6 +94,32 @@
       "save": null,
       "effects": [],
       "forced_movement": null,
+      "movement_grant": null,
+      "damage": {
+        "critical": {
+          "allow": false,
+          "bonus": ""
+        },
+        "parts": [
+          {
+            "number": null,
+            "denomination": 0,
+            "bonus": "",
+            "types": [
+              "necrotic"
+            ],
+            "custom": {
+              "enabled": true,
+              "formula": "@scale.cleric.divine-strike"
+            },
+            "scaling": {
+              "mode": "",
+              "number": 1,
+              "formula": ""
+            }
+          }
+        ]
+      },
       "fully_executable": false,
       "standalone_use_feature_rejected": true,
       "classification": "deferred_rider",
@@ -91,6 +138,15 @@
       "once_per_turn": false,
       "choice_group": null,
       "automatic": false,
+      "native_damage": false,
+      "pre_roll_commit": false,
+      "forgo_advantage": false,
+      "requires_reckless": false,
+      "requires_rage": false,
+      "own_turn": false,
+      "shared_damage_group": null,
+      "declaration": null,
+      "choice_limit_granted": null,
       "cost_model": {
         "resource_targets": [],
         "feature_uses": null,
@@ -101,6 +157,32 @@
       "save": null,
       "effects": [],
       "forced_movement": null,
+      "movement_grant": null,
+      "damage": {
+        "critical": {
+          "allow": false,
+          "bonus": ""
+        },
+        "parts": [
+          {
+            "number": null,
+            "denomination": 0,
+            "bonus": "",
+            "types": [
+              "radiant"
+            ],
+            "custom": {
+              "enabled": true,
+              "formula": "@scale.cleric.divine-strike"
+            },
+            "scaling": {
+              "mode": "",
+              "number": 1,
+              "formula": ""
+            }
+          }
+        ]
+      },
       "fully_executable": false,
       "standalone_use_feature_rejected": true,
       "classification": "deferred_rider",
@@ -116,23 +198,79 @@
       "execution_phase": "damage_preparation",
       "target_role": "attack_target",
       "target_size_max": null,
-      "once_per_turn": false,
+      "once_per_turn": true,
       "choice_group": "brutal-strike",
       "automatic": false,
+      "native_damage": false,
+      "pre_roll_commit": true,
+      "forgo_advantage": true,
+      "requires_reckless": true,
+      "requires_rage": false,
+      "own_turn": true,
+      "shared_damage_group": "brutal-strike",
+      "declaration": null,
+      "choice_limit_granted": 1,
       "cost_model": {
         "resource_targets": [],
         "feature_uses": null,
         "sneak_dice_cost": 0,
         "inherit_damage_type": true,
-        "commit": null
+        "commit": "pre_roll"
       },
       "save": null,
       "effects": [],
-      "forced_movement": null,
-      "fully_executable": false,
+      "forced_movement": {
+        "max_distance_ft": 15,
+        "requires_distance_choice": false,
+        "on_save": "always"
+      },
+      "movement_grant": {
+        "maximum_speed_fraction": "half",
+        "direction": "straight_toward_target",
+        "movement_mode": "walk",
+        "provokes_opportunity_attacks": false
+      },
+      "damage": {
+        "critical": {
+          "allow": false,
+          "bonus": ""
+        },
+        "parts": [
+          {
+            "number": null,
+            "denomination": 0,
+            "bonus": "",
+            "types": [
+              "acid",
+              "bludgeoning",
+              "cold",
+              "fire",
+              "force",
+              "lightning",
+              "necrotic",
+              "piercing",
+              "poison",
+              "psychic",
+              "radiant",
+              "slashing",
+              "thunder"
+            ],
+            "custom": {
+              "enabled": true,
+              "formula": "@scale.barbarian.brutal-strike"
+            },
+            "scaling": {
+              "mode": "",
+              "number": 1,
+              "formula": ""
+            }
+          }
+        ]
+      },
+      "fully_executable": true,
       "standalone_use_feature_rejected": true,
-      "classification": "deferred_rider",
-      "deferred_reason": "requires first-attack Reckless decision, Strength Advantage and incoming Advantage lifecycle; also requires selected straight-toward half-Speed follow movement without OA"
+      "classification": "executable_rider",
+      "deferred_reason": null
     },
     {
       "feature_slug": "brutal-strike",
@@ -144,23 +282,85 @@
       "execution_phase": "damage_preparation",
       "target_role": "attack_target",
       "target_size_max": null,
-      "once_per_turn": false,
+      "once_per_turn": true,
       "choice_group": "brutal-strike",
       "automatic": false,
+      "native_damage": false,
+      "pre_roll_commit": true,
+      "forgo_advantage": true,
+      "requires_reckless": true,
+      "requires_rage": false,
+      "own_turn": true,
+      "shared_damage_group": "brutal-strike",
+      "declaration": null,
+      "choice_limit_granted": 1,
       "cost_model": {
         "resource_targets": [],
         "feature_uses": null,
         "sneak_dice_cost": 0,
         "inherit_damage_type": true,
-        "commit": null
+        "commit": "pre_roll"
       },
       "save": null,
-      "effects": [],
+      "effects": [
+        {
+          "effect_id": "bg9jWpPRIJ0Q2vPY",
+          "outcome": "always",
+          "expiry": "none",
+          "lifecycle": {
+            "repeat_save": null,
+            "maximum_rounds": null,
+            "expiry_boundary": "source_next_turn_start",
+            "expire_on_positive_damage": false,
+            "one_use_modifiers": [],
+            "stacking": "latest_only",
+            "stacking_group": "hamstring-blow"
+          }
+        }
+      ],
       "forced_movement": null,
-      "fully_executable": false,
+      "movement_grant": null,
+      "damage": {
+        "critical": {
+          "allow": false,
+          "bonus": ""
+        },
+        "parts": [
+          {
+            "number": null,
+            "denomination": 0,
+            "bonus": "",
+            "types": [
+              "acid",
+              "bludgeoning",
+              "cold",
+              "fire",
+              "force",
+              "lightning",
+              "necrotic",
+              "piercing",
+              "poison",
+              "psychic",
+              "radiant",
+              "slashing",
+              "thunder"
+            ],
+            "custom": {
+              "enabled": true,
+              "formula": "@scale.barbarian.brutal-strike"
+            },
+            "scaling": {
+              "mode": "",
+              "number": 1,
+              "formula": ""
+            }
+          }
+        ]
+      },
+      "fully_executable": true,
       "standalone_use_feature_rejected": true,
-      "classification": "deferred_rider",
-      "deferred_reason": "requires first-attack Reckless decision, Strength Advantage and incoming Advantage lifecycle; latest-only speed reduction awaits complete foundation"
+      "classification": "executable_rider",
+      "deferred_reason": null
     },
     {
       "feature_slug": "cunning-strike",
@@ -175,6 +375,15 @@
       "once_per_turn": false,
       "choice_group": "cunning-strike",
       "automatic": false,
+      "native_damage": false,
+      "pre_roll_commit": false,
+      "forgo_advantage": false,
+      "requires_reckless": false,
+      "requires_rage": false,
+      "own_turn": false,
+      "shared_damage_group": null,
+      "declaration": null,
+      "choice_limit_granted": null,
       "cost_model": {
         "resource_targets": [],
         "feature_uses": null,
@@ -211,6 +420,8 @@
         }
       ],
       "forced_movement": null,
+      "movement_grant": null,
+      "damage": null,
       "fully_executable": true,
       "standalone_use_feature_rejected": true,
       "classification": "executable_rider",
@@ -229,6 +440,15 @@
       "once_per_turn": false,
       "choice_group": "cunning-strike",
       "automatic": false,
+      "native_damage": false,
+      "pre_roll_commit": false,
+      "forgo_advantage": false,
+      "requires_reckless": false,
+      "requires_rage": false,
+      "own_turn": false,
+      "shared_damage_group": null,
+      "declaration": null,
+      "choice_limit_granted": null,
       "cost_model": {
         "resource_targets": [],
         "feature_uses": null,
@@ -254,6 +474,8 @@
         }
       ],
       "forced_movement": null,
+      "movement_grant": null,
+      "damage": null,
       "fully_executable": true,
       "standalone_use_feature_rejected": true,
       "classification": "executable_rider",
@@ -272,6 +494,15 @@
       "once_per_turn": false,
       "choice_group": null,
       "automatic": false,
+      "native_damage": false,
+      "pre_roll_commit": false,
+      "forgo_advantage": false,
+      "requires_reckless": false,
+      "requires_rage": false,
+      "own_turn": false,
+      "shared_damage_group": null,
+      "declaration": null,
+      "choice_limit_granted": null,
       "cost_model": {
         "resource_targets": [],
         "feature_uses": null,
@@ -282,6 +513,44 @@
       "save": null,
       "effects": [],
       "forced_movement": null,
+      "movement_grant": null,
+      "damage": {
+        "critical": {
+          "allow": false,
+          "bonus": ""
+        },
+        "parts": [
+          {
+            "number": null,
+            "denomination": 0,
+            "bonus": "",
+            "types": [
+              "acid",
+              "bludgeoning",
+              "cold",
+              "fire",
+              "force",
+              "lightning",
+              "necrotic",
+              "piercing",
+              "poison",
+              "psychic",
+              "radiant",
+              "slashing",
+              "thunder"
+            ],
+            "custom": {
+              "enabled": true,
+              "formula": "(@scale.rogue.sneak-attack.number - @scaling)d6"
+            },
+            "scaling": {
+              "mode": "",
+              "number": 1,
+              "formula": ""
+            }
+          }
+        ]
+      },
       "fully_executable": false,
       "standalone_use_feature_rejected": true,
       "classification": "deferred_rider",
@@ -300,20 +569,36 @@
       "once_per_turn": false,
       "choice_group": "cunning-strike",
       "automatic": false,
+      "native_damage": false,
+      "pre_roll_commit": false,
+      "forgo_advantage": false,
+      "requires_reckless": false,
+      "requires_rage": false,
+      "own_turn": false,
+      "shared_damage_group": null,
+      "declaration": null,
+      "choice_limit_granted": null,
       "cost_model": {
         "resource_targets": [],
         "feature_uses": null,
         "sneak_dice_cost": 1,
         "inherit_damage_type": false,
-        "commit": null
+        "commit": "qualifying_final_hit"
       },
       "save": null,
       "effects": [],
       "forced_movement": null,
-      "fully_executable": false,
+      "movement_grant": {
+        "maximum_speed_fraction": "half",
+        "direction": "any",
+        "movement_mode": "walk",
+        "provokes_opportunity_attacks": false
+      },
+      "damage": null,
+      "fully_executable": true,
       "standalone_use_feature_rejected": true,
-      "classification": "deferred_rider",
-      "deferred_reason": "requires immediate selected half-Speed movement with OA exemption limited to that movement"
+      "classification": "executable_rider",
+      "deferred_reason": null
     },
     {
       "feature_slug": "defensive-tactics",
@@ -328,6 +613,15 @@
       "once_per_turn": false,
       "choice_group": null,
       "automatic": false,
+      "native_damage": false,
+      "pre_roll_commit": false,
+      "forgo_advantage": false,
+      "requires_reckless": false,
+      "requires_rage": false,
+      "own_turn": false,
+      "shared_damage_group": null,
+      "declaration": null,
+      "choice_limit_granted": null,
       "cost_model": {
         "resource_targets": [],
         "feature_uses": null,
@@ -338,6 +632,8 @@
       "save": null,
       "effects": [],
       "forced_movement": null,
+      "movement_grant": null,
+      "damage": null,
       "fully_executable": false,
       "standalone_use_feature_rejected": true,
       "classification": "supporting_context",
@@ -356,6 +652,15 @@
       "once_per_turn": false,
       "choice_group": null,
       "automatic": false,
+      "native_damage": false,
+      "pre_roll_commit": false,
+      "forgo_advantage": false,
+      "requires_reckless": false,
+      "requires_rage": false,
+      "own_turn": false,
+      "shared_damage_group": null,
+      "declaration": null,
+      "choice_limit_granted": null,
       "cost_model": {
         "resource_targets": [],
         "feature_uses": null,
@@ -366,6 +671,8 @@
       "save": null,
       "effects": [],
       "forced_movement": null,
+      "movement_grant": null,
+      "damage": null,
       "fully_executable": false,
       "standalone_use_feature_rejected": true,
       "classification": "supporting_context",
@@ -384,6 +691,15 @@
       "once_per_turn": false,
       "choice_group": null,
       "automatic": false,
+      "native_damage": false,
+      "pre_roll_commit": false,
+      "forgo_advantage": false,
+      "requires_reckless": false,
+      "requires_rage": false,
+      "own_turn": false,
+      "shared_damage_group": null,
+      "declaration": null,
+      "choice_limit_granted": null,
       "cost_model": {
         "resource_targets": [
           {
@@ -413,6 +729,8 @@
       },
       "effects": [],
       "forced_movement": null,
+      "movement_grant": null,
+      "damage": null,
       "fully_executable": false,
       "standalone_use_feature_rejected": true,
       "classification": "supporting_context",
@@ -431,6 +749,15 @@
       "once_per_turn": false,
       "choice_group": null,
       "automatic": false,
+      "native_damage": false,
+      "pre_roll_commit": false,
+      "forgo_advantage": false,
+      "requires_reckless": false,
+      "requires_rage": false,
+      "own_turn": false,
+      "shared_damage_group": null,
+      "declaration": null,
+      "choice_limit_granted": null,
       "cost_model": {
         "resource_targets": [],
         "feature_uses": null,
@@ -441,6 +768,8 @@
       "save": null,
       "effects": [],
       "forced_movement": null,
+      "movement_grant": null,
+      "damage": null,
       "fully_executable": false,
       "standalone_use_feature_rejected": true,
       "classification": "supporting_context",
@@ -459,6 +788,15 @@
       "once_per_turn": false,
       "choice_group": null,
       "automatic": false,
+      "native_damage": false,
+      "pre_roll_commit": false,
+      "forgo_advantage": false,
+      "requires_reckless": false,
+      "requires_rage": false,
+      "own_turn": false,
+      "shared_damage_group": null,
+      "declaration": null,
+      "choice_limit_granted": null,
       "cost_model": {
         "resource_targets": [
           {
@@ -488,6 +826,8 @@
       },
       "effects": [],
       "forced_movement": null,
+      "movement_grant": null,
+      "damage": null,
       "fully_executable": false,
       "standalone_use_feature_rejected": true,
       "classification": "supporting_context",
@@ -506,6 +846,15 @@
       "once_per_turn": false,
       "choice_group": "cunning-strike",
       "automatic": false,
+      "native_damage": false,
+      "pre_roll_commit": false,
+      "forgo_advantage": false,
+      "requires_reckless": false,
+      "requires_rage": false,
+      "own_turn": false,
+      "shared_damage_group": null,
+      "declaration": null,
+      "choice_limit_granted": null,
       "cost_model": {
         "resource_targets": [],
         "feature_uses": null,
@@ -525,6 +874,8 @@
       },
       "effects": [],
       "forced_movement": null,
+      "movement_grant": null,
+      "damage": null,
       "fully_executable": false,
       "standalone_use_feature_rejected": true,
       "classification": "deferred_rider",
@@ -543,6 +894,15 @@
       "once_per_turn": false,
       "choice_group": "cunning-strike",
       "automatic": false,
+      "native_damage": false,
+      "pre_roll_commit": false,
+      "forgo_advantage": false,
+      "requires_reckless": false,
+      "requires_rage": false,
+      "own_turn": false,
+      "shared_damage_group": null,
+      "declaration": null,
+      "choice_limit_granted": null,
       "cost_model": {
         "resource_targets": [],
         "feature_uses": null,
@@ -579,6 +939,8 @@
         }
       ],
       "forced_movement": null,
+      "movement_grant": null,
+      "damage": null,
       "fully_executable": true,
       "standalone_use_feature_rejected": true,
       "classification": "executable_rider",
@@ -597,6 +959,15 @@
       "once_per_turn": false,
       "choice_group": "cunning-strike",
       "automatic": false,
+      "native_damage": false,
+      "pre_roll_commit": false,
+      "forgo_advantage": false,
+      "requires_reckless": false,
+      "requires_rage": false,
+      "own_turn": false,
+      "shared_damage_group": null,
+      "declaration": null,
+      "choice_limit_granted": null,
       "cost_model": {
         "resource_targets": [],
         "feature_uses": null,
@@ -622,6 +993,8 @@
         }
       ],
       "forced_movement": null,
+      "movement_grant": null,
+      "damage": null,
       "fully_executable": true,
       "standalone_use_feature_rejected": true,
       "classification": "executable_rider",
@@ -640,6 +1013,15 @@
       "once_per_turn": false,
       "choice_group": null,
       "automatic": false,
+      "native_damage": false,
+      "pre_roll_commit": false,
+      "forgo_advantage": false,
+      "requires_reckless": false,
+      "requires_rage": false,
+      "own_turn": false,
+      "shared_damage_group": null,
+      "declaration": null,
+      "choice_limit_granted": null,
       "cost_model": {
         "resource_targets": [
           {
@@ -660,6 +1042,32 @@
       "save": null,
       "effects": [],
       "forced_movement": null,
+      "movement_grant": null,
+      "damage": {
+        "critical": {
+          "allow": false,
+          "bonus": ""
+        },
+        "parts": [
+          {
+            "number": null,
+            "denomination": 0,
+            "bonus": "",
+            "types": [
+              "force"
+            ],
+            "custom": {
+              "enabled": true,
+              "formula": "(1 + @spells.pact.level)d8"
+            },
+            "scaling": {
+              "mode": "",
+              "number": 1,
+              "formula": ""
+            }
+          }
+        ]
+      },
       "fully_executable": false,
       "standalone_use_feature_rejected": true,
       "classification": "deferred_rider",
@@ -678,6 +1086,15 @@
       "once_per_turn": false,
       "choice_group": null,
       "automatic": false,
+      "native_damage": false,
+      "pre_roll_commit": false,
+      "forgo_advantage": false,
+      "requires_reckless": false,
+      "requires_rage": false,
+      "own_turn": false,
+      "shared_damage_group": null,
+      "declaration": null,
+      "choice_limit_granted": null,
       "cost_model": {
         "resource_targets": [],
         "feature_uses": null,
@@ -688,6 +1105,8 @@
       "save": null,
       "effects": [],
       "forced_movement": null,
+      "movement_grant": null,
+      "damage": null,
       "fully_executable": false,
       "standalone_use_feature_rejected": true,
       "classification": "supporting_context",
@@ -706,6 +1125,15 @@
       "once_per_turn": false,
       "choice_group": null,
       "automatic": false,
+      "native_damage": false,
+      "pre_roll_commit": false,
+      "forgo_advantage": false,
+      "requires_reckless": false,
+      "requires_rage": false,
+      "own_turn": false,
+      "shared_damage_group": null,
+      "declaration": null,
+      "choice_limit_granted": null,
       "cost_model": {
         "resource_targets": [],
         "feature_uses": null,
@@ -716,6 +1144,35 @@
       "save": null,
       "effects": [],
       "forced_movement": null,
+      "movement_grant": null,
+      "damage": {
+        "critical": {
+          "allow": false,
+          "bonus": ""
+        },
+        "parts": [
+          {
+            "number": null,
+            "denomination": 0,
+            "bonus": "",
+            "types": [
+              "cold",
+              "fire",
+              "lightning",
+              "thunder"
+            ],
+            "custom": {
+              "enabled": true,
+              "formula": "@scale.druid.elemental-fury"
+            },
+            "scaling": {
+              "mode": "",
+              "number": 1,
+              "formula": ""
+            }
+          }
+        ]
+      },
       "fully_executable": false,
       "standalone_use_feature_rejected": true,
       "classification": "deferred_rider",
@@ -734,6 +1191,15 @@
       "once_per_turn": false,
       "choice_group": null,
       "automatic": false,
+      "native_damage": false,
+      "pre_roll_commit": false,
+      "forgo_advantage": false,
+      "requires_reckless": false,
+      "requires_rage": false,
+      "own_turn": false,
+      "shared_damage_group": null,
+      "declaration": null,
+      "choice_limit_granted": null,
       "cost_model": {
         "resource_targets": [
           {
@@ -764,6 +1230,32 @@
       "save": null,
       "effects": [],
       "forced_movement": null,
+      "movement_grant": null,
+      "damage": {
+        "critical": {
+          "allow": false,
+          "bonus": ""
+        },
+        "parts": [
+          {
+            "number": 1,
+            "denomination": 10,
+            "bonus": "",
+            "types": [
+              "fire"
+            ],
+            "custom": {
+              "enabled": false,
+              "formula": ""
+            },
+            "scaling": {
+              "mode": "",
+              "number": 1,
+              "formula": ""
+            }
+          }
+        ]
+      },
       "fully_executable": false,
       "standalone_use_feature_rejected": true,
       "classification": "deferred_rider",
@@ -782,6 +1274,15 @@
       "once_per_turn": false,
       "choice_group": null,
       "automatic": false,
+      "native_damage": false,
+      "pre_roll_commit": false,
+      "forgo_advantage": false,
+      "requires_reckless": false,
+      "requires_rage": false,
+      "own_turn": false,
+      "shared_damage_group": null,
+      "declaration": null,
+      "choice_limit_granted": null,
       "cost_model": {
         "resource_targets": [],
         "feature_uses": null,
@@ -792,6 +1293,32 @@
       "save": null,
       "effects": [],
       "forced_movement": null,
+      "movement_grant": null,
+      "damage": {
+        "critical": {
+          "allow": false,
+          "bonus": ""
+        },
+        "parts": [
+          {
+            "number": 1,
+            "denomination": 10,
+            "bonus": "",
+            "types": [
+              "force"
+            ],
+            "custom": {
+              "enabled": false,
+              "formula": ""
+            },
+            "scaling": {
+              "mode": "",
+              "number": 1,
+              "formula": ""
+            }
+          }
+        ]
+      },
       "fully_executable": false,
       "standalone_use_feature_rejected": true,
       "classification": "supporting_context",
@@ -807,23 +1334,70 @@
       "execution_phase": "damage_preparation",
       "target_role": "attack_target",
       "target_size_max": null,
-      "once_per_turn": false,
+      "once_per_turn": true,
       "choice_group": null,
-      "automatic": false,
+      "automatic": true,
+      "native_damage": false,
+      "pre_roll_commit": false,
+      "forgo_advantage": false,
+      "requires_reckless": true,
+      "requires_rage": true,
+      "own_turn": true,
+      "shared_damage_group": null,
+      "declaration": null,
+      "choice_limit_granted": null,
       "cost_model": {
         "resource_targets": [],
         "feature_uses": null,
         "sneak_dice_cost": 0,
         "inherit_damage_type": true,
-        "commit": null
+        "commit": "qualifying_final_hit"
       },
       "save": null,
       "effects": [],
       "forced_movement": null,
-      "fully_executable": false,
+      "movement_grant": null,
+      "damage": {
+        "critical": {
+          "allow": false,
+          "bonus": ""
+        },
+        "parts": [
+          {
+            "number": null,
+            "denomination": 0,
+            "bonus": "",
+            "types": [
+              "acid",
+              "bludgeoning",
+              "cold",
+              "fire",
+              "force",
+              "lightning",
+              "necrotic",
+              "piercing",
+              "poison",
+              "psychic",
+              "radiant",
+              "slashing",
+              "thunder"
+            ],
+            "custom": {
+              "enabled": true,
+              "formula": "(@scale.barbarian.rage-damage)d6"
+            },
+            "scaling": {
+              "mode": "",
+              "number": 1,
+              "formula": ""
+            }
+          }
+        ]
+      },
+      "fully_executable": true,
       "standalone_use_feature_rejected": true,
-      "classification": "deferred_rider",
-      "deferred_reason": "requires first-attack Reckless decision, Strength Advantage and incoming Advantage lifecycle; also requires active Rage and first qualifying target per own turn"
+      "classification": "executable_rider",
+      "deferred_reason": null
     },
     {
       "feature_slug": "frosts-chill",
@@ -838,6 +1412,15 @@
       "once_per_turn": false,
       "choice_group": null,
       "automatic": false,
+      "native_damage": false,
+      "pre_roll_commit": false,
+      "forgo_advantage": false,
+      "requires_reckless": false,
+      "requires_rage": false,
+      "own_turn": false,
+      "shared_damage_group": null,
+      "declaration": null,
+      "choice_limit_granted": null,
       "cost_model": {
         "resource_targets": [
           {
@@ -868,6 +1451,32 @@
       "save": null,
       "effects": [],
       "forced_movement": null,
+      "movement_grant": null,
+      "damage": {
+        "critical": {
+          "allow": false,
+          "bonus": ""
+        },
+        "parts": [
+          {
+            "number": 1,
+            "denomination": 6,
+            "bonus": "",
+            "types": [
+              "cold"
+            ],
+            "custom": {
+              "enabled": false,
+              "formula": ""
+            },
+            "scaling": {
+              "mode": "",
+              "number": 1,
+              "formula": ""
+            }
+          }
+        ]
+      },
       "fully_executable": false,
       "standalone_use_feature_rejected": true,
       "classification": "deferred_rider",
@@ -886,6 +1495,15 @@
       "once_per_turn": false,
       "choice_group": null,
       "automatic": false,
+      "native_damage": false,
+      "pre_roll_commit": false,
+      "forgo_advantage": false,
+      "requires_reckless": false,
+      "requires_rage": false,
+      "own_turn": false,
+      "shared_damage_group": null,
+      "declaration": null,
+      "choice_limit_granted": null,
       "cost_model": {
         "resource_targets": [],
         "feature_uses": null,
@@ -896,6 +1514,8 @@
       "save": null,
       "effects": [],
       "forced_movement": null,
+      "movement_grant": null,
+      "damage": null,
       "fully_executable": false,
       "standalone_use_feature_rejected": true,
       "classification": "supporting_context",
@@ -914,6 +1534,15 @@
       "once_per_turn": false,
       "choice_group": null,
       "automatic": false,
+      "native_damage": false,
+      "pre_roll_commit": false,
+      "forgo_advantage": false,
+      "requires_reckless": false,
+      "requires_rage": false,
+      "own_turn": false,
+      "shared_damage_group": null,
+      "declaration": null,
+      "choice_limit_granted": null,
       "cost_model": {
         "resource_targets": [
           {
@@ -934,6 +1563,8 @@
       "save": null,
       "effects": [],
       "forced_movement": null,
+      "movement_grant": null,
+      "damage": null,
       "fully_executable": false,
       "standalone_use_feature_rejected": true,
       "classification": "supporting_context",
@@ -952,6 +1583,15 @@
       "once_per_turn": false,
       "choice_group": null,
       "automatic": false,
+      "native_damage": false,
+      "pre_roll_commit": false,
+      "forgo_advantage": false,
+      "requires_reckless": false,
+      "requires_rage": false,
+      "own_turn": false,
+      "shared_damage_group": null,
+      "declaration": null,
+      "choice_limit_granted": null,
       "cost_model": {
         "resource_targets": [
           {
@@ -982,6 +1622,8 @@
       "save": null,
       "effects": [],
       "forced_movement": null,
+      "movement_grant": null,
+      "damage": null,
       "fully_executable": false,
       "standalone_use_feature_rejected": true,
       "classification": "deferred_rider",
@@ -1000,6 +1642,15 @@
       "once_per_turn": false,
       "choice_group": null,
       "automatic": false,
+      "native_damage": false,
+      "pre_roll_commit": false,
+      "forgo_advantage": false,
+      "requires_reckless": false,
+      "requires_rage": false,
+      "own_turn": false,
+      "shared_damage_group": null,
+      "declaration": null,
+      "choice_limit_granted": null,
       "cost_model": {
         "resource_targets": [],
         "feature_uses": null,
@@ -1010,6 +1661,44 @@
       "save": null,
       "effects": [],
       "forced_movement": null,
+      "movement_grant": null,
+      "damage": {
+        "critical": {
+          "allow": false,
+          "bonus": ""
+        },
+        "parts": [
+          {
+            "number": 1,
+            "denomination": 8,
+            "bonus": "",
+            "types": [
+              "acid",
+              "bludgeoning",
+              "cold",
+              "fire",
+              "force",
+              "lightning",
+              "necrotic",
+              "piercing",
+              "poison",
+              "psychic",
+              "radiant",
+              "slashing",
+              "thunder"
+            ],
+            "custom": {
+              "enabled": false,
+              "formula": ""
+            },
+            "scaling": {
+              "mode": "",
+              "number": 1,
+              "formula": ""
+            }
+          }
+        ]
+      },
       "fully_executable": false,
       "standalone_use_feature_rejected": true,
       "classification": "deferred_rider",
@@ -1028,6 +1717,15 @@
       "once_per_turn": false,
       "choice_group": null,
       "automatic": false,
+      "native_damage": false,
+      "pre_roll_commit": false,
+      "forgo_advantage": false,
+      "requires_reckless": false,
+      "requires_rage": false,
+      "own_turn": false,
+      "shared_damage_group": null,
+      "declaration": null,
+      "choice_limit_granted": null,
       "cost_model": {
         "resource_targets": [
           {
@@ -1067,6 +1765,8 @@
       },
       "effects": [],
       "forced_movement": null,
+      "movement_grant": null,
+      "damage": null,
       "fully_executable": false,
       "standalone_use_feature_rejected": true,
       "classification": "deferred_rider",
@@ -1075,58 +1775,112 @@
     {
       "feature_slug": "improved-brutal-strike",
       "activity_id": "UmRlsf4QWW98I4FS",
-      "option_id": null,
+      "option_id": "sundering-blow",
       "inventory_role": "rider",
       "trigger": "reckless_hit",
       "qualification": "strength",
       "execution_phase": "after_damage",
       "target_role": "attack_target",
       "target_size_max": null,
-      "once_per_turn": false,
+      "once_per_turn": true,
       "choice_group": "brutal-strike",
       "automatic": false,
+      "native_damage": false,
+      "pre_roll_commit": true,
+      "forgo_advantage": true,
+      "requires_reckless": true,
+      "requires_rage": false,
+      "own_turn": true,
+      "shared_damage_group": "brutal-strike",
+      "declaration": null,
+      "choice_limit_granted": null,
       "cost_model": {
         "resource_targets": [],
         "feature_uses": null,
         "sneak_dice_cost": 0,
         "inherit_damage_type": false,
-        "commit": null
+        "commit": "pre_roll"
       },
       "save": null,
-      "effects": [],
+      "effects": [
+        {
+          "effect_id": "tUyuyTQGmpUqMcFe",
+          "outcome": "always",
+          "expiry": "none",
+          "lifecycle": {
+            "repeat_save": null,
+            "maximum_rounds": null,
+            "expiry_boundary": "source_next_turn_start",
+            "expire_on_positive_damage": false,
+            "one_use_modifiers": [
+              "next_attack_bonus_other_creature"
+            ],
+            "next_attack_scope": "other_creature",
+            "next_attack_bonus_group": "sundering-blow"
+          }
+        }
+      ],
       "forced_movement": null,
-      "fully_executable": false,
+      "movement_grant": null,
+      "damage": null,
+      "fully_executable": true,
       "standalone_use_feature_rejected": true,
-      "classification": "deferred_rider",
-      "deferred_reason": "requires first-attack Reckless decision, Strength Advantage and incoming Advantage lifecycle; also requires next attack by another creature +5 consumption"
+      "classification": "executable_rider",
+      "deferred_reason": null
     },
     {
       "feature_slug": "improved-brutal-strike",
       "activity_id": "I30qGlPDcyKwz65H",
-      "option_id": null,
+      "option_id": "staggering-blow",
       "inventory_role": "rider",
       "trigger": "reckless_hit",
       "qualification": "strength",
       "execution_phase": "after_damage",
       "target_role": "attack_target",
       "target_size_max": null,
-      "once_per_turn": false,
+      "once_per_turn": true,
       "choice_group": "brutal-strike",
       "automatic": false,
+      "native_damage": false,
+      "pre_roll_commit": true,
+      "forgo_advantage": true,
+      "requires_reckless": true,
+      "requires_rage": false,
+      "own_turn": true,
+      "shared_damage_group": "brutal-strike",
+      "declaration": null,
+      "choice_limit_granted": null,
       "cost_model": {
         "resource_targets": [],
         "feature_uses": null,
         "sneak_dice_cost": 0,
         "inherit_damage_type": false,
-        "commit": null
+        "commit": "pre_roll"
       },
       "save": null,
-      "effects": [],
+      "effects": [
+        {
+          "effect_id": "L9N4evZo1jt46dap",
+          "outcome": "always",
+          "expiry": "none",
+          "lifecycle": {
+            "repeat_save": null,
+            "maximum_rounds": null,
+            "expiry_boundary": "source_next_turn_start",
+            "expire_on_positive_damage": false,
+            "one_use_modifiers": [
+              "next_save_disadvantage"
+            ]
+          }
+        }
+      ],
       "forced_movement": null,
-      "fully_executable": false,
+      "movement_grant": null,
+      "damage": null,
+      "fully_executable": true,
       "standalone_use_feature_rejected": true,
-      "classification": "deferred_rider",
-      "deferred_reason": "requires first-attack Reckless decision, Strength Advantage and incoming Advantage lifecycle; also requires next-save Disadvantage consumption"
+      "classification": "executable_rider",
+      "deferred_reason": null
     },
     {
       "feature_slug": "improved-brutal-strike-2",
@@ -1141,6 +1895,15 @@
       "once_per_turn": false,
       "choice_group": "brutal-strike",
       "automatic": false,
+      "native_damage": false,
+      "pre_roll_commit": false,
+      "forgo_advantage": false,
+      "requires_reckless": false,
+      "requires_rage": false,
+      "own_turn": false,
+      "shared_damage_group": null,
+      "declaration": null,
+      "choice_limit_granted": 2,
       "cost_model": {
         "resource_targets": [],
         "feature_uses": null,
@@ -1151,10 +1914,12 @@
       "save": null,
       "effects": [],
       "forced_movement": null,
-      "fully_executable": false,
+      "movement_grant": null,
+      "damage": null,
+      "fully_executable": true,
       "standalone_use_feature_rejected": true,
-      "classification": "supporting_context",
-      "deferred_reason": "requires first-attack Reckless decision, Strength Advantage and incoming Advantage lifecycle; scales damage and permits two distinct options"
+      "classification": "executable_foundation",
+      "deferred_reason": null
     },
     {
       "feature_slug": "improved-cunning-strike",
@@ -1169,6 +1934,15 @@
       "once_per_turn": false,
       "choice_group": "cunning-strike",
       "automatic": false,
+      "native_damage": false,
+      "pre_roll_commit": false,
+      "forgo_advantage": false,
+      "requires_reckless": false,
+      "requires_rage": false,
+      "own_turn": false,
+      "shared_damage_group": null,
+      "declaration": null,
+      "choice_limit_granted": 2,
       "cost_model": {
         "resource_targets": [],
         "feature_uses": null,
@@ -1179,6 +1953,8 @@
       "save": null,
       "effects": [],
       "forced_movement": null,
+      "movement_grant": null,
+      "damage": null,
       "fully_executable": false,
       "standalone_use_feature_rejected": true,
       "classification": "supporting_context",
@@ -1197,6 +1973,15 @@
       "once_per_turn": false,
       "choice_group": null,
       "automatic": false,
+      "native_damage": false,
+      "pre_roll_commit": false,
+      "forgo_advantage": false,
+      "requires_reckless": false,
+      "requires_rage": false,
+      "own_turn": false,
+      "shared_damage_group": null,
+      "declaration": null,
+      "choice_limit_granted": null,
       "cost_model": {
         "resource_targets": [],
         "feature_uses": null,
@@ -1207,6 +1992,34 @@
       "save": null,
       "effects": [],
       "forced_movement": null,
+      "movement_grant": null,
+      "damage": {
+        "critical": {
+          "allow": false,
+          "bonus": ""
+        },
+        "parts": [
+          {
+            "number": 1,
+            "denomination": 6,
+            "bonus": "",
+            "types": [
+              "necrotic",
+              "psychic",
+              "radiant"
+            ],
+            "custom": {
+              "enabled": false,
+              "formula": ""
+            },
+            "scaling": {
+              "mode": "",
+              "number": 1,
+              "formula": ""
+            }
+          }
+        ]
+      },
       "fully_executable": false,
       "standalone_use_feature_rejected": true,
       "classification": "deferred_rider",
@@ -1225,6 +2038,15 @@
       "once_per_turn": false,
       "choice_group": null,
       "automatic": false,
+      "native_damage": false,
+      "pre_roll_commit": false,
+      "forgo_advantage": false,
+      "requires_reckless": false,
+      "requires_rage": false,
+      "own_turn": false,
+      "shared_damage_group": null,
+      "declaration": null,
+      "choice_limit_granted": null,
       "cost_model": {
         "resource_targets": [
           {
@@ -1245,6 +2067,8 @@
       "save": null,
       "effects": [],
       "forced_movement": null,
+      "movement_grant": null,
+      "damage": null,
       "fully_executable": false,
       "standalone_use_feature_rejected": true,
       "classification": "deferred_rider",
@@ -1263,6 +2087,15 @@
       "once_per_turn": false,
       "choice_group": null,
       "automatic": false,
+      "native_damage": false,
+      "pre_roll_commit": false,
+      "forgo_advantage": false,
+      "requires_reckless": false,
+      "requires_rage": false,
+      "own_turn": false,
+      "shared_damage_group": null,
+      "declaration": null,
+      "choice_limit_granted": null,
       "cost_model": {
         "resource_targets": [
           {
@@ -1283,6 +2116,8 @@
       "save": null,
       "effects": [],
       "forced_movement": null,
+      "movement_grant": null,
+      "damage": null,
       "fully_executable": false,
       "standalone_use_feature_rejected": true,
       "classification": "deferred_rider",
@@ -1301,6 +2136,15 @@
       "once_per_turn": false,
       "choice_group": null,
       "automatic": false,
+      "native_damage": false,
+      "pre_roll_commit": false,
+      "forgo_advantage": false,
+      "requires_reckless": false,
+      "requires_rage": false,
+      "own_turn": false,
+      "shared_damage_group": null,
+      "declaration": null,
+      "choice_limit_granted": null,
       "cost_model": {
         "resource_targets": [
           {
@@ -1331,6 +2175,8 @@
       "save": null,
       "effects": [],
       "forced_movement": null,
+      "movement_grant": null,
+      "damage": null,
       "fully_executable": false,
       "standalone_use_feature_rejected": false,
       "classification": "supporting_context",
@@ -1349,6 +2195,15 @@
       "once_per_turn": false,
       "choice_group": "open-hand-technique",
       "automatic": false,
+      "native_damage": false,
+      "pre_roll_commit": false,
+      "forgo_advantage": false,
+      "requires_reckless": false,
+      "requires_rage": false,
+      "own_turn": false,
+      "shared_damage_group": null,
+      "declaration": null,
+      "choice_limit_granted": null,
       "cost_model": {
         "resource_targets": [],
         "feature_uses": null,
@@ -1365,6 +2220,8 @@
         }
       ],
       "forced_movement": null,
+      "movement_grant": null,
+      "damage": null,
       "fully_executable": true,
       "standalone_use_feature_rejected": true,
       "classification": "executable_rider",
@@ -1383,6 +2240,15 @@
       "once_per_turn": false,
       "choice_group": "open-hand-technique",
       "automatic": false,
+      "native_damage": false,
+      "pre_roll_commit": false,
+      "forgo_advantage": false,
+      "requires_reckless": false,
+      "requires_rage": false,
+      "own_turn": false,
+      "shared_damage_group": null,
+      "declaration": null,
+      "choice_limit_granted": null,
       "cost_model": {
         "resource_targets": [],
         "feature_uses": null,
@@ -1406,6 +2272,8 @@
         "requires_distance_choice": true,
         "on_save": "failure"
       },
+      "movement_grant": null,
+      "damage": null,
       "fully_executable": true,
       "standalone_use_feature_rejected": true,
       "classification": "executable_rider",
@@ -1424,6 +2292,15 @@
       "once_per_turn": false,
       "choice_group": "open-hand-technique",
       "automatic": false,
+      "native_damage": false,
+      "pre_roll_commit": false,
+      "forgo_advantage": false,
+      "requires_reckless": false,
+      "requires_rage": false,
+      "own_turn": false,
+      "shared_damage_group": null,
+      "declaration": null,
+      "choice_limit_granted": null,
       "cost_model": {
         "resource_targets": [],
         "feature_uses": null,
@@ -1449,6 +2326,8 @@
         }
       ],
       "forced_movement": null,
+      "movement_grant": null,
+      "damage": null,
       "fully_executable": true,
       "standalone_use_feature_rejected": true,
       "classification": "executable_rider",
@@ -1467,6 +2346,15 @@
       "once_per_turn": false,
       "choice_group": null,
       "automatic": false,
+      "native_damage": false,
+      "pre_roll_commit": false,
+      "forgo_advantage": false,
+      "requires_reckless": false,
+      "requires_rage": false,
+      "own_turn": false,
+      "shared_damage_group": null,
+      "declaration": null,
+      "choice_limit_granted": null,
       "cost_model": {
         "resource_targets": [],
         "feature_uses": null,
@@ -1486,6 +2374,8 @@
       },
       "effects": [],
       "forced_movement": null,
+      "movement_grant": null,
+      "damage": null,
       "fully_executable": false,
       "standalone_use_feature_rejected": true,
       "classification": "deferred_rider",
@@ -1504,6 +2394,15 @@
       "once_per_turn": false,
       "choice_group": null,
       "automatic": false,
+      "native_damage": false,
+      "pre_roll_commit": false,
+      "forgo_advantage": false,
+      "requires_reckless": false,
+      "requires_rage": false,
+      "own_turn": false,
+      "shared_damage_group": null,
+      "declaration": null,
+      "choice_limit_granted": null,
       "cost_model": {
         "resource_targets": [
           {
@@ -1524,6 +2423,8 @@
       "save": null,
       "effects": [],
       "forced_movement": null,
+      "movement_grant": null,
+      "damage": null,
       "fully_executable": false,
       "standalone_use_feature_rejected": true,
       "classification": "deferred_rider",
@@ -1542,6 +2443,15 @@
       "once_per_turn": false,
       "choice_group": null,
       "automatic": false,
+      "native_damage": false,
+      "pre_roll_commit": false,
+      "forgo_advantage": false,
+      "requires_reckless": false,
+      "requires_rage": false,
+      "own_turn": false,
+      "shared_damage_group": null,
+      "declaration": null,
+      "choice_limit_granted": null,
       "cost_model": {
         "resource_targets": [],
         "feature_uses": null,
@@ -1552,6 +2462,8 @@
       "save": null,
       "effects": [],
       "forced_movement": null,
+      "movement_grant": null,
+      "damage": null,
       "fully_executable": false,
       "standalone_use_feature_rejected": true,
       "classification": "supporting_context",
@@ -1563,13 +2475,22 @@
       "option_id": null,
       "inventory_role": "foundation",
       "trigger": "reckless_hit",
-      "qualification": "strength",
+      "qualification": "any_attack",
       "execution_phase": "damage_preparation",
-      "target_role": "attack_target",
+      "target_role": "attacker",
       "target_size_max": null,
       "once_per_turn": false,
       "choice_group": null,
       "automatic": false,
+      "native_damage": false,
+      "pre_roll_commit": false,
+      "forgo_advantage": false,
+      "requires_reckless": false,
+      "requires_rage": false,
+      "own_turn": true,
+      "shared_damage_group": null,
+      "declaration": "reckless_attack",
+      "choice_limit_granted": null,
       "cost_model": {
         "resource_targets": [],
         "feature_uses": null,
@@ -1578,12 +2499,27 @@
         "commit": null
       },
       "save": null,
-      "effects": [],
+      "effects": [
+        {
+          "effect_id": "XA0GhXVB54U2IuRP",
+          "outcome": "always",
+          "expiry": "none",
+          "lifecycle": {
+            "repeat_save": null,
+            "maximum_rounds": null,
+            "expiry_boundary": "source_next_turn_start",
+            "expire_on_positive_damage": false,
+            "one_use_modifiers": []
+          }
+        }
+      ],
       "forced_movement": null,
-      "fully_executable": false,
+      "movement_grant": null,
+      "damage": null,
+      "fully_executable": true,
       "standalone_use_feature_rejected": true,
-      "classification": "supporting_context",
-      "deferred_reason": "requires first-attack Reckless decision, Strength Advantage and incoming Advantage lifecycle"
+      "classification": "executable_foundation",
+      "deferred_reason": null
     },
     {
       "feature_slug": "remarkable-athlete",
@@ -1598,6 +2534,15 @@
       "once_per_turn": false,
       "choice_group": null,
       "automatic": false,
+      "native_damage": false,
+      "pre_roll_commit": false,
+      "forgo_advantage": false,
+      "requires_reckless": false,
+      "requires_rage": false,
+      "own_turn": false,
+      "shared_damage_group": null,
+      "declaration": null,
+      "choice_limit_granted": null,
       "cost_model": {
         "resource_targets": [],
         "feature_uses": null,
@@ -1608,6 +2553,8 @@
       "save": null,
       "effects": [],
       "forced_movement": null,
+      "movement_grant": null,
+      "damage": null,
       "fully_executable": false,
       "standalone_use_feature_rejected": true,
       "classification": "supporting_context",
@@ -1626,6 +2573,15 @@
       "once_per_turn": false,
       "choice_group": null,
       "automatic": false,
+      "native_damage": false,
+      "pre_roll_commit": false,
+      "forgo_advantage": false,
+      "requires_reckless": false,
+      "requires_rage": false,
+      "own_turn": false,
+      "shared_damage_group": null,
+      "declaration": null,
+      "choice_limit_granted": null,
       "cost_model": {
         "resource_targets": [],
         "feature_uses": null,
@@ -1636,6 +2592,8 @@
       "save": null,
       "effects": [],
       "forced_movement": null,
+      "movement_grant": null,
+      "damage": null,
       "fully_executable": false,
       "standalone_use_feature_rejected": true,
       "classification": "deferred_rider",
@@ -1654,6 +2612,15 @@
       "once_per_turn": false,
       "choice_group": null,
       "automatic": false,
+      "native_damage": false,
+      "pre_roll_commit": false,
+      "forgo_advantage": false,
+      "requires_reckless": false,
+      "requires_rage": false,
+      "own_turn": false,
+      "shared_damage_group": null,
+      "declaration": null,
+      "choice_limit_granted": null,
       "cost_model": {
         "resource_targets": [
           {
@@ -1674,6 +2641,8 @@
       "save": null,
       "effects": [],
       "forced_movement": null,
+      "movement_grant": null,
+      "damage": null,
       "fully_executable": false,
       "standalone_use_feature_rejected": true,
       "classification": "supporting_context",
@@ -1692,6 +2661,15 @@
       "once_per_turn": true,
       "choice_group": null,
       "automatic": true,
+      "native_damage": true,
+      "pre_roll_commit": false,
+      "forgo_advantage": false,
+      "requires_reckless": false,
+      "requires_rage": false,
+      "own_turn": false,
+      "shared_damage_group": null,
+      "declaration": null,
+      "choice_limit_granted": null,
       "cost_model": {
         "resource_targets": [],
         "feature_uses": null,
@@ -1702,6 +2680,44 @@
       "save": null,
       "effects": [],
       "forced_movement": null,
+      "movement_grant": null,
+      "damage": {
+        "critical": {
+          "allow": true,
+          "bonus": ""
+        },
+        "parts": [
+          {
+            "number": null,
+            "denomination": null,
+            "bonus": "",
+            "types": [
+              "acid",
+              "bludgeoning",
+              "cold",
+              "fire",
+              "force",
+              "lightning",
+              "necrotic",
+              "piercing",
+              "poison",
+              "psychic",
+              "radiant",
+              "slashing",
+              "thunder"
+            ],
+            "custom": {
+              "enabled": true,
+              "formula": "@scale.rogue.sneak-attack"
+            },
+            "scaling": {
+              "mode": "",
+              "number": 1,
+              "formula": ""
+            }
+          }
+        ]
+      },
       "fully_executable": true,
       "standalone_use_feature_rejected": true,
       "classification": "executable_rider",
@@ -1720,6 +2736,15 @@
       "once_per_turn": true,
       "choice_group": null,
       "automatic": false,
+      "native_damage": false,
+      "pre_roll_commit": false,
+      "forgo_advantage": false,
+      "requires_reckless": false,
+      "requires_rage": false,
+      "own_turn": false,
+      "shared_damage_group": null,
+      "declaration": null,
+      "choice_limit_granted": null,
       "cost_model": {
         "resource_targets": [
           {
@@ -1760,6 +2785,8 @@
         }
       ],
       "forced_movement": null,
+      "movement_grant": null,
+      "damage": null,
       "fully_executable": true,
       "standalone_use_feature_rejected": true,
       "classification": "executable_rider",
@@ -1778,6 +2805,15 @@
       "once_per_turn": false,
       "choice_group": null,
       "automatic": false,
+      "native_damage": false,
+      "pre_roll_commit": false,
+      "forgo_advantage": false,
+      "requires_reckless": false,
+      "requires_rage": false,
+      "own_turn": false,
+      "shared_damage_group": null,
+      "declaration": null,
+      "choice_limit_granted": null,
       "cost_model": {
         "resource_targets": [],
         "feature_uses": null,
@@ -1788,6 +2824,32 @@
       "save": null,
       "effects": [],
       "forced_movement": null,
+      "movement_grant": null,
+      "damage": {
+        "critical": {
+          "allow": false,
+          "bonus": ""
+        },
+        "parts": [
+          {
+            "number": null,
+            "denomination": 0,
+            "bonus": "",
+            "types": [
+              "force"
+            ],
+            "custom": {
+              "enabled": true,
+              "formula": "@scale.ranger.mark"
+            },
+            "scaling": {
+              "mode": "",
+              "number": 1,
+              "formula": ""
+            }
+          }
+        ]
+      },
       "fully_executable": false,
       "standalone_use_feature_rejected": true,
       "classification": "supporting_context",
@@ -1806,6 +2868,15 @@
       "once_per_turn": false,
       "choice_group": null,
       "automatic": false,
+      "native_damage": false,
+      "pre_roll_commit": false,
+      "forgo_advantage": false,
+      "requires_reckless": false,
+      "requires_rage": false,
+      "own_turn": false,
+      "shared_damage_group": null,
+      "declaration": null,
+      "choice_limit_granted": null,
       "cost_model": {
         "resource_targets": [],
         "feature_uses": null,
@@ -1816,6 +2887,8 @@
       "save": null,
       "effects": [],
       "forced_movement": null,
+      "movement_grant": null,
+      "damage": null,
       "fully_executable": false,
       "standalone_use_feature_rejected": true,
       "classification": "supporting_context",

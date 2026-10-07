@@ -5,7 +5,7 @@
         "condition": "",
         "override": false,
         "reaction_conditions": [],
-        "type": "special",
+        "type": "",
         "value": null
       },
       "applied_effects": [],
@@ -71,6 +71,15 @@
             "max": null,
             "min": null
           },
+          "lifecycle": {
+            "expire_on_positive_damage": false,
+            "expiry_boundary": "source_next_turn_start",
+            "maximum_rounds": null,
+            "one_use_modifiers": [],
+            "repeat_save": null,
+            "stacking": "latest_only",
+            "stacking_group": "hamstring-blow"
+          },
           "on_save": null,
           "riders": null
         }
@@ -125,23 +134,72 @@
     }
   ],
   "advancement": [],
+  "attack_rider_choice_limits": {
+    "brutal-strike": 1
+  },
+  "attack_rider_options": {
+    "forceful-blow": {
+      "activity_id": "nN5gsB6AcSQ4uQPN",
+      "choice_group": "brutal-strike",
+      "effects": [],
+      "forced_movement": {
+        "max_distance_ft": 15,
+        "on_save": "always",
+        "requires_distance_choice": false
+      },
+      "movement_grant": {
+        "direction": "straight_toward_target",
+        "maximum_speed_fraction": "half",
+        "movement_mode": "walk",
+        "provokes_opportunity_attacks": false
+      }
+    },
+    "hamstring-blow": {
+      "activity_id": "nN5gsB6AcSQ4uQPN",
+      "choice_group": "brutal-strike",
+      "effects": [
+        {
+          "effect_id": "bg9jWpPRIJ0Q2vPY",
+          "expiry": "none",
+          "lifecycle": {
+            "expire_on_positive_damage": false,
+            "expiry_boundary": "source_next_turn_start",
+            "maximum_rounds": null,
+            "one_use_modifiers": [],
+            "repeat_save": null,
+            "stacking": "latest_only",
+            "stacking_group": "hamstring-blow"
+          },
+          "outcome": "always"
+        }
+      ],
+      "forced_movement": null,
+      "movement_grant": null
+    }
+  },
   "attack_riders": {
     "nN5gsB6AcSQ4uQPN": {
       "automatic": false,
       "choice_group": "brutal-strike",
-      "deferred_options": {
-        "forceful-blow": "requires first-attack Reckless decision, Strength Advantage and incoming Advantage lifecycle; also requires selected straight-toward half-Speed follow movement without OA",
-        "hamstring-blow": "requires first-attack Reckless decision, Strength Advantage and incoming Advantage lifecycle; latest-only speed reduction awaits complete foundation"
-      },
-      "deferred_reason": "requires first-attack Reckless decision, Strength Advantage and incoming Advantage lifecycle",
+      "deferred_options": {},
+      "deferred_reason": null,
       "effects": [],
       "forced_movement": null,
+      "forgo_advantage": true,
       "inherit_damage_type": true,
       "inventory_role": "rider",
-      "once_per_turn": false,
+      "once_per_turn": true,
+      "option_ids": [
+        "forceful-blow",
+        "hamstring-blow"
+      ],
+      "own_turn": true,
       "phase": "damage_preparation",
+      "pre_roll_commit": true,
       "qualification": "strength",
       "related_activity_ids": [],
+      "requires_reckless": true,
+      "shared_damage_group": "brutal-strike",
       "sneak_dice_cost": 0,
       "target_role": "attack_target",
       "trigger": "reckless_hit"
@@ -156,10 +214,10 @@
     {
       "changes": [
         {
-          "key": "system.attributes.movement.walk",
+          "key": "speed.reduction",
           "mode": 2,
           "priority": null,
-          "value": "-15"
+          "value": "15"
         }
       ],
       "description": "<p>Hit by a hamstring blow, this character's Speed has been reduced by 15 feet until the start of the attacker's next turn.</p>",

@@ -149,6 +149,7 @@ from dnd5e_engine.areas import (
     is_harmful,
     select_affected,
 )
+from dnd5e_engine.attack_declarations import observe_attack_roll
 from dnd5e_engine.attack_riders import AttackRiderRequest
 from dnd5e_engine.death_saves import DeathSaveState, roll_death_save
 from dnd5e_engine.effect_lifecycle import EffectIdentity, OngoingEffectLifecycle
@@ -360,6 +361,7 @@ class PlayerIntent(BaseModel):
     # keeps the safe no-op reject for a multi-activity feature (never guess).
     activity_id: str | None = None
     attack_riders: tuple[AttackRiderRequest, ...] = ()
+    reckless_attack: bool = Field(default=False, strict=True)
     slot_level: int | None = None
     # Charges to spend on a variable-cost item invocation (wand upcast).
     # Validated by the use_item charge gate against consumption.scaling.
@@ -4804,6 +4806,8 @@ def _emit(live: _LiveCombat, event: CombatEvent) -> None:
     legacy combat semantics — monsters die immediately at 0 HP (SRD §Damage
     at 0 Hit Points); only PCs route through death saves.
     """
+    if isinstance(event, EffectApplied):
+        live_effect_lifecycle.replace_stacking_effects(live, event.effect)
     if isinstance(event, ConditionApplied):
         target = _find_combatant(live, event.target_id)
         if target is not None and is_condition_immune(target, event.condition):
@@ -4824,6 +4828,8 @@ def _emit(live: _LiveCombat, event: CombatEvent) -> None:
     live.persistent_areas.observe(live, event)
     if isinstance(event, CheckRolled):
         observe_check(live, event)
+    if isinstance(event, AttackRolled):
+        observe_attack_roll(live, event)
 
     if isinstance(event, TurnStarted):
         _emit_apply_turn_started(live, event)
@@ -4907,6 +4913,7 @@ def _emit_apply_turn_started(live: _LiveCombat, event: TurnStarted) -> None:
                     # the start of the actor's own turn.
                     "attacks_remaining": _attacks_per_action(live, c),
                     "attack_action_engaged": False,
+                    "attack_rolls_made_this_turn": 0,
                     "light_weapon_swing_slug": None,
                     "offhand_attack_spent": False,
                     # SRD §Actions in Combat — Dodge: "until the start of
@@ -11596,25 +11603,42 @@ async def submit_player_intent(
     authoritative rejection events. The pure preflight remains the primary gate.
     """
     live = _get_live(handle)
-    if intent.attack_riders:
+    if intent.attack_riders or intent.reckless_attack:
         _validate_intent_preconditions(live, handle, actor_id, intent=intent)
         if reject_nonattack_riders(live, actor_id, intent):
             return
-    if intent.intent_type != "use_feature" and not intent.attack_riders:
+    if (
+        intent.intent_type not in ("use_feature", "attack")
+        and not intent.attack_riders
+        and not intent.reckless_attack
+    ):
         await _submit_player_intent(handle, actor_id, intent)
         return
     queue = live.event_queue
     listeners = live.event_listeners
     original_rng = live.rng
-    snapshot = copy.deepcopy(live, {id(queue): queue, id(listeners): listeners})
+    original_rng_state = original_rng.getstate()
+    snapshot = copy.deepcopy(
+        live, {id(queue): queue, id(listeners): listeners, id(original_rng): original_rng}
+    )
     buffered: asyncio.Queue[CombatEvent | None] = asyncio.Queue()
     live.event_queue = buffered
     live.event_listeners = []
     try:
         await _submit_player_intent(handle, actor_id, intent)
+    except FeaturePreflightError:
+        original_rng.setstate(original_rng_state)
+        live.__dict__.update(snapshot.__dict__)
+        while not buffered.empty():
+            buffered.get_nowait()
+        live.event_queue = buffered
+        live.event_listeners = []
+        _emit(
+            live,
+            AttackFailed(actor_id=actor_id, target_id=intent.target_id, reason="unsupported_rider"),
+        )
     except ValueError:
-        original_rng.setstate(snapshot.rng.getstate())
-        snapshot.rng = original_rng
+        original_rng.setstate(original_rng_state)
         live.__dict__.update(snapshot.__dict__)
         _LOGGER.exception("unexpected_feature_resolution_error feature=%s", intent.feature_id)
         raise
@@ -12060,7 +12084,9 @@ async def _submit_player_intent(
             ),
         )
         actx = attach_reaction_hooks(live, actx)
-        actx = attach_attack_riders(live, actx, rider_plans, origin=rider_origin)
+        actx = attach_attack_riders(
+            live, actx, rider_plans, origin=rider_origin, reckless_attack=intent.reckless_attack
+        )
         if cast_spell is not None:
             resolve_spell_activities(live, cast_spell, actx, intent=intent)
         else:

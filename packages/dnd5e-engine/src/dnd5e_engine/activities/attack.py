@@ -73,7 +73,10 @@ from dnd5e_srd_data.schema.monster import MonsterTraitMechanic
 from dnd5e_engine.activities.apply import apply_damage, damage_type_can_apply
 from dnd5e_engine.activities.context import (
     AttackHitContext,
+    AttackPreRollContext,
     AttackResolutionContext,
+    AttackRiderPreparation,
+    AttackRollModifier,
     DamageInstanceContext,
 )
 from dnd5e_engine.activities.d20 import AdvantageSources, roll_d20_test
@@ -101,7 +104,7 @@ if TYPE_CHECKING:
 
     from dnd5e_engine.types.combat import Combatant
 
-    from .context import ActivityResolutionContext
+    from .context import ActivityResolutionContext, AttackOrigin
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -140,12 +143,9 @@ def resolve_attack(
     governing_ability = _governing_ability(activity, ctx, weapon)
     # SRD 5.2 Exhaustion — an attack roll is a D20 Test, so the flat
     # ``-2 x level`` penalty rides on the attack bonus (no extra draw).
-    attack_bonus = (
-        _attack_bonus(activity, ctx, weapon, governing_ability)
-        + ctx.d20_test_penalty.get(ctx.caster.entity_id, 0)
-        + _fighting_style_attack_bonus(ctx, weapon)
-        + ctx.weapon_enchantment_to_hit
-    )
+    # A carrier's bonus can contain dice. Resolve it only after the first
+    # pre-roll hook accepts the attack, preserving draw-free rejection.
+    attack_bonus: int | None = None
     cast_level = ctx.slot_level or ctx.base_spell_level or 0
     # SRD §Bless / §Bane apply a signed d4 to the affected creature's OWN attack
     # rolls (keyed on the attacker). Rolled once per attack so each swing draws a
@@ -167,14 +167,8 @@ def resolve_attack(
                 else weapon_attack_bonus_expr
             )
 
-    # SRD §Advantage and Disadvantage — the attacker's own
-    # ``flags.advantage.attack`` / ``flags.disadvantage.attack`` override
-    # changes (both present cancel to normal, the legacy evaluator
-    # ``reconcile_adv``). These both feed the d20 mode below (F2b) and gate the
-    # SRD §Sneak Attack trigger.
-    attacker_has_advantage, attacker_has_disadvantage = attacker_advantage_flags(ctx)
     # SRD 5.2 Heavy — ability-score-invariant per attack (see docstring);
-    # computed once, outside the per-target loop, like the flag half above.
+    # computed once, outside the per-target loop.
     heavy_disadvantage = _weapon_heavy_disadvantage(weapon, ctx.caster)
 
     # SRD 5.2 §Weapon Mastery — Cleave (C15 Task 7): "You can make this
@@ -194,11 +188,20 @@ def resolve_attack(
             weapon,
             distance_ft=distance_ft,
             target_conditions=ctx.target_conditions.get(target.entity_id, []),
-            attacker_has_advantage=attacker_has_advantage,
-            attacker_has_disadvantage=attacker_has_disadvantage,
+            governing_ability=governing_ability,
             heavy_disadvantage=heavy_disadvantage,
         )
-        sources, roll_bonus = _consume_attack_roll_modifier(ctx, target, sources, attack_bonus)
+        sources, roll_bonus = _prepare_attack_roll(
+            activity, ctx, target, weapon, governing_ability, sources
+        )
+        if attack_bonus is None:
+            attack_bonus = (
+                _attack_bonus(activity, ctx, weapon, governing_ability)
+                + ctx.d20_test_penalty.get(ctx.caster.entity_id, 0)
+                + _fighting_style_attack_bonus(ctx, weapon)
+                + ctx.weapon_enchantment_to_hit
+            )
+        roll_bonus += attack_bonus
         roll = roll_d20_test(ctx.rng, roll_bonus, sources, forced_natural=_forced_d20(ctx, index))
         mode: AdvantageMode = roll.mode
         natural, total = roll.kept, roll.total
@@ -302,8 +305,6 @@ def resolve_attack(
                     governing_ability,
                     attack_bonus,
                     attack_bonus_expr,
-                    attacker_has_advantage=attacker_has_advantage,
-                    attacker_has_disadvantage=attacker_has_disadvantage,
                     heavy_disadvantage=heavy_disadvantage,
                 )
         else:
@@ -319,8 +320,6 @@ def _resolve_cleave_chain(
     attack_bonus: int,
     attack_bonus_expr: str | None,
     *,
-    attacker_has_advantage: bool,
-    attacker_has_disadvantage: bool,
     heavy_disadvantage: bool,
 ) -> None:
     """SRD 5.2 §Weapon Mastery — Cleave: roll the ONE chained melee attack
@@ -369,11 +368,13 @@ def _resolve_cleave_chain(
         weapon,
         distance_ft=distance_ft,
         target_conditions=candidate_conditions,
-        attacker_has_advantage=attacker_has_advantage,
-        attacker_has_disadvantage=attacker_has_disadvantage,
+        governing_ability=governing_ability,
         heavy_disadvantage=heavy_disadvantage,
     )
-    sources, roll_bonus = _consume_attack_roll_modifier(ctx, candidate, sources, attack_bonus)
+    sources, extra_bonus = _prepare_attack_roll(
+        activity, ctx, candidate, weapon, governing_ability, sources
+    )
+    roll_bonus = attack_bonus + extra_bonus
     roll = roll_d20_test(ctx.rng, roll_bonus, sources, forced_natural=None)
     total = roll.total
     if attack_bonus_expr:
@@ -431,26 +432,59 @@ def _resolve_cleave_chain(
     )
 
 
-def _consume_attack_roll_modifier(
+def _prepare_attack_roll(
+    activity: AttackActivity,
     ctx: ActivityResolutionContext,
     target: Combatant,
+    weapon: Weapon | None,
+    governing_ability: str | None,
     sources: AdvantageSources,
-    attack_bonus: int,
 ) -> tuple[AdvantageSources, int]:
-    """Consume a matching one-use grant even if the roll misses or cancels."""
-    if ctx.attack_roll_modifier is None:
-        return sources, attack_bonus
-    modifier = ctx.attack_roll_modifier(ctx.caster.entity_id, target.entity_id)
-    return (
-        AdvantageSources(
-            advantage=tuple(
-                _dedupe_preserve_order([*sources.advantage, *modifier.advantage_sources])
-            ),
-            disadvantage=tuple(
-                _dedupe_preserve_order([*sources.disadvantage, *modifier.disadvantage_sources])
-            ),
+    """Consume one-use grants and validate the full roll before any dice."""
+    bonus = 0
+    if ctx.attack_roll_modifier is not None:
+        modifier = ctx.attack_roll_modifier(ctx.caster.entity_id, target.entity_id)
+        sources = _merge_roll_modifier(sources, modifier)
+        bonus += modifier.flat_bonus
+    if ctx.attack_pre_roll is not None:
+        modifier = ctx.attack_pre_roll(
+            AttackPreRollContext(
+                attacker_id=ctx.caster.entity_id,
+                target_id=target.entity_id,
+                source_activity_id=activity.id,
+                weapon_slug=weapon.slug if weapon is not None else None,
+                weapon_category=weapon.weapon_category if weapon is not None else None,
+                unarmed=weapon is not None and weapon.slug == "unarmed-strike",
+                governing_ability=governing_ability,
+                advantage_sources=sources.advantage,
+                disadvantage_sources=sources.disadvantage,
+                attack_origin=_attack_origin(ctx),
+                turn_serial=ctx.turn_serial,
+            )
+        )
+        sources = _merge_roll_modifier(sources, modifier)
+        bonus += modifier.flat_bonus
+    return sources, bonus
+
+
+def _merge_roll_modifier(
+    sources: AdvantageSources, modifier: AttackRollModifier
+) -> AdvantageSources:
+    return AdvantageSources(
+        advantage=()
+        if modifier.forgo_all_advantage
+        else tuple(_dedupe_preserve_order([*sources.advantage, *modifier.advantage_sources])),
+        disadvantage=tuple(
+            _dedupe_preserve_order([*sources.disadvantage, *modifier.disadvantage_sources])
         ),
-        attack_bonus + modifier.flat_bonus,
+    )
+
+
+def _attack_origin(ctx: ActivityResolutionContext) -> AttackOrigin:
+    return (
+        "opportunity"
+        if ctx.is_opportunity_attack and ctx.attack_origin == "default"
+        else ctx.attack_origin
     )
 
 
@@ -491,8 +525,7 @@ def _attack_roll_sources(
     *,
     distance_ft: int | None,
     target_conditions: list[str],
-    attacker_has_advantage: bool,
-    attacker_has_disadvantage: bool,
+    governing_ability: str | None,
     heavy_disadvantage: bool,
 ) -> tuple[AdvantageSources, bool]:
     """Collect every advantage / disadvantage source for ONE attack roll by
@@ -540,14 +573,13 @@ def _attack_roll_sources(
     )
     adv_sources: list[AdvantageSource] = []
     dis_sources: list[AdvantageSource] = []
-    if attacker_has_advantage:
-        adv_sources.append("flag")
+    flag_sources = attack_effect_sources(ctx, target.entity_id, governing_ability)
+    adv_sources.extend(flag_sources.advantage)
     if attacker_cond_adv:
         adv_sources.append("condition:attacker")
     if target_cond_adv:
         adv_sources.append("condition:target")
-    if attacker_has_disadvantage:
-        dis_sources.append("flag")
+    dis_sources.extend(flag_sources.disadvantage)
     if attacker_cond_dis:
         dis_sources.append("condition:attacker")
     if target_cond_dis:
@@ -680,22 +712,45 @@ def attacker_advantage_flags(ctx: ActivityResolutionContext) -> tuple[bool, bool
     deferred — see the migration note); an absent/empty ``active_effects`` yields
     ``(False, False)`` (``normal``), byte-identical to the prior hardcode.
     """
-    has_advantage = False
-    has_disadvantage = False
-    for eff in ctx.active_effects:
-        if eff.target_id != ctx.caster.entity_id:
-            continue
-        for ch in eff.changes:
-            if ch.mode != "override" or ch.value is not True:
-                continue
-            if ch.key == "flags.advantage.attack":
-                has_advantage = True
-            elif ch.key == "flags.disadvantage.attack":
-                has_disadvantage = True
+    flags = _active_attack_flags(ctx, ctx.caster.entity_id)
+    has_advantage = "flags.advantage.attack" in flags
+    has_disadvantage = "flags.disadvantage.attack" in flags
     # Both present cancel to normal (the legacy evaluator ``reconcile_adv``).
     if has_advantage and has_disadvantage:
         return False, False
     return has_advantage, has_disadvantage
+
+
+def _active_attack_flags(ctx: ActivityResolutionContext, actor_id: str) -> set[str]:
+    effects = (
+        ctx.attack_active_effects(actor_id)
+        if ctx.attack_active_effects is not None
+        else ctx.active_effects
+    )
+    return {
+        change.key
+        for effect in effects
+        if effect.target_id == actor_id and not effect.disabled
+        for change in effect.changes
+        if change.mode == "override" and (change.value is True or change.value == "true")
+    }
+
+
+def attack_effect_sources(
+    ctx: ActivityResolutionContext, target_id: str, governing_ability: str | None
+) -> AdvantageSources:
+    """Project current generic effect flags without consuming any roll or grant."""
+    attacker_flags = _active_attack_flags(ctx, ctx.caster.entity_id)
+    target_flags = _active_attack_flags(ctx, target_id)
+    advantage = (
+        "flags.advantage.attack" in attacker_flags
+        or (governing_ability == "str" and "flags.advantage.attack.strength" in attacker_flags)
+        or "flags.advantage.attack_against" in target_flags
+    )
+    return AdvantageSources(
+        advantage=("flag",) if advantage else (),
+        disadvantage=("flag",) if "flags.disadvantage.attack" in attacker_flags else (),
+    )
 
 
 def sneak_attack_dice(ctx: ActivityResolutionContext) -> str | None:
@@ -1070,11 +1125,7 @@ def _attack_rider_plan(
         disadvantage_sources=sources.disadvantage,
         is_hit=True,
         is_crit=is_crit,
-        attack_origin=(
-            "opportunity"
-            if ctx.is_opportunity_attack and ctx.attack_origin == "default"
-            else ctx.attack_origin
-        ),
+        attack_origin=_attack_origin(ctx),
         turn_serial=ctx.turn_serial,
         sneak_eligible=eligible,
         sneak_will_fire=will_fire,
@@ -1218,6 +1269,8 @@ def _apply_on_hit_damage(
             expression = f"{plan.remaining_sneak_dice_count}d{match.group(2)}"
             by_type[first_type] += roll_expr(expression, ctx.rng, crit=is_crit)
 
+        _roll_damage_contributions(ctx, plan, by_type, first_type)
+
         damage_ctx = _sneak_damage_context(ctx, plan, first_type)
 
         # spell-delivered attack rolls are magical too (spells are magical effects)
@@ -1243,7 +1296,13 @@ def _apply_on_hit_damage(
 def _prepare_attack_rider(
     ctx: ActivityResolutionContext, plan: AttackResolutionContext
 ) -> AttackResolutionContext:
-    sacrificed = ctx.attack_rider_prepare(plan) if ctx.attack_rider_prepare is not None else 0
+    prepared = ctx.attack_rider_prepare(plan) if ctx.attack_rider_prepare is not None else 0
+    preparation = (
+        prepared
+        if isinstance(prepared, AttackRiderPreparation)
+        else AttackRiderPreparation(sneak_dice_sacrificed=prepared)
+    )
+    sacrificed = preparation.sneak_dice_sacrificed
     if (
         isinstance(sacrificed, bool)
         or not isinstance(sacrificed, int)
@@ -1258,7 +1317,49 @@ def _prepare_attack_rider(
         remaining_sneak_dice_count=(plan.sneak_dice_count - sacrificed)
         if plan.sneak_will_fire
         else 0,
+        damage_contributions=preparation.damage_contributions,
     )
+
+
+def _roll_damage_contributions(
+    ctx: ActivityResolutionContext,
+    plan: AttackResolutionContext,
+    by_type: dict[str, int],
+    inherited_type: str | None,
+) -> None:
+    """Fold canonical rider parts into the same authoritative hit instance."""
+    groups: set[str] = set()
+    for contribution in plan.damage_contributions:
+        group = contribution.shared_damage_group
+        if group is not None:
+            if group in groups:
+                continue
+            groups.add(group)
+        activity = contribution.activity
+        is_crit = plan.is_crit and activity.damage.critical.allow
+        first_type: str | None = None
+        for part in activity.damage.parts:
+            damage_type = (
+                inherited_type
+                if contribution.inherit_damage_type
+                else _part_type(part, activity.id, ctx)
+            )
+            if damage_type is None:
+                raise ValueError("attack rider damage requires a resolved damage type")
+            first_type = first_type or damage_type
+            resolved = resolve_damage_block(part, ctx, ability=plan.governing_ability)
+            by_type[damage_type] = by_type.get(damage_type, 0) + roll_damage_part(
+                resolved,
+                ctx.rng,
+                crit=is_crit,
+                character_level=ctx.caster_level,
+                slot_level=ctx.slot_level,
+                base_level=ctx.base_spell_level,
+            )
+        if is_crit and activity.damage.critical.bonus and first_type is not None:
+            by_type[first_type] += _resolve_critical_bonus(
+                activity.damage.critical.bonus, ctx, plan.governing_ability
+            )
 
 
 def _sneak_damage_context(

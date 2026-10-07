@@ -90,6 +90,7 @@ from dnd5e_srd_data import (
 )
 from dnd5e_srd_data.schema.common import ReactionCondition, ReactionTriggerKind
 from tools.translators.prose_cleanup import cleanup_prose
+from tools.translators.spell_timing import apply_spell_timing
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -2363,10 +2364,14 @@ def translate_spell_yaml(
         duration=_spell_duration(system.get("duration") or {}),
         materials=_spell_materials(system.get("materials") or {}),
         preparation=_spell_preparation(system.get("preparation") or {}),
-        activities=_apply_affects_corrections(
+        activities=apply_spell_timing(
             slug,
-            _apply_spell_save_cover_overrides(
-                slug, _apply_spell_damage_type_corrections(slug, _translate_activities(system))
+            _description(doc),
+            _apply_affects_corrections(
+                slug,
+                _apply_spell_save_cover_overrides(
+                    slug, _apply_spell_damage_type_corrections(slug, _translate_activities(system))
+                ),
             ),
         ),
         passive_effects=_passive_effects(doc),

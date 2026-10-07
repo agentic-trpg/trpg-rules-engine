@@ -31,7 +31,9 @@ from pydantic import (
     Field,
     NonNegativeInt,
     PositiveInt,
+    SerializerFunctionWrapHandler,
     field_serializer,
+    model_serializer,
 )
 
 # ---------------------------------------------------------------------------
@@ -614,6 +616,25 @@ class RollBlock(BaseModel, frozen=True):
 # ---------------------------------------------------------------------------
 
 
+class ActivityTiming(BaseModel, frozen=True):
+    """Execution timing, translated from audited source structures/patterns.
+
+    ``manual`` records an event/sequence the boundary scheduler cannot execute;
+    it must never fall back to cast-time resolution. No runtime prose parsing.
+    Effect ids refer to the spell's canonical PassiveEffect, not a runtime id.
+    """
+
+    trigger: Literal["immediate", "turn_start", "turn_end", "manual"] = "immediate"
+    recurring: bool = False
+    subject: Literal["target", "caster", "area"] = "target"
+    next_turn: bool = True
+    effect_id: str | None = None
+    requires_condition: str | None = None
+    ends_effect_on_success: bool = False
+    scale_with_slot: bool = True
+    effects_concentration: bool = True
+
+
 class _ActivityBase(BaseModel):
     """Shared fields every Foundry activity carries (base-activity.mjs).
     Subclasses redeclare only the ``kind`` discriminator and per-kind blocks."""
@@ -631,8 +652,18 @@ class _ActivityBase(BaseModel):
     target: TargetBlock = Field(default_factory=TargetBlock)
     uses: UsesBlock = Field(default_factory=UsesBlock)
     visibility: VisibilityBlock = Field(default_factory=VisibilityBlock)
+    timing: ActivityTiming = Field(default_factory=ActivityTiming)
 
     model_config = {"populate_by_name": True}
+
+    @model_serializer(mode="wrap")
+    def _serialize_activity(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        # Keep existing immediate canonical documents byte-stable; omitted
+        # timing validates to the explicit immediate default on every activity.
+        data: dict[str, Any] = handler(self)
+        if self.timing == ActivityTiming():
+            data.pop("timing", None)
+        return data
 
 
 class _ActivityBaseWithEffects(_ActivityBase):

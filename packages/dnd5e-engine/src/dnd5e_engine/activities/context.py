@@ -70,6 +70,9 @@ class ActivityResolutionContext:
     # verbatim (bounds-checked) instead of the activity/spell level. None for
     # every non-item cast.
     cast_level_override: int | None = None
+    # Live-combat spell dispatch also schedules typed deferred activities.
+    # Standalone resolution has no lifecycle and resolves only immediate work.
+    spell_dispatch: Callable[[Spell, ActivityResolutionContext], None] | None = None
     # Player-supplied damage-type choice per activity id, for parts that offer a
     # CHOICE of damage type (``DamagePartBlock.types`` with >1 entry — e.g.
     # Chromatic Orb's [acid, cold, fire, ...]). Keyed by activity id; the chosen

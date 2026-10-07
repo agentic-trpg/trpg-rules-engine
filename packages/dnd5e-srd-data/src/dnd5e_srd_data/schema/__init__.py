@@ -16,6 +16,7 @@ from dnd5e_srd_data.schema.common import (
     # Activity discriminated union + per-kind classes
     Activity,
     ActivityKind,
+    ActivityTiming,
     AppliedEffectRef,
     AttackActivity,
     AttackBlock,
@@ -140,6 +141,7 @@ __all__ = [
     "ActivationBlock",
     "Activity",
     "ActivityKind",
+    "ActivityTiming",
     "AdvancementEntry",
     "AdvancementType",
     "AppliedEffectRef",

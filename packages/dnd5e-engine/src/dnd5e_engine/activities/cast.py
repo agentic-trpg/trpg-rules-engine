@@ -4,8 +4,9 @@ A Foundry ``CastActivity`` (``cast-data.mjs``) wraps another spell by
 ``spell.uuid`` — a scroll or wand "casts" a referenced spell. The handler looks
 the spell up in ``ctx.spell_book``, builds a CHILD context (propagating the cast
 level, the referenced spell's base level / concentration flag / own
-``passive_effects``, and a recursion-guard chain), then RE-ENTERS
-``resolve_activity`` for each activity on the referenced spell. ``cast`` emits
+``passive_effects``, and a recursion-guard chain), then dispatches through the
+live timing scheduler. A standalone context re-enters ``resolve_activity``
+only for immediate activities. ``cast`` emits
 NOTHING itself — the delegated child activities emit their own events.
 
 MIRRORS, does not import from, ``effects/spell.py`` (the legacy ``type:
@@ -124,5 +125,9 @@ def resolve_cast(activity: CastActivity, ctx: ActivityResolutionContext) -> None
         cast_level_override=None,
         parent_chain=(*ctx.parent_chain, uuid),
     )
-    for child_activity in spell.activities:
-        resolve_activity(child_activity, child_ctx)
+    if ctx.spell_dispatch is not None:
+        ctx.spell_dispatch(spell, child_ctx)
+    else:
+        for child_activity in spell.activities:
+            if child_activity.timing.trigger == "immediate":
+                resolve_activity(child_activity, child_ctx)

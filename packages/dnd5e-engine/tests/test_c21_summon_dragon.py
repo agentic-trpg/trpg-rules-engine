@@ -395,10 +395,9 @@ def _far_foe() -> EncounterMemberSpec:
 
 def test_recasting_summon_dragon_replaces_the_summon() -> None:
     """SRD 5.2: "You lose Concentration on an effect the moment you start
-    casting a spell that requires Concentration." The recast's anchor drops
-    the first cast's concentration, which dismisses the first spirit, before
-    the second joins. The first spirit still stood at 1,0 when the second
-    cast was checked, so the second takes 0,1."""
+    casting a spell that requires Concentration." Starting the recast drops
+    the first cast's concentration and dismisses the first spirit before
+    resolution, so the second spirit can occupy the vacated 1,0 cell."""
     handle, live = start([summoner()], seed=1, encounter=[_far_foe()])
     _cast(handle)
     act(handle, SPIRIT, intent_type="pass")
@@ -420,7 +419,7 @@ def test_recasting_summon_dragon_replaces_the_summon() -> None:
     assert [e.reason for e in events(live, CombatantLeft)] == ["concentration_drop"]
     assert roster(live) == [SUMMONER, second, "mon:foe"]
     assert list(live.summons) == [second]
-    assert live.actor_zone[second] == cell_id(0, 1)
+    assert live.actor_zone[second] == cell_id(1, 0)
     assert live.concentration_chain[SUMMONER] == [ANCHOR]
     assert live.current_actor_id == second
 

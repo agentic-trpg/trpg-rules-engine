@@ -245,15 +245,6 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   chained one, so a future data change (a Finesse/ranged weapon gaining
   the `cleave` mastery) would silently double-fold the rider.
   (`packages/dnd5e-engine/src/dnd5e_engine/activities/attack.py::_resolve_cleave_chain`)
-- **An earlier concentration ends only after the new concentration spell
-  resolves (2026-09-25, C21a; amended 2026-09-26, C21b).** SRD 5.2: "You lose
-  Concentration on an effect the moment you start casting a spell that
-  requires Concentration". The engine drops the old chain after the new
-  spell's resolution, so a self-cast Bless's d4 still applies to Spiritual
-  Weapon's immediate attack roll, and a recast of Summon Dragon places its new
-  spirit while the old one still stands: the old spirit's space counts as
-  occupied, though the old spirit leaves before the new one joins.
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_record_effect_lifecycle_links`)
 - **A cast longer than a turn resolves as an Action (2026-09-25, C21a;
   amended 2026-09-26, C21b).** `_classify_action_cost` special-cases only
   Bonus Action and Reaction casts, so a 1-minute or 1-hour cast resolves
@@ -269,14 +260,6 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   Wall of Ice that drops its own caster to 0 Hit Points (see "A readied spell
   always targets its own caster") leaves it concentrating until its death.
   (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_apply_concentration_anchor`)
-- **A monster's concentration has no duration cap (2026-09-26, C21a).** SRD
-  5.2 Concentration: "If the effect has a maximum duration, the effect's
-  description specifies how long the creator can concentrate on it: up to 1
-  minute, 1 hour, or some other duration." The monster cast site folds its
-  cast without `concentration_max_rounds`, so a monster's concentration, an
-  anchored one included, outlives the spell's duration and ends only by
-  damage, the Incapacitated condition, death or a new concentration spell.
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_resolve_monster_cast`)
 - **A concentration spell cast from an item concentrates only through an
   effect of its own (2026-09-26, C21a).** SRD 5.2 Staff of Frost: "you can
   cast one of the spells on the following table from it" — a cast, so its Fog
@@ -284,7 +267,10 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   (a turn, a monster's stat block, a Ready) but not at `use_item`, whose fold
   gets no spell: a Staff of Frost's Fog Cloud leaves no concentration, while a
   Necklace of Prayer Beads' Bless, which applies a concentration effect, does
-  concentrate. Potions are the SRD's stated exception (see "A potion's spell
+  concentrate. Item-cast replacement also still occurs in the post-resolution
+  fold rather than at cast start. Typed deferred activities now use the shared
+  scheduler, but do not supply the missing item concentration anchors/caps.
+  Potions are the SRD's stated exception (see "A potion's spell
   concentrates").
   (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_fold_resolution_outcome`)
 - **`CombatOutcome.expended_resources` counts a concentration spell where its
@@ -303,7 +289,7 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   none of the four resolves an area, so `PlayerIntent.excluded_target_ids`
   sent with any of them is refused with `target_invalid`. Spirit Guardians'
   "designate creatures to be unaffected" stays unexpressed until a persistent
-  emanation is modelled (see "No ongoing-damage producer").
+  emanation is modelled (see "Unmapped ongoing damage and persistent-area producers").
   (`packages/dnd5e-engine/src/dnd5e_engine/areas.py::is_choice`,
   `packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_area_target_failure`)
 
@@ -1073,17 +1059,15 @@ zone + apply logic:
   `advance_monster_turn` has no branch that chooses any of the five C14
   actions; a monster only ever attacks, casts, moves, or flees.
   (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::advance_monster_turn`)
-- **No ongoing-damage producer.** (2026-08-26, narrowed 2026-09-03 C18) F3a
-  gave it a place to land — `turn_lifecycle.py` runs `round_start` /
-  `turn_start` / `turn_end` hooks off the single `_end_turn_and_advance` path —
-  but the only registered hooks are the pre-existing duration tick and
-  reaction-effect expiry, plus F3b's timed-effect expiry. Start-of-turn damage
-  (Acid Arrow, Spirit Guardians) still has no producer. (Regeneration and
-  recharge rolls closed C18 — they run at the head of a driven monster turn,
-  `_run_monster_turn_start`, rather than as a registered `turn_start` hook;
-  see `docs/migration/v0.5-to-v0.6.md`.)
-  (`packages/dnd5e-engine/src/dnd5e_engine/turn_lifecycle.py`,
-  `packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_register_default_turn_hooks`)
+- **Unmapped ongoing damage and persistent-area producers remain partial.**
+  (2026-08-26, narrowed 2026-10-07) Typed spell timed activities now produce
+  recurring start/end and next-turn-end work through `turn_lifecycle.py` for
+  six verified canonical activities, including Acid Arrow's next-turn-end
+  damage. Spirit Guardians and other unmapped effects still need producers;
+  entry hazards, moving areas and numbered rounds remain deferred. Monster
+  regeneration/recharge remain on the driven-monster path (C18).
+  See `docs/dev/spell-timed-activities.md` for the canonical audit and scope.
+  (`packages/dnd5e-engine/src/dnd5e_engine/timed_activities.py`)
 - **Initiative has no "Delay" option.** C14 Task 8 (2026-09-01) added the
   engine-rolled `d20 + DEX modifier` path (`initiative=None`) with Surprise
   and Incapacitated Disadvantage; the SRD "Delay" combat option (holding
@@ -1103,17 +1087,17 @@ zone + apply logic:
 
 ## Audit 2026-08-26 — spellcasting & concentration
 
-- **A spell's turn-boundary activities resolve at cast time (2026-10-04,
-  C26a).** Every activity a spell carries resolves when it is cast, including
-  the ones Foundry fires on a later turn: Weird's "End of Turn Save" makes
-  every creature in the sphere save twice at once, taking the damage twice.
-  Vitriolic Sphere's "End of Turn Damage", Incendiary Cloud's "Per Turn Save",
-  Storm of Vengeance's turn-2-to-5 activities, Earthquake's "End of Turn
-  Fissures", Delayed Blast Fireball's bead activities and the start-of-turn
-  activities of Ensnaring Strike, Searing Smite, Stinking Cloud and Tsunami
-  have the same shape. Needs a per-activity timing signal and a turn-boundary
-  producer (see "No ongoing-damage producer").
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::submit_player_intent`)
+- **Complex spell activity sequences remain manual.** (2026-10-04 C26a,
+  narrowed 2026-10-07) Canonical typed timing now schedules Weird, Vitriolic
+  Sphere, Stinking Cloud, Acid Arrow, Ensnaring Strike and Searing Smite at
+  their verified boundaries, with source cleanup and stable ordering. The
+  14 audited activities for Incendiary Cloud, Tsunami, Earthquake, Delayed
+  Blast Fireball, Storm of Vengeance, Forbiddance, Wall of Ice and Wall of
+  Thorns are explicitly manual and no longer resolve automatically at cast
+  time. Their moving areas, entry events, numbered stages or detonation state
+  require further typed producers; this does not claim full persistent areas.
+  (`packages/dnd5e-srd-data/tools/translators/spell_timing.py`,
+  `packages/dnd5e-engine/src/dnd5e_engine/timed_activities.py`)
 - **An item's hazard area saves at use time, not when a creature enters it
   (2026-10-04, C26a).** SRD 5.2 Ball Bearings and Caltrops: "A creature that
   enters this area for the first time on a turn must succeed on a DC …
@@ -1123,15 +1107,6 @@ zone + apply logic:
   target only). This is the item-side sibling of the turn-boundary row
   above.
   (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_area_targets`)
-- **A creature caught by its own effect repeats the save at the end of the
-  current turn, not "the end of its next turn" (2026-10-04, C26a).** Sleep
-  cast with `excluded_target_ids=()` catches its own caster: the caster
-  saves at the cast, then again when that same casting turn ends, because
-  the repeat-save hook fires for whichever actor's turn is ending without
-  checking whether the effect was applied on this very turn.
-  `test_c26_s05_sleep_spares_its_caster` slices `[:3]` around the extra
-  save.
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_hook_run_end_of_turn_saves`)
 - **Empty `scaling.mode` is treated as whole-mode dice scaling on upcast
   (2026-09-03, C17).** `activities/dice.py::_scaling_steps` scales dice for
   any leveled spell whose damage part carries the corpus-default

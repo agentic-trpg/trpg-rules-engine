@@ -203,6 +203,17 @@
           "width": ""
         }
       },
+      "timing": {
+        "effect_id": "WHhf4PFHQBDkCAyb",
+        "effects_concentration": true,
+        "ends_effect_on_success": false,
+        "next_turn": true,
+        "recurring": false,
+        "requires_condition": null,
+        "scale_with_slot": false,
+        "subject": "target",
+        "trigger": "turn_end"
+      },
       "uses": {
         "max": "",
         "recovery": [],

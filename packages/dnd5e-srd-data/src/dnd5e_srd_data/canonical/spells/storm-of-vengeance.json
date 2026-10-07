@@ -205,6 +205,17 @@
           "width": ""
         }
       },
+      "timing": {
+        "effect_id": null,
+        "effects_concentration": true,
+        "ends_effect_on_success": false,
+        "next_turn": true,
+        "recurring": false,
+        "requires_condition": null,
+        "scale_with_slot": true,
+        "subject": "target",
+        "trigger": "manual"
+      },
       "uses": {
         "max": "",
         "recovery": [],
@@ -313,6 +324,17 @@
           "width": ""
         }
       },
+      "timing": {
+        "effect_id": null,
+        "effects_concentration": true,
+        "ends_effect_on_success": false,
+        "next_turn": true,
+        "recurring": false,
+        "requires_condition": null,
+        "scale_with_slot": true,
+        "subject": "target",
+        "trigger": "manual"
+      },
       "uses": {
         "max": "",
         "recovery": [],
@@ -414,6 +436,17 @@
           "width": ""
         }
       },
+      "timing": {
+        "effect_id": null,
+        "effects_concentration": true,
+        "ends_effect_on_success": false,
+        "next_turn": true,
+        "recurring": false,
+        "requires_condition": null,
+        "scale_with_slot": true,
+        "subject": "target",
+        "trigger": "manual"
+      },
       "uses": {
         "max": "",
         "recovery": [],
@@ -514,6 +547,17 @@
           "units": "ft",
           "width": ""
         }
+      },
+      "timing": {
+        "effect_id": null,
+        "effects_concentration": true,
+        "ends_effect_on_success": false,
+        "next_turn": true,
+        "recurring": false,
+        "requires_condition": null,
+        "scale_with_slot": true,
+        "subject": "target",
+        "trigger": "manual"
       },
       "uses": {
         "max": "",

@@ -220,7 +220,7 @@ def test_a_monster_cast_is_anchored_when_its_target_saves(seed: int, anchored: b
     """The Dryad's first turn casts Entangle (1/day; STR save DC 14). Seed 5:
     the hero's d20 20 saves, so nothing concentrates but the anchor. Seed 1:
     a 5 fails, and the Restrained effect concentrates on its own. The
-    monster site keeps its uncapped duration."""
+    monster site enforces the spell's maximum duration."""
     dryad = foe(
         entity_id="mon:dryad",
         name="Dryad",
@@ -236,7 +236,9 @@ def test_a_monster_cast_is_anchored_when_its_target_saves(seed: int, anchored: b
     anchor = ("mon:dryad", "effect:entangle", "cast:entangle:mon:dryad")
     assert (live.concentration_chain["mon:dryad"] == [anchor]) is anchored
     assert bool(_anchors(live)) is anchored
-    assert "mon:dryad" not in live.concentration_rounds_remaining
+    # Entangle's one-minute cap now applies to a monster cast too; its
+    # casting turn has already consumed one of the ten caster turn ends.
+    assert live.concentration_rounds_remaining["mon:dryad"] == 9
 
 
 def test_a_readied_concentration_spell_now_concentrates() -> None:

@@ -92,6 +92,17 @@
           "width": ""
         }
       },
+      "timing": {
+        "effect_id": "A0tTvLeRetrC708K",
+        "effects_concentration": true,
+        "ends_effect_on_success": true,
+        "next_turn": true,
+        "recurring": true,
+        "requires_condition": null,
+        "scale_with_slot": true,
+        "subject": "target",
+        "trigger": "turn_start"
+      },
       "uses": {
         "max": "",
         "recovery": [],

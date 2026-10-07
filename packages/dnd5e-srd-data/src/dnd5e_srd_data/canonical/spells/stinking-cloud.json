@@ -86,6 +86,17 @@
           "width": ""
         }
       },
+      "timing": {
+        "effect_id": null,
+        "effects_concentration": false,
+        "ends_effect_on_success": false,
+        "next_turn": true,
+        "recurring": true,
+        "requires_condition": null,
+        "scale_with_slot": true,
+        "subject": "area",
+        "trigger": "turn_start"
+      },
       "uses": {
         "max": "",
         "recovery": [],

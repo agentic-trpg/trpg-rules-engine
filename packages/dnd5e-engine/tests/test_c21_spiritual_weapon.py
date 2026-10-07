@@ -155,17 +155,16 @@ def test_a_level_3_slot_adds_1d8() -> None:
     assert _damage(live) == [("mon:foe", 14, "force")]
 
 
-def test_a_running_bless_still_applies_to_the_immediate_attack() -> None:
-    """The concentration hand-off runs after the resolution (the recorded D1
-    timing edge): the cleric's own Bless still adds its d4 to the force's
-    immediate attack, then ends. Seed 3: the foe's d20 8 misses AC 30; the
-    attack rolls 19 + 6 and Bless's d4 2 = 27; 1d8 6 + 3 = 9 Force."""
+def test_a_running_bless_ends_before_the_new_spells_immediate_attack() -> None:
+    """Old concentration ends at casting start. Seed 3: the foe's d20 8
+    misses AC 30; the force attacks with 19 + 6, without a Bless draw, then
+    rolls 1d8 3 + 3 = 6 Force."""
     handle, live = start([cleric(ac=30)], seed=3)
     act(handle, "char:cleric", intent_type="cast_spell", spell_id="bless", target_id="char:cleric")
     monster_turn(handle)
     _cast(handle, target_id="mon:foe")
-    assert _hits(live)[-1] == ("char:cleric", 19, 6, 27)
-    assert _damage(live) == [("mon:foe", 9, "force")]
+    assert _hits(live)[-1] == ("char:cleric", 19, 6, 25)
+    assert _damage(live) == [("mon:foe", 6, "force")]
     assert [(e.effect_id, e.reason) for e in events(live, EffectExpired)] == [
         ("effect:blessed", "concentration_drop")
     ]

@@ -244,6 +244,7 @@ def build_activity_context(
     weapon_enchantment_to_hit: int = 0,
     stat_block_magnitudes: StatBlockMagnitudes | None = None,
     is_opportunity_attack: bool = False,
+    save_dc_override: int | None = None,
 ) -> ActivityResolutionContext:
     """Adapt the caster + the pre-computed hydration sidecars into the typed
     ``ActivityResolutionContext`` the new resolver consumes.
@@ -294,6 +295,9 @@ def build_activity_context(
     ``resolve_cast`` (``activities/cast.py``) to fall back to the wrapper
     activity's own/base spell level, unchanged from before this field
     existed.
+
+    ``save_dc_override`` reuses a captured casting DC for timed work without
+    rolling a caster's DC bonus again. Ordinary invocations compute it here.
     """
     mod = _caster_mod(caster)
     if stat_block_magnitudes is not None:
@@ -444,17 +448,21 @@ def build_activity_context(
         slot_level=slot_level,
         base_spell_level=base_spell_level,
         save_dc_override=(
-            None
-            if is_feature_invocation
-            or (stat_block_magnitudes is not None and base_spell_level is None)
-            else _save_dc(
-                caster,
-                mod,
-                caster_abilities=caster_abilities,
-                caster_proficiency_bonus=caster_proficiency_bonus,
-                spellcasting_ability=spellcasting_ability,
+            save_dc_override
+            if save_dc_override is not None
+            else (
+                None
+                if is_feature_invocation
+                or (stat_block_magnitudes is not None and base_spell_level is None)
+                else _save_dc(
+                    caster,
+                    mod,
+                    caster_abilities=caster_abilities,
+                    caster_proficiency_bonus=caster_proficiency_bonus,
+                    spellcasting_ability=spellcasting_ability,
+                )
+                + _spell_dc_bonus(caster, passive_damage_modifiers, rng)
             )
-            + _spell_dc_bonus(caster, passive_damage_modifiers, rng)
         ),
         # C15: ``None`` here (host never set ``PartyMemberSpec.attack_bonus``)
         # correctly falls through in ``attack.py::_attack_bonus`` to the real

@@ -240,6 +240,12 @@ from dnd5e_engine.spellcasting import (
     resolve_target_count,
     spell_component_metadata,
 )
+from dnd5e_engine.timed_activities import (
+    TimedActivityState,
+    begin_spell_cast,
+    register_timed_activity_hooks,
+    resolve_spell_activities,
+)
 from dnd5e_engine.turn_lifecycle import (
     TurnLifecycle,
     run_round_start,
@@ -2723,6 +2729,7 @@ def _resolve_monster_cast(
     slot_level = activity.spell.level if activity.spell.level is not None else spell.level
     spellcasting_ability = activity.spell.ability or current.spellcasting_ability
 
+    current = begin_spell_cast(live, current, spell)
     payload = _build_hydration_payload(live, caster=current)
     pre_event_count = len(live.event_log)
     actx = build_activity_context(
@@ -2748,8 +2755,9 @@ def _resolve_monster_cast(
     _emit_spell_cast(live, current.entity_id, spell, slot_level)
     if placement is not None:
         _emit_monster_area(live, current, spell.slug, placement)
-    for child_activity in spell.activities:
-        resolve_activity(child_activity, actx)
+    resolve_spell_activities(
+        live, spell, actx, area_origin=placement.origin if placement is not None else None
+    )
 
     # SRD 5.2 §Actions in Combat — Help; §Weapon Mastery — Vex / Sap: a
     # monster cast whose resolved spell includes an ``AttackActivity``
@@ -2767,9 +2775,14 @@ def _resolve_monster_cast(
 
     _mark_monster_action_used(live, current, action, (activity,))
 
-    # The PC path's fold; ``concentration_max_rounds`` stays on the default
-    # here — the same recorded follow-up as the mundane monster-attack site.
-    _fold_resolution_outcome(live, current, spell=spell, actx=actx, pre_event_count=pre_event_count)
+    _fold_resolution_outcome(
+        live,
+        current,
+        spell=spell,
+        actx=actx,
+        pre_event_count=pre_event_count,
+        concentration_max_rounds=_concentration_max_rounds(spell),
+    )
     _sync_legendary_resistance(live, pre_event_count)
 
 
@@ -3148,6 +3161,8 @@ class _LiveCombat:
     scene_sunlight: bool = False
     current_turn_index: int = 0
     round_number: int = 1
+    turn_serial: int = 0
+    timed_activities: TimedActivityState = field(default_factory=TimedActivityState)
     ended: bool = False
     final_outcome: CombatOutcome | None = None
     # each combatant's cell, per entity_id (read through ``topology``)
@@ -4894,6 +4909,7 @@ def _emit(live: _LiveCombat, event: CombatEvent) -> None:
             )
             return
     live.event_log.append(event)
+    live.timed_activities.observe(event)
     live.event_queue.put_nowait(event)
     for listener in live.event_listeners:
         listener(event)
@@ -4943,6 +4959,7 @@ def _emit_apply_turn_started(live: _LiveCombat, event: TurnStarted) -> None:
     refresh that actor's per-turn Action / Bonus Action / Reaction / movement
     budgets on the initiative slot."""
     live.current_actor_id = event.actor_id
+    live.turn_serial += 1
     # SRD §Action Economy — refresh the actor's per-turn budgets on the
     # start of their own turn. The reaction line ("You regain your
     # reaction at the start of your turn") and the Action/Bonus Action
@@ -5523,6 +5540,8 @@ def _record_death(live: _LiveCombat, event: Death, *, killer_id: str | None) -> 
     """
     if event.target_id in live.dead_ids:
         return
+    # Synthesized deaths also reach this entry point without passing _emit.
+    live.timed_activities.observe(event)
     live.dead_ids.add(event.target_id)
     live.deaths_recorded.append(
         DeathRecord(
@@ -6577,7 +6596,11 @@ def _record_effect_lifecycle_links(
             # Non-concentration condition applies (e.g. ghoul claw →
             # paralyzed, which is SRD instantaneous and has no repeat-save
             # mechanic) are skipped.
-            if failed_save is not None and eff.flags.get("concentration"):
+            if (
+                failed_save is not None
+                and eff.flags.get("concentration")
+                and not live.timed_activities.owns_repeat(key)
+            ):
                 live.repeat_save_on_turn_end.setdefault(key, []).append(
                     {
                         "ability": failed_save.ability,
@@ -6585,6 +6608,9 @@ def _record_effect_lifecycle_links(
                         "effect_name": eff.name,
                         "condition": ev.condition,
                         "caster_id": caster.entity_id,
+                        "applied_on_own_turn": (
+                            live.turn_serial if live.current_actor_id == ev.target_id else None
+                        ),
                     }
                 )
             continue
@@ -6845,7 +6871,8 @@ def _register_default_turn_hooks(live: _LiveCombat) -> None:
     hooks: it reads only the ending turn's own events and Bonus-Action mark,
     and it runs after the ``rounds`` tick, so the corpus Rage's ``rounds: 10``
     stays the outer cap.
-    ``engine:repeat-save`` is registered FIRST among the ``turn_end`` hooks: the
+    ``engine:timed-activities-end`` runs before legacy repeat saves and expiry.
+    ``engine:repeat-save`` follows it among the ``turn_end`` hooks: the
     SRD repeat save (Hold Person / Hold Monster / Dominate Person) must resolve
     while its source effect is still live, so it runs before
     ``engine:duration-tick`` could expire that effect on the same boundary.
@@ -6861,6 +6888,10 @@ def _register_default_turn_hooks(live: _LiveCombat) -> None:
     genuinely fire on the engine's own ``TurnStarted``/``TurnEnded`` boundary
     append here rather than editing the advance path.
     """
+    live.lifecycle.register(
+        "turn_start", _hook_expire_reaction_effects, key="engine:reaction-effect-expiry"
+    )
+    register_timed_activity_hooks(live)
     live.lifecycle.register("turn_end", _hook_run_end_of_turn_saves, key="engine:repeat-save")
     live.lifecycle.register("turn_end", _hook_tick_durations, key="engine:duration-tick")
     live.lifecycle.register(
@@ -6871,9 +6902,6 @@ def _register_default_turn_hooks(live: _LiveCombat) -> None:
     )
     live.lifecycle.register("turn_end", _hook_expire_vex_grants, key="engine:vex-expiry")
     live.lifecycle.register("turn_end", _hook_rage_extension, key="engine:rage-extension")
-    live.lifecycle.register(
-        "turn_start", _hook_expire_reaction_effects, key="engine:reaction-effect-expiry"
-    )
 
 
 def _tick_durations_at_turn_end(live: _LiveCombat, actor_id: str) -> None:
@@ -7081,6 +7109,10 @@ def _expire_timed_effects_at_turn_end(live: _LiveCombat, actor_id: str) -> None:
 
             # (1) turns — the TARGET's own turn end.
             if duration.turns is not None and target_id == actor_id:
+                if live.timed_activities.waiting_for_next_turn(
+                    (target_id, eff.id, eff.origin), live.turn_serial
+                ):
+                    continue
                 turns_left = duration.turns - 1
                 if turns_left > 0:
                     duration = duration.model_copy(update={"turns": turns_left})
@@ -7174,6 +7206,9 @@ def _run_end_of_turn_saves(live: _LiveCombat, actor_id: str) -> None:
         specs = live.repeat_save_on_turn_end.get(identity, [])
         surviving: list[dict[str, Any]] = []
         for spec in specs:
+            if spec.get("applied_on_own_turn") == live.turn_serial:
+                surviving.append(spec)
+                continue
             ability = spec["ability"]
             dc = int(spec["dc"])
             condition = str(spec["condition"])
@@ -8791,6 +8826,9 @@ def _begin_turn(live: _LiveCombat, *, new_round: bool) -> None:
         TurnPhase(actor_id=actor_id, phase="turn_start", round_number=live.round_number),
     )
     run_turn_start(live, actor_id)
+    if live.departed_actor_id is not None:
+        _hand_off_departed_turn(live)
+        return
     _maybe_roll_death_save(live)
 
 
@@ -8803,6 +8841,9 @@ def _open_turn_at_current_index(live: _LiveCombat) -> None:
     initiative order, whose removal already moved the pointer on, C21), so
     neither path skips the next creature's turn.
     """
+    if not live.initiative:
+        live.current_actor_id = None
+        return
     new_round = live.current_turn_index >= len(live.initiative)
     if new_round:
         live.current_turn_index = 0
@@ -8845,7 +8886,10 @@ def _end_turn_and_advance(live: _LiveCombat, actor_id: str) -> None:
         _hand_off_departed_turn(live)
         return
     _close_turn(live, actor_id)
-    live.current_turn_index += 1
+    if live.departed_actor_id == actor_id:
+        live.departed_actor_id = None
+    else:
+        live.current_turn_index += 1
     _open_turn_at_current_index(live)
 
 
@@ -11752,6 +11796,7 @@ def _resolve_readied_spell_cast(
     )
     _emit_spell_cast(live, reactor.entity_id, spell, slot_level)
 
+    reactor = begin_spell_cast(live, reactor, spell)
     spellcasting_ability = _resolve_caster_spellcasting_ability(reactor)
     payload = _build_hydration_payload(live, caster=reactor)
     actx = build_activity_context(
@@ -11785,8 +11830,7 @@ def _resolve_readied_spell_cast(
         undead_fortitude_holds=live.undead_fortitude_holds,
     )
     pre_event_count = len(live.event_log)
-    for activity in spell.activities:
-        resolve_activity(activity, actx, weapon=None)
+    resolve_spell_activities(live, spell, actx)
 
     # A readied concentration spell concentrates like an on-turn cast.
     _fold_resolution_outcome(
@@ -12355,6 +12399,8 @@ async def submit_player_intent(
             ),
         )
 
+    if cast_spell_for_timing is not None:
+        current = begin_spell_cast(live, current, cast_spell_for_timing)
     if _drain_counterspell_reaction(live, current, actor_id, intent):
         _end_action(live, actor_id, intent, allow_movement=is_bonus_action)
         return
@@ -12583,8 +12629,17 @@ async def submit_player_intent(
                 cover_origin=_area_cover_origin(live, current.entity_id, intent, activities),
             ),
         )
-        for activity in activities:
-            resolve_activity(activity, actx, weapon=fetched_weapon)
+        actx = replace(
+            actx,
+            spell_dispatch=lambda spell, child_ctx: resolve_spell_activities(
+                live, spell, child_ctx, intent=intent
+            ),
+        )
+        if cast_spell is not None:
+            resolve_spell_activities(live, cast_spell, actx, intent=intent)
+        else:
+            for activity in activities:
+                resolve_activity(activity, actx, weapon=fetched_weapon)
 
         # SRD 5.2 Bardic Inspiration — a die rolled this resolution is spent.
         _expend_granted_die(live, current, actx)

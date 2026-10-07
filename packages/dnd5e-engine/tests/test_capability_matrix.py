@@ -121,6 +121,30 @@ def test_named_inert_concentration_spells_really_are_inert(canonical_dir: Path) 
         )
 
 
+def test_published_timing_counts_and_acceptance_sources_match_canonical(
+    canonical_dir: Path, matrix_text: str
+) -> None:
+    from collections import Counter
+
+    triggers = Counter(
+        activity.get("timing", {}).get("trigger", "immediate")
+        for path in sorted((canonical_dir / "spells").glob("*.json"))
+        for activity in json.loads(path.read_text()).get("activities", [])
+    )
+    supported = triggers["turn_start"] + triggers["turn_end"]
+    assert f"**{supported} supported timed activities**" in matrix_text
+    assert f"**{triggers['manual']} manual activities**" in matrix_text
+    assert triggers == {"immediate": 444, "turn_start": 3, "turn_end": 3, "manual": 14}
+    for slug, trigger, recurring in (
+        ("weird", "turn_end", True),
+        ("vitriolic-sphere", "turn_end", False),
+        ("stinking-cloud", "turn_start", True),
+    ):
+        timings = [a["timing"] for a in _canonical_spell(slug)["activities"] if "timing" in a]
+        assert len(timings) == 1
+        assert (timings[0]["trigger"], timings[0]["recurring"]) == (trigger, recurring)
+
+
 def test_published_legendary_action_count_matches_the_corpus(
     canonical_dir: Path, matrix_text: str
 ) -> None:
@@ -274,6 +298,14 @@ def _monster_magnitudes_resolve() -> bool:
 
 
 _PROBES: dict[str, tuple[Any, str]] = {
+    "Spell timed activity lifecycle": (
+        lambda: (
+            "class PendingTimedActivity" in _src("timed_activities.py")
+            and "resolve_activity(pending.activity, ctx)" in _src("timed_activities.py")
+            and "register_timed_activity_hooks(live)" in _src("orchestrator.py")
+        ),
+        "⚠️ Partial",
+    ),
     # F1c/F1d: every save path adds a real ability + proficiency modifier.
     "Saving throws, half-on-save": (
         lambda: "save_modifier(" in _src("orchestrator.py"),
@@ -649,9 +681,9 @@ _PROBES: dict[str, tuple[Any, str]] = {
         "(C19)",
     ),
     # C20: Rage's extension check is a registered ``turn_end`` hook.
-    "Rage's end-of-turn extension check (C20)": (
+    "Turn lifecycle — start/end of turn, top-of-round hooks": (
         lambda: "engine:rage-extension" in _src("orchestrator.py"),
-        "Rage's end-of-turn extension check (C20)",
+        "Rage hooks remain on the shared advance path",
     ),
     # C20: Action Surge's extra action is counted on the live turn view.
     "Action Surge grants one restricted": (

@@ -212,6 +212,17 @@
           "width": ""
         }
       },
+      "timing": {
+        "effect_id": "6bCIQhmzYmSR5Ck1",
+        "effects_concentration": true,
+        "ends_effect_on_success": true,
+        "next_turn": true,
+        "recurring": true,
+        "requires_condition": "frightened",
+        "scale_with_slot": true,
+        "subject": "target",
+        "trigger": "turn_end"
+      },
       "uses": {
         "max": "",
         "recovery": [],

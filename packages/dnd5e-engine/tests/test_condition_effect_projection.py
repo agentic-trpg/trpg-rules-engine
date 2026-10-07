@@ -20,7 +20,10 @@ from dnd5e_engine.types.effects import ActiveEffectChange
 def test_migration_selection_is_an_explicit_clause_allowlist() -> None:
     migrations = condition_rules._DECLARATIVE_CONDITION_MIGRATIONS
     assert migrations == {
-        "charmed": frozenset({ConditionEffectKind.CANT_ATTACK_CHARMER}),
+        "charmed": frozenset(
+            {ConditionEffectKind.CANT_ATTACK_CHARMER, ConditionEffectKind.CHARMER_SOCIAL_ADVANTAGE}
+        ),
+        "deafened": frozenset({ConditionEffectKind.AUTO_FAIL_HEARING_CHECKS}),
         "incapacitated": frozenset(
             {
                 ConditionEffectKind.CANNOT_TAKE_ACTIONS,
@@ -71,6 +74,7 @@ def test_migration_selection_is_an_explicit_clause_allowlist() -> None:
         ),
         "blinded": frozenset(
             {
+                ConditionEffectKind.AUTO_FAIL_SIGHT_CHECKS,
                 ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS,
                 ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST,
             }
@@ -124,6 +128,13 @@ def test_migration_selection_is_an_explicit_clause_allowlist() -> None:
         (ConditionEffectKind.BREAKS_CONCENTRATION, "condition.breaks_concentration", True),
         (ConditionEffectKind.DISADVANTAGE_INITIATIVE, "flags.disadvantage.initiative", True),
         (ConditionEffectKind.ADVANTAGE_INITIATIVE, "flags.advantage.initiative", True),
+        (ConditionEffectKind.AUTO_FAIL_SIGHT_CHECKS, "flags.auto_fail.check.sight", True),
+        (ConditionEffectKind.AUTO_FAIL_HEARING_CHECKS, "flags.auto_fail.check.hearing", True),
+        (
+            ConditionEffectKind.CHARMER_SOCIAL_ADVANTAGE,
+            "flags.advantage.check.charmer_social",
+            True,
+        ),
     ],
 )
 def test_typed_clause_translates_to_active_effect_change(
@@ -138,6 +149,7 @@ def test_typed_clause_translates_to_active_effect_change(
     "slug",
     [
         "charmed",
+        "deafened",
         "exhaustion",
         "invisible",
         "frightened",
@@ -170,6 +182,9 @@ def test_projection_is_repeatable_pure_and_never_draws_dice(
         condition_rules.conditions_disadvantage_initiative,
         condition_rules.conditions_advantage_initiative,
         condition_rules.conditions_cannot_attack_charmer,
+        condition_rules.conditions_charmer_social_advantage,
+        lambda conditions: condition_rules.conditions_auto_fail_check(conditions, "sight"),
+        lambda conditions: condition_rules.conditions_auto_fail_check(conditions, "hearing"),
         condition_rules.conditions_cannot_move_toward_fear_source,
         condition_rules.conditions_grant_disadvantage_on_ability_checks,
         lambda conditions: condition_rules.conditions_unseen(
@@ -223,15 +238,15 @@ def test_empty_and_unsupported_effect_kinds_are_inert() -> None:
     )
 
 
-def test_other_conditions_are_not_migrated() -> None:
-    assert (
-        _project_condition_changes(
-            [
-                "deafened",
-            ]
-        )
-        == []
+def test_other_conditions_are_not_migrated(monkeypatch: pytest.MonkeyPatch) -> None:
+    # All fifteen SRD conditions now opt in to at least one clause. Future
+    # definitions must still remain inert until explicitly selected.
+    monkeypatch.setitem(
+        condition_rules._DECLARATIVE_CONDITION_EFFECTS,
+        "future-condition",
+        (ConditionEffect(kind=ConditionEffectKind.AUTO_FAIL_HEARING_CHECKS),),
     )
+    assert _project_condition_changes(["future-condition"]) == []
 
 
 @pytest.mark.parametrize(
@@ -346,7 +361,7 @@ def test_partial_migrations_project_only_opted_in_clauses(
 ) -> None:
     definition = BundledAssetLoader().get_condition(slug)
     assert definition is not None
-    # Sight failure and crawling remain outside the explicit migration selection.
+    # Sight failure is now selected; crawling remains outside the migration.
     assert {effect.kind for effect in definition.effects} == expected_kinds
     expected = [ActiveEffectChange(key="flags.disadvantage.attack", mode="override", value=True)]
     if slug != "prone":
@@ -357,6 +372,10 @@ def test_partial_migrations_project_only_opted_in_clauses(
         expected.insert(0, ActiveEffectChange(key="speed.override", mode="override", value=0))
         expected.append(
             ActiveEffectChange(key="flags.disadvantage.save.dexterity", mode="override", value=True)
+        )
+    if slug == "blinded":
+        expected.insert(
+            0, ActiveEffectChange(key="flags.auto_fail.check.sight", mode="override", value=True)
         )
     if slug == "prone":
         expected.extend(
@@ -445,7 +464,10 @@ def test_removing_own_attack_clause_preserves_blinded_and_prone_target_neighbour
     )
 
     assert _project_condition_changes([slug]) == (
-        [ActiveEffectChange(key="flags.advantage.attack", mode="override", value=True)]
+        [
+            ActiveEffectChange(key="flags.auto_fail.check.sight", mode="override", value=True),
+            ActiveEffectChange(key="flags.advantage.attack", mode="override", value=True),
+        ]
         if slug == "blinded"
         else [
             ActiveEffectChange(key="flags.advantage.attack.within_ft", mode="override", value=5),
@@ -557,6 +579,9 @@ def test_unopted_clauses_do_not_reach_an_expanded_projector(
                 ConditionEffectKind.SPEED_PENALTY_PER_LEVEL,
                 ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS,
                 ConditionEffectKind.DISADVANTAGE_ABILITY_CHECKS,
+                ConditionEffectKind.AUTO_FAIL_SIGHT_CHECKS,
+                ConditionEffectKind.AUTO_FAIL_HEARING_CHECKS,
+                ConditionEffectKind.CHARMER_SOCIAL_ADVANTAGE,
                 ConditionEffectKind.DISADVANTAGE_SAVE,
                 ConditionEffectKind.AUTO_FAIL_SAVE,
                 ConditionEffectKind.RESIST_ALL_DAMAGE,

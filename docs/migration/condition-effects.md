@@ -9,14 +9,15 @@ documents the data contract and its sources.
 | Condition | Migrated clauses |
 |---|---|
 | Incapacitated | `cannot_take_actions`, `breaks_concentration`, `disadvantage_initiative` |
-| Charmed | `cant_attack_charmer` |
+| Charmed | `cant_attack_charmer`, `charmer_social_advantage` |
 | Poisoned | `disadvantage_own_attacks`, `disadvantage_ability_checks` |
 | Grappled | `speed_zero`, `disadvantage_attacks_except_grappler` |
 | Invisible | `advantage_own_attacks`, `disadvantage_attacks_against`, `unseen` (observer-cannot-see-bearer gate); `advantage_initiative` (ungated) |
 | Frightened | `disadvantage_own_attacks`, `disadvantage_ability_checks` (fear-source sight gate), `cant_move_toward_fear_source` (no visibility gate) |
 | Exhaustion | `d20_test_penalty_per_level`, `speed_penalty_per_level` |
 | Restrained | `disadvantage_own_attacks`, `disadvantage_save` (DEX), `advantage_attacks_against`, `speed_zero` |
-| Blinded | `disadvantage_own_attacks`, `advantage_attacks_against` |
+| Blinded | `disadvantage_own_attacks`, `advantage_attacks_against`, `auto_fail_sight_checks` |
+| Deafened | `auto_fail_hearing_checks` |
 | Prone | `disadvantage_own_attacks`, `advantage_attacks_against` (within 5 ft), `disadvantage_attacks_against` (beyond 5 ft) |
 | Paralyzed | `auto_fail_save` (STR, DEX), `advantage_attacks_against`, `speed_zero`, `auto_crit_within_5ft` |
 | Stunned | `auto_fail_save` (STR, DEX), `advantage_attacks_against` |
@@ -213,7 +214,7 @@ Cancellation still draws one d20; duplicate conditions never stack extra dice.
 
 ### Source/context-relative consumers
 
-Charmed's `cant_attack_charmer` opts in independently of its social-check clause.
+Charmed's attack restriction and social-check clause opt in independently.
 `conditions_cannot_attack_charmer()` consumes the exact projected boolean override.
 Player attack and harmful spell rejection, monster target filtering (including
 legendary actions), and opportunity-attack filtering all consult this helper
@@ -354,14 +355,11 @@ particular:
 - Grappled: `speed_zero` and attack disadvantage except against the grappler are
   migrated. Source-identity tracking, drag/carry, escape and grapple removal
   retain their existing paths and implementation boundaries.
-- Blinded: the viewer's legacy inability to see remains in the composite
-  visibility predicate. `auto_fail_sight_checks` is not opted in and still
-  lacks a per-check sense requirement. Deafened's `auto_fail_hearing_checks`
-  likewise remains outside the migration and unimplemented.
+- Blinded/Deafened: typed sight/hearing requirements now consume their canonical auto-fail check clauses without RNG draws. Viewer visibility retains the existing composite predicate.
 - Prone: crawl movement restrictions. Both target-side distance attack clauses
   are migrated; unknown distance leaves those scoped clauses inert.
 - Charmed: the attack/harmful-target restriction is migrated; charmer identity
-  remains runtime lineage. `charmer_social_advantage` remains unimplemented.
+  remains runtime lineage. `charmer_social_advantage` now consumes typed social semantics and actual charmer lineage through the shared check pipeline.
 - Invisible: both attack clauses and `unseen` are migrated with separate typed
   observer gates. `advantage_initiative` is migrated without a visibility gate.
 - Frightened: attack/check disadvantage and no-approach are migrated; source

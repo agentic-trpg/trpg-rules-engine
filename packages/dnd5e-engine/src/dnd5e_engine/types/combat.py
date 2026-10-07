@@ -96,6 +96,10 @@ class Combatant(BaseModel):
     save_proficiencies: list[str] = Field(default_factory=list)  # Ability codes
     skill_proficiencies: list[str] = Field(default_factory=list)  # skill slugs
     skill_expertise: list[str] = Field(default_factory=list)
+    jack_of_all_trades: bool = False
+    reliable_talent: bool = False
+    stealth_disadvantage: bool = False
+    tool_proficiencies: tuple[str, ...] = ()
     # C15 (2026-09-02) R1 sentinel — SRD 5.2 §Weapon Proficiency: "Anyone can
     # wield a weapon, but you must have proficiency with it to add your
     # Proficiency Bonus to an attack roll you make with it" (Proficiency

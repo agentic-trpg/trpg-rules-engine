@@ -298,6 +298,15 @@ def _monster_magnitudes_resolve() -> bool:
 
 
 _PROBES: dict[str, tuple[Any, str]] = {
+    "Ability & skill checks": (
+        lambda: (
+            "class CheckRequest(" in _src("types/checks.py")
+            and "resolve_check_request(" in _src("activities/check.py")
+            and "resolve_live_check(live" in _src("orchestrator.py")
+            and "roll_d20_test(" in _src("activities/check_pipeline.py")
+        ),
+        "✅ Resolved",
+    ),
     "Persistent area lifecycle": (
         lambda: (
             "class PersistentArea:" in _src("persistent_areas.py")
@@ -374,16 +383,14 @@ _PROBES: dict[str, tuple[Any, str]] = {
         lambda: "ConcentrationCheck(" in _src("orchestrator.py"),
         "✅",
     ),
-    # Frightened's check LOS gap is closed. Sense-required automatic check
-    # failure remains outside explicit opt-in, so the conditions row stays
-    # Partial; closing one gap must not imply every SRD row is implemented.
+    # Sense/social check clauses are live; held-item/crawling rules still defer.
     "Conditions (the 15 SRD conditions)": (
         lambda: (
             '"actor_incapacitated"' in _src("orchestrator.py")
-            and ConditionEffectKind.AUTO_FAIL_SIGHT_CHECKS
-            not in _DECLARATIVE_CONDITION_MIGRATIONS["blinded"]
-            and ConditionEffectKind.AUTO_FAIL_HEARING_CHECKS
-            not in _DECLARATIVE_CONDITION_MIGRATIONS.get("deafened", frozenset())
+            and ConditionEffectKind.DROPS_HELD_ITEMS
+            not in _DECLARATIVE_CONDITION_MIGRATIONS["unconscious"]
+            and ConditionEffectKind.RESTRICTED_MOVEMENT_CRAWL
+            not in _DECLARATIVE_CONDITION_MIGRATIONS["prone"]
         ),
         "⚠️ Partial",
     ),
@@ -685,9 +692,12 @@ _PROBES: dict[str, tuple[Any, str]] = {
         lambda: "def subclass_gate_level(" in _src("rules/character.py"),
         "✅ Resolved",
     ),
-    "`CheckSpec.jack_of_all_trades` / `reliable_talent`": (
-        lambda: "reliable_talent: bool = False" in _src("check.py"),
-        "(C19)",
+    "| Jack of All Trades, Reliable Talent |": (
+        lambda: (
+            "reliable_talent=sheet.reliable_talent" in _src("build_party.py")
+            and "actor.reliable_talent and eligible" in _src("activities/check_pipeline.py")
+        ),
+        "Real live",
     ),
     # C20: Rage's extension check is a registered ``turn_end`` hook.
     "Turn lifecycle — start/end of turn, top-of-round hooks": (

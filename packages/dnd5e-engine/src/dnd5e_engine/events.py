@@ -36,6 +36,11 @@ DamageType = Literal[
 ]
 
 Ability = Literal["str", "dex", "con", "int", "wis", "cha"]
+RequiredSense = Literal["none", "sight", "hearing"]
+CheckContext = Literal[
+    "generic", "search", "study", "influence", "hide", "escape", "activity", "internal"
+]
+CheckCostOwner = Literal["action", "activity", "internal"]
 
 ConditionType = Literal[
     "blinded",
@@ -74,6 +79,8 @@ AdvantageSource = Literal[
     "dodge",
     "help",
     "trait",
+    "armor",
+    "charmed",
 ]
 
 EffectExpiryReason = Literal[
@@ -141,6 +148,7 @@ CastFailedReason = Literal[
 ]
 
 IntentType = Literal[
+    "check",
     "attack",
     "cast_spell",
     "use_item",
@@ -312,6 +320,18 @@ class CheckRolled(BaseModel):
     natural: int | None = None
     modifier: int | None = None
     sources: list[AdvantageSource] = Field(default_factory=list)
+    target_id: str | None = None
+    context: CheckContext = "activity"
+    required_sense: RequiredSense = "none"
+    social_interaction: bool = False
+    cost_owner: CheckCostOwner = "activity"
+    activity_id: str | None = None
+    auto_failure: Literal["sight", "hearing"] | None = None
+    rolled_natural: int | None = None
+    reliable_talent_applied: bool = False
+    inspiration_bonus: int = 0
+    advantage_sources: list[AdvantageSource] = Field(default_factory=list)
+    disadvantage_sources: list[AdvantageSource] = Field(default_factory=list)
 
 
 # ── damage / healing / temp HP ──────────────────────────────────────────────
@@ -886,6 +906,8 @@ __all__ = [
     "AttackRolled",
     "CastFailed",
     "CastFailedReason",
+    "CheckContext",
+    "CheckCostOwner",
     "CheckRolled",
     "CombatEnded",
     "CombatEvent",
@@ -915,6 +937,7 @@ __all__ = [
     "MoveFailed",
     "ReactionTriggered",
     "RechargeRolled",
+    "RequiredSense",
     "RoundEnded",
     "RoundStarted",
     "SaveRolled",

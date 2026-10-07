@@ -193,6 +193,10 @@ class PartyMemberSpec(BaseModel):
     save_proficiencies: tuple[str, ...] = ()
     skill_proficiencies: tuple[str, ...] = ()
     skill_expertise: tuple[str, ...] = ()
+    jack_of_all_trades: bool = False
+    reliable_talent: bool = False
+    stealth_disadvantage: bool = False
+    tool_proficiencies: tuple[str, ...] = ()
     weapon_proficiencies: tuple[str, ...] = ()
 
     @model_validator(mode="after")

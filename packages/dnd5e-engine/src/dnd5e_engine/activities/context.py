@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from dnd5e_engine.events import CombatEvent
+from dnd5e_engine.types.checks import CheckActorState, CheckRequest
 from dnd5e_engine.types.combat import Combatant
 
 if TYPE_CHECKING:
@@ -318,6 +319,8 @@ class ActivityResolutionContext:
     # the lower).
     # Heterogeneous by construction, hence the ``Any`` value type.
     check_modifiers: dict[str, dict[str, Any]] = field(default_factory=dict)
+    check_states: dict[str, CheckActorState] = field(default_factory=dict)
+    check_request: CheckRequest | None = None
     # Effect definitions riding the activity's applied-effect refs, to be
     # translated into runtime ``ActiveEffect``s (one per target) via
     # ``activities/effects.passive_effect_to_active_effect``. Supplied by golden

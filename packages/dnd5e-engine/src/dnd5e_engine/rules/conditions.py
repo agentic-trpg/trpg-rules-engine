@@ -42,7 +42,10 @@ class Condition(StrEnum):
 
 # Migration selection only; mechanical meaning comes from the canonical data.
 _DECLARATIVE_CONDITION_MIGRATIONS: dict[str, frozenset[ConditionEffectKind]] = {
-    "charmed": frozenset({ConditionEffectKind.CANT_ATTACK_CHARMER}),
+    "charmed": frozenset(
+        {ConditionEffectKind.CANT_ATTACK_CHARMER, ConditionEffectKind.CHARMER_SOCIAL_ADVANTAGE}
+    ),
+    "deafened": frozenset({ConditionEffectKind.AUTO_FAIL_HEARING_CHECKS}),
     "incapacitated": frozenset(
         {
             ConditionEffectKind.CANNOT_TAKE_ACTIONS,
@@ -90,6 +93,7 @@ _DECLARATIVE_CONDITION_MIGRATIONS: dict[str, frozenset[ConditionEffectKind]] = {
     ),
     "blinded": frozenset(
         {
+            ConditionEffectKind.AUTO_FAIL_SIGHT_CHECKS,
             ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS,
             ConditionEffectKind.ADVANTAGE_ATTACKS_AGAINST,
         }
@@ -421,6 +425,18 @@ def conditions_cannot_attack_charmer(conditions: list[str]) -> bool:
     """Whether a migrated clause forbids attacking the runtime charmer."""
     return projected_boolean_flag(
         _project_condition_changes(conditions), "targeting.cannot_attack_charmer"
+    )
+
+
+def conditions_auto_fail_check(conditions: list[str], sense: str) -> bool:
+    return sense in ("sight", "hearing") and projected_boolean_flag(
+        _project_condition_changes(conditions), f"flags.auto_fail.check.{sense}"
+    )
+
+
+def conditions_charmer_social_advantage(conditions: list[str]) -> bool:
+    return projected_boolean_flag(
+        _project_condition_changes(conditions), "flags.advantage.check.charmer_social"
     )
 
 

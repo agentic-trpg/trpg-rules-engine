@@ -80,6 +80,7 @@ from dnd5e_engine.specs import (
     WallSegment,
 )
 from dnd5e_engine.spellcasting import RitualCast, derive_pact_slots, resolve_ritual_cast
+from dnd5e_engine.types.checks import CheckRequest, HelpCheckSpec
 from dnd5e_engine.types.effects import (
     ActiveEffect,
     ActiveEffectChange,
@@ -94,6 +95,7 @@ __all__ = [
     "AdvantageSource",
     "CharacterBuildSpec",
     "CheckKind",
+    "CheckRequest",
     "CheckResult",
     "CheckSpec",
     "CombatEvent",
@@ -105,6 +107,7 @@ __all__ = [
     "EncounterMemberSpec",
     "EndCombatResult",
     "GridScene",
+    "HelpCheckSpec",
     "HitDicePool",
     "IntentRejectedError",
     "IntentType",

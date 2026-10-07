@@ -189,12 +189,12 @@ def test_new_consumers_use_projection_without_condition_name_fallback(monkeypatc
 
 
 def test_unrelated_clauses_remain_outside_all_opt_ins():
-    # Invisible Initiative is now opted in; these unrelated clauses remain deferred.
+    # Typed check clauses are opted in; unrelated clauses remain deferred.
+    assert K.CHARMER_SOCIAL_ADVANTAGE in rules._DECLARATIVE_CONDITION_MIGRATIONS["charmed"]
+    assert K.AUTO_FAIL_SIGHT_CHECKS in rules._DECLARATIVE_CONDITION_MIGRATIONS["blinded"]
+    assert K.AUTO_FAIL_HEARING_CHECKS in rules._DECLARATIVE_CONDITION_MIGRATIONS["deafened"]
     excluded = {
-        K.CHARMER_SOCIAL_ADVANTAGE,
         K.CANNOT_SPEAK,
-        K.AUTO_FAIL_SIGHT_CHECKS,
-        K.AUTO_FAIL_HEARING_CHECKS,
         K.MOVABLE_BY_GRAPPLER,
         K.RESTRICTED_MOVEMENT_CRAWL,
         K.DROPS_HELD_ITEMS,

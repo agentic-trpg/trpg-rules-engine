@@ -64,6 +64,9 @@ def build_party_member(
         save_proficiencies=tuple(sorted(sheet.save_proficiencies)),
         skill_proficiencies=tuple(sorted(sheet.skill_proficiencies)),
         skill_expertise=tuple(sorted(sheet.skill_expertise)),
+        jack_of_all_trades=sheet.jack_of_all_trades,
+        reliable_talent=sheet.reliable_talent,
+        stealth_disadvantage=sheet.stealth_disadvantage,
         weapon_proficiencies=tuple(sorted(sheet.weapon_proficiencies)),
     )
     if instance.attack_bonus is not None:

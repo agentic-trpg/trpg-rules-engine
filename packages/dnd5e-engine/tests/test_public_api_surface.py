@@ -13,6 +13,8 @@ TOP_LEVEL = {
     "CheckKind",
     "CheckResult",
     "CheckSpec",
+    "CheckRequest",
+    "HelpCheckSpec",
     "CombatEvent",
     "CombatHandle",
     "CombatInstance",

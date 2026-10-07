@@ -215,9 +215,9 @@ def test_context_mechanics_do_not_call_condition_name_predicates(monkeypatch):
 
 
 def test_metadata_only_clauses_remain_outside_runtime_opt_in():
-    # Initiative is now explicitly opted in; these unrelated clauses remain metadata.
+    # Initiative and social checks are explicitly opted in; movement remains metadata.
     assert K.ADVANTAGE_INITIATIVE in rules._DECLARATIVE_CONDITION_MIGRATIONS["invisible"]
-    assert K.CHARMER_SOCIAL_ADVANTAGE not in rules._DECLARATIVE_CONDITION_MIGRATIONS["charmed"]
+    assert K.CHARMER_SOCIAL_ADVANTAGE in rules._DECLARATIVE_CONDITION_MIGRATIONS["charmed"]
     assert K.MOVABLE_BY_GRAPPLER not in rules._DECLARATIVE_CONDITION_MIGRATIONS["grappled"]
     assert rules.project_passive_check_modifiers(["frightened"]) == {
         "passive_check_adv": [],

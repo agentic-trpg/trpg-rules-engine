@@ -22,6 +22,7 @@ from dnd5e_engine.activities.dice import roll_expr
 from dnd5e_engine.events import Ability, CombatEvent
 from dnd5e_engine.rules.conditions import active_condition_names
 from dnd5e_engine.rules.dice import proficiency_bonus
+from dnd5e_engine.types.checks import CheckActorState, CheckRequest
 from dnd5e_engine.types.combat import Combatant
 
 if TYPE_CHECKING:
@@ -205,6 +206,8 @@ def build_activity_context(
     passive_damage_modifiers: dict[str, dict[str, list[str]]],
     save_modifiers: dict[str, dict[str, Any]],
     check_modifiers: dict[str, dict[str, Any]] | None = None,
+    check_states: dict[str, CheckActorState] | None = None,
+    check_request: CheckRequest | None = None,
     target_cover: dict[str, str] | None = None,
     target_distance_ft: dict[str, int] | None = None,
     attacker_grappler_id: str | None = None,
@@ -535,6 +538,8 @@ def build_activity_context(
         sneak_attack_spent=sneak_attack_spent or {},
         sneak_attack_ally_adjacent=sneak_attack_ally_adjacent or {},
         check_modifiers=_check_modifier_sidecar(check_modifiers),
+        check_states=check_states or {},
+        check_request=check_request,
         source_passive_effects=source_passive_effects,
         spell_book=spell_book,
         scale_values=scale_values or {},

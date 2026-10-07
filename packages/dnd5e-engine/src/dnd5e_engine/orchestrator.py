@@ -198,6 +198,13 @@ from dnd5e_engine.events import (
     Unconscious,
 )
 from dnd5e_engine.lib_loader import get_lib_loader
+from dnd5e_engine.live_checks import (
+    observe_check,
+    preflight_activity_checks,
+    project_check_states,
+    resolve_live_check,
+    validate_check_surface,
+)
 from dnd5e_engine.outcome import (
     CombatOutcome,
     DeathRecord,
@@ -260,6 +267,7 @@ from dnd5e_engine.turn_lifecycle import (
     run_turn_end,
     run_turn_start,
 )
+from dnd5e_engine.types.checks import CheckRequest, HelpCheckGrant, HelpCheckSpec
 from dnd5e_engine.types.combat import BehaviorProfile, Combatant, MonsterActionUses, WornArmor
 from dnd5e_engine.types.conditions import ActiveCondition
 from dnd5e_engine.types.effects import ActiveEffect, ActiveEffectChange, ActiveEffectDuration
@@ -301,6 +309,8 @@ class PlayerIntent(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     intent_type: IntentType
+    check: CheckRequest | None = None
+    help_check: HelpCheckSpec | None = None
     spell_id: str | None = None
     target_id: str | None = None
     # C17 — SRD 5.2 "one creature or several": per-instance targets for a spell
@@ -2657,6 +2667,7 @@ def _monster_context_kwargs(
         "passive_damage_modifiers": payload["passive_damage_modifiers"],
         "save_modifiers": payload["save_modifiers"],
         "check_modifiers": payload["check_modifiers"],
+        "check_states": payload["check_states"],
         "d20_test_penalty": payload["d20_test_penalty"],
         "target_cover": _target_cover_map(live, current.entity_id, target_list),
         "target_distance_ft": _target_distance_map(live, current.entity_id, target_list),
@@ -3328,6 +3339,7 @@ class _LiveCombat:
     # helper at that helper's OWN next ``TurnStarted``
     # (``_emit_apply_turn_started``), never at the target's turn.
     help_grants: dict[str, list[str]] = field(default_factory=dict)
+    help_check_grants: list[HelpCheckGrant] = field(default_factory=list)
     # SRD 5.2 §Actions in Combat — Hide (C14 Task 5): the set of entity_ids
     # currently benefiting from a successful Hide check's Invisible
     # condition. Populated by ``_handle_hide`` on a successful DC 15
@@ -3712,7 +3724,11 @@ def _reject_invalid_help_target(live: _LiveCombat, actor_id: str, intent: Player
     intents without a typed failure event of their own. Split out of
     ``submit_player_intent`` purely to keep that dispatcher's cyclomatic
     complexity under the lint ceiling (mirrors ``_set_dodging``)."""
-    if intent.intent_type == "help" and _help_target_invalid(live, actor_id, intent):
+    if (
+        intent.intent_type == "help"
+        and intent.help_check is None
+        and _help_target_invalid(live, actor_id, intent)
+    ):
         raise IntentRejectedError(
             "target_invalid",
             f"actor_id={actor_id!r} help target {intent.target_id!r} is not a living "
@@ -4331,31 +4347,16 @@ def _handle_escape_grapple(live: _LiveCombat, current: Combatant, intent: Player
     athletics_mod = check_modifier(current, "str", "athletics").total
     acrobatics_mod = check_modifier(current, "dex", "acrobatics").total
     if athletics_mod >= acrobatics_mod:
-        skill, ability, modifier = "athletics", "str", athletics_mod
+        skill, ability = "athletics", "str"
     else:
-        skill, ability, modifier = "acrobatics", "dex", acrobatics_mod
-    # SRD 5.2 Exhaustion — "the roll is reduced by 2 times your Exhaustion
-    # level" on EVERY D20 Test, ability checks included. The grapple SAVE
-    # already threads this (mirroring ``_run_end_of_turn_saves``); the
-    # escape check must too (Fix round 1).
-    modifier += d20_test_penalty(current.conditions)
-    roll = roll_d20_test(live.rng, modifier, AdvantageSources())
-    succeeded = roll.total >= dc
-    _emit(
+        skill, ability = "acrobatics", "dex"
+    result = resolve_live_check(
         live,
-        CheckRolled(
-            actor_id=current.entity_id,
-            ability=ability,
-            skill=skill,
-            dc=dc,
-            roll_total=roll.total,
-            succeeded=succeeded,
-            advantage=roll.mode,
-            natural=roll.kept,
-            modifier=roll.modifier,
-            sources=list(roll.sources),
+        CheckRequest(
+            actor_id=current.entity_id, ability=ability, skill=skill, dc=dc, context="escape"
         ),
     )
+    succeeded = result.succeeded
     if succeeded:
         _release_one_grapple_effect(live, current.entity_id, grappled_ac.source_effect_id)
         _emit(live, ConditionRemoved(target_id=current.entity_id, condition="grappled"))
@@ -4380,9 +4381,19 @@ def _dispatch_simple_turn_ending_intent(
         _set_dodging(live, actor_id)
         _end_action(live, actor_id, intent)
         return True
+    if intent.intent_type == "check":
+        assert intent.check is not None
+        resolve_live_check(live, intent.check)
+        _end_action(live, actor_id, intent)
+        return True
     if intent.intent_type == "help":
-        assert intent.target_id is not None  # mypy: narrowed by the gate above
-        live.help_grants.setdefault(intent.target_id, []).append(actor_id)
+        if intent.help_check is not None:
+            live.help_check_grants.append(
+                HelpCheckGrant(actor_id, intent.help_check.beneficiary_id, intent.help_check.skill)
+            )
+        else:
+            assert intent.target_id is not None
+            live.help_grants.setdefault(intent.target_id, []).append(actor_id)
         _end_action(live, actor_id, intent)
         return True
     if intent.intent_type == "grapple":
@@ -4584,27 +4595,10 @@ def _handle_hide(live: _LiveCombat, current: Combatant, intent: PlayerIntent) ->
         IntentSubmitted(actor_id=actor_id, intent_type="hide"),
     )
 
-    modifier = check_modifier(current, "dex", "stealth").total + d20_test_penalty(
-        current.conditions
+    result = resolve_live_check(
+        live, CheckRequest(actor_id=actor_id, ability="dex", skill="stealth", dc=15, context="hide")
     )
-    roll = roll_d20_test(live.rng, modifier, AdvantageSources())
-    dc = 15
-    succeeded = roll.total >= dc
-    _emit(
-        live,
-        CheckRolled(
-            actor_id=actor_id,
-            ability="dex",
-            skill="stealth",
-            dc=dc,
-            roll_total=roll.total,
-            succeeded=succeeded,
-            advantage=roll.mode,
-            natural=roll.kept,
-            modifier=roll.modifier,
-            sources=list(roll.sources),
-        ),
-    )
+    succeeded = result.succeeded
     if succeeded:
         _emit(live, ConditionApplied(target_id=actor_id, condition="invisible"))
         live.hidden_entities.add(actor_id)
@@ -4946,6 +4940,8 @@ def _emit(live: _LiveCombat, event: CombatEvent) -> None:
     for listener in live.event_listeners:
         listener(event)
     live.persistent_areas.observe(live, event)
+    if isinstance(event, CheckRolled):
+        observe_check(live, event)
 
     if isinstance(event, TurnStarted):
         _emit_apply_turn_started(live, event)
@@ -5052,6 +5048,7 @@ def _emit_apply_turn_started(live: _LiveCombat, event: TurnStarted) -> None:
     # against target's. Strip this actor's entity_id out of every grant
     # list (an unconsumed grant simply lapses); drop any list left empty so
     # ``help_grants`` never accumulates dead keys.
+    live.help_check_grants[:] = [g for g in live.help_check_grants if g.helper_id != event.actor_id]
     for target_id in list(live.help_grants):
         helpers = [h for h in live.help_grants[target_id] if h != event.actor_id]
         if helpers:
@@ -6175,6 +6172,7 @@ def _build_hydration_payload(live: _LiveCombat, caster: Combatant | None = None)
         "passive_damage_modifiers": passive_damage_modifiers,
         "save_modifiers": save_modifiers,
         "check_modifiers": check_modifiers,
+        "check_states": project_check_states(live),
         "d20_test_penalty": d20_penalty,
         "existing_temp_hp": existing_temp_hp,
         "counter_state": counter_state,
@@ -7518,6 +7516,10 @@ def _build_pc_combatants(
                 save_proficiencies=list(pc.save_proficiencies),
                 skill_proficiencies=list(pc.skill_proficiencies),
                 skill_expertise=list(pc.skill_expertise),
+                jack_of_all_trades=pc.jack_of_all_trades,
+                reliable_talent=pc.reliable_talent,
+                stealth_disadvantage=pc.stealth_disadvantage,
+                tool_proficiencies=pc.tool_proficiencies,
                 # C15 R1 sentinel: thread ``None`` when the host never
                 # explicitly set the spec field (legacy "assume proficient"
                 # behaviour, byte-identical to every pre-C15 fixture);
@@ -9110,6 +9112,9 @@ def _purge_references_to(live: _LiveCombat, entity_id: str) -> None:
     """Drop ``entity_id`` where it appears inside another creature's entry: a
     Help grant it gave, a Vex grant against it, a Sap mark it sourced, a Slow
     mark it sourced. An entry left empty goes with it."""
+    live.help_check_grants[:] = [
+        g for g in live.help_check_grants if entity_id not in (g.helper_id, g.beneficiary_id)
+    ]
     for target in list(live.help_grants):
         helpers = [h for h in live.help_grants[target] if h != entity_id]
         if helpers:
@@ -11913,6 +11918,7 @@ def _resolve_readied_spell_cast(
         passive_damage_modifiers=payload["passive_damage_modifiers"],
         save_modifiers=payload["save_modifiers"],
         check_modifiers=payload["check_modifiers"],
+        check_states=payload["check_states"],
         d20_test_penalty=payload["d20_test_penalty"],
         # C15: is_proficient_attack left on default (True) — this reaction
         # path only resolves cast SaveActivity/DamageActivity from a Spell
@@ -12093,6 +12099,7 @@ def _drain_counterspell_reaction(
         passive_damage_modifiers=payload["passive_damage_modifiers"],
         save_modifiers=payload["save_modifiers"],
         check_modifiers=payload["check_modifiers"],
+        check_states=payload["check_states"],
         d20_test_penalty=payload["d20_test_penalty"],
         target_distance_ft=_target_distance_map(live, reactor.entity_id, [current]),
         # C15: is_proficient_attack left on default (True) — Counterspell
@@ -12214,6 +12221,7 @@ def _pc_attack_context_kwargs(
         "passive_damage_modifiers": payload["passive_damage_modifiers"],
         "save_modifiers": payload["save_modifiers"],
         "check_modifiers": payload["check_modifiers"],
+        "check_states": payload["check_states"],
         "d20_test_penalty": payload["d20_test_penalty"],
         # The degenerate case where an area's point of origin coincides with
         # the target's own cell (a small sphere centred on the lone creature
@@ -12320,6 +12328,7 @@ async def submit_player_intent(
     """
     live = _get_live(handle)
     current = _validate_intent_preconditions(live, handle, actor_id, intent=intent)
+    validate_check_surface(live, current, intent)
 
     # Movement and utility intents dispatch through dedicated handlers;
     # Hide pays its Action and uses the shared continuation helper. See
@@ -12357,6 +12366,7 @@ async def submit_player_intent(
     # budget consumption (mirroring the bonus-action gate): a rejected
     # invocation spends no Action/Bonus Action. The matching spend is
     # recorded only once the invocation is committed to resolving (below).
+    preflight_activity_checks(live, current, intent, feature_invocation)
     if _gate_feature_and_item_uses(live, actor_id, intent, feature_invocation):
         return
 
@@ -12681,7 +12691,12 @@ async def submit_player_intent(
             # (``PlayerIntent.redeem_granted_die``), sized from the granting
             # bard now — ``None`` for every non-attack intent and an attack
             # that asks for none.
-            granted_die=_redeemed_die(live, current, intent),
+            check_request=intent.check,
+            granted_die=(
+                _granted_die(live, _find_combatant(live, intent.check.actor_id) or current)
+                if intent.check and intent.check.redeem_granted_die
+                else _redeemed_die(live, current, intent)
+            ),
             # A FEATURE invocation must not inherit the blanket spell
             # save_dc_override; its save activity computes its own ability+PB DC.
             is_feature_invocation=bool(intent.feature_id),

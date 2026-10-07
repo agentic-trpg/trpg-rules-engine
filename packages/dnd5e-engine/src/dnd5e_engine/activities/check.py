@@ -1,49 +1,9 @@
-"""``check`` kind handler for the Activity resolver.
+"""Canonical CheckActivity adapter for the shared typed ability-check pipeline.
 
-A Foundry ``CheckActivity`` (``check-data.mjs``) makes ONE actor roll a d20-based
-ability or skill check against a DC, then applies its effect riders. Canonical
-SRD 5.2 examples: Maze's "Banish to Maze" (Intelligence/investigation check vs DC
-20 to escape) and manacles' "Escape Check" / "Burst Check" (sleight-of-hand /
-athletics vs a flat DC).
-
-Unlike a ``save``, a check CAN carry no DC at all. A no-DC check is purely
-informational: the actor still rolls, ``CheckRolled`` is still emitted, but
-``succeeded`` is ``None`` (no pass/fail comparison is made).
-
-MIRRORS, does not import from, ``effects/check.py``:
-
-* The ACTOR that rolls is the activity's first TARGET when one is present (an
-  imposed check — escape the manacles, resist Banish to Maze), exactly as
-  ``effects/check.py`` rolls for ``ctx.target_list[0]``. With no target the
-  CASTER rolls (a self-check — a PC's own Stealth check). Contested checks (a
-  second, opposed caster roll) are out of Piece-1-2 scope.
-* The skill→ability mapping mirrors ``effects/check.py:_SKILL_TO_ABILITY`` but is
-  keyed by the Foundry 3-letter skill *codes* the canonical ``check.associated``
-  field actually carries (``"ath"``, ``"slt"``, ``"inv"``, ...) rather than the
-  the legacy evaluator long-form (``"athletics"``). Source: ``CONFIG.DND5E.skills`` in
-  ``foundry/module/config.mjs``.
-* The modifier is the RESOLVED integer off a per-actor sidecar
-  (``ctx.check_modifiers``), mirroring ``effects/check.py:_read_check_modifiers``
-  / ``_modifier_for_key`` — the skill mod when a skill is named (the 3-letter
-  ``associated`` code mapped to the canonical SRD slug the sidecar is keyed by,
-  via ``SKILL_CODE_TO_SLUG``), else the ability mod
-  (``ability_mods[ability]``), else +0. ``Combatant`` carries no per-skill table,
-  so the value comes from the sidecar.
-* The DC resolution mirrors Foundry ``check-data.mjs`` prepareFinalData
-  (lines 65-69): ``"spellcasting"`` → ``8 + prof + spellcasting-ability mod``;
-  ``"flat"`` → the parsed ``check.dc.formula``; an EMPTY calculation falls back
-  to the flat ``formula`` when one is present (Foundry's ``simplifyBonus(formula)``
-  branch — every real canonical check ships ``calculation=""`` + a literal
-  formula), and resolves to ``None`` only when calculation AND formula are both
-  empty.
-
-The d20 goes through the shared ``activities/d20.py::roll_d20_test`` primitive
-(F2c) and honors ``ctx.variables["force_check_d20"]`` — a NEW test seam (our own;
-``effects/check.py`` relies on a seeded ``ctx.rng``). Condition-derived
-disadvantage (SRD 5.2 §Frightened / §Poisoned / §Exhaustion) arrives on
-``ctx.check_modifiers[actor]["disadvantage"]``. Riders fire AFTER
-the roll via the shared ``apply_activity_effects`` (``EffectApplied`` then
-``ConditionApplied``), applied to the rolling actor.
+First target rolls when present, otherwise the caster. Canonical ability/skill
+and DC adapters remain pure and public; explicit standalone modifier sidecars
+are supported. Live checks use typed actor state and real Combatant magnitudes.
+Effect riders retain their existing placement after the authoritative check.
 """
 
 from __future__ import annotations
@@ -51,17 +11,16 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Final, get_args
 
-from dnd5e_engine.activities.d20 import AdvantageSources, D20Result, roll_d20_test
+from dnd5e_engine.activities.check_pipeline import activity_check_modifier, resolve_check_request
 from dnd5e_engine.activities.dice import roll_expr
 from dnd5e_engine.activities.effects import apply_activity_effects
 from dnd5e_engine.activities.formula import resolve_roll_data
-from dnd5e_engine.events import Ability, AdvantageSource, CheckRolled
+from dnd5e_engine.events import Ability
 from dnd5e_engine.rules.skills import SKILL_CODE_TO_SLUG
+from dnd5e_engine.types.checks import CheckRequest
 
 if TYPE_CHECKING:
     from dnd5e_srd_data.schema.common import CheckActivity
-
-    from dnd5e_engine.types.combat import Combatant
 
     from .context import ActivityResolutionContext
 
@@ -106,6 +65,7 @@ _SKILL_TO_ABILITY: Final[dict[str, Ability]] = {
 # Test-determinism seam for the natural check d20 (our own code; effects/check.py
 # has none and relies on a seeded ctx.rng).
 FORCE_CHECK_D20: Final = "force_check_d20"
+_check_modifier = activity_check_modifier  # retained compatibility seam
 
 
 def resolve_check(activity: CheckActivity, ctx: ActivityResolutionContext) -> None:
@@ -121,24 +81,17 @@ def resolve_check(activity: CheckActivity, ctx: ActivityResolutionContext) -> No
     skill, ability = _resolve_skill_ability(activity)
     actor = ctx.targets[0] if ctx.targets else ctx.caster
 
-    modifier = _check_modifier(ctx, actor, skill=skill, ability=ability)
-    roll = _roll_d20(ctx, actor, modifier)
-    total = roll.total
-    succeeded = (total >= dc) if dc is not None else None
-
-    ctx.event_emitter(
-        CheckRolled(
-            actor_id=actor.entity_id,
-            ability=ability,
-            skill=skill,
-            dc=dc,
-            roll_total=total,
-            succeeded=succeeded,
-            advantage=roll.mode,
-            natural=roll.kept,
-            modifier=roll.modifier,
-            sources=list(roll.sources),
-        )
+    slug = SKILL_CODE_TO_SLUG.get(skill or "")
+    request = ctx.check_request or CheckRequest(
+        actor_id=actor.entity_id,
+        ability=ability,
+        skill=slug,
+        tool=skill if skill and slug is None else None,
+        dc=dc,
+        context="activity",
+    )
+    resolve_check_request(
+        request, ctx, cost_owner="activity", activity_id=activity.id, skill_label=skill
     )
 
     # Riders apply to the rolling actor (e.g. manacles "Bind" → Restrained on the
@@ -151,7 +104,9 @@ def resolve_check(activity: CheckActivity, ctx: ActivityResolutionContext) -> No
 # ── DC resolution ─────────────────────────────────────────────────────────────
 
 
-def _resolve_dc(activity: CheckActivity, ctx: ActivityResolutionContext) -> int | None:
+def _resolve_dc(
+    activity: CheckActivity, ctx: ActivityResolutionContext, *, allow_dice: bool = True
+) -> int | None:
     """Resolve ``check.dc`` to a concrete int, or ``None`` for a no-DC check.
 
     Mirrors Foundry ``check-data.mjs`` prepareFinalData:
@@ -182,6 +137,8 @@ def _resolve_dc(activity: CheckActivity, ctx: ActivityResolutionContext) -> int 
             # Empty calculation AND empty formula → a no-DC informational check.
             return None
         resolved = resolve_roll_data(formula, ctx, ability=ctx.spellcasting_ability)
+        if not allow_dice and "d" in resolved.lower():
+            raise ValueError("live check DC must be a scalar")
         return roll_expr(resolved, ctx.rng)
 
     raise ValueError(
@@ -220,65 +177,6 @@ def _resolve_skill_ability(activity: CheckActivity) -> tuple[str | None, Ability
     return skill, ability  # type: ignore[return-value]
 
 
-# ── roll + modifier ───────────────────────────────────────────────────────────
-
-
-def _roll_d20(ctx: ActivityResolutionContext, actor: Combatant, modifier: int) -> D20Result:
-    """The check's D20 Test, honoring ``variables["force_check_d20"]``.
-
-    Delegates to the shared ``activities/d20.py::roll_d20_test`` primitive (F2c),
-    so an ability check resolves advantage in the same one place an attack or a
-    save does.
-
-    SRD 5.2 §Frightened / §Poisoned / §Exhaustion impose disadvantage on ability
-    checks. That is projected onto ``ctx.check_modifiers[actor]["disadvantage"]``
-    by the orchestrator (F1d) and consumed HERE for the first time — tagged
-    ``"condition:attacker"`` because the source is always a condition on the
-    ROLLING actor. There is no check-advantage producer in the engine yet
-    (Help / Guidance are not modelled), so the advantage side stays empty.
-
-    Draw discipline: a check with no disadvantage flag consumes exactly one
-    ``rng.randint(1, 20)`` (unchanged); a flagged actor now consumes two.
-    """
-    forced = ctx.variables.get(FORCE_CHECK_D20)
-    forced_natural = int(forced) if forced is not None else None
-    dis: tuple[AdvantageSource, ...] = ()
-    if ctx.check_modifiers.get(actor.entity_id, {}).get("disadvantage"):
-        dis = ("condition:attacker",)
-    return roll_d20_test(
-        ctx.rng, modifier, AdvantageSources(disadvantage=dis), forced_natural=forced_natural
-    )
-
-
-def _check_modifier(
-    ctx: ActivityResolutionContext,
-    actor: Combatant,
-    *,
-    skill: str | None,
-    ability: str,
-) -> int:
-    """The actor's resolved check modifier off ``ctx.check_modifiers``.
-
-    Mirrors ``effects/check.py:_modifier_for_key`` — the skill mod takes
-    precedence when a skill is named and present; else the ability mod
-    (``ability_mods[ability]``); else +0. The sidecar shape is
-    ``{entity_id: {"skills": {slug: mod}, "ability_mods": {ability: mod}}}``,
-    keyed by the canonical SRD skill SLUG, so the activity's Foundry 3-letter
-    ``check.associated`` code is translated through ``SKILL_CODE_TO_SLUG``
-    first. The raw code is then tried as a fallback — LEGACY: it keeps a
-    host-built sidecar that was keyed by code (the pre-F1d golden-fixture shape)
-    working unchanged.
-
-    SRD 5.2 Exhaustion — an ability check is a D20 Test, so the flat
-    ``-2 x level`` penalty (``ctx.d20_test_penalty[actor]``) is folded on top of
-    whichever base the lookup resolved to. A flat modifier adds no draw.
-    """
-    penalty = ctx.d20_test_penalty.get(actor.entity_id, 0)
-    actor_mods = ctx.check_modifiers.get(actor.entity_id, {})
-    if skill is not None:
-        skills = actor_mods.get("skills", {})
-        for key in (SKILL_CODE_TO_SLUG.get(skill), skill):
-            if key is not None and key in skills:
-                return int(skills[key]) + penalty
-    ability_mods = actor_mods.get("ability_mods", {})
-    return int(ability_mods.get(ability, 0)) + penalty
+# Public, pure adapters also used by pre-payment live validation.
+check_dc = _resolve_dc
+check_skill_ability = _resolve_skill_ability

@@ -95,6 +95,9 @@ def project_condition_effects(effects: Iterable[ConditionEffect]) -> list[Active
     flag_keys = {
         ConditionEffectKind.DISADVANTAGE_OWN_ATTACKS: "flags.disadvantage.attack",
         ConditionEffectKind.DISADVANTAGE_ABILITY_CHECKS: "flags.disadvantage.check",
+        ConditionEffectKind.AUTO_FAIL_SIGHT_CHECKS: "flags.auto_fail.check.sight",
+        ConditionEffectKind.AUTO_FAIL_HEARING_CHECKS: "flags.auto_fail.check.hearing",
+        ConditionEffectKind.CHARMER_SOCIAL_ADVANTAGE: "flags.advantage.check.charmer_social",
         ConditionEffectKind.RESIST_ALL_DAMAGE: "damage.resistance.all",
         ConditionEffectKind.CANNOT_TAKE_ACTIONS: "condition.cannot_take_actions",
         ConditionEffectKind.BREAKS_CONCENTRATION: "condition.breaks_concentration",

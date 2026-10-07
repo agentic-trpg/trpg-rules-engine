@@ -406,17 +406,11 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   de-duplicated: a feat reachable both as a bare feature-choice-pool pick
   and as a `feat:<class>:<level>:<feat>` token lands twice.
   (`packages/dnd5e-engine/src/dnd5e_engine/build_spec.py::derive_sheet`)
-- **In-combat consumers of several C19-derived sheet fields don't exist yet
-  (2026-09-23, C19 scope cut).** `DerivedSheet.stealth_disadvantage`,
-  `jack_of_all_trades` and `reliable_talent` are computed but never read
-  in combat — `orchestrator.py`'s Hide handler applies no Stealth
-  disadvantage for a hidden PC in noisy armor, and no in-combat skill/
-  ability check applies Jack of All Trades or Reliable Talent (the
-  standalone `check.py::resolve_check` is the only consumer today). A Mage
-  Armor cast does not flip a target's derived `ac_calc_mode`. Feature-
-  driven skill bonuses (Divine Order Thaumaturge, Primal Order Magician,
-  Primal Knowledge) are similarly unread anywhere.
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py`)
+- **Remaining C19 sheet consumers (narrowed 2026-10-07).** Noisy armor,
+  Jack of All Trades and Reliable Talent now project into live combat and the
+  shared typed ability-check pipeline. Mage Armor still does not flip derived
+  `ac_calc_mode`; Divine Order Thaumaturge, Primal Order Magician and Primal
+  Knowledge bonuses remain separate follow-ups.
 
 ## Architecture (2026-08-22)
 
@@ -497,9 +491,8 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   obscurement, no Blinded emission from darkness; `can_see` reads
   `GridScene.lighting` / `obscurement_cells` plus the viewer's projected
   senses. Sunlight Sensitivity's attack-roll half closed C18 (the new
-  whole-scene `GridScene.sunlight` flag); its ability-check half (the
-  trait disadvantages ALL ability checks in sunlight) is still open (see
-  "Typed traits are hydrated..." under "Audit 2026-08-26 — monsters" below).
+  whole-scene `GridScene.sunlight` flag); its ability-check half now shares the typed check pipeline
+  (2026-10-07), applying to all ability checks in sunlight.
   No *See Invisibility*-style effect flag
   pierces the Invisible condition either (C16b plan ruling R3) — only
   blindsight/
@@ -634,17 +627,13 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   Reckless Attack and no hit.
   (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_resolve_feature_invocation`,
   `packages/dnd5e-srd-data/src/dnd5e_srd_data/canonical/features/brutal-strike.json`)
-- **Bardic Inspiration applies to weapon attack rolls only (2026-09-24, C20
-  scope cut).** SRD 5.2: "Once within the next hour when the creature fails a
-  D20 Test, the creature can roll the Bardic Inspiration die and add the number
-  rolled to the d20". `redeem_granted_die` rides only an `attack` intent:
-  `cast_spell` ignores it, so a spell attack roll never uses the die. Saves and
-  ability checks have no intent field to carry the holder's choice, so the die
-  never helps them either. The grant isn't gated on "within 60 feet of yourself
-  who can see or hear you", and a die whose bard isn't in the combat can't be
-  redeemed (its size is read from that bard's `@scale.bard.inspiration`).
-  (`packages/dnd5e-engine/src/dnd5e_engine/activities/attack.py`,
-  `packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_redeemed_die`)
+- **Bardic Inspiration follow-ups (narrowed 2026-10-07).** Weapon attacks retain
+  their existing redemption path; ability checks now accept explicit nested
+  redemption, roll only after a failed D20 Test and expend the held effect.
+  Spell-attack and save redemption, grant range/sight/hearing enforcement and
+  redemption after the granting bard departs remain deferred.
+  (`packages/dnd5e-engine/src/dnd5e_engine/activities/check_pipeline.py`)
+
 - **Font of Inspiration and Superior Inspiration are not modelled
   (2026-09-25).** SRD 5.2 Font of Inspiration (Bard 5): "You now regain all
   your expended uses of Bardic Inspiration when you finish a Short or Long
@@ -1014,23 +1003,19 @@ zone + apply logic:
 
 ## Audit 2026-08-26 — action economy & turn structure
 
-- **`search`/`study`/`influence`/`utilize` do not exist as `IntentType`
-  values at all** (`dodge` closed C14 Task 3, `help` assist-an-attack-roll
-  flavor closed C14 Task 4, `hide` closed C14 Task 5 — all 2026-09-01;
-  Help's ability-check flavor is still open, no check-advantage producer
-  exists). Deliberately deferred from C14 in full: the campaign design
-  (spec §5, row C14) lists all four intents, but none has an approved
-  catalog acceptance scenario or a harmonised API-DELTAS row — a maintainer
-  flag, not an oversight.
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py`)
-- **Help's ability-check flavor is unimplemented.** No check-advantage
-  producer exists on the check-resolution path, so a helper cannot grant
-  Advantage on an ally's upcoming ability check (only the attack-roll
-  flavor is wired).
-  (`packages/dnd5e-engine/src/dnd5e_engine/activities/check.py`)
+- **Search / Study / Influence now use typed check Action wrappers (2026-10-07).**
+  `PlayerIntent.check.context` selects audited ability/skill combinations and
+  requires a DM-supplied DC. DM/Agent still selects the check and semantics;
+  the engine performs no narrative, NPC attitude or DC judgment. `utilize`,
+  exploration and opposed searches remain outside this seam.
+
+- **Help ability-check flavor resolved (2026-10-07).** Typed beneficiary/skill,
+  helper proficiency, DM-declared assistance possibility/range, one-use matching
+  consumption and helper-next-turn expiry share the existing Help lifecycle.
+  Attack Help behavior is unchanged.
+
 - **Help has no "target is an enemy of the helper" gate.** SRD 5.2 Help's
-  ability-check flavor requires the helped creature to be "an enemy of the
-  one you're helping"; the attack-roll flavor's `help_grants` bookkeeping
+  attack-roll flavor requires an enemy within 5 feet; its `help_grants` bookkeeping
   accepts any `target_id`, including the helper's own ally or self, with no
   validation.
   (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_dispatch_simple_turn_ending_intent`)
@@ -1232,11 +1217,8 @@ now calls the engine rather than standing in for it. Residual gaps:
   only ("other magical effects" — magic-item and spell-like monster saves —
   are not yet recognised, and the orchestrator-level save paths — repeat
   save, concentration, Grapple/Shove — still do not read it). C18 landed
-  Pack Tactics (attack advantage), Sunlight Sensitivity (attack
-  disadvantage — its ability-check half is not modelled: the bundled trait
-  text is "While in sunlight, the monster has Disadvantage on ability checks
-  and attack rolls.", so every ability check the bearer makes in sunlight
-  should roll at Disadvantage), Undead Fortitude
+  Pack Tactics (attack advantage), Sunlight Sensitivity (attack and all ability-check
+  disadvantage in sunlight; typed check pipeline 2026-10-07), Undead Fortitude
   (CON save to hold at 1 HP), Swarm (no HP/temp-HP gain) and Legendary
   Resistance. Flyby (no flying-movement tracking) and Nimble Escape
   (untyped bonus action; the monster AI takes no bonus actions) are not
@@ -1360,25 +1342,23 @@ source still blocks a distance-reducing path while unseen. Regression tests
 isolate both behaviors in the same wall/darkness/invisibility scenes.
 The separate monster AI movement follow-up above remains open.
 
-- **Blinded / Deafened "automatically fail ability checks that require
-  sight/hearing".** There is no per-check sense vocabulary on `CheckSpec` /
-  `CheckActivity`, so a check cannot declare it requires sight or hearing.
-  (`packages/dnd5e-engine/src/dnd5e_engine/activities/check.py`)
-- **Charmed grants the charmer advantage on social ability checks.** The
-  engine has no social-interaction check surface to attach it to (no
-  `influence` intent, no interaction DC), so the row is unrepresentable rather
-  than merely unimplemented.
-  (`packages/dnd5e-engine/src/dnd5e_engine/rules/conditions.py`)
+- **Blinded/Deafened typed check auto-fail resolved (2026-10-07).** Explicit
+  sight/hearing requirements consume canonical clauses without d20 draws.
+  Skills never imply senses. See `docs/dev/typed-ability-checks.md`.
+
+- **Charmed social check Advantage resolved (2026-10-07).** Explicit typed
+  social-interaction checks require actual charmer lineage, including imposing
+  effect origins; ordinary Charisma checks receive no social bonus.
 
 ## C12 deferred minors (2026-08-27)
 
 Small, real and deliberately not worth their own task; recorded so they are not
 re-discovered.
 
-- **`activities/check.py::_check_modifier`'s skill-branch penalty fold is
-  untested.** The exhaustion penalty is pinned on the ability branch only; the
-  `return int(skills[key]) + penalty` line has no direct test.
-  (`packages/dnd5e-engine/src/dnd5e_engine/activities/check.py`)
+- **`_check_modifier` skill penalty regression resolved (2026-10-07).** A direct
+  skill-branch test pins Exhaustion; live checks also combine the declarative
+  penalty with active-effect bonus dice in deterministic order.
+
 - **`_monster_dash_movement_budget`'s parameter is still named `base_speed`**
   although its caller now passes the condition/exhaustion-PROJECTED speed. A
   rename to `effective_speed` is cosmetic but removes a real reading trap.

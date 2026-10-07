@@ -8,9 +8,7 @@
         "type": "",
         "value": null
       },
-      "applied_effects": [
-        "Q3CLqX7crfusAxkj"
-      ],
+      "applied_effects": [],
       "consumption": {
         "scaling": {
           "allowed": false,
@@ -52,22 +50,23 @@
         "units": "inst",
         "value": null
       },
-      "effects": [
-        {
-          "id": "Q3CLqX7crfusAxkj",
-          "level": {
-            "max": null,
-            "min": null
-          },
-          "on_save": true,
-          "riders": null
-        }
-      ],
+      "effects": [],
       "flags": {},
       "id": "dnd5eactivity000",
       "img": "",
       "kind": "save",
       "name": "Emanation Save",
+      "persistent_area": {
+        "effects_until_target_turn_start": false,
+        "once_per_turn": true,
+        "placement": "follow-source",
+        "speed_multiplier": 0.5,
+        "triggers": [
+          "enter",
+          "area-enters-creature",
+          "turn-end-inside"
+        ]
+      },
       "range": {
         "override": true,
         "special": "",
@@ -87,8 +86,8 @@
       "sort": 200000,
       "target": {
         "affects": {
-          "choice": false,
-          "count": "1",
+          "choice": true,
+          "count": "",
           "special": "",
           "type": "creature"
         },
@@ -98,9 +97,9 @@
           "contiguous": false,
           "count": "",
           "height": "",
-          "size": "",
+          "size": "15",
           "stationary": false,
-          "type": "",
+          "type": "radius",
           "units": "ft",
           "width": ""
         }

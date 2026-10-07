@@ -16,7 +16,7 @@ from dnd5e_engine.events import AreaShape
 from dnd5e_engine.spatial import GridTopology, SpatialTopology
 
 #: The shapes ``GridTopology.cells_in_template`` rasterises.
-GridShape = Literal["sphere", "cone", "line", "cube", "cylinder"]
+GridShape = Literal["sphere", "cone", "line", "cube", "cylinder", "square"]
 
 #: Where a template's point of origin sits: the named target's cell, or the
 #: acting creature's own.
@@ -34,7 +34,7 @@ _TEMPLATE_TYPES: Final[dict[str, tuple[AreaShape, GridShape, OriginAnchor, bool]
     "cylinder": ("cylinder", "cylinder", "target", True),
     "radius": ("emanation", "sphere", "actor", False),
     "cube": ("cube", "cube", "actor", False),
-    "square": ("cube", "cube", "actor", False),
+    "square": ("cube", "square", "target", True),
     "cone": ("cone", "cone", "actor", False),
     "line": ("line", "line", "actor", False),
 }

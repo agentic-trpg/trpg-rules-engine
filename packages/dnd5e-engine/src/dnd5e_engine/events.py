@@ -600,6 +600,38 @@ class AttackFailed(BaseModel):
 AreaShape = Literal["cone", "cube", "cylinder", "emanation", "line", "sphere"]
 
 
+class AreaCreated(BaseModel):
+    """A persistent area now exists; hosts need not infer it from narration."""
+
+    type: Literal["area_created"] = "area_created"
+    area_id: str
+    actor_id: str
+    source_id: str
+    source_kind: Literal["spell", "item"]
+    activity_id: str
+    placement: Literal["stationary", "follow-source"]
+    shape: AreaShape
+    grid_shape: Literal["sphere", "cone", "line", "cube", "cylinder", "square"]
+    size_ft: int
+    origin: str
+    excluded_ids: tuple[str, ...]
+    duration_rounds: int | None
+    concentration: bool
+    slot_level: int | None
+    save_dc: int | None
+    triggers: tuple[
+        Literal["enter", "area-enters-creature", "turn-start-inside", "turn-end-inside"], ...
+    ]
+
+
+class AreaExpired(BaseModel):
+    type: Literal["area_expired"] = "area_expired"
+    area_id: str
+    actor_id: str
+    source_id: str
+    reason: Literal["duration", "concentration_drop", "source_removed"]
+
+
 class AreaTargeted(BaseModel):
     """An area of effect was placed, before anything in it rolls.
 
@@ -779,6 +811,8 @@ CombatEvent = Annotated[
     | MoveFailed
     | AttackFailed
     | AreaTargeted
+    | AreaCreated
+    | AreaExpired
     | CastFailed
     | SpellCast
     | ReactionTriggered
@@ -826,6 +860,8 @@ ALL_COMBAT_EVENT_TYPES: tuple[type[BaseModel], ...] = (
     MoveFailed,
     AttackFailed,
     AreaTargeted,
+    AreaCreated,
+    AreaExpired,
     CastFailed,
     SpellCast,
     ReactionTriggered,
@@ -842,6 +878,8 @@ __all__ = [
     "ActorMoved",
     "AdvantageMode",
     "AdvantageSource",
+    "AreaCreated",
+    "AreaExpired",
     "AreaShape",
     "AreaTargeted",
     "AttackFailed",

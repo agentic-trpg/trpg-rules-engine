@@ -101,6 +101,12 @@ relitigated): `radius_cells = size_ft // cell_size_ft`.
   extending away from** the origin cell along `direction`: a `size_ft` cube is
   the `n x n` block (`n = size_ft // cell_size_ft`) whose near face abuts the
   origin, and the origin cell itself is **not** in the area.
+- **`"square"`** — a point-based footprint includes its origin at the
+  minimum-column/minimum-row corner, extending toward positive columns/rows
+  by `size_ft / cell_size_ft` cells per side. No direction is required.
+  A 10-ft Square covers four 5-ft cells; a 5-ft Square covers one. This is
+  distinct from the face-anchored Cube convention and is used by stationary
+  Ball Bearings and Caltrops areas.
 - **`"cylinder"`** — the grid is strictly 2-D, so a cylinder's height carries no
   geometry: its footprint is exactly its `"sphere"` disc of the same radius,
   origin included. This is a deliberate collapse, not an omission; modelling it

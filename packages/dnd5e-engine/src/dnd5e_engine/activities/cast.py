@@ -129,5 +129,8 @@ def resolve_cast(activity: CastActivity, ctx: ActivityResolutionContext) -> None
         ctx.spell_dispatch(spell, child_ctx)
     else:
         for child_activity in spell.activities:
-            if child_activity.timing.trigger == "immediate":
+            if (
+                child_activity.timing.trigger == "immediate"
+                and child_activity.persistent_area is None
+            ):
                 resolve_activity(child_activity, child_ctx)

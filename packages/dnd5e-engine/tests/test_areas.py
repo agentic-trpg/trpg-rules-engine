@@ -89,7 +89,7 @@ def test_an_attack_or_utility_activity_is_never_an_area() -> None:
         ("cylinder", ("cylinder", "cylinder", "target", True)),
         ("radius", ("emanation", "sphere", "actor", False)),
         ("cube", ("cube", "cube", "actor", False)),
-        ("square", ("cube", "cube", "actor", False)),
+        ("square", ("cube", "square", "target", True)),
         ("cone", ("cone", "cone", "actor", False)),
         ("line", ("line", "line", "actor", False)),
     ],

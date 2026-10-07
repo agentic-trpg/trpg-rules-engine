@@ -424,7 +424,7 @@ class GridTopology:
     def cells_in_template(
         self,
         origin: str,
-        shape: Literal["sphere", "cone", "line", "cube", "cylinder"],
+        shape: Literal["sphere", "cone", "line", "cube", "cylinder", "square"],
         size_ft: int,
         *,
         direction: tuple[int, int] | None = None,
@@ -464,6 +464,8 @@ class GridTopology:
           SRD: "A Cube's point of origin isn't included in the area of
           effect unless its creator decides otherwise" (origin excluded).
           See ``docs/dev/spatial-geometry.md`` for the placement convention.
+        * ``"square"``: point-based ``n x n`` block, origin included at its
+          minimum-column/minimum-row corner; no direction required.
 
         See ``docs/dev/spatial-geometry.md``. Not part of the
         ``SpatialTopology`` Protocol.
@@ -482,6 +484,16 @@ class GridTopology:
                         if self._in_bounds(cid):
                             cells.append(cid)
             return cells
+
+        if shape == "square":
+            # Point-based square: origin is its minimum-column/minimum-row
+            # corner cell, included. Unlike a face-anchored Cube, no aim is needed.
+            return [
+                cell_id(oc + dc, orow + dr)
+                for dc in range(radius_cells)
+                for dr in range(radius_cells)
+                if self._in_bounds(cell_id(oc + dc, orow + dr))
+            ]
 
         if direction is None:
             raise ValueError(f"shape={shape!r} requires a direction vector")

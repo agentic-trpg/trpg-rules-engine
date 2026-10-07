@@ -7,7 +7,6 @@ at execution. No spell slugs, activity names or prose drive runtime behavior.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -17,7 +16,6 @@ from dnd5e_engine.activities.build_context import build_activity_context
 from dnd5e_engine.activities.context import ActivityResolutionContext
 from dnd5e_engine.activities.effects import passive_effect_to_active_effect
 from dnd5e_engine.activities.resolver import resolve_activity
-from dnd5e_engine.areas import area_template
 from dnd5e_engine.events import (
     CombatantLeft,
     CombatEvent,
@@ -40,16 +38,15 @@ EffectIdentity = tuple[str, str, str]
 
 @dataclass(frozen=True)
 class PendingTimedActivity:
-    """One typed execution record; ``target_id=None`` selects the boundary actor
-    inside the stationary area. Concentration and effect links are independent:
-    expiring a transient area rider must not remove the recurring area record.
+    """One target-bound execution record. Area ownership lives exclusively in
+    PersistentAreaState, including recurring boundary activities.
     """
 
     sequence: int
     spell: Spell
     activity: Activity
     caster: Combatant
-    target_id: str | None
+    target_id: str
     slot_level: int | None
     spellcasting_ability: str | None
     save_dc_override: int | None
@@ -59,7 +56,6 @@ class PendingTimedActivity:
     duration: ActiveEffectDuration | None
     concentration: bool
     concentration_identity: EffectIdentity | None
-    area_cells: tuple[str, ...] = ()
 
 
 @dataclass
@@ -125,19 +121,31 @@ def resolve_spell_activities(
     source order is preserved, even when Foundry lists deferred work first.
     """
     from dnd5e_engine import orchestrator as orch
+    from dnd5e_engine.persistent_areas import register_area
     from dnd5e_engine.types.effects import ActiveEffectDuration
 
     before = len(live.event_log)
     for activity in spell.activities:
-        if activity.timing.trigger == "immediate":
+        if activity.persistent_area is not None:
+            register_area(
+                live,
+                activity,
+                ctx,
+                source_id=spell.slug,
+                spell=spell,
+                intent=intent,
+                origin=area_origin,
+            )
+        elif activity.timing.trigger == "immediate":
             resolve_activity(activity, ctx)
     applied = [e.effect for e in live.event_log[before:] if isinstance(e, EffectApplied)]
     for activity in spell.activities:
-        timing = activity.timing
-        if timing.trigger not in ("turn_start", "turn_end"):
+        if activity.persistent_area is not None:
             continue
-        targets: Sequence[Combatant | None] = [None] if timing.subject == "area" else ctx.targets
-        for target in targets:
+        timing = activity.timing
+        if timing.trigger not in ("turn_start", "turn_end") or timing.subject == "area":
+            continue
+        for target in ctx.targets:
             linked = _linked_effect(spell, ctx, timing, target, applied)
             if timing.effect_id is not None and linked is None:
                 continue
@@ -147,10 +155,7 @@ def resolve_spell_activities(
                 or timing.requires_condition not in live.conditions_by_effect.get(identity, [])
             ):
                 continue
-            if target is not None and (not target.is_alive or target.entity_id in live.dead_ids):
-                continue
-            cells = _area_cells(live, spell, ctx, intent, area_origin) if target is None else ()
-            if target is None and not cells:
+            if not target.is_alive or target.entity_id in live.dead_ids:
                 continue
             state = live.timed_activities
             state.pending.append(
@@ -159,7 +164,7 @@ def resolve_spell_activities(
                     spell=spell,
                     activity=activity,
                     caster=ctx.caster,
-                    target_id=target.entity_id if target else None,
+                    target_id=target.entity_id,
                     slot_level=ctx.slot_level,
                     spellcasting_ability=ctx.spellcasting_ability,
                     save_dc_override=ctx.save_dc_override,
@@ -175,7 +180,6 @@ def resolve_spell_activities(
                     )
                     if spell.concentration
                     else None,
-                    area_cells=cells,
                 )
             )
             state.next_sequence += 1
@@ -208,33 +212,10 @@ def _linked_effect(
     )
 
 
-def _area_cells(
-    live: _LiveCombat,
-    spell: Spell,
-    ctx: ActivityResolutionContext,
-    intent: PlayerIntent | None,
-    origin: str | None,
-) -> tuple[str, ...]:
-    # Only stationary, existing grid templates; no wall or enter-area producer.
-    template = next((area_template(a) for a in spell.activities if area_template(a)), None)
-    if template is None or template.directional:
-        return ()
-    if origin is None and intent is not None:
-        origin = intent.target_zone_id or live.actor_zone.get(intent.target_id or "")
-    origin = origin or live.actor_zone.get(ctx.caster.entity_id)
-    if origin is None:
-        return ()
-    return tuple(
-        sorted(live.topology.cells_in_template(origin, template.grid_shape, template.size_ft))
-    )
-
-
 def _eligible(live: _LiveCombat, pending: PendingTimedActivity, actor_id: str) -> bool:
     if pending.not_before_turn > live.turn_serial:
         return False
     subject = pending.caster.entity_id if pending.timing.subject == "caster" else pending.target_id
-    if pending.timing.subject == "area":
-        return live.actor_zone.get(actor_id) in pending.area_cells
     return subject == actor_id
 
 
@@ -251,11 +232,10 @@ def run_timed_activities(live: _LiveCombat, phase: str, actor_id: str | None) ->
             continue
         if not _eligible(live, pending, actor_id):
             continue
-        target = orch._find_combatant(live, pending.target_id or actor_id)
+        target = orch._find_combatant(live, pending.target_id)
         caster = orch._find_combatant(live, pending.caster.entity_id)
         if target is None or target.entity_id in live.dead_ids:
-            if pending.target_id is not None:
-                live.timed_activities.pending.remove(pending)
+            live.timed_activities.pending.remove(pending)
             continue
         if pending.concentration and not live.concentration_chain.get(pending.caster.entity_id):
             live.timed_activities.pending.remove(pending)

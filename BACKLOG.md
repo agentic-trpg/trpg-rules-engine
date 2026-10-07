@@ -283,13 +283,12 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   monster), and a Polymorph on a PC ally charges the ally.
   (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_emit_apply_effect_applied`)
 - **"Of your choice" targeting is unmodelled on a `utility` activity or a
-  templateless save (2026-10-04, C26a).** Spirit Guardians, Holy Aura and
+  templateless save (2026-10-04, C26a; narrowed 2026-10-07).** Holy Aura and
   Nature's Sanctuary carry their `affects.choice` flag on a `utility`
   activity, and Rod of Rulership's choice save carries no measured template;
-  none of the four resolves an area, so `PlayerIntent.excluded_target_ids`
-  sent with any of them is refused with `target_invalid`. Spirit Guardians'
-  "designate creatures to be unaffected" stays unexpressed until a persistent
-  emanation is modelled (see "Unmapped ongoing damage and persistent-area producers").
+  these do not resolve an area, so `PlayerIntent.excluded_target_ids`
+  sent with any of them is refused with `target_invalid`. Spirit Guardians now
+  persists its cast-time exclusions in a source-following Emanation.
   (`packages/dnd5e-engine/src/dnd5e_engine/areas.py::is_choice`,
   `packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_area_target_failure`)
 
@@ -519,8 +518,10 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   and emanation activities now share `areas.py`, select all affected creatures
   and aim deterministically using actual `affects` filters to avoid friendly
   fire when possible. Candidate burst origins remain enemy cells, and aims
-  remain the eight grid directions; empty-cell placement, persistent areas,
-  dynamic hazards and altitude / 3-D are still outside this execution seam.
+  remain the eight grid directions. Player point-based Sphere/Cylinder/Square
+  casts accept legal empty cells, and verified persistent producers use shared
+  area state. Monster AI still selects occupied origins; altitude / 3-D,
+  wall templates and formula sizes remain outside this execution seam.
   (`packages/dnd5e-engine/src/dnd5e_engine/areas.py::area_template`,
   `packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_area_targets`)
 - **A counted area's named creatures aren't checked against its template
@@ -532,11 +533,11 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   illusion's size, not its target area. Only too many names, a repeated name
   and a name not in the combat are refused.
   (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_area_plan`)
-- **An area's point of origin is a creature's cell, never an empty one
-  (2026-10-04, C26a).** A Sphere or Cylinder centres on the named target's cell
-  (else the caster's), and a Cone, Cube, Line or Emanation starts at the
-  caster's; SRD 5.2's "a point you choose within range" on an empty cell
-  (`target_zone_id`) is not accepted for an area.
+- **Directional and monster-selected origins remain limited
+  (2026-10-07).** Player Sphere/Cylinder/Square origins accept a legal
+  `target_zone_id`, checked for canonical cell identity, range and line of
+  effect before spending. Cone/Cube/Line origins remain caster-anchored, and
+  monster AI still selects occupied burst origins.
   (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_area_origin`)
 - **A delegated cast resolves against its named target only (2026-10-04,
   C26a).** An item whose activity casts a spell (the Wand of Fireballs, a Spell
@@ -1063,8 +1064,10 @@ zone + apply logic:
   (2026-08-26, narrowed 2026-10-07) Typed spell timed activities now produce
   recurring start/end and next-turn-end work through `turn_lifecycle.py` for
   six verified canonical activities, including Acid Arrow's next-turn-end
-  damage. Spirit Guardians and other unmapped effects still need producers;
-  entry hazards, moving areas and numbered rounds remain deferred. Monster
+  damage. PersistentAreaState now owns Spirit Guardians, Stinking Cloud,
+  Ball Bearings and Caltrops, including step entry, source-follow coverage,
+  boundary triggers, exclusions, per-turn gates and lifetime cleanup. Other
+  unmapped effects, actively moved clouds and numbered rounds remain deferred. Monster
   regeneration/recharge remain on the driven-monster path (C18).
   See `docs/dev/spell-timed-activities.md` for the canonical audit and scope.
   (`packages/dnd5e-engine/src/dnd5e_engine/timed_activities.py`)
@@ -1095,18 +1098,22 @@ zone + apply logic:
   Blast Fireball, Storm of Vengeance, Forbiddance, Wall of Ice and Wall of
   Thorns are explicitly manual and no longer resolve automatically at cast
   time. Their moving areas, entry events, numbered stages or detonation state
-  require further typed producers; this does not claim full persistent areas.
+  require further typed producers. Verified persistent producers are documented
+  in `docs/dev/persistent-areas.md`; this does not enable other area spells.
   (`packages/dnd5e-srd-data/tools/translators/spell_timing.py`,
   `packages/dnd5e-engine/src/dnd5e_engine/timed_activities.py`)
-- **An item's hazard area saves at use time, not when a creature enters it
-  (2026-10-04, C26a).** SRD 5.2 Ball Bearings and Caltrops: "A creature that
-  enters this area for the first time on a turn must succeed on a DC …
-  Dexterity saving throw." A `use_item` now makes every creature already
-  standing in the square save at once — an ally included — rather than
-  waiting for a creature to walk into it on a later turn (v0.6: the named
-  target only). This is the item-side sibling of the turn-boundary row
-  above.
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_area_targets`)
+- **Persistent area lifecycle implemented for four verified producers
+  (2026-10-07).** Spirit Guardians follows its caster with a 15-ft Emanation,
+  persists exclusions, halves Speed by current membership and shares one
+  per-turn gate across entry, Emanation entry and turn end. Ball Bearings and
+  Caltrops place stationary 10-ft/5-ft squares and save on first entry each
+  turn (DC 10/15); Caltrops' failed-save Speed 0 ends at the target's next
+  turn start. Stinking Cloud uses the same state for its stationary footprint
+  and turn-start saves. AreaCreated/AreaExpired are typed events. Wall geometry,
+  3D, multi-cell creatures, Incendiary Cloud active movement, Tsunami, Storm
+  of Vengeance, Delayed Blast Fireball, Forbiddance and long casting times
+  remain excluded. Wind dispersal and Stinking Cloud obscurement are deferred.
+  (`packages/dnd5e-engine/src/dnd5e_engine/persistent_areas.py`)
 - **Empty `scaling.mode` is treated as whole-mode dice scaling on upcast
   (2026-09-03, C17).** `activities/dice.py::_scaling_steps` scales dice for
   any leveled spell whose damage part carries the corpus-default

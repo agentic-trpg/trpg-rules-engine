@@ -51,9 +51,11 @@ their own typed producers.
 
 `timed_activities.py` owns typed `PendingTimedActivity` records and their
 per-combat ordered state. Each record captures source spell/activity, caster,
-target (or stationary area cells), slot, ability/DC, timing, earliest turn,
+target, slot, ability/DC, timing, earliest turn,
 duration, source-effect identity and concentration identity. Source magnitudes
 are captured when cast; defenses and positions are read at the boundary.
+Persistent footprints, including Stinking Cloud, live in `PersistentAreaState`;
+see [Persistent area lifecycle](persistent-areas.md).
 
 On-turn, monster and readied spell dispatch resolve immediate activities in
 canonical order, then schedule eligible deferred activities. Delegated item
@@ -89,10 +91,10 @@ step. The existing typed spell duration also caps monster concentration.
 
 ## Boundaries
 
-Stinking Cloud uses the existing grid template to capture a stationary
-footprint and tests current membership at turn start. Wind dispersal, cloud
-vision/obscurement and full persistent areas are not implemented here. Wall
-geometry, entry hazards, long casting times, spell components, a reaction
+Stinking Cloud now uses shared persistent-area state and tests current
+membership at turn start. Spirit Guardians, Ball Bearings and Caltrops use the
+same state for movement and boundary triggers. Wind dispersal and cloud
+vision/obscurement remain deferred. Wall geometry, long casting times, spell components, a reaction
 rewrite and 3D/elevation remain outside this infrastructure. Existing
 unclassified spell mechanics and corpus payload divergences remain in
 `BACKLOG.md`.

@@ -298,6 +298,15 @@ def _monster_magnitudes_resolve() -> bool:
 
 
 _PROBES: dict[str, tuple[Any, str]] = {
+    "Persistent area lifecycle": (
+        lambda: (
+            "class PersistentArea:" in _src("persistent_areas.py")
+            and "resolve_activity(area.activity, ctx)" in _src("persistent_areas.py")
+            and "after_movement_step(live, actor_id, previous_cell)" in _src("orchestrator.py")
+            and "register_area_hooks(live)" in _src("orchestrator.py")
+        ),
+        "✅ Resolved",
+    ),
     "Spell timed activity lifecycle": (
         lambda: (
             "class PendingTimedActivity" in _src("timed_activities.py")

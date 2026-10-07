@@ -57,6 +57,15 @@
       "img": "",
       "kind": "save",
       "name": "Spill Ball Bearings",
+      "persistent_area": {
+        "effects_until_target_turn_start": false,
+        "once_per_turn": true,
+        "placement": "stationary",
+        "speed_multiplier": null,
+        "triggers": [
+          "enter"
+        ]
+      },
       "range": {
         "override": false,
         "special": "",
@@ -88,7 +97,7 @@
           "count": "",
           "height": "",
           "size": "10",
-          "stationary": false,
+          "stationary": true,
           "type": "square",
           "units": "ft",
           "width": ""

@@ -203,6 +203,14 @@ from dnd5e_engine.outcome import (
     DeathRecord,
     LootDrop,
 )
+from dnd5e_engine.persistent_areas import (
+    PersistentAreaState,
+    after_movement_step,
+    area_speed,
+    before_turn_start,
+    register_area_hooks,
+    register_item_areas,
+)
 from dnd5e_engine.rest import FEATURE_USE_COUNTER_PREFIX, ITEM_USE_COUNTER_PREFIX
 from dnd5e_engine.rules.character import (
     extra_attack_count,
@@ -1771,17 +1779,36 @@ def push_combatant(live: _LiveCombat, target_id: str, origin_cell: str, distance
     path = topology.push_path(origin_cell, target_cell, distance_ft, occupied_cells=occupied)
     if not path:
         return
-    live.actor_zone[target_id] = path[-1]
-    _emit(
-        live,
-        CombatantMoved(
-            actor_id=target_id,
-            from_zone=target_cell,
-            to_zone=path[-1],
-            distance_ft=len(path) * topology.cell_size_ft,
-            forced=True,
-        ),
-    )
+    previous_cell = target_cell
+    split_steps = bool(live.persistent_areas.areas)
+    for next_cell in path:
+        live.actor_zone[target_id] = next_cell
+        if split_steps:
+            _emit(
+                live,
+                CombatantMoved(
+                    actor_id=target_id,
+                    from_zone=previous_cell,
+                    to_zone=next_cell,
+                    distance_ft=topology.cell_size_ft,
+                    forced=True,
+                ),
+            )
+        after_movement_step(live, target_id, previous_cell)
+        previous_cell = next_cell
+        if target_id in live.dead_ids or _find_combatant(live, target_id) is None:
+            break
+    if not split_steps:
+        _emit(
+            live,
+            CombatantMoved(
+                actor_id=target_id,
+                from_zone=target_cell,
+                to_zone=previous_cell,
+                distance_ft=(path.index(previous_cell) + 1) * topology.cell_size_ft,
+                forced=True,
+            ),
+        )
 
 
 def _apply_forced_movement_riders(
@@ -1978,6 +2005,7 @@ def _take_walk_step(live: _LiveCombat, mover_id: str, next_cell: str) -> bool:
             actor_id=mover_id, from_zone=from_cell, to_zone=next_cell, distance_ft=step_distance
         ),
     )
+    after_movement_step(live, mover_id, from_cell)
     return True
 
 
@@ -3163,6 +3191,7 @@ class _LiveCombat:
     round_number: int = 1
     turn_serial: int = 0
     timed_activities: TimedActivityState = field(default_factory=TimedActivityState)
+    persistent_areas: PersistentAreaState = field(default_factory=PersistentAreaState)
     ended: bool = False
     final_outcome: CombatOutcome | None = None
     # each combatant's cell, per entity_id (read through ``topology``)
@@ -3638,6 +3667,8 @@ def _effective_speed(c: Combatant, live: _LiveCombat | None = None) -> int:
     speed = project_speed(c.base_speed, _condition_names(c), exhaustion_level_of(c.conditions))
     if live is not None and live.slow_marks.get(c.entity_id):
         speed = max(0, speed - 10)
+    if live is not None:
+        speed = area_speed(live, c.entity_id, speed)
     return speed
 
 
@@ -3924,6 +3955,7 @@ def _drop_concentration(
     entries = list(live.concentration_chain.get(caster_id) or ())
     if not entries:
         return
+    live.persistent_areas.concentration_ended(live, caster_id, duration=reason == "duration")
     for target_id, effect_id, origin in entries:
         identity = (target_id, effect_id, origin)
         conditions = list(live.conditions_by_effect.get(identity, []))
@@ -4913,6 +4945,7 @@ def _emit(live: _LiveCombat, event: CombatEvent) -> None:
     live.event_queue.put_nowait(event)
     for listener in live.event_listeners:
         listener(event)
+    live.persistent_areas.observe(live, event)
 
     if isinstance(event, TurnStarted):
         _emit_apply_turn_started(live, event)
@@ -4960,6 +4993,7 @@ def _emit_apply_turn_started(live: _LiveCombat, event: TurnStarted) -> None:
     budgets on the initiative slot."""
     live.current_actor_id = event.actor_id
     live.turn_serial += 1
+    before_turn_start(live, event.actor_id)
     # SRD §Action Economy — refresh the actor's per-turn budgets on the
     # start of their own turn. The reaction line ("You regain your
     # reaction at the start of your turn") and the Action/Bonus Action
@@ -5543,6 +5577,7 @@ def _record_death(live: _LiveCombat, event: Death, *, killer_id: str | None) -> 
     # Synthesized deaths also reach this entry point without passing _emit.
     live.timed_activities.observe(event)
     live.dead_ids.add(event.target_id)
+    live.persistent_areas.observe(live, event)
     live.deaths_recorded.append(
         DeathRecord(
             target_id=event.target_id,
@@ -6247,8 +6282,11 @@ def _area_origin(
     Sphere or Cylinder (Fireball), else the actor's cell (Burning Hands,
     Thunderwave, an Emanation)."""
     actor_cell = live.actor_zone[actor_id]
-    if template.anchor == "target" and intent.target_id:
-        return live.actor_zone.get(intent.target_id, actor_cell)
+    if template.anchor == "target":
+        if intent.target_zone_id is not None:
+            return intent.target_zone_id
+        if intent.target_id:
+            return live.actor_zone.get(intent.target_id, actor_cell)
     return actor_cell
 
 
@@ -6262,6 +6300,38 @@ def _area_cover_origin(
     if plan is None or plan.template is None or not plan.places_template:
         return None
     return _area_origin(live, actor_id, intent, plan.template)
+
+
+def _point_area_failure(
+    live: _LiveCombat, current: Combatant, intent: PlayerIntent, plan: _AreaPlan | None
+) -> CombatEvent | None:
+    if plan is None or plan.template is None or plan.template.anchor != "target":
+        return None
+    if intent.target_zone_id is None and plan.activity.persistent_area is None:
+        return None
+    origin = _area_origin(live, current.entity_id, intent, plan.template)
+    if live.topology.distance_ft(origin, origin) is None or cell_id(*parse_cell(origin)) != origin:
+        return CastFailed(
+            actor_id=current.entity_id, spell_id=intent.spell_id or "", reason="target_invalid"
+        )
+    spell = get_lib_loader().get_spell(intent.spell_id) if intent.spell_id else None
+    metric_range = spell.range if spell else plan.activity.range
+    try:
+        range_ft = (
+            int(metric_range.value)
+            if metric_range.units == "ft" and metric_range.value is not None
+            else None
+        )
+    except (ValueError, TypeError):
+        range_ft = None
+    caster_cell = live.actor_zone[current.entity_id]
+    if range_ft is not None and not _in_range_with_los(
+        live.topology, caster_cell, origin, range_ft
+    ):
+        return CastFailed(
+            actor_id=current.entity_id, spell_id=intent.spell_id or "", reason="out_of_range"
+        )
+    return None
 
 
 def _area_target_failure(
@@ -6294,6 +6364,9 @@ def _area_target_failure(
         stat_block_slug=_current_stat_block_slug(live, actor_id),
     ).activities
     plan = _area_plan(intent, activities)
+    point_failure = _point_area_failure(live, current, intent, plan)
+    if point_failure is not None:
+        return point_failure
     in_combat = {c.entity_id for c in live.initiative}
     invalid = (
         (
@@ -6891,6 +6964,7 @@ def _register_default_turn_hooks(live: _LiveCombat) -> None:
     live.lifecycle.register(
         "turn_start", _hook_expire_reaction_effects, key="engine:reaction-effect-expiry"
     )
+    register_area_hooks(live)
     register_timed_activity_hooks(live)
     live.lifecycle.register("turn_end", _hook_run_end_of_turn_saves, key="engine:repeat-save")
     live.lifecycle.register("turn_end", _hook_tick_durations, key="engine:duration-tick")
@@ -9243,9 +9317,21 @@ def _handle_move(live: _LiveCombat, current: Combatant, intent: PlayerIntent) ->
         _update_combatant(
             live, actor_id, movement_remaining=mover.movement_remaining - step_distance
         )
+        previous_cell = position
         live.actor_zone[actor_id] = next_cell
         position = next_cell
         run_ft += step_distance
+        if live.persistent_areas.areas:
+            _emit(
+                live,
+                ActorMoved(
+                    actor_id=actor_id, from_zone=run_start, to_zone=position, distance_ft=run_ft
+                ),
+            )
+            run_start, run_ft = position, 0
+        after_movement_step(live, actor_id, previous_cell)
+        if _walk_must_stop(live, actor_id):
+            break
     # A summon dropped to 0 HP on the way has left the order, and its
     # departure already opened the next turn: no ActorMoved.
     if run_ft and _find_combatant(live, actor_id) is not None:
@@ -10561,7 +10647,16 @@ def _spell_out_of_range(
         intent.intent_type == "cast_spell"
         and cast_spell_for_timing is not None
         and intent.target_id is not None
-        and not (intent.target_zone_id is not None and cast_spell_for_timing.slug in CONSTRUCTS)
+        and not (
+            intent.target_zone_id is not None
+            and (
+                cast_spell_for_timing.slug in CONSTRUCTS
+                or any(
+                    (template := area_template(a)) is not None and template.anchor == "target"
+                    for a in cast_spell_for_timing.activities
+                )
+            )
+        )
     ):
         return False
     spell_range = cast_spell_for_timing.range
@@ -11390,6 +11485,8 @@ def _resolve_intent_activities(
         # Item/Weapon/Armor/MagicItem, all of which inherit ``activities``.
         fetched_item = get_lib_loader().get_item(intent.item_id)
         if fetched_item is not None:
+            if any(a.persistent_area is not None for a in fetched_item.activities):
+                feature_passive_effects = list(fetched_item.passive_effects)
             if intent.activity_id:
                 activities = [a for a in fetched_item.activities if a.id == intent.activity_id]
             else:
@@ -12638,8 +12735,10 @@ async def submit_player_intent(
         if cast_spell is not None:
             resolve_spell_activities(live, cast_spell, actx, intent=intent)
         else:
+            register_item_areas(live, activities, actx, intent)
             for activity in activities:
-                resolve_activity(activity, actx, weapon=fetched_weapon)
+                if activity.persistent_area is None:
+                    resolve_activity(activity, actx, weapon=fetched_weapon)
 
         # SRD 5.2 Bardic Inspiration — a die rolled this resolution is spent.
         _expend_granted_die(live, current, actx)

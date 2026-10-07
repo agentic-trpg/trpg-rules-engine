@@ -89,6 +89,7 @@ from dnd5e_srd_data import (
     WeaponProperty,
 )
 from dnd5e_srd_data.schema.common import ReactionCondition, ReactionTriggerKind
+from tools.translators.persistent_areas import apply_persistent_areas
 from tools.translators.prose_cleanup import cleanup_prose
 from tools.translators.spell_timing import apply_spell_timing
 
@@ -2068,7 +2069,9 @@ def translate_generic_item_yaml(
         rarity=rarity,
         provenance=_provenance(yaml_path, ingest_date, ingest_version),
         review=ReviewState(),
-        activities=_translate_activities(system),
+        activities=apply_persistent_areas(
+            _slug(doc, yaml_path), _description(doc), _translate_activities(system)
+        ),
         passive_effects=_passive_effects(doc),
         requires_attunement=requires_attunement,
         attunement_constraint=attunement_constraint,
@@ -2364,13 +2367,18 @@ def translate_spell_yaml(
         duration=_spell_duration(system.get("duration") or {}),
         materials=_spell_materials(system.get("materials") or {}),
         preparation=_spell_preparation(system.get("preparation") or {}),
-        activities=apply_spell_timing(
+        activities=apply_persistent_areas(
             slug,
             _description(doc),
-            _apply_affects_corrections(
+            apply_spell_timing(
                 slug,
-                _apply_spell_save_cover_overrides(
-                    slug, _apply_spell_damage_type_corrections(slug, _translate_activities(system))
+                _description(doc),
+                _apply_affects_corrections(
+                    slug,
+                    _apply_spell_save_cover_overrides(
+                        slug,
+                        _apply_spell_damage_type_corrections(slug, _translate_activities(system)),
+                    ),
                 ),
             ),
         ),

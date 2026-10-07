@@ -49,6 +49,15 @@
       "img": "",
       "kind": "save",
       "name": "Start of Turn Save",
+      "persistent_area": {
+        "effects_until_target_turn_start": false,
+        "once_per_turn": true,
+        "placement": "stationary",
+        "speed_multiplier": null,
+        "triggers": [
+          "turn-start-inside"
+        ]
+      },
       "range": {
         "override": true,
         "special": "",
@@ -69,7 +78,7 @@
       "target": {
         "affects": {
           "choice": false,
-          "count": "1",
+          "count": "",
           "special": "",
           "type": "creature"
         },
@@ -79,9 +88,9 @@
           "contiguous": false,
           "count": "",
           "height": "",
-          "size": "",
-          "stationary": false,
-          "type": "",
+          "size": "20",
+          "stationary": true,
+          "type": "sphere",
           "units": "ft",
           "width": ""
         }
@@ -225,7 +234,7 @@
   "passive_effects": [
     {
       "changes": [],
-      "description": "<p>While &amp;Reference[poisoned apply=false] in this way, the creature can\u2019t take an action or a Bonus Action.</p>",
+      "description": "<p>While &amp;Reference[poisoned apply=false] in this way, the creature can’t take an action or a Bonus Action.</p>",
       "disabled": false,
       "duration": {
         "turns": 1

@@ -616,6 +616,23 @@ class RollBlock(BaseModel, frozen=True):
 # ---------------------------------------------------------------------------
 
 
+AreaTrigger = Literal["enter", "area-enters-creature", "turn-start-inside", "turn-end-inside"]
+
+
+class PersistentAreaSpec(BaseModel, frozen=True):
+    """Audited area behavior; geometry comes from the activity's template.
+
+    Placement never executes the payload. Entry means a completed movement
+    step crossing the boundary. One gate is shared by all triggers of an area.
+    """
+
+    placement: Literal["stationary", "follow-source"] = "stationary"
+    triggers: tuple[AreaTrigger, ...]
+    once_per_turn: bool = True
+    speed_multiplier: float | None = Field(default=None, gt=0, le=1)
+    effects_until_target_turn_start: bool = False
+
+
 class ActivityTiming(BaseModel, frozen=True):
     """Execution timing, translated from audited source structures/patterns.
 
@@ -653,6 +670,7 @@ class _ActivityBase(BaseModel):
     uses: UsesBlock = Field(default_factory=UsesBlock)
     visibility: VisibilityBlock = Field(default_factory=VisibilityBlock)
     timing: ActivityTiming = Field(default_factory=ActivityTiming)
+    persistent_area: PersistentAreaSpec | None = None
 
     model_config = {"populate_by_name": True}
 
@@ -663,6 +681,8 @@ class _ActivityBase(BaseModel):
         data: dict[str, Any] = handler(self)
         if self.timing == ActivityTiming():
             data.pop("timing", None)
+        if self.persistent_area is None:
+            data.pop("persistent_area", None)
         return data
 
 

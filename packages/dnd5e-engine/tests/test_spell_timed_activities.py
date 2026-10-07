@@ -152,8 +152,9 @@ def test_stinking_cloud_saves_only_at_turn_start_and_poison_expires_at_turn_end(
     _cast(handle, "stinking-cloud")
     assert not events(live, SaveRolled)
     assert not _damage(live)
-    assert len(live.timed_activities.pending) == 1
-    assert live.timed_activities.pending[0].duration.rounds == 10
+    assert not live.timed_activities.pending
+    assert len(live.persistent_areas.areas) == 1
+    assert live.persistent_areas.areas[0].duration.rounds == 10
     act(handle, HERO, intent_type="pass")
     assert len(events(live, SaveRolled)) == 1
     assert "poisoned" in live.active_conditions[FOE]
@@ -162,7 +163,7 @@ def test_stinking_cloud_saves_only_at_turn_start_and_poison_expires_at_turn_end(
     assert live.event_log[save_index - 1].phase == "turn_start"
     _end(live)
     assert "poisoned" not in live.active_conditions[FOE]
-    assert len(live.timed_activities.pending) == 1
+    assert len(live.persistent_areas.areas) == 1
     act(handle, HERO, intent_type="pass")
     assert len(events(live, SaveRolled)) == 2
     _end(live)
@@ -199,11 +200,12 @@ def test_timed_work_is_cancelled_synchronously_without_rng(cleanup):
 def test_area_anchor_removal_cancels_recurring_work():
     handle, live = _combat()
     _cast(handle, "stinking-cloud")
-    target, effect_id, origin = live.timed_activities.pending[0].concentration_identity
+    target, effect_id, origin = live.persistent_areas.areas[0].concentration_identity
     orch._emit(
         live, EffectExpired(target_id=target, effect_id=effect_id, origin=origin, reason="duration")
     )
     assert not live.timed_activities.pending
+    assert not live.persistent_areas.areas
 
 
 def test_same_boundary_uses_stable_cast_order_and_seeded_events(monkeypatch):
@@ -347,6 +349,7 @@ def test_recurring_area_expires_with_concentration_duration_without_extra_draws(
     rng = live.rng.getstate()
     act(handle, HERO, intent_type="pass")
     assert not live.timed_activities.pending
+    assert not live.persistent_areas.areas
     assert not events(live, SaveRolled)
     assert live.rng.getstate() == rng
 

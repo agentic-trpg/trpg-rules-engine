@@ -68,6 +68,10 @@
         "units": "self",
         "value": null
       },
+      "reaction": {
+        "responses": [],
+        "target_role": "damage_source"
+      },
       "save": {
         "ability": [
           "dex"

@@ -17,7 +17,11 @@ from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Any, cast
 
 from dnd5e_engine.activities.actor_stats import ability_modifier_of, proficiency_bonus_of
-from dnd5e_engine.activities.context import ActivityResolutionContext
+from dnd5e_engine.activities.context import (
+    ActivityResolutionContext,
+    AttackHitContext,
+    DamageInstanceContext,
+)
 from dnd5e_engine.activities.dice import roll_expr
 from dnd5e_engine.events import Ability, CombatEvent
 from dnd5e_engine.rules.conditions import active_condition_names
@@ -248,6 +252,11 @@ def build_activity_context(
     stat_block_magnitudes: StatBlockMagnitudes | None = None,
     is_opportunity_attack: bool = False,
     save_dc_override: int | None = None,
+    attack_hit_reaction: Callable[[AttackHitContext], int] | None = None,
+    attack_continuation_allowed: Callable[[], bool] | None = None,
+    damage_instance_id_provider: Callable[[str, str | None], str] | None = None,
+    damage_instance_resolved: Callable[[DamageInstanceContext], None] | None = None,
+    negated_spell_damage_targets: frozenset[str] = frozenset(),
 ) -> ActivityResolutionContext:
     """Adapt the caster + the pre-computed hydration sidecars into the typed
     ``ActivityResolutionContext`` the new resolver consumes.
@@ -441,6 +450,11 @@ def build_activity_context(
         targets=targets,
         event_emitter=event_emitter,
         caster_abilities=caster_abilities,
+        attack_hit_reaction=attack_hit_reaction,
+        attack_continuation_allowed=attack_continuation_allowed,
+        damage_instance_id_provider=damage_instance_id_provider,
+        damage_instance_resolved=damage_instance_resolved,
+        negated_spell_damage_targets=negated_spell_damage_targets,
         caster_proficiency_bonus=caster_proficiency_bonus,
         caster_level=caster.character_level,
         spellcasting_ability=spellcasting_ability,

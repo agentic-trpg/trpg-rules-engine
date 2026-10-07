@@ -225,6 +225,16 @@ from dnd5e_engine.live_features import (
 from dnd5e_engine.live_features import (
     feature_target_failure as _feature_target_failure,
 )
+from dnd5e_engine.live_reactions import (
+    attach_reaction_hooks,
+    can_continue_resolution,
+    can_take_reaction,
+    observe_reaction_lifecycle,
+    pay_reaction,
+    prearm_failure,
+    register_pending_reaction,
+    spell_cast_opportunity,
+)
 from dnd5e_engine.outcome import (
     CombatOutcome,
     DeathRecord,
@@ -237,6 +247,11 @@ from dnd5e_engine.persistent_areas import (
     before_turn_start,
     register_area_hooks,
     register_item_areas,
+)
+from dnd5e_engine.reactions import (
+    ActiveReactionResponse,
+    PendingReaction,
+    ReactionTriggerCompatibility,
 )
 from dnd5e_engine.rest import FEATURE_USE_COUNTER_PREFIX, ITEM_USE_COUNTER_PREFIX
 from dnd5e_engine.rules.character import (
@@ -302,13 +317,6 @@ _LOGGER = logging.getLogger(__name__)
 # ``dnd5e_engine.specs`` (imported above). They are pure value-typed payloads
 # the host passes into ``start_combat`` and have no app.* dependencies.
 
-# SRD §Reactions — the closed set of trigger conditions the pre-armed reaction
-# queue recognizes. Typed-semantics rule (CLAUDE.md): a field over
-# a closed set is a Literal, never bare str. These three are the exact values
-# ``PlayerIntent.reaction_trigger``'s own docstring already named as its
-# intended examples.
-ReactionTrigger = Literal["cast_spell", "hit_by_attack", "targeted_by_magic_missile"]
-
 # SRD 5.2 granted dice a creature spends on its own roll. One today: "That
 # creature gains one of your Bardic Inspiration dice."
 GrantedDie = Literal["feature_grant:bardic-inspiration"]
@@ -370,11 +378,9 @@ class PlayerIntent(BaseModel):
     # ``AttackFailed(reason="no_granted_die")`` before anything is spent.
     # Ignored by other intent types (saves and checks carry no such choice).
     redeem_granted_die: GrantedDie | None = None
-    # SRD §Reactions — the trigger condition a ``"ready"`` intent pre-arms
-    # 's pending-reaction queue). Consumed by
-    # ``_pop_pending_reaction`` / ``_drain_targeted_reactions`` when a
-    # matching triggering intent is later submitted by any combatant.
-    reaction_trigger: ReactionTrigger | None = None
+    # Deprecated input compatibility only. Canonical reaction_conditions own
+    # the trigger set; a supplied alias must match that existing set.
+    reaction_trigger: ReactionTriggerCompatibility | None = None
     # SRD §Movement — the destination cell id (``cell_id(col, row)``) of a
     # ``"move"``; also the space a conjuration names (Spiritual Weapon's force,
     # Summon Dragon's spirit).
@@ -2788,7 +2794,15 @@ def _resolve_monster_cast(
     slot_level = activity.spell.level if activity.spell.level is not None else spell.level
     spellcasting_ability = activity.spell.ability or current.spellcasting_ability
 
+    # A stat-block cast has passed its own availability/placement gates.
+    # Its casting-time budget commits before the spell can be interrupted;
+    # a limited-use spell's resource is recorded only after resolution.
+    if live.current_actor_id == current.entity_id:
+        _update_combatant(live, current.entity_id, action_available=False)
+        current = _find_combatant(live, current.entity_id) or current
     current = begin_spell_cast(live, current, spell)
+    if spell_cast_opportunity(live, current, spell):
+        return
     payload = _build_hydration_payload(live, caster=current)
     pre_event_count = len(live.event_log)
     actx = build_activity_context(
@@ -2947,18 +2961,6 @@ def _resolve_monster_attack_activities(
         for a in activities
     ):
         return
-    # SRD §Reactions — drain the attacked PC's pending ``hit_by_attack``
-    # reaction (Shield) BEFORE the sidecar projection below, so the
-    # just-applied +5 AC effect folds into THIS attack's hydration
-    # payload — the monster-attacker / PC-defender direction. Shield's own
-    # resolution draws no dice, so the attack's d20 keeps its seed-stream
-    # position.
-    _drain_targeted_reactions(
-        live,
-        trigger="hit_by_attack",
-        triggering_actor_id=actor.entity_id,
-        targets=target_list,
-    )
     # The orchestrator owns the per-entity passive sidecars; project them
     # once and hand the two dicts ``build_activity_context`` needs in (it
     # stays pure — no orchestrator import, no double-compute). Mirrors the
@@ -2991,8 +2993,11 @@ def _resolve_monster_attack_activities(
         is_opportunity_attack=is_opportunity_attack,
         **_monster_context_kwargs(live, actor, target_list, payload),
     )
+    actx = attach_reaction_hooks(live, actx)
     if execution_plan is None:
         for activity in activities:
+            if not can_continue_resolution(live, actor.entity_id):
+                break
             if area_activity([activity]) is None:
                 resolve_activity(activity, actx, weapon=None)
             else:
@@ -3038,6 +3043,8 @@ def _execute_monster_plan(
         return
     executed = False
     for step in plan.executions:
+        if not can_continue_resolution(live, actor.entity_id):
+            break
         action = step.source_action
         if action is not None and not _monster_action_available(live, actor, action):
             continue
@@ -3075,6 +3082,8 @@ def _resolve_monster_execution(
     """Resolve each area child with its own targets, retaining shared outcome state."""
     resolved: list[Activity] = []
     for activity in activities:
+        if not can_continue_resolution(live, actor.entity_id):
+            break
         child_context = actx
         if area_activity([activity]) is not None:
             placement = _monster_area_placement(live, actor, [activity])
@@ -3328,11 +3337,14 @@ class _LiveCombat:
     # an ``events`` list on the result envelope without changing the
     # canonical queue-based delivery for ``narration_events``.
     event_listeners: list[Any] = field(default_factory=list)
-    # SRD §Reactions — 's pre-armed reaction queue (see
-    # docs/dev/reaction-queue.md). Populated by a ``"ready"`` intent; drained
-    # (popped + resolved) by ``_pop_pending_reaction`` when a matching trigger
-    # is observed from another combatant's intent.
-    pending_reactions: list[_PendingReaction] = field(default_factory=list)
+    # Canonical pre-armed reactions (see docs/dev/reaction-queue.md).
+    # ``live_reactions`` registers declarations and releases the first eligible
+    # candidate when a typed rules opportunity is produced.
+    pending_reactions: list[PendingReaction] = field(default_factory=list)
+    active_reaction_responses: list[ActiveReactionResponse] = field(default_factory=list)
+    reaction_resolution_depth: int = 0
+    damage_instance_sequence: int = 0
+    processed_zero_hp_damage_instances: set[tuple[str, str]] = field(default_factory=set)
     # SRD §Reactions / one-round buffs — a reaction-applied effect (Shield)
     # fires DURING another actor's turn, so the generic caster-turn-end
     # duration tick (``_tick_durations_at_turn_end``) won't recur until the
@@ -3340,7 +3352,7 @@ class _LiveCombat:
     # start of your next turn" effect. Keyed by the effect owner/caster's
     # entity_id -> list of (target_id, effect.id, effect.origin) identities to
     # expire the moment that owner's OWN next TurnStarted fires (see
-    # ``_emit_apply_turn_started``). Populated by ``_resolve_readied_spell_cast``.
+    # ``_emit_apply_turn_started``). Populated by ``record_reaction_effects``.
     reaction_effects_pending_expiry: dict[str, list[tuple[str, str, str]]] = field(
         default_factory=dict
     )
@@ -3505,22 +3517,6 @@ class _LiveCombat:
     # C21 — roster summons each owner has made: never reset and never purged,
     # so a summon id is never reused.
     summon_counts: dict[str, int] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
-class _PendingReaction:
-    """One armed-but-not-yet-fired reaction — 's queue entry.
-
-    Registered by a ``"ready"`` intent (``owner_id`` spends their Action to
-    arm it); popped + resolved by ``_pop_pending_reaction`` the moment a
-    matching ``trigger`` is next observed from any OTHER combatant's
-    intent. See ``docs/dev/reaction-queue.md``.
-    """
-
-    owner_id: str
-    trigger: ReactionTrigger
-    spell_id: str | None
-    slot_level: int | None
 
 
 @dataclass
@@ -4969,6 +4965,7 @@ def _emit(live: _LiveCombat, event: CombatEvent) -> None:
                 event.target_id,
             )
             return
+    observe_reaction_lifecycle(live, event)
     live.event_log.append(event)
     live.timed_activities.observe(event)
     live.event_queue.put_nowait(event)
@@ -5019,7 +5016,7 @@ def _emit(live: _LiveCombat, event: CombatEvent) -> None:
     if isinstance(event, Death):
         if event.target_id in live.dead_ids:
             return
-        _record_death(live, event, killer_id=live.current_actor_id)
+        _record_death(live, event, killer_id=None)
 
 
 def _emit_apply_turn_started(live: _LiveCombat, event: TurnStarted) -> None:
@@ -5185,7 +5182,7 @@ def _emit_apply_damage(live: _LiveCombat, event: DamageApplied) -> None:
     # opening snapshot. Combined into the same model_copy as the
     # ``last_damaged_by`` update below.
     new_temp_hp = live.tracked_temp_hp.get(event.target_id, 0)
-    damager = live.current_actor_id
+    damager = event.source_actor_id
     update_payload: dict[str, Any] = {
         "hp_current": new_hp,
         "temp_hp": new_temp_hp,
@@ -5276,7 +5273,7 @@ def _emit_apply_damage(live: _LiveCombat, event: DamageApplied) -> None:
             # 0 HP. Recursion guard: _emit re-enters here for the Death, but
             # the dead_ids set blocks double-recording, and Death's only
             # running-state effect is to record the death.
-            killer = live.current_actor_id
+            killer = event.source_actor_id
             death_event = Death(target_id=event.target_id, reason="damage")
             _record_death(live, death_event, killer_id=killer)
             live.event_log.append(death_event)
@@ -5308,7 +5305,7 @@ def _apply_zero_hp_to_character(
     remainder = damage_after_temp - hp_before if hp_before > 0 else damage_after_temp
     if remainder >= hp_max:
         death_event = Death(target_id=event.target_id, reason="instant_kill")
-        _record_death(live, death_event, killer_id=live.current_actor_id)
+        _record_death(live, death_event, killer_id=event.source_actor_id)
         live.event_log.append(death_event)
         live.event_queue.put_nowait(death_event)
         for idx, c in enumerate(live.initiative):
@@ -5317,6 +5314,8 @@ def _apply_zero_hp_to_character(
                 break
         return
     if hp_before > 0:
+        if event.damage_instance_id is not None and damage_after_temp > 0:
+            live.processed_zero_hp_damage_instances.add((event.target_id, event.damage_instance_id))
         if "unconscious" not in _condition_names(target):
             _emit(live, Unconscious(target_id=event.target_id))
             _emit(live, ConditionApplied(target_id=event.target_id, condition="unconscious"))
@@ -5326,6 +5325,11 @@ def _apply_zero_hp_to_character(
     # ``activities/apply.py`` emits ``DamageApplied`` unconditionally.
     if damage_after_temp <= 0:
         return
+    if event.damage_instance_id is not None:
+        identity = (event.target_id, event.damage_instance_id)
+        if identity in live.processed_zero_hp_damage_instances:
+            return
+        live.processed_zero_hp_damage_instances.add(identity)
     state = DeathSaveState.from_dict(target.death_saves) if target.death_saves else DeathSaveState()
     # SRD 5.2 "Damage at 0 Hit Points" — the Critical-Hit two-failure clause
     # (C15 Task 4): a Critical Hit against a creature already at 0 HP counts
@@ -5341,7 +5345,7 @@ def _apply_zero_hp_to_character(
             break
     if outcome == "dead":
         death_event = Death(target_id=event.target_id, reason="death_saves")
-        _record_death(live, death_event, killer_id=live.current_actor_id)
+        _record_death(live, death_event, killer_id=event.source_actor_id)
         live.event_log.append(death_event)
         live.event_queue.put_nowait(death_event)
 
@@ -5627,6 +5631,7 @@ def _record_death(live: _LiveCombat, event: Death, *, killer_id: str | None) -> 
     # Synthesized deaths also reach this entry point without passing _emit.
     live.timed_activities.observe(event)
     live.dead_ids.add(event.target_id)
+    observe_reaction_lifecycle(live, event)
     live.persistent_areas.observe(live, event)
     live.deaths_recorded.append(
         DeathRecord(
@@ -6828,6 +6833,14 @@ def _fold_resolution_outcome(
     _record_effect_lifecycle_links(
         live, caster, pre_event_count, concentration_max_rounds=concentration_max_rounds
     )
+    # Reactions can kill or incapacitate the caster before this outer fold
+    # materializes a concentration anchor and its dependents. Reconcile after
+    # all links exist, preserving the independent concentration condition gate.
+    latest = _find_combatant(live, caster.entity_id)
+    if latest is None or not latest.is_alive or caster.entity_id in live.dead_ids:
+        _drop_concentration(live, caster.entity_id, reason="source_dead")
+    elif latest.hp_current <= 0 or conditions_break_concentration(_condition_names(latest)):
+        _drop_concentration(live, caster.entity_id, reason="incapacitated")
 
 
 def _hook_run_end_of_turn_saves(live: _LiveCombat, actor_id: str | None) -> None:
@@ -9418,7 +9431,6 @@ def _conjuration_gate_failure(
     checks: tuple[_ConjurationGate, ...] = (
         _shape_shifted_failure,
         _summon_command_failure,
-        _readied_conjuration_failure,
         _enchant_cast_failure,
         _construct_cast_failure,
         _summon_cast_failure,
@@ -9432,20 +9444,6 @@ def _conjuration_gate_failure(
         if failure is not None:
             return failure
     return None
-
-
-def _readied_conjuration_failure(
-    live: _LiveCombat, current: Combatant, intent: PlayerIntent
-) -> CombatEvent | None:
-    """``CastFailed(reason="target_invalid")`` for a ``ready`` naming an
-    allowlisted conjuration. A readied cast resolves from ``_PendingReaction``,
-    which carries only the spell and its slot level, never the weapon, form or
-    cell the conjuration needs."""
-    if intent.intent_type != "ready" or (intent.spell_id or "") not in CONJURATION_ALLOWLIST:
-        return None
-    return CastFailed(
-        actor_id=current.entity_id, spell_id=intent.spell_id or "", reason="target_invalid"
-    )
 
 
 def _enchant_cast_failure(
@@ -9848,6 +9846,7 @@ def _resolve_construct_attack(
         active_effects=tuple(live.active_effects.get(owner.entity_id, [])),
         **(_monster_context_kwargs(live, owner, target_list, payload) | geometry),
     )
+    actx = attach_reaction_hooks(live, actx)
     resolve_activity(
         construct_attack_activity(
             spec,
@@ -10741,16 +10740,6 @@ def _spell_out_of_range_failure(
     return CastFailed(actor_id=actor_id, spell_id=intent.spell_id or "", reason="out_of_range")
 
 
-def _hellish_rebuke_target_invalid(current: Combatant, intent: PlayerIntent) -> bool:
-    """SRD §Hellish Rebuke — return ``True`` if this is a Hellish Rebuke cast
-    whose target is not the most-recent damager tracked on the caster."""
-    return (
-        intent.intent_type == "cast_spell"
-        and intent.spell_id == "hellish-rebuke"
-        and (current.last_damaged_by is None or intent.target_id != current.last_damaged_by)
-    )
-
-
 def _cast_target_invalid_failure(
     live: _LiveCombat, current: Combatant, actor_id: str, intent: PlayerIntent
 ) -> CombatEvent | None:
@@ -10764,9 +10753,7 @@ def _cast_target_invalid_failure(
         return None
     named_targets = intent.target_ids or ([intent.target_id] if intent.target_id else [])
     live_ids = {c.entity_id for c in live.initiative}
-    if _hellish_rebuke_target_invalid(current, intent) or any(
-        t not in live_ids for t in named_targets
-    ):
+    if any(t not in live_ids for t in named_targets):
         return CastFailed(
             actor_id=actor_id, spell_id=intent.spell_id or "", reason="target_invalid"
         )
@@ -11770,423 +11757,6 @@ def _resolve_targets(
 # submit_player_intent / advance_monster_turn / _handle_move below.
 
 
-def _register_pending_reaction(live: _LiveCombat, actor_id: str, intent: PlayerIntent) -> None:
-    """SRD §Ready — register a ``"ready"`` intent's pre-armed reaction.
-
-    Replaces any prior pending entry for the same owner (a combatant has one
-    Action per turn, so at most one freshly-armed reaction at a time — see
-    docs/dev/reaction-queue.md, "Queue data structure"). No-op for any other
-    intent type or a ``"ready"`` without a ``reaction_trigger``.
-    """
-    if intent.intent_type != "ready" or intent.reaction_trigger is None:
-        return
-    live.pending_reactions = [pr for pr in live.pending_reactions if pr.owner_id != actor_id]
-    live.pending_reactions.append(
-        _PendingReaction(
-            owner_id=actor_id,
-            trigger=intent.reaction_trigger,
-            spell_id=intent.spell_id,
-            slot_level=intent.slot_level,
-        )
-    )
-
-
-def _drain_pre_resolution_reactions(
-    live: _LiveCombat,
-    current: Combatant,
-    intent: PlayerIntent,
-    targets: Sequence[Combatant],
-) -> set[str]:
-    """Drain target-owned pending reactions for a resolving PC intent and a
-    construct cast (Spiritual Weapon's immediate attack).
-
-    ``"attack"`` intents fire ``hit_by_attack`` reactions (Shield's +5 AC
-    lands before the hit/miss comparison); a ``magic-missile`` cast fires
-    ``targeted_by_magic_missile`` reactions, returning the target ids whose
-    reaction fired so the caller can inject the force carve-out. Every
-    other intent drains nothing (the overwhelmingly common case).
-    """
-    if intent.intent_type == "attack" or (
-        intent.intent_type == "cast_spell"
-        and CONJURATION_ALLOWLIST.get(intent.spell_id or "") == "construct"
-    ):
-        _drain_targeted_reactions(
-            live,
-            trigger="hit_by_attack",
-            triggering_actor_id=current.entity_id,
-            targets=targets,
-        )
-        return set()
-    if intent.intent_type == "cast_spell" and intent.spell_id == "magic-missile":
-        return _drain_targeted_reactions(
-            live,
-            trigger="targeted_by_magic_missile",
-            triggering_actor_id=current.entity_id,
-            targets=targets,
-        )
-    return set()
-
-
-def _apply_magic_missile_shield_carveout(
-    payload: dict[str, Any], shielded_target_ids: set[str]
-) -> None:
-    """SRD Shield — *"...and you take no damage from Magic Missile."*
-
-    Inject a transient ``"force"`` immunity entry into the (per-resolution,
-    never persisted) hydration payload for each target whose Shield reaction
-    just fired against a Magic Missile trigger.
-    ``activities/apply.py::apply_damage`` already merges the sidecar's
-    ``immunities`` list unconditionally, flooring the rolled force damage to
-    ``0`` (still emitting ``DamageApplied(amount=0)`` per that module's
-    "never a suppressed event" contract). Deliberately spell-slug-scoped —
-    NOT a general force-immunity mechanic (docs/dev/reaction-queue.md,
-    "Magic Missile carve-out").
-    """
-    for target_id in shielded_target_ids:
-        entry = payload["passive_damage_modifiers"].setdefault(target_id, {})
-        immunities = list(entry.get("immunities", ()))
-        if "force" not in immunities:
-            immunities.append("force")
-        entry["immunities"] = immunities
-
-
-def _pop_pending_reaction(
-    live: _LiveCombat,
-    trigger: ReactionTrigger,
-    *,
-    triggering_actor_id: str,
-    only_owner_id: str | None = None,
-    eligible: Callable[[Combatant, _PendingReaction], bool] | None = None,
-) -> _PendingReaction | None:
-    """SRD §Reactions — pop the first pending reaction matching ``trigger``,
-    scanning ``live.initiative`` in INITIATIVE ORDER (the documented firing
-    order when multiple reactions could match one trigger). A candidate
-    reactor must not be the triggering actor themselves, must match
-    ``only_owner_id`` when given (the ``hit_by_attack`` /
-    ``targeted_by_magic_missile`` triggers are owned by the creature actually
-    under attack/targeted, not any bystander), must be alive, must be neither
-    Incapacitated nor shape-shifted, and must have ``reaction_available``.
-    Removes + returns the match (a reaction fires — and is spent — at most
-    once); ``None`` when nothing qualifies.
-
-    An armed reaction whose owner fails ``eligible`` is SKIPPED (left queued,
-    no Reaction spent) — R4. The scan continues in initiative order to the
-    next candidate rather than stopping.
-    """
-    for reactor in live.initiative:
-        if reactor.entity_id == triggering_actor_id:
-            continue
-        if only_owner_id is not None and reactor.entity_id != only_owner_id:
-            continue
-        if not reactor.is_alive or reactor.hp_current <= 0:
-            continue
-        # SRD 5.2 Incapacitated — no Reaction (so no opportunity attack either).
-        if conditions_block_actions(_condition_names(reactor)):
-            continue
-        # Every armed reaction releases a spell, which this engine casts at the
-        # release, and a shape-shifted creature "can't cast spells" (SRD 5.2
-        # Wild Shape, Polymorph). The spell stays armed: shapeshifting "doesn't
-        # break your Concentration", which holds a readied spell (SRD 5.2 Ready).
-        if (
-            reactor.entity_id in live.transforms
-            or _rage_effect(live, reactor.entity_id) is not None
-        ):
-            continue
-        if not reactor.reaction_available:
-            continue
-        match = next(
-            (
-                pr
-                for pr in live.pending_reactions
-                if pr.owner_id == reactor.entity_id and pr.trigger == trigger
-            ),
-            None,
-        )
-        if match is not None:
-            if eligible is not None and not eligible(reactor, match):
-                continue
-            live.pending_reactions.remove(match)
-            return match
-    return None
-
-
-def _resolve_readied_spell_cast(
-    live: _LiveCombat, reactor: Combatant, popped: _PendingReaction
-) -> None:
-    """Auto-fire a pre-armed reaction spell (Shield) as a full self-cast.
-
-    Consumes the reactor's Reaction + spell slot, emits ``ReactionTriggered``,
-    then resolves the spell's own activities against the reactor as sole
-    target through the SAME typed resolver every on-turn cast uses — no
-    bespoke Shield-only mechanics. Any ``EffectApplied`` this produces on the
-    reactor with a round-scoped duration is registered for the off-turn
-    expiry fix (``reaction_effects_pending_expiry`` — see
-    ``docs/dev/reaction-queue.md``), since the reactor is by construction NOT
-    the active turn-actor when a reaction fires.
-    """
-    spell = get_lib_loader().get_spell(popped.spell_id or "")
-    if spell is None:
-        return
-
-    for idx, c in enumerate(live.initiative):
-        if c.entity_id == reactor.entity_id:
-            live.initiative[idx] = c.model_copy(update={"reaction_available": False})
-            break
-
-    slot_level = popped.slot_level if popped.slot_level is not None else spell.level
-    if spell.level > 0:
-        _take_spell_slot(live, reactor.entity_id, slot_level)
-    # ``_emit_spell_cast`` normalises ``slot_level`` to ``None`` for a
-    # cantrip; ``slot_level`` here stays the raw popped/derived value for the
-    # slot-take check above.
-
-    _emit(
-        live,
-        ReactionTriggered(
-            actor_id=reactor.entity_id,
-            reaction_name=popped.spell_id or "",
-            trigger_event_uuid="",
-        ),
-    )
-    _emit_spell_cast(live, reactor.entity_id, spell, slot_level)
-
-    reactor = begin_spell_cast(live, reactor, spell)
-    spellcasting_ability = _resolve_caster_spellcasting_ability(reactor)
-    payload = _build_hydration_payload(live, caster=reactor)
-    actx = build_activity_context(
-        reactor,
-        [reactor],
-        rng=live.rng,
-        event_emitter=lambda ev: _emit(live, ev),
-        slot_level=slot_level,
-        base_spell_level=spell.level,
-        spellcasting_ability=spellcasting_ability,
-        concentration=spell.concentration,
-        source_passive_effects=list(spell.passive_effects),
-        # Monster/reaction paths don't delegate casts yet — PC-path
-        # delegation lives in _build_cast_spell_book; extending it here is a
-        # recorded follow-up.
-        spell_book={},
-        passive_damage_modifiers=payload["passive_damage_modifiers"],
-        save_modifiers=payload["save_modifiers"],
-        check_modifiers=payload["check_modifiers"],
-        check_states=payload["check_states"],
-        d20_test_penalty=payload["d20_test_penalty"],
-        # C15: is_proficient_attack left on default (True) — this reaction
-        # path only resolves cast SaveActivity/DamageActivity from a Spell
-        # (Shield's own reaction cast), never an AttackActivity with a
-        # fetched Weapon, so the proficiency gate never applies here.
-        target_distance_ft=_target_distance_map(live, reactor.entity_id, [reactor]),
-        attacker_grappler_id=_condition_source_entity(live, reactor, "grappled"),
-        legendary_resistance_armed=payload["legendary_resistance_armed"],
-        legendary_resistances_remaining_by_entity=payload[
-            "legendary_resistances_remaining_by_entity"
-        ],
-        undead_fortitude_holds=live.undead_fortitude_holds,
-    )
-    pre_event_count = len(live.event_log)
-    resolve_spell_activities(live, spell, actx)
-
-    # A readied concentration spell concentrates like an on-turn cast.
-    _fold_resolution_outcome(
-        live,
-        reactor,
-        spell=spell,
-        actx=actx,
-        pre_event_count=pre_event_count,
-        concentration_max_rounds=_concentration_max_rounds(spell),
-    )
-    _sync_legendary_resistance(live, pre_event_count)
-
-    for ev in live.event_log[pre_event_count:]:
-        if (
-            isinstance(ev, EffectApplied)
-            and ev.effect.target_id == reactor.entity_id
-            and ev.effect.duration.rounds is not None
-        ):
-            live.reaction_effects_pending_expiry.setdefault(reactor.entity_id, []).append(
-                (ev.effect.target_id, ev.effect.id, ev.effect.origin)
-            )
-
-
-def _readied_cast_eligible(
-    live: _LiveCombat, reactor: Combatant, pending: _PendingReaction
-) -> bool:
-    """R4 — a readied leveled spell (Shield) needs an unexpended slot at its
-    readied level. SRD §Spell Slots: "When you cast a spell, you expend a
-    slot of that spell's level or higher"; a cantrip (level 0) has no slot
-    to expend and is always eligible."""
-    spell = get_lib_loader().get_spell(pending.spell_id or "")
-    if spell is None or spell.level == 0:
-        return True
-    level = pending.slot_level if pending.slot_level is not None else spell.level
-    return _slot_available(live, reactor.entity_id, level)
-
-
-def _drain_targeted_reactions(
-    live: _LiveCombat,
-    *,
-    trigger: ReactionTrigger,
-    triggering_actor_id: str,
-    targets: Sequence[Combatant],
-) -> set[str]:
-    """Pop + fully resolve one matching reaction per entry in ``targets``
-    (each target can own at most one match). Returns the set of target
-    entity_ids whose reaction fired — Shield vs. Magic Missile's force
-    carve-out needs to know which targets just got shielded."""
-    fired: set[str] = set()
-    for target in targets:
-        popped = _pop_pending_reaction(
-            live,
-            trigger,
-            triggering_actor_id=triggering_actor_id,
-            only_owner_id=target.entity_id,
-            eligible=lambda reactor, pending: _readied_cast_eligible(live, reactor, pending),
-        )
-        if popped is None:
-            continue
-        reactor = _find_combatant(live, popped.owner_id)
-        if reactor is None:
-            continue
-        _resolve_readied_spell_cast(live, reactor, popped)
-        fired.add(target.entity_id)
-    return fired
-
-
-def _drain_counterspell_reaction(
-    live: _LiveCombat, current: Combatant, actor_id: str, intent: PlayerIntent
-) -> bool:
-    """SRD 5.2 Counterspell — pop a pending ``"cast_spell"``-trigger reaction
-    (if any) and resolve it against ``current`` (the interrupted caster) via
-    Counterspell's OWN canonical ``save``-kind activity, through the
-    existing, unmodified ``activities/save.py`` resolver.
-
-    Returns ``True`` iff the triggering cast was countered (``CastFailed``
-    emitted). The caller has already paid the casting-time budget and must
-    now finish the intent through the shared turn-continuation helper,
-    BEFORE ``_consume_spell_slot`` runs for the triggering spell. ``False``
-    means no reaction fired OR the save succeeded; either way the triggering
-    cast proceeds exactly as if this function had never been called.
-
-    Gates (R4): the reactor must hold a slot at the readied level in either
-    pool and be within Counterspell's own ``range.value`` with line of
-    sight — an ineligible reactor's armed reaction is skipped, not
-    consumed.
-    """
-    if intent.intent_type != "cast_spell" or not intent.spell_id:
-        return False
-
-    caster_zone = live.actor_zone.get(actor_id)
-
-    def _eligible(reactor: Combatant, pending: _PendingReaction) -> bool:
-        spell = get_lib_loader().get_spell(pending.spell_id or "counterspell")
-        if spell is None:
-            return False
-        level = pending.slot_level if pending.slot_level is not None else spell.level
-        if spell.level > 0 and not _slot_available(live, reactor.entity_id, level):
-            return False
-        range_ft = spell.range.value
-        reactor_zone = live.actor_zone.get(reactor.entity_id)
-        if range_ft is None or reactor_zone is None or caster_zone is None:
-            return True  # no geometry ⇒ no penalty (engine-wide convention)
-        return _in_range_with_los(live.topology, reactor_zone, caster_zone, int(range_ft))
-
-    popped = _pop_pending_reaction(
-        live, "cast_spell", triggering_actor_id=actor_id, eligible=_eligible
-    )
-    if popped is None:
-        return False
-    reactor = _find_combatant(live, popped.owner_id)
-    if reactor is None:
-        return False
-    # The spell lookup here duplicates ``_eligible``'s (identical
-    # ``pending.spell_id or "counterspell"`` / ``popped.spell_id or
-    # "counterspell"`` expression): ``_eligible`` runs once per CANDIDATE
-    # during the scan inside ``_pop_pending_reaction`` — the armed entry is
-    # not known yet, so its spell can't be pre-fetched — and this second
-    # lookup is against ``popped``, the one entry the scan actually selected.
-    counterspell = get_lib_loader().get_spell(popped.spell_id or "counterspell")
-    if counterspell is None:
-        return False
-    save_activity = next((a for a in counterspell.activities if isinstance(a, SaveActivity)), None)
-    if save_activity is None:
-        return False
-
-    # Counterspell's OWN slot is spent whether or not it succeeds — only the
-    # INTERRUPTED spell's slot is conditionally preserved, below.
-    for idx, c in enumerate(live.initiative):
-        if c.entity_id == reactor.entity_id:
-            live.initiative[idx] = c.model_copy(update={"reaction_available": False})
-            break
-    cs_level = popped.slot_level if popped.slot_level is not None else counterspell.level
-    if counterspell.level > 0:
-        _take_spell_slot(live, reactor.entity_id, cs_level)
-
-    _emit(
-        live,
-        ReactionTriggered(
-            actor_id=reactor.entity_id,
-            reaction_name=popped.spell_id or "counterspell",
-            trigger_event_uuid="",
-        ),
-    )
-    _emit_spell_cast(live, reactor.entity_id, counterspell, cs_level)
-
-    reactor_spellcasting_ability = _resolve_caster_spellcasting_ability(reactor)
-    payload = _build_hydration_payload(live, caster=reactor)
-    actx = build_activity_context(
-        reactor,
-        [current],
-        rng=live.rng,
-        event_emitter=lambda ev: _emit(live, ev),
-        slot_level=cs_level,
-        base_spell_level=counterspell.level,
-        spellcasting_ability=reactor_spellcasting_ability,
-        concentration=False,
-        source_passive_effects=list(counterspell.passive_effects),
-        # Monster/reaction paths don't delegate casts yet — PC-path
-        # delegation lives in _build_cast_spell_book; extending it here is a
-        # recorded follow-up.
-        spell_book={},
-        passive_damage_modifiers=payload["passive_damage_modifiers"],
-        save_modifiers=payload["save_modifiers"],
-        check_modifiers=payload["check_modifiers"],
-        check_states=payload["check_states"],
-        d20_test_penalty=payload["d20_test_penalty"],
-        target_distance_ft=_target_distance_map(live, reactor.entity_id, [current]),
-        # C15: is_proficient_attack left on default (True) — Counterspell
-        # resolves a SaveActivity, never an AttackActivity with a fetched
-        # Weapon, so the proficiency gate never applies here.
-        attacker_grappler_id=_condition_source_entity(live, reactor, "grappled"),
-        legendary_resistance_armed=payload["legendary_resistance_armed"],
-        legendary_resistances_remaining_by_entity=payload[
-            "legendary_resistances_remaining_by_entity"
-        ],
-        undead_fortitude_holds=live.undead_fortitude_holds,
-    )
-    pre_event_count = len(live.event_log)
-    resolve_activity(save_activity, actx, weapon=None)
-    _sync_legendary_resistance(live, pre_event_count)
-    save_events = [
-        ev
-        for ev in live.event_log[pre_event_count:]
-        if isinstance(ev, SaveRolled) and ev.target_id == current.entity_id
-    ]
-    succeeded = save_events[-1].succeeded if save_events else True
-    if succeeded:
-        return False
-
-    _emit(
-        live,
-        CastFailed(
-            actor_id=actor_id,
-            spell_id=intent.spell_id or "",
-            reason="countered",
-        ),
-    )
-    return True
-
-
 async def _dispatch_turn_nonending_intent(
     live: _LiveCombat, current: Combatant, intent: PlayerIntent
 ) -> bool:
@@ -12548,8 +12118,7 @@ async def _submit_player_intent(
     # (SRD §Weapon Reach / Range) -> Loading one-shot-per-Action cap (SRD 5.2
     # Loading) -> Charmed target (SRD 5.2 "You can't attack the charmer or
     # target the charmer with damaging abilities or magical effects") ->
-    # pre-slot ``target_invalid`` (Hellish Rebuke's fixed target, SRD
-    # §Hellish Rebuke) -> an area's own refusals (``_area_target_failure``: an
+    # pre-slot ``target_invalid`` -> an area's own refusals (``_area_target_failure``: an
     # unaimed Cone/Line/Cube, an exclusion where there is no choice, a counted
     # area's bad names) -> a second Action Surge this turn (SRD 5.2 "only once
     # on a turn") -> a Bardic
@@ -12573,6 +12142,7 @@ async def _submit_player_intent(
         lambda: _bardic_inspiration_target_failure(live, actor_id, intent),
         lambda: _granted_die_failure(live, current, intent),
         lambda: _conjuration_gate_failure(live, current, intent),
+        lambda: prearm_failure(live, current, intent),
     )
     for build_pre_resolution_failure in pre_resolution_gates:
         failure = build_pre_resolution_failure()
@@ -12634,13 +12204,17 @@ async def _submit_player_intent(
             ReactionTriggered(
                 actor_id=actor_id,
                 reaction_name=intent.spell_id or "",
-                trigger_event_uuid="",
+                affected_target_id=intent.target_id or actor_id,
+                source_spell_id=intent.spell_id,
+                source_activity_id=intent.activity_id,
             ),
         )
 
     if cast_spell_for_timing is not None:
         current = begin_spell_cast(live, current, cast_spell_for_timing)
-    if _drain_counterspell_reaction(live, current, actor_id, intent):
+    if cast_spell_for_timing is not None and spell_cast_opportunity(
+        live, current, cast_spell_for_timing
+    ):
         _end_action(live, actor_id, intent, allow_movement=is_bonus_action)
         return
     _consume_spell_slot(live, actor_id, intent)
@@ -12662,7 +12236,7 @@ async def _submit_player_intent(
     # Registration draws no dice and resolves no activities; the generic
     # tail below advances the turn exactly as for any other Action. No-op
     # for every other intent type (guard inside the helper).
-    _register_pending_reaction(live, actor_id, intent)
+    register_pending_reaction(live, actor_id, intent)
 
     # C17 — ``SpellCast`` metadata event (component/material/ritual bookkeeping,
     # never enforced). Emitted right after the slot gate passes so it is
@@ -12720,23 +12294,7 @@ async def _submit_player_intent(
     # (``_area_targets``); any other intent resolves against its named target.
     targets = _resolve_targets(live, current, intent, activities, cast_spell)
 
-    # SRD §Reactions — drain any pending target-owned reactions (Shield)
-    # BEFORE the sidecar projection below, so a just-applied reaction effect
-    # (Shield's +5 AC) folds into this very resolution's hydration payload
-    # . Returns the target ids whose reaction fired against a
-    # Magic Missile trigger — needed for the carve-out injection below.
-    shielded_vs_magic_missile = _drain_pre_resolution_reactions(live, current, intent, targets)
-
-    # The orchestrator already owns the per-entity passive sidecars; project
-    # them once and hand the two dicts ``build_activity_context`` needs in
-    # (it stays pure — no orchestrator import, no double-compute).
     payload = _build_hydration_payload(live, caster=current)
-
-    # SRD Shield — *"...and you take no damage from Magic Missile."* Inject
-    # the transient, spell-slug-scoped force carve-out into THIS payload only
-    # (rebuilt fresh per resolution; nothing persists). No-op for an empty
-    # set (guard inside the helper).
-    _apply_magic_missile_shield_carveout(payload, shielded_vs_magic_missile)
 
     pre_event_count = len(live.event_log)
 
@@ -12881,11 +12439,14 @@ async def _submit_player_intent(
                 live, spell, child_ctx, intent=intent
             ),
         )
+        actx = attach_reaction_hooks(live, actx)
         if cast_spell is not None:
             resolve_spell_activities(live, cast_spell, actx, intent=intent)
         else:
             register_item_areas(live, activities, actx, intent)
             for activity in activities:
+                if not can_continue_resolution(live, current.entity_id):
+                    break
                 if activity.persistent_area is None:
                     resolve_activity(activity, actx, weapon=fetched_weapon)
 
@@ -13025,9 +12586,7 @@ def _opportunity_attackers(
             reactor_id not in live.party_ids and reactor_id not in live.encounter_ids
         ) or not _is_enemy(live, reactor_id, mover_id):
             continue
-        if not reactor.is_alive or reactor.hp_current <= 0 or not reactor.reaction_available:
-            continue
-        if conditions_block_actions(_condition_names(reactor)):
+        if not can_take_reaction(live, reactor):
             continue
         reactor_cell = live.actor_zone.get(reactor_id)
         attack = _opportunity_attack_of(live, reactor) if reactor_cell is not None else None
@@ -13089,7 +12648,7 @@ def _fire_opportunity_attacks_on_step(
             live,
             IntentSubmitted(actor_id=reactor_id, intent_type="reaction", target_id=mover_id),
         )
-        _update_combatant(live, reactor_id, reaction_available=False)
+        reactor = pay_reaction(live, reactor)
         _resolve_opportunity_attack(live, reactor, mover)
         # An attack's forced movement (the Push mastery) carried the mover
         # off from_cell: the walk ends where it landed, and later reactors
@@ -13223,10 +12782,6 @@ def _resolve_opportunity_attack(live: _LiveCombat, reactor: Combatant, mover: Co
         return
     targets = [mover]
     weapon = _enchanted_weapon(live, reactor, attack.weapon)
-    # SRD Shield: "+5 bonus to AC, including against the triggering attack".
-    _drain_targeted_reactions(
-        live, trigger="hit_by_attack", triggering_actor_id=reactor.entity_id, targets=targets
-    )
     payload = _build_hydration_payload(live, caster=reactor)
     pre_event_count = len(live.event_log)
     kwargs = _pc_attack_context_kwargs(
@@ -13250,6 +12805,7 @@ def _resolve_opportunity_attack(live: _LiveCombat, reactor: Combatant, mover: Co
         is_opportunity_attack=True,
         **kwargs,
     )
+    actx = attach_reaction_hooks(live, actx)
     for activity in attack.activities:
         resolve_activity(activity, actx, weapon=weapon)
     _consume_attack_roll_grants(live, reactor, targets, pre_event_count)

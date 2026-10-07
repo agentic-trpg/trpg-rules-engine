@@ -536,7 +536,7 @@ _PROBES: dict[str, tuple[Any, str]] = {
         "Refused casts preserve action budgets",
     ),
     "Countered casts spend their casting-time": (
-        lambda: "def _drain_counterspell_reaction(" in _src("orchestrator.py"),
+        lambda: "spell_cast_opportunity(live," in _src("orchestrator.py"),
         "preserve the spell slot",
     ),
     "feature/item Magic-action classification": (
@@ -616,18 +616,22 @@ _PROBES: dict[str, tuple[Any, str]] = {
         lambda: "exhaustion_level" in _src("rest.py"),
         "Long Rest reduces the level by 1",
     ),
-    # C17 Task 4 (R4): Counterspell's reaction-drain eligibility check is
-    # threaded through ``_pop_pending_reaction``'s ``eligible=`` predicate —
-    # an ineligible reactor's armed reaction is skipped, not popped.
+    # Typed reaction eligibility validates before fire_reaction removes the
+    # selected declaration, so an ineligible candidate stays queued.
     "slot-gated at the readied level and 60 ft range/LoS-gated at drain time": (
-        lambda: "eligible=" in _src("orchestrator.py"),
+        lambda: (
+            "def _condition_eligible(" in _src("live_reactions.py")
+            and "def _eligible(" in _src("live_reactions.py")
+            and "matching_conditions(pending, opportunity)" in _src("live_reactions.py")
+        ),
         "slot-gated at the readied level and 60 ft range/LoS-gated at drain time",
     ),
-    # C17 Task 4 (R4): a readied leveled spell (Shield) is gated on slot
-    # availability at drain time via its own ``_readied_cast_eligible``
-    # predicate (distinct from Counterspell's inline ``_eligible`` above).
+    # Every supported readied spell uses the same slot gate.
     "an unexpended slot at its readied level": (
-        lambda: "def _readied_cast_eligible(" in _src("orchestrator.py"),
+        lambda: (
+            "orch._slot_available(live, reactor.entity_id, pending.slot_level)"
+            in _src("live_reactions.py")
+        ),
         "an unexpended slot at its readied level",
     ),
     # C17 Task 1: per-class/multiclass/Pact slot tables are derived
@@ -871,10 +875,13 @@ _PROBES: dict[str, tuple[Any, str]] = {
         lambda: "def _resolve_dc(" in _src("activities/save.py"),
         "✅",
     ),
-    # Partial because the interactions are named special cases, not data.
     "Counterspell, Shield, Hellish Rebuke, Magic Missile interactions": (
-        lambda: "def _apply_magic_missile_shield_carveout(" in _src("orchestrator.py"),
-        "⚠️ Partial",
+        lambda: (
+            "matching_conditions(pending, opportunity)" in _src("live_reactions.py")
+            and "def _apply_magic_missile_shield_carveout(" not in _src("orchestrator.py")
+            and "def _drain_counterspell_reaction(" not in _src("orchestrator.py")
+        ),
+        "✅",
     ),
     "| Dispel Magic |": (
         lambda: not _spell_resolves(_canonical_spell("dispel-magic")),
@@ -948,14 +955,28 @@ _PROBES: dict[str, tuple[Any, str]] = {
         "✅",
     ),
     "Shield (incl. vs. Magic Missile)": (
-        lambda: "def _apply_magic_missile_shield_carveout(" in _src("orchestrator.py"),
+        lambda: (
+            "attack_hit_reaction" in _src("activities/attack.py")
+            and "negate_triggering_spell_damage" in _src("live_reactions.py")
+        ),
         "✅",
     ),
-    # A readied reaction fires only on one of the engine's named triggers.
+    "| Hellish Rebuke |": (
+        lambda: (
+            "damage_instance_resolved" in _src("activities/apply.py")
+            and "ReactionTriggerKind.TAKES_DAMAGE" in _src("live_reactions.py")
+        ),
+        "✅",
+    ),
+    "Feather Fall falling trigger": (
+        lambda: "ReactionTriggerKind.CREATURE_FALLS" not in _src("reactions.py"),
+        "❌",
+    ),
+    # Canonical conditions are required; there is no arbitrary trigger parser.
     "Ready an action with a custom trigger": (
         lambda: (
-            'ReactionTrigger = Literal["cast_spell", "hit_by_attack", "targeted_by_magic_missile"]'
-            in _src("orchestrator.py")
+            'return "no typed reaction conditions"' in _src("reactions.py")
+            and "prearm_failure(live," in _src("orchestrator.py")
         ),
         "❌",
     ),

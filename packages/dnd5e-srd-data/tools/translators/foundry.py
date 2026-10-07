@@ -97,6 +97,7 @@ from tools.translators.feature_runtime import (
 )
 from tools.translators.persistent_areas import apply_persistent_areas
 from tools.translators.prose_cleanup import cleanup_prose
+from tools.translators.reactions import apply_reaction_semantics
 from tools.translators.spell_timing import apply_spell_timing
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -2373,17 +2374,22 @@ def translate_spell_yaml(
         duration=_spell_duration(system.get("duration") or {}),
         materials=_spell_materials(system.get("materials") or {}),
         preparation=_spell_preparation(system.get("preparation") or {}),
-        activities=apply_persistent_areas(
+        activities=apply_reaction_semantics(
             slug,
-            _description(doc),
-            apply_spell_timing(
+            apply_persistent_areas(
                 slug,
                 _description(doc),
-                _apply_affects_corrections(
+                apply_spell_timing(
                     slug,
-                    _apply_spell_save_cover_overrides(
+                    _description(doc),
+                    _apply_affects_corrections(
                         slug,
-                        _apply_spell_damage_type_corrections(slug, _translate_activities(system)),
+                        _apply_spell_save_cover_overrides(
+                            slug,
+                            _apply_spell_damage_type_corrections(
+                                slug, _translate_activities(system)
+                            ),
+                        ),
                     ),
                 ),
             ),

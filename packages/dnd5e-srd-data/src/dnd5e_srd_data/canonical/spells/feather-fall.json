@@ -46,6 +46,10 @@
         "units": "self",
         "value": null
       },
+      "reaction": {
+        "responses": [],
+        "target_role": "affected_creature"
+      },
       "roll": {
         "formula": "",
         "name": "",

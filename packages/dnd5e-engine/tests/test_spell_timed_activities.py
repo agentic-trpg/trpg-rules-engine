@@ -279,6 +279,7 @@ def test_new_concentration_ends_old_before_new_resolution_but_refusals_preserve_
 
 
 def test_self_applied_sleep_does_not_repeat_save_on_current_turn_end():
+    """Self-inflicted Incapacitated ends Sleep's concentration immediately."""
     handle, live = _combat(wisdom=-30)
     act(
         handle,
@@ -289,11 +290,13 @@ def test_self_applied_sleep_does_not_repeat_save_on_current_turn_end():
         excluded_target_ids=(),
     )
     saves = len(events(live, SaveRolled))
+    assert events(live, ConcentrationDropped)[-1].target_id == HERO
+    assert not live.timed_activities.pending
     act(handle, HERO, intent_type="pass")
     assert len(events(live, SaveRolled)) == saves
     _end(live)
     _end(live)
-    assert len(events(live, SaveRolled)) == saves + 1
+    assert len(events(live, SaveRolled)) == saves
 
 
 def test_turn_start_hook_removal_hands_off_without_stranding_initiative():
@@ -433,7 +436,9 @@ def test_countered_new_concentration_cast_ends_old_chain_but_keeps_slot():
     act(handle, HERO, intent_type="cast_spell", spell_id="bless", target_id=HERO)
     for _ in range(3):
         _end(live)
-    orch._register_pending_reaction(
+    from dnd5e_engine.live_reactions import register_pending_reaction
+
+    register_pending_reaction(
         live,
         "char:counter",
         orch.PlayerIntent(

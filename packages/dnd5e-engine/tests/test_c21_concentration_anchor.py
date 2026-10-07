@@ -241,10 +241,8 @@ def test_a_monster_cast_is_anchored_when_its_target_saves(seed: int, anchored: b
     assert live.concentration_rounds_remaining["mon:dryad"] == 9
 
 
-def test_a_readied_concentration_spell_now_concentrates() -> None:
-    """A readied Fog Cloud fires on the foe's attack as a self-cast; the
-    readied site now runs the same fold, so the spell concentrates (1 hour:
-    600 rounds). Seed 1: the cast draws nothing; the foe's d20 5 misses AC 25."""
+def test_a_concentration_spell_without_typed_reaction_cannot_be_readied() -> None:
+    """A host cannot invent Fog Cloud's hit trigger or spend its Action."""
     hero = pc(spells_known=["fog-cloud"], spell_slots={1: 1}, ac=25)
     handle, live = start([hero], seed=1)
     act(
@@ -255,10 +253,9 @@ def test_a_readied_concentration_spell_now_concentrates() -> None:
         slot_level=1,
         reaction_trigger="hit_by_attack",
     )
-    monster_turn(handle)
-    assert [e.spell_id for e in events(live, SpellCast)] == ["fog-cloud"]
-    assert live.concentration_chain["char:hero"] == [
-        ("char:hero", "effect:fog-cloud", "cast:fog-cloud:char:hero")
-    ]
-    assert live.concentration_rounds_remaining["char:hero"] == 600
-    assert combatant(live, "char:hero").concentration_effect_id == "effect:fog-cloud"
+    assert not events(live, SpellCast)
+    assert not live.pending_reactions
+    assert not live.concentration_chain
+    assert live.spell_slots_by_entity["char:hero"][1] == 1
+    assert combatant(live, "char:hero").action_available
+    assert live.current_actor_id == "char:hero"

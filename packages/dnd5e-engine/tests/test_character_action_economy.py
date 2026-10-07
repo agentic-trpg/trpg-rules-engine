@@ -22,7 +22,8 @@ from dnd5e_engine.events import (
     TurnEnded,
 )
 from dnd5e_engine.lib_loader import set_lib_loader_for_tests
-from dnd5e_engine.orchestrator import IntentRejectedError, _register_pending_reaction
+from dnd5e_engine.live_reactions import register_pending_reaction
+from dnd5e_engine.orchestrator import IntentRejectedError
 from dnd5e_engine.specs import GridScene
 from tests.c20_support import act, combatant, events, monster_turn, pc, start
 
@@ -378,7 +379,7 @@ def _counterspell_combat(**caster_kwargs):
         ],
         seed=4,
     )
-    _register_pending_reaction(
+    register_pending_reaction(
         live,
         "char:counter",
         PlayerIntent(

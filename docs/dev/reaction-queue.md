@@ -1,415 +1,176 @@
-# Reaction queue
+# Data-driven reactions
 
-How the engine models reactions: the pre-armed reaction queue, cross-actor
-trigger detection, Counterspell, Shield, the monster-reactor opportunity
-attack, and Disengage. These share one piece of machinery and were designed
-together rather than piecemeal; this note is that shared design.
+Reactions use canonical `ActivationBlock.reaction_conditions` as their
+authoritative trigger semantics. Runtime never parses a spell description or
+`activation.condition`. An activity can inherit reaction conditions while its
+own `activation.type` remains `action`; populated typed conditions are what
+identify the reaction.
 
-**Hard governing constraint: reactions are pre-armed auto-fire.** There is no mid-resolution host round-trip anywhere
-in this design — `submit_player_intent` / `advance_monster_turn` remain the
-only two ingress points, and a queued reaction is drained and fully resolved
-entirely inside whichever of those two calls processes the trigger. A host
-never gets asked "do you want to react?" mid-resolution; it must pre-declare
-the reaction (via a normal on-turn `"ready"` intent) before the trigger ever
-fires.
+## Host contract: pre-arm, then deterministic auto-fire
 
-## SRD ground truth
+The engine has no mid-resolution host round-trip. On its own turn a creature
+submits `PlayerIntent(intent_type="ready", spell_id=..., slot_level=...)` to
+pre-arm a supported reaction spell. Declaration spends an Action and draws no
+dice. The Reaction and spell slot are paid only when an eligible opportunity
+fires. Re-arming replaces that owner's previous pending declaration.
 
-- **Ready** (`the Foundry SRD source packs, content24/chapter-1/actions.yml`,
-  journal entry "Ready"): *"Prepare to take an action in response to a
-  trigger you define... you take your Reaction to take that action."*
-- **Reactions** (`appendices/appendix-d-rule-references.yml`, journal page
-  `2VqLyxMyMxgXe2wC`): *"You can take a Reaction on another creature's turn
-  ... Once you take a Reaction, you can't take another one until the start
-  of your next turn."*
-- **Opportunity Attacks** (`chapter-1/combat.yml`): *"You can make an
-  Opportunity Attack when a creature that you can see leaves your reach... The
-  attack occurs right before it leaves your reach."*
-- **Disengage** (`chapter-1/actions.yml`): *"Your movement doesn't provoke
-  Opportunity Attacks for the rest of the turn."*
-- **Counterspell** / **Shield** (`canonical/spells/counterspell.json` /
-  `shield.json` `description` fields, traced verbatim to
-  `the Foundry SRD source packs, spells24/...`) — quoted in full in each
-  reaction's own section below.
+This `ready` API is an engine pre-arm mechanism. It does not implement SRD
+Ready's arbitrary trigger language or held-spell rules. A spell without
+supported typed conditions is refused before the declaration's Action is
+spent. The optional legacy `reaction_trigger` field is a deprecated
+compatibility check: it cannot add conditions to the canonical spell, and an
+incompatible value is refused before payment.
 
-## Modeling decision: `"ready"` is the pre-arm intent, not true SRD Ready
+## Pending declarations and opportunities
 
-The engine has no interactive prompt seam and the hard constraint forbids
-adding one. Real SRD Ready lets a player define an arbitrary trigger in
-prose; Counterspell/Shield's own casting time is literally `"reaction"` with
-a fixed trigger condition baked into the spell. This cluster reuses the
-existing, already-unhandled `IntentType` literal `"ready"` as the engine's
-**pre-arm mechanism**: a combatant spends their on-turn Action submitting
-`PlayerIntent(intent_type="ready", spell_id=..., slot_level=..., reaction_trigger=...)`,
-which register a pending reaction and do nothing else (no dice, no
-`ReactionTriggered` yet). No new `IntentType` member is needed — `"ready"`
-was already in the closed enum, previously handled as an inert
-Action-consuming no-op. The action-economy shape is unchanged: readying
-still spends the Action (not the Reaction) at declaration time; the
-Reaction itself is spent later, only when the trigger actually fires.
+`reactions.py` holds typed pending declarations, opportunities, matching and
+target derivation. `live_reactions.py` connects them to authoritative combat
+state, payment and the shared activity resolvers. The orchestrator calls these
+boundaries at actual resolution points.
 
-`reaction_trigger` moves from `str | None` to a closed
-`ReactionTrigger = Literal["cast_spell", "hit_by_attack",
-"targeted_by_magic_missile"]` (`orchestrator.py`) — the three trigger
-values this cluster's concrete reactions need, matching the examples
-already named in `PlayerIntent.reaction_trigger`'s own docstring. Additive
-only in the sense that no public name changes; the field's *accepted value
-set* narrows from "any string" to these three, which is the point of the
-typed-semantics rule (an unconsumed `str` sidecar cannot be validated at
-all).
+A pending declaration retains its owner, source kind, spell/activity identity,
+slot level, canonical conditions and required predeclared resolution inputs.
+Conditions have OR semantics in their stable canonical order. Shield's
+`HIT_BY_ATTACK` and `TARGETED_BY_SPELL(target_spell_slug="magic-missile")`
+conditions belong to the same declaration.
 
-## Queue data structure
+Opportunities carry the canonical `ReactionTriggerKind`, triggering actor,
+affected creature, source spell/activity and the attack or damage context
+needed by matching. They originate from rules resolution, rather than an
+intent type or a host-supplied trigger string:
 
-```python
-@dataclass(frozen=True)
-class _PendingReaction:
-    owner_id: str
-    trigger: ReactionTrigger
-    spell_id: str | None
-    slot_level: int | None
+| Opportunity | Authoritative production point |
+|---|---|
+| `HIT_BY_ATTACK` | A shared attack resolver's provisional hit, after its attack roll |
+| `TARGETED_BY_SPELL` | A legal spell resolution targets a creature |
+| `SEES_SPELL_CAST` | Legal casting begins after casting-time payment and before source-slot payment |
+| `TAKES_DAMAGE` | A creature actually takes positive damage from a rules instance |
+| `CREATURE_FALLS` | No authoritative falling producer; safely deferred |
+
+Matching reads only the typed kind, optional spell qualifier, typed range and
+explicit runtime context. Sight-dependent conditions use the live visibility
+rules. Targets follow closed canonical response metadata: self, triggering
+actor, damage source or affected creature. Shield therefore resolves on its
+reactor; Counterspell on the interrupted caster; Hellish Rebuke on the actual
+creature that dealt the damage.
+
+## Eligibility, ordering and payment
+
+Candidates are visited in initiative order. Matching and all eligibility
+checks finish before a candidate is removed: live owner and target, positive
+owner HP, Reaction available, no Incapacitated restriction, spellcasting
+allowed by Rage/transformation state, range/sight and an available slot at
+the armed level. An ineligible candidate stays queued with its slot, Reaction
+and RNG unchanged, and the scan continues to the next candidate.
+
+An eligible firing removes its pending declaration, spends the Reaction and
+slot, emits `ReactionTriggered`, and resolves the canonical activity. A slot
+comes from Spellcasting first, then Pact Magic. The owner's Reaction refreshes
+at its next turn start. Death and departure clear that owner's pending entry;
+temporary Rage/transformation restrictions keep an otherwise valid entry
+armed.
+
+Opportunity attacks remain an automatic movement path without pre-arming.
+They share reaction availability/payment primitives and the attack resolver.
+Disengage, sight, reach and the existing movement-stop rules remain in force.
+
+## Shield: one attack roll and one final adjudication
+
+The shared attack resolver rolls once and computes a provisional hit against
+the current effective AC. A provisional miss produces no hit opportunity and
+does not fire Shield. On a provisional hit the live hook can resolve Shield
+immediately, then returns the defender's refreshed effective AC. The same
+attack total is checked against that AC. Natural 1/20 and advantage or
+disadvantage retain the existing attack rules and number of draws.
+
+Only the final `AttackRolled` is emitted. If Shield turns the hit into a miss,
+there is no hit damage or hit rider. If the attack still hits, its normal
+damage follows. The reaction and Shield effect remain committed in either
+case, with the effect expiring at the reactor's next turn start.
+
+Because the hook belongs to `activities/attack.py`, weapon and spell attacks,
+monster attacks, opportunity attacks, legendary attacks and construct attacks
+share the same timing. A `SaveActivity` or `DamageActivity` never produces a
+hit opportunity.
+
+Magic Missile uses the canonical targeted-spell qualifier. The exact typed
+response stays attached to the active Shield effect, including when an attack
+originally triggered it. Each matching spell resolution receives its own
+damage negation without another Reaction or slot payment. The response expires
+with Shield; it does not add permanent force immunity or require a spell-name
+branch in the orchestrator.
+
+## Counterspell: legal casting before source-slot payment
+
+A refused cast produces no casting opportunity. Target, range, slot and
+casting-time legality must pass first. A legal cast pays its Action, Bonus
+Action or Reaction, then presents `SEES_SPELL_CAST` while its spell slot is
+still unspent. Both PC and monster spell casts reach this boundary.
+
+Counterspell's own canonical `SaveActivity` makes the caster's Constitution
+save against the reactor's spell save DC through `resolve_activity()`.
+Counterspell always spends its own Reaction and slot when it fires. A failed
+save dissipates the triggering spell, emits `CastFailed(reason="countered")`,
+preserves that spell's slot and produces none of its effects or RNG draws.
+A successful save lets the triggering spell spend its own slot and resolve.
+Its casting-time budget remains spent in both cases; an unused Action Surge
+restricted extra Action remains available for a legal non-Magic action.
+
+The queue resolves the first eligible reactor in initiative order. Nested
+Counterspell chains are deferred; firing a queued spell does not recursively
+open an unbounded spell-cast reaction stack.
+
+## Damage-triggered reactions and attribution
+
+`DamageApplied.source_actor_id` identifies the real source creature whenever
+activity resolution knows it. Environmental or unknown sources remain
+`None`; the live fold does not guess from the current turn actor. Death
+attribution consumes the same field, so an opportunity attack or reaction
+kill credits the attacker who actually dealt the damage.
+
+`damage_instance_id` groups the typed damage parts of one rules instance.
+Its identity is generated from deterministic resolution sequencing, never a
+random UUID. A multi-type hit produces one damage-trigger opportunity per
+affected creature, after its damage parts land, and one damage-at-zero-HP
+death-save failure (two for a critical hit). Separate attacks remain separate
+instances.
+
+Hellish Rebuke requires positive actual damage and a living damage source the
+reactor can see within the typed range. It resolves its ordinary spell
+save/damage activities on that source. Zero damage, an unknown source, or a
+reactor left dead, at 0 HP or Incapacitated produces no firing. Eligibility
+uses the immediate damage context, rather than `last_damaged_by`.
+
+## Events and deterministic replay
+
+`ReactionTriggered` is authoritative. Its typed context identifies the
+trigger kind, triggering actor, affected creature, source spell/activity and,
+when applicable, damage instance. The legacy event-UUID field does not stand
+in for those identities. A host can explain who reacted and why from the
+event stream alone.
+
+The same state, declarations, trigger intents and seed produce equivalent
+events, pending queue, resources, HP/effects and RNG state. Eligibility and
+declaration checks draw no RNG. A Shield reaction adds no dice to the
+triggering attack.
+
+## Canonical audit and remaining gaps
+
+The deterministic [reaction runtime audit](reaction-runtime-audit.json)
+records every canonical reaction activity's conditions, producer coverage,
+target derivation, executable classification and explicit deferred reason.
+Regenerate it from the repository root:
+
+```console
+uv run python -X utf8 -m dnd5e_engine.reaction_audit --output docs/dev/reaction-runtime-audit.json
 ```
 
-`_LiveCombat` gains:
-
-- `pending_reactions: list[_PendingReaction]` — the queue itself. A `"ready"`
-  intent appends one entry (replacing any prior entry for the same owner —
-  a combatant has at most one action per turn, so at most one freshly-armed
-  reaction at a time). List, not a per-owner dict, so multiple different
-  combatants can have independent pending reactions live simultaneously and
-  the drain can walk them in a defined order.
-- `reaction_effects_pending_expiry: dict[str, list[tuple[str, str, str]]]` —
-  the off-turn-buff-expiry companion structure (see "Duration-fix
-  semantics" below), keyed by the effect's caster/owner id.
-
-## Cross-actor trigger detection + firing order
-
-`_pop_pending_reaction(live, trigger, *, triggering_actor_id, only_owner_id=None)`
-scans `live.initiative` **in initiative order** (documented firing order —
-ties and multi-reactor cases resolve deterministically by whoever acts
-first in the round) for the first combatant that: is not the triggering
-actor itself, matches `only_owner_id` when given (the `hit_by_attack` /
-`targeted_by_magic_missile` triggers are owned by the creature actually
-under attack/targeted — a bystander's readied reaction never fires for
-someone else's hit), is alive, has `reaction_available`, and holds a
-`_PendingReaction` for `trigger`. The match is removed from the queue and
-returned; a reaction is drained (and spent) exactly once. `None` when
-nothing qualifies — the triggering action proceeds untouched, which is the
-overwhelmingly common case and must stay cheap (a linear scan over a queue
-that is empty for almost every intent).
-
-`_drain_targeted_reactions(live, *, trigger, triggering_actor_id, targets)`
-is the per-target-list wrapper `hit_by_attack` / `targeted_by_magic_missile`
-share: for each target in the triggering action's resolved target list, pop
-+ fully resolve one matching reaction (below), returning the set of target
-ids whose reaction fired (Shield vs. Magic Missile's force carve-out needs
-that set — see below).
-
-## Interaction points in the orchestrator
-
-Three call sites drain the queue, each for a different trigger:
-
-1. **`submit_player_intent`, `cast_spell` branch, BEFORE `_consume_spell_slot`**
-   — `trigger="cast_spell"`, `triggering_actor_id` = the caster. This is
-   Counterspell's hook. Legality, range, target count, action economy and
-   slot availability have already passed, and the caster has paid its
-   casting-time Action, Bonus Action or Reaction. Its spell slot is still
-   unspent. Successful Counterspell wastes that casting-time payment while
-   preserving the slot; the shared continuation helper keeps any remaining
-   resources usable, including Action Surge's restricted extra Action.
-   True refused casts return before payment or draining any reaction, with
-   action budgets, slots, the pending queue and RNG unchanged.
-
-2. **`submit_player_intent`, `cast_spell`/`attack` branches, right after
-   `_resolve_targets`** — `trigger="hit_by_attack"` for an `"attack"` intent,
-   `trigger="targeted_by_magic_missile"` for a `spell_id == "magic-missile"`
-   cast, both scoped to the resolved `targets` list. This is Shield's hook
-   for the PC-attacker / PC-attacked and PC-caster / PC-targeted directions.
-3. **`advance_monster_turn`, right before `_build_hydration_payload`** (the
-   monster attack path) — `trigger="hit_by_attack"`, `targets=[chosen_target]`
-   (the PC the monster is about to attack). This is Shield's hook for the
-   monster-attacker / PC-defender direction — the one a pinned scenario actually pins.
-
-A fourth, unrelated interaction point — `_handle_move` (the PC move
-handler) — fires the monster-reactor opportunity attack (see below). It
-does **not** go through `pending_reactions` at all (see "Why AoO is not a
-queued reaction").
-
-## Counterspell (a pinned scenario, S02)
-
-> "You attempt to interrupt a creature in the process of casting a spell.
-> The creature makes a Constitution saving throw. On a failed save, the
-> spell dissipates with no effect, and the action, Bonus Action, or Reaction
-> used to cast it is wasted. If that spell was cast with a spell slot, the
-> slot isn't expended." — `canonical/spells/counterspell.json`
-
-The canonical Counterspell activity (`dnd5eactivity000`) is already
-`kind: "save"`, `save.ability: ["con"]`, `save.dc.calculation:
-"spellcasting"` — the SRD 5.2 (2024) mechanic (an unconditional CON save
-against the counterspeller's own spell save DC), not the retired 2014
-ability-check-vs-DC-10-plus-level mechanic a stale prior BACKLOG line still
-names (corrected in the same PR that lands this cluster, per BACKLOG's own
-"close a gap → delete/correct its entry" protocol). Because the canonical
-data is already right, the implementation is narrow: no bespoke DC formula,
-no new check-kind invocation — Counterspell's own `SaveActivity` is resolved
-through the **existing, unmodified** `activities/save.py::resolve_save`
-resolver, with the interrupted caster as sole target.
-
-`_drain_counterspell_reaction(live, current, actor_id, intent)`:
-
-1. Pop a `"cast_spell"`-trigger reaction (any owner other than the caster).
-   `None` → not countered, fall through to the caster's normal cast.
-2. Consume the reactor's `reaction_available` and spell slot (Counterspell's
-   own slot is spent regardless of outcome — only the *interrupted* spell's
-   slot is conditionally spared, below) and emit
-   `ReactionTriggered(actor_id=reactor, reaction_name="counterspell")`.
-3. Build an `ActivityResolutionContext` with `caster=reactor`,
-   `targets=[the interrupted caster]`, resolving the reactor's REAL
-   spellcasting ability via the already-shipped
-   `_resolve_caster_spellcasting_ability` (an earlier release's real-ability-score
-   path — see "Independently-verified gap already closed" below) and run
-   Counterspell's `SaveActivity` through `resolve_activity`. This emits
-   exactly one `SaveRolled` (no damage, no effect riders — Counterspell's
-   own `damage.parts` / `effects` are both empty).
-4. `succeeded=True` → return `False` (not countered); the caller proceeds
-   to `_consume_spell_slot` and resolves the triggering spell exactly as if
-   no reaction had fired.
-5. `succeeded=False` → emit `CastFailed(actor_id=<interrupted caster>,
-   spell_id=<their spell>, reason="countered")` and return `True`. The caller
-   skips the caster's spell-slot spend and finishes the intent through
-   `_end_action`. The casting-time payment remains spent. Other resources
-   determine whether the caster stays on turn: a countered Magic Action
-   spends only the base Action, leaving an unused Action Surge extra Action
-   available for a legal non-Magic Action. The reactor's payment also remains
-   committed, regardless of the save's outcome.
-
-### Slot-consumption redesign (closes the discovered "slots consumed at
-submission" entry)
-
-The on-turn cast path separates three steps:
-
-1. Validate legality and slot availability without spending anything.
-   `_apply_pre_slot_cast_gates` checks rituals and target count, then
-   `_spell_slot_unavailable` checks both Spellcasting and Pact Magic pools.
-2. Pay the casting-time budget with `_consume_intent_budget`, then drain
-   Counterspell. A reaction cast emits `ReactionTriggered` when that payment
-   commits, even if Counterspell subsequently interrupts it.
-3. Only an uncountered cast reaches `_consume_spell_slot`, which spends one
-   slot from Spellcasting first, then Pact Magic. Cantrips spend no slot.
-
-No refund is needed. Refused casts do not trigger Counterspell or advance
-the rules RNG; a legal countered cast spends its casting time and the
-counterspeller's resources, with its own slot still available.
-
-### Independently-verified gap already closed
-
-The task brief's source material (and a prior BACKLOG-adjacent note) flagged
-a second, compounding bug: PC spell save DC allegedly still used the flat
-Avrae-era approximation (`8 + 2 + max(0, attack_bonus-2)`) instead of the
-real `8 + proficiency_bonus + ability_mod(spellcasting_ability)` formula,
-which would make this scenario's `dc=15` assertion unreachable. **Verified
-empirically before writing any C06 code:** `build_context.py::_save_dc`
-already implements the real formula whenever a `spellcasting_ability`
-resolves (landed in an earlier release, per that function's own docstring —
-`"per an earlier release (a pinned scenario), its save DC now runs the honest SRD 5.2
-formula"`). A direct probe (casting `counterspell` on-turn as a level-5
-INT-18 wizard, `rng_seed=9` then `rng_seed=1`) reproduced the catalog's
-exact pinned numbers — `dc=15, roll_total=15, succeeded=True` and
-`dc=15, roll_total=5, succeeded=False` — with **zero** new code. This
-sub-bug needed no fix in this design; it is called out here so the
-"compounding gap" language in the BACKLOG/brief is not silently
-re-litigated by a future reader.
-
-### Slot and range gating (C17 R4) — skip, don't pop
-
-C17 added an `eligible=` predicate to `_pop_pending_reaction` (the shared
-queue-pop primitive both Counterspell and readied-cast drains call): a
-candidate reaction that matches the trigger and owner is only popped when
-`eligible(reactor, pending)` also returns `True`. `_drain_counterspell_
-reaction`'s own `_eligible` closure looks up the ARMED spell per candidate
-(`get_lib_loader().get_spell(pending.spell_id or "counterspell")`) — a
-non-Counterspell readied spell armed on the `"cast_spell"` trigger is
-therefore gated by ITS OWN level and range, not Counterspell's — and checks
-two things: an unexpended slot at the readied level (`_slot_available`,
-checked against BOTH pools — see below) when the spell's `level > 0`, and,
-when the spell carries a `range.value`, `_in_range_with_los(topology,
-reactor_zone, caster_zone, range.value)`. A reactor or caster with no
-tracked cell skips the range check entirely — "no geometry ⇒ no penalty" is
-the engine-wide convention, unchanged. A
-candidate that fails `eligible` is left in `live.pending_reactions` (still
-armed for a later trigger) and the scan continues to the next candidate in
-initiative order — the reactor's own Reaction and slot are both untouched.
-This is a **skip**, never a pop-then-refund: the reaction was never
-consumed in the first place.
-
-### Two-pool slot consumption (C17 R3)
-
-Every slot-consuming site in this module — the Counterspell drain, a
-readied-cast resolve (Shield), and the on-turn cast gate — now routes
-through `_slot_available(live, entity_id, slot_level)` /
-`_take_spell_slot(live, entity_id, slot_level)` rather than reading
-`live.spell_slots_by_entity` directly. SRD §Multiclassing lets either pool
-cast either prepared spell (the engine has no spell-list gate), so both
-functions check/draw from the regular Spellcasting pool FIRST, then Pact
-Magic — a caster holding a slot at the same level in both pools always
-spends the Spellcasting one. There is no way to force a specific pool
-(BACKLOG.md).
-
-## Shield (a pinned scenario, S04)
-
-> "Until the start of your next turn, you have a +5 bonus to AC, including
-> against the triggering attack, and you take no damage from *Magic
-> Missile*." — `canonical/spells/shield.json`
-
-Shield's own canonical activity (`dnd5eactivity000`) is a `utility` kind
-carrying one effect ref (`Bv3EoHGfYCprLdG1`) whose `PassiveEffect` change is
-`{key: "system.attributes.ac.bonus", mode: add, value: "5"}`,
-`duration.rounds: 1`. Casting it through the **existing, unmodified**
-activity resolver (a `utility` activity with effect riders already applies
-them per target — Task 9-A FIX 2) needs three additive consumption-side
-fixes; nothing about the resolver itself changes.
-
-`_resolve_readied_spell_cast(live, reactor, popped)` is the shared "auto-fire
-a readied self-buff reaction spell to completion" helper (used by both the
-`hit_by_attack` and `targeted_by_magic_missile` hooks): consume the
-reactor's reaction + spell slot, emit `ReactionTriggered`, build a context
-with `caster=reactor, targets=[reactor]`, and walk the spell's own
-activities. For Shield this emits `EffectApplied` (the +5 AC rider) with no
-attack roll and no dice at all — consistent with a pinned scenario's "Shield never
-touches the roll, only the AC comparison" pin.
-
-### AC-bonus consumption (three compounding drop points, closed together)
-
-1. `_fold_active_effect_changes` gains a key alias:
-   `"system.attributes.ac.bonus"` normalizes to the existing `"ac.bonus"`
-   branch (which already writes `per_target_entry["passive_ac_bonus"]`) —
-   an alias, not a new branch. The branch existed; the Foundry-native key
-   Shield's own effect actually carries never reached it.
-2. `ActivityResolutionContext` gains `passive_ac_bonus: dict[str, int]`.
-   `build_activity_context` extracts `save_modifiers[id]["passive_ac_bonus"]`
-   (a signed string, e.g. `"5"`) via `roll_expr` into this int-keyed sidecar
-   — `roll_expr` on a plain literal draws no dice, so this extraction never
-   perturbs the seeded stream (verified: Shield's own bonus is a flat `"5"`,
-   never a dice formula, in the SRD corpus).
-3. `attack.py::resolve_attack` folds `ctx.passive_ac_bonus.get(target_id, 0)`
-   into `effective_ac` alongside the existing cover-bonus fold, symmetric
-   with a pinned scenario's cover-AC consumer shape.
-
-### Duration-fix semantics (closes the discovered "1-round buffs expire on
-caster's own turn end" entry, for the reaction-applied path)
-
-`_tick_durations_at_turn_end` ticks a round-scoped effect at its **caster's
-own** `TurnEnded` — correct for the common case (a buff cast on the
-caster's own turn: Bless cast on your turn lasts through your next
-`N` turn-ends). It is wrong for a reaction-applied buff: Shield fires
-*during the attacker's turn*, so the caster's (the reactor's) own
-`TurnEnded` doesn't recur until the caster's NEXT turn ends — one full turn
-too late; the SRD text is explicit that Shield lasts only "until the start
-of your next turn."
-
-Rather than rewriting the generic per-turn-end tick (which the wide
-existing on-turn-cast test surface depends on staying exactly as-is), this
-cluster adds a narrow, additive companion mechanism scoped to
-reaction-applied effects only: `_resolve_readied_spell_cast` inspects the
-`EffectApplied` events it just caused; any effect landing on the reactor
-with a non-`None` `duration.rounds` is registered in
-`live.reaction_effects_pending_expiry[reactor_id]`. `_emit_apply_turn_started`
-(already the single reset point for Action/Bonus Action/Reaction/movement
-budgets) gains one more step: pop any pending entries keyed to the
-combatant whose turn is starting and, if the effect is still present, emit
-`EffectExpired(reason="duration")` immediately (before any other event this
-turn). This expires the effect at the **owner's own next `TurnStarted`** —
-exactly the SRD boundary — rather than waiting for a `TurnEnded` that may
-be an entire round later. The existing turn-end tick is untouched and
-simply never finds the effect still present by the time it would otherwise
-run (already-expired entries are no-ops for it). Scoped deliberately to
-reaction-fired effects only: a hypothetical multi-round reaction buff isn't
-in this design's SRD scope, so no richer round-counting rule was built for
-a case nothing here exercises.
-
-### Magic Missile carve-out (a pinned scenario) — narrow, not a force-immunity mechanic
-
-> "...and you take no damage from *Magic Missile*." (same Shield text,
-> above) — an explicit SRD *spell-specific* carve-out, not a general force
-> resistance/immunity the creature otherwise has.
-
-`_drain_targeted_reactions(..., trigger="targeted_by_magic_missile", ...)`
-returns the set of target ids whose Shield reaction just fired. When the
-triggering cast's `spell_id == "magic-missile"`, `submit_player_intent`
-injects a **transient** `"force"` entry into
-`payload["passive_damage_modifiers"][target_id]["immunities"]` for exactly
-this one hydration payload (rebuilt fresh per resolution — nothing
-persists past this call) before it flows into `build_activity_context`.
-`activities/apply.py::apply_damage` already merges the sidecar's
-`immunities` list unconditionally (no new consumer code) — a `force`
-`DamageApplied` amount rolls, then floors to `0` through the existing
-immune-type path (still emits `DamageApplied(amount=0)`, per that module's
-documented "never a suppressed event" contract). No new field, no general
-force-immunity flag on `Combatant` — deliberately narrower than a real
-force-resistance mechanic, matching the SRD's spell-specific wording and
-the smallest change that satisfies it.
-
-### Slot gating on the readied-cast path (C17 R4)
-
-Shield's own hook, `_drain_targeted_reactions`, passes `eligible=lambda
-reactor, pending: _readied_cast_eligible(live, reactor, pending)` into
-every `_pop_pending_reaction` call it makes. `_readied_cast_eligible` is
-the readied-cast mirror of Counterspell's `_eligible` closure above, minus
-the range check (Shield's own canonical activity carries no `range`): a
-cantrip-level readied spell (`level == 0`) is always eligible; a leveled
-one needs an unexpended slot at its readied level via `_slot_available`
-(same Spellcasting-then-Pact-Magic order as everywhere else — see the
-Counterspell section's "Two-pool slot consumption"). A zero-slot reactor's
-readied Shield is skipped exactly like an ineligible Counterspell — left
-armed, Reaction and slot both untouched — so a Magic Missile or melee hit
-against a reactor with no slot left at the readied level now actually
-lands, where it previously always triggered the buff for free.
-
-## Monster opportunity attack (a pinned scenario) + Disengage (a pinned scenario)
-
-### Why AoO is not a queued reaction
-
-An opportunity attack is not "readied" via an on-turn intent — SRD
-Opportunity Attacks are always available, gated only on `reaction_available`.
-Since C24 one trigger serves every walk: `_opportunity_attackers(live, *,
-mover_id, from_cell, to_cell)` lists who a step provokes (an enemy whose reach
-the step leaves, that can see the mover), and `_fire_opportunity_attacks_on_step`
-makes those attacks before the step — "the attack occurs right before it
-leaves your reach" — through the activity context, and tells the walk whether to
-stop. `_handle_move`, the closing walk and the flee walk all call it per step.
-
-### Disengage (real handler; closes the discovered turn-ending fall-through)
-
-`"disengage"` becomes a fourth turn-non-ending early-return branch in
-`submit_player_intent`, alongside `"move"` / `"move_mark"` / `"dash"`:
-`_handle_disengage` validates + consumes the Action (Disengage **is** your
-Action — distinct from Dash's Action/Bonus-Action dual economy), sets a new
-per-turn `Combatant.disengaging_this_turn: bool = False` flag to `True`,
-emits `IntentSubmitted(intent_type="disengage")`, and — critically — does
-**not** call `_advance_turn`. This is the fix for the discovered defect:
-previously `"disengage"` fell through to the generic Action-consuming tail
-that unconditionally advances the turn, making a same-turn
-Disengage→Move sequence raise `IntentRejectedError(reason="not_actor_turn")`
-on the follow-up `move` call. `disengaging_this_turn` resets to `False` at
-the actor's own next `TurnStarted` (added to `_emit_apply_turn_started`'s
-existing per-turn-budget reset, alongside `action_available` etc.) — "your
-movement doesn't provoke... for the rest of the turn," not permanently.
-
-## Explicitly out of scope
-
-- **Interactive prompts.** A host asking "do you want to Counterspell
-  this?" mid-resolution is a host concern; this engine only supports
-  pre-armed auto-fire, by hard constraint.
-- **Monster spellcasting.** `select_typed_monster_action` still never picks
-  a `CastActivity`-only action (Spellcasting/Protective Magic), so a monster
-  cannot cast Counterspell/Shield on its own turn through the public API;
-  a pinned scenario model the "enemy caster" as a second PC for this reason (a
-  documented substitution, not an error — see the catalog's own
-  "Constructibility finding").
-- **A general force-immunity / resistance mechanic.** Deliberately not
-  built — see the Magic Missile carve-out above.
-- **Multi-round reaction-applied buffs.** The off-turn expiry mechanism
-  fires at the owner's very next `TurnStarted` regardless of the effect's
-  `duration.rounds` value — correct for every reaction buff this cluster's
-  SRD scope contains (`rounds == 1`, i.e. "until the start of your next
-  turn"); a hypothetical longer-duration reaction buff would need a richer
-  round-counting rule not built here.
+The inventory contains 55 activities: 3 executable, 1 with a typed trigger but
+no producer, and 51 explicitly deferred. Ten activities carry 11 typed
+conditions. Feather Fall has typed `CREATURE_FALLS` semantics but no
+authoritative falling lifecycle, so pre-arming is refused. Absorb Elements is
+absent from the bundled canonical spell corpus; adding it requires complete
+damage-type trigger/response semantics before admission. Untyped or unsupported
+reaction declarations fail closed.
+Arbitrary prose Ready, interactive prompts, falling physics, nested reaction
+stacks and a new monster AI reaction policy remain outside this subsystem.

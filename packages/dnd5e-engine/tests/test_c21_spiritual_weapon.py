@@ -474,11 +474,8 @@ def test_the_cultist_fanatics_spiritual_weapon_is_no_monster_cast() -> None:
     assert _monster_cast_candidate(live, combatant(live, "mon:fanatic"), entry) is None
 
 
-def test_a_readied_concentration_spell_stays_its_owners() -> None:
-    """The force's immediate attack fires its target's readied Fog Cloud before
-    the cast resolves, as every attack drains reactions: the Fog Cloud
-    concentrates on the hero, and the cleric holds only its Spiritual Weapon.
-    Seed 9: the Fog Cloud draws nothing; d20 15 + 6 misses AC 30."""
+def test_a_construct_attack_cannot_fire_an_invented_fog_cloud_reaction() -> None:
+    """An untyped pre-arm is refused; the construct keeps its own concentration."""
     hero = pc(spells_known=["fog-cloud"], spell_slots={1: 1}, ac=30, zone_id=cell_id(0, 1))
     handle, live = start([hero, cleric(initiative=19)], seed=9)
     act(
@@ -489,11 +486,12 @@ def test_a_readied_concentration_spell_stays_its_owners() -> None:
         slot_level=1,
         reaction_trigger="hit_by_attack",
     )
+    assert combatant(live).action_available
+    assert not live.pending_reactions
+    act(handle, "char:hero", intent_type="pass")
     _cast(handle, target_id="char:hero")
-    assert {e.spell_id for e in events(live, SpellCast)} == {"fog-cloud", SW}
+    assert {e.spell_id for e in events(live, SpellCast)} == {SW}
     assert _hits(live) == [("char:cleric", 15, 6, 21)]
     assert live.concentration_chain["char:cleric"] == [ANCHOR]
-    assert live.concentration_chain["char:hero"] == [
-        ("char:hero", "effect:fog-cloud", "cast:fog-cloud:char:hero")
-    ]
-    assert combatant(live).concentration_effect_id == "effect:fog-cloud"
+    assert "char:hero" not in live.concentration_chain
+    assert combatant(live).concentration_effect_id is None

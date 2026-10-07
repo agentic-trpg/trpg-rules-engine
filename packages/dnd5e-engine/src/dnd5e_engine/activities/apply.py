@@ -33,6 +33,7 @@ from typing import TYPE_CHECKING, Final, cast, get_args
 from dnd5e_srd_data.schema.monster import MonsterTraitMechanic
 
 from dnd5e_engine.activities.actor_stats import save_modifier
+from dnd5e_engine.activities.context import DamageInstanceContext
 from dnd5e_engine.activities.d20 import AdvantageSources, roll_d20_test
 from dnd5e_engine.events import DamageApplied, DamageType, SaveRolled
 
@@ -124,6 +125,8 @@ def apply_damage(
     vulnerabilities = set(sidecar.get("vulnerabilities", ()))
 
     total_dealt = 0
+    damage_instance_id: str | None = None
+    damage_types: list[DamageType] = []
     for damage_type_str, amount in rolled_by_type.items():
         if damage_type_str not in _SRD_DAMAGE_TYPES:
             _LOGGER.warning(
@@ -133,7 +136,12 @@ def apply_damage(
             )
             continue
         srd_type = cast(DamageType, damage_type_str)
+        if damage_instance_id is None:
+            damage_instance_id = ctx.next_damage_instance_id(target.entity_id, source_id)
+        damage_types.append(srd_type)
         final_amount = _apply_modifiers(amount, srd_type, resistances, immunities, vulnerabilities)
+        if target.entity_id in ctx.negated_spell_damage_targets:
+            final_amount = 0
         total_dealt += final_amount
         is_overkill = final_amount > target.hp_current
         # C18 §Monster action economy — SRD 5.2 stat-block trait "Undead
@@ -147,7 +155,8 @@ def apply_damage(
         # narration is "took 12 damage but held on"); only ``is_overkill``
         # and ``target.hp_current`` reflect the trait's save.
         if (
-            final_amount >= target.hp_current
+            final_amount > 0
+            and final_amount >= target.hp_current
             and MonsterTraitMechanic.UNDEAD_FORTITUDE in target.trait_mechanics
             and srd_type != "radiant"
             and not is_crit
@@ -188,7 +197,20 @@ def apply_damage(
                 damage_type=srd_type,
                 is_overkill=is_overkill,
                 source_id=source_id,
+                source_actor_id=ctx.caster.entity_id,
+                damage_instance_id=damage_instance_id,
                 is_crit=is_crit,
+            )
+        )
+    if damage_instance_id is not None and ctx.damage_instance_resolved is not None:
+        ctx.damage_instance_resolved(
+            DamageInstanceContext(
+                damage_instance_id=damage_instance_id,
+                source_actor_id=ctx.caster.entity_id,
+                target_id=target.entity_id,
+                source_id=source_id,
+                amount=total_dealt,
+                damage_types=tuple(damage_types),
             )
         )
     return total_dealt

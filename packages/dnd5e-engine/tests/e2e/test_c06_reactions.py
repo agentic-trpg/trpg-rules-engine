@@ -2,22 +2,14 @@
 
 Transcribed from specs/e2e-scenario-catalog.md, Cluster 6.
 
-Governing constraint (cluster preamble): reactions are pre-armed
-auto-fire. A combatant declares the reaction + trigger condition via a
-normal ON-TURN intent (``intent_type="ready"`` — already a member of the
-``IntentType`` literal, currently accepted and handled as a safe
-Action-consuming no-op with zero reaction bookkeeping). When the trigger
-condition is later satisfied by ANY combatant's submitted intent, the
-engine is expected to auto-resolve the pending reaction and emit its
-events BEFORE the triggering intent's own activities resolve — entirely
-inside whichever of ``submit_player_intent``/``advance_monster_turn``
-processes the trigger; there is no mid-resolution host round-trip.
-
-Per this cluster's task brief, the enemy caster in C06-S01/S02 is modeled
-as a second PC (``PartyMemberSpec``) rather than a monster — monster
-spellcasting is not constructible via the public turn-taking seam today
-(``select_typed_monster_action`` never selects a ``CastActivity``-only
-action) — by documented decision, not a substitution error.
+Reactions are pre-armed auto-fire. A normal on-turn ``ready`` intent spends
+the declaration's Action and derives conditions from canonical data. Legacy
+trigger inputs here are compatibility checks. Reactions fire entirely inside
+the triggering ingress call, with no mid-resolution host round-trip.
+Shield fires after a provisional hit and before the one final AttackRolled;
+Counterspell fires after legal casting-time payment and before source-slot
+payment. C06's two-PC caster fixtures retain their original catalog numbers;
+test_reaction_runtime.py additionally covers actual monster spell casts.
 
 C06-S01/S02 transcribe SRD 5.2 (2024) Counterspell — an unconditional
 Constitution saving throw against the counterspeller's own spell save DC

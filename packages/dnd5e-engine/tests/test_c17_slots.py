@@ -507,10 +507,8 @@ def test_counterspell_and_readied_casts_emit_spell_cast():
     assert "counterspell" in names
 
 
-def test_readied_cantrip_emits_spell_cast_with_none_slot_level():
-    """``events.py``: ``SpellCast.slot_level: int | None  # None for a cantrip`` —
-    a readied cantrip (Fire Bolt on hit_by_attack) must honour that contract too,
-    not just the on-turn cast path."""
+def test_readied_cantrip_without_canonical_trigger_is_refused_before_payment():
+    """A host's hit trigger cannot turn Fire Bolt into a reaction spell."""
 
     async def _go():
         handle, live = await _start(
@@ -531,6 +529,8 @@ def test_readied_cantrip_emits_spell_cast_with_none_slot_level():
                 )
             ],
         )
+        before_actor = live.initiative[0].model_copy(deep=True)
+        before_rng = live.rng.getstate()
         await submit_player_intent(
             handle,
             actor_id="char:target",
@@ -540,10 +540,14 @@ def test_readied_cantrip_emits_spell_cast_with_none_slot_level():
                 reaction_trigger="hit_by_attack",
             ),
         )
-        await advance_monster_turn(handle)
+        assert live.initiative[0] == before_actor
+        assert live.rng.getstate() == before_rng
         return live
 
     live = _run(_go())
     casts = [e for e in _events(live, SpellCast) if e.spell_id == "fire-bolt"]
-    assert len(casts) == 1
-    assert casts[0].slot_level is None
+    assert casts == []
+    assert _events(live, CastFailed)[-1].reason == "unsupported_reaction"
+    assert live.spell_slots_by_entity.get("char:target", {}) == {}
+    assert live.pending_reactions == []
+    assert live.current_actor_id == "char:target"

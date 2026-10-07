@@ -182,6 +182,38 @@ class ReactionCondition(BaseModel, frozen=True):
     """The whitespace-normalized Foundry ``activation.condition`` the entry was derived from."""
 
 
+class ReactionResponse(BaseModel, frozen=True):
+    """A closed reaction outcome beyond the activity's ordinary resolution.
+
+    A response with ``trigger_kind`` applies only when that canonical trigger
+    matched. Spell identity restrictions remain in ``ReactionCondition``;
+    consumers never inspect a spell name or free-text description.
+    """
+
+    kind: Literal["negate_triggering_spell_damage", "cancel_triggering_spell_on_failed_save"]
+    trigger_kind: ReactionTriggerKind | None = None
+
+
+class ReactionSemantics(BaseModel, frozen=True):
+    """Audited reaction target and response, supplied by ingestion metadata.
+
+    The owning activity's ``activation.reaction_conditions`` remains the
+    authoritative trigger OR-list, including inherited triggers on an activity
+    whose serialized activation type is still ``action``.
+    """
+
+    target_role: Literal["self", "triggering_actor", "damage_source", "affected_creature"]
+    responses: list[ReactionResponse] = Field(default_factory=list)
+    effect_expiry: Literal["owner_next_turn_start"] | None = None
+
+    @model_serializer(mode="wrap")
+    def _serialize_reaction(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        if self.effect_expiry is None:
+            data.pop("effect_expiry", None)
+        return data
+
+
 class ActivationBlock(BaseModel, frozen=True):
     """Foundry ``shared/activation-field.mjs``."""
 
@@ -671,6 +703,7 @@ class _ActivityBase(BaseModel):
     visibility: VisibilityBlock = Field(default_factory=VisibilityBlock)
     timing: ActivityTiming = Field(default_factory=ActivityTiming)
     persistent_area: PersistentAreaSpec | None = None
+    reaction: ReactionSemantics | None = None
 
     model_config = {"populate_by_name": True}
 
@@ -683,6 +716,8 @@ class _ActivityBase(BaseModel):
             data.pop("timing", None)
         if self.persistent_area is None:
             data.pop("persistent_area", None)
+        if self.reaction is None:
+            data.pop("reaction", None)
         return data
 
 

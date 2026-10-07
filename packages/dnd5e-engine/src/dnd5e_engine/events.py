@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
+from dnd5e_srd_data.schema.common import ReactionTriggerKind
 from pydantic import BaseModel, Field
 
 from dnd5e_engine.types.effects import ActiveEffect
@@ -109,6 +110,7 @@ EffectExpiryReason = Literal[
 CastFailedReason = Literal[
     "raging",
     "unsupported_feature",
+    "unsupported_reaction",
     "out_of_range",
     "no_slot",
     "target_invalid",
@@ -350,6 +352,12 @@ class DamageApplied(BaseModel):
     # ``"mastery:<slug>"`` for procs. ``None`` for paths not yet threaded
     # (spell/save/heal damage — a C17+ seam).
     source_id: str | None = None
+    # The creature that caused the damage; None for environmental/unknown
+    # sources. Independent of whose turn the event happens on.
+    source_actor_id: str | None = None
+    # All damage types from one hit/save against one target share this
+    # deterministic identity. None keeps legacy external producers valid.
+    damage_instance_id: str | None = None
     # C15 — whether this damage event was a critical hit; feeds the
     # crit-at-0-HP two-death-save-failures clause (SRD §Damage at 0 HP).
     is_crit: bool = False
@@ -716,7 +724,13 @@ class ReactionTriggered(BaseModel):
     type: Literal["reaction_triggered"] = "reaction_triggered"
     actor_id: str
     reaction_name: str
-    trigger_event_uuid: str
+    trigger_event_uuid: str | None = None
+    trigger_kind: ReactionTriggerKind | None = None
+    triggering_actor_id: str | None = None
+    affected_target_id: str | None = None
+    source_spell_id: str | None = None
+    source_activity_id: str | None = None
+    damage_instance_id: str | None = None
 
 
 # ── roster ──────────────────────────────────────────────────────────────────

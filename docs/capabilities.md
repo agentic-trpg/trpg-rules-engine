@@ -95,7 +95,7 @@ Create Food and Water*) are out of scope for a combat engine by nature.
 | Spell slots, upcasting, at-will/innate casting | ⚠️ Partial — per-class/multiclass/Pact tables derived engine-side (`derive_spell_slots`, `derive_multiclass_slots`, `derive_pact_slots`); rests restore slots; Pact Magic is a second pool; upcasting scales dice AND target count (`target.affects.count`); attack-kind repeat instances still not scaled |
 | Spell attack rolls & save DCs (incl. flat overrides) | ✅ Resolved |
 | Concentration | ✅ full lifecycle (C13, C21: every concentration spell concentrates, including one that applies no effect of its own) |
-| Counterspell, Shield, Hellish Rebuke, Magic Missile interactions | ⚠️ Partial | Implemented, but as named special cases rather than data-driven rules; slot-gated and range-gated at drain time |
+| Counterspell, Shield, Hellish Rebuke, Magic Missile interactions | ✅ Resolved | Canonical typed reaction conditions and response/target metadata drive a shared queue. Shield uses the same rolled attack to adjudicate updated AC across every shared attack path. Counterspell observes legal PC and monster casts after casting-time payment, before the triggering slot is spent. Hellish Rebuke fires after a positive damage instance and targets its actual source. The reaction audit records unsupported producers and sources. |
 | Ritual casting | ⚠️ Partial | Out-of-combat via `resolve_ritual_cast`; in-combat rejected |
 | Material components / component pouches | ⚠️ Partial | Metadata on `SpellCast`, not enforced |
 | Dispel Magic | ❌ Not modelled | Inert (no mechanical activity) |
@@ -149,10 +149,21 @@ Reactions work, with one constraint that shapes any host integration:
 | Reaction | Status |
 |---|---|
 | Opportunity attack | ✅ Resolved — needs no arming: every walk that leaves an enemy's reach draws it, whoever drives the mover (a `move` intent, the monster AI's closing walk or its flee); Disengage suppresses it from either side, and a summon makes none (BACKLOG.md) |
-| Shield (incl. vs. Magic Missile) | ✅ Resolved |
+| Shield (incl. vs. Magic Missile) | ✅ Resolved — a provisional hit opens the shared attack hook; the original roll produces one final AttackRolled. Typed targeted-spell metadata negates the triggering Magic Missile's damage only. |
 | Counterspell | ✅ Resolved — slot-gated at the readied level and 60 ft range/LoS-gated at drain time (an ineligible reactor's armed reaction is skipped, not popped) |
-| Readied spell cast | ✅ Resolved — a readied leveled spell (e.g. Shield) needs an unexpended slot at its readied level; an ineligible reactor's armed reaction is skipped, not popped |
+| Hellish Rebuke | ✅ Resolved — a positive complete damage instance opens the typed damage trigger; the real living source must be visible and in range, and the reactor must still be able to react. Multi-type parts produce one opportunity. |
+| Readied spell cast | ✅ Resolved — a supported canonical reaction spell derives its conditions automatically and needs an unexpended slot at its readied level; an ineligible reactor's armed reaction is skipped, not popped. Unsupported or incompatible declarations are refused before Action payment. |
+| Feather Fall falling trigger | ❌ Not modelled — canonical CREATURE_FALLS exists, but the engine has no authoritative falling opportunity producer, so pre-arm is refused. |
 | Arbitrary SRD "Ready an action with a custom trigger" | ❌ Not modelled |
+
+The optional `reaction_trigger` input is a deprecated compatibility check; it
+cannot add a trigger absent from the canonical conditions. Matching conditions
+use OR semantics and eligible reactors fire in initiative order. Rage and
+transformation keep blocked declarations armed. Nested reaction chains and a
+monster AI reaction policy remain deferred. Absorb Elements is absent from the
+bundled canonical spell corpus; no runtime spell-name branch is inferred for it.
+The [reaction design](dev/reaction-queue.md) links the complete deterministic
+inventory and its generation command.
 
 ## Environment & exploration
 

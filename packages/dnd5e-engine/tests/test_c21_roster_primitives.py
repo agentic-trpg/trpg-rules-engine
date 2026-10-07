@@ -17,6 +17,7 @@ from dnd5e_engine.events import (
     TurnPhase,
     TurnStarted,
 )
+from dnd5e_engine.live_reactions import register_pending_reaction
 from dnd5e_engine.orchestrator import (
     _Construct,
     _current_actor,
@@ -26,7 +27,6 @@ from dnd5e_engine.orchestrator import (
     _insert_into_roster,
     _leave_roster,
     _LiveCombat,
-    _PendingReaction,
     _remove_from_roster,
     _run_monster_turn_start,
     _Transform,
@@ -241,12 +241,10 @@ def test_a_departed_creature_leaves_no_per_entity_state() -> None:
     live.conditions_by_effect[held_other] = ["paralyzed"]
     live.repeat_save_on_turn_end[(NEW, "effect:hold", f"cast:hold:{HERO}")] = [{"ability": "wis"}]
     live.repeat_save_on_turn_end[held_other] = [{"ability": "wis"}]
-    live.pending_reactions.append(
-        _PendingReaction(owner_id=NEW, trigger="cast_spell", spell_id=None, slot_level=None)
-    )
-    live.pending_reactions.append(
-        _PendingReaction(owner_id=HERO, trigger="cast_spell", spell_id=None, slot_level=None)
-    )
+    for owner_id in (NEW, HERO):
+        register_pending_reaction(
+            live, owner_id, PlayerIntent(intent_type="ready", spell_id="counterspell")
+        )
     live.reaction_effects_pending_expiry[NEW] = [(NEW, "effect:shield", f"cast:shield:{NEW}")]
     live.help_grants[NEW] = [HERO]  # helped against it
     live.help_grants["mon:a"] = [NEW, HERO]  # it helped

@@ -80,13 +80,6 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   unconditional primary branch. Child fan-out still resolves one offensive
   activity per invocation, not arbitrary multi-activity riders.
   (`packages/dnd5e-engine/src/dnd5e_engine/activities/monster_actions.py::plan_monster_action`)
-- **A readied Shield fires on a monster's save action (2026-10-04, C26a).**
-  `_resolve_monster_attack_activities` drains its targets' `hit_by_attack`
-  reactions before any monster action resolves, so a Fire Breath pops a
-  wizard's readied Shield (`ReactionTriggered`, then `SpellCast(shield)`),
-  spending its Reaction and slot, though SRD 5.2 Shield answers "being hit by
-  an attack roll".
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_resolve_monster_attack_activities`)
 - **Utility-only and cost > 1 legendary actions are never selected by the
   built-in AI** (2026-09-03, C18). `_take_legendary_action` only considers
   entries whose `legendary_cost` is unset or `1` and that carry an
@@ -123,19 +116,6 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   convention) — a monster that used its recharge ability in one encounter
   always starts its next encounter fully recharged, with no cross-combat
   "still on cooldown" model.
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py`)
-- **Neither PC nor monster cast path drains a readied Shield reaction on a
-  spell ATTACK** (2026-09-03). Both `hit_by_attack`-trigger drain sites gate
-  on an ATTACK activity, not any attack roll: the PC's
-  `_drain_pre_resolution_reactions` fires the drain only for
-  `intent.intent_type == "attack"` (and Spiritual Weapon's cast, whose force
-  attacks at once: C21a), and the monster's shared
-  `_resolve_monster_attack_activities` fires it only from the mundane
-  attack/legendary-action attack path. A spell attack roll
-  (`intent_type == "cast_spell"` on the PC side, `_resolve_monster_cast` on
-  the monster side) never pops a target's readied Shield, even though a
-  spell attack roll is exactly the kind of "attack roll" Shield's SRD 5.2
-  text protects against.
   (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py`)
 - **Undead Fortitude's trigger ignores temporary HP on the live combat
   path** (2026-09-23). `activities/apply.py::apply_damage` gates the trait's
@@ -319,12 +299,6 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   `CombatEvent` union only because a host imports it. Drop it in a later
   breaking minor, once no host does.
   (`packages/dnd5e-engine/src/dnd5e_engine/events.py::ZoneTransit`)
-- **`DeathRecord.killer_id` names the current actor, not the attacker
-  (2026-09-27, C23).** Every death is recorded with `live.current_actor_id`,
-  so a kill landed off the killer's own turn names whoever's turn it is: an
-  opportunity attack that kills a moving creature credits the mover itself,
-  and a readied spell or a reaction credits the creature whose turn it is.
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_record_death`)
 - **A second late `narration_events` consumer on an ended combat awaits
   forever (2026-09-27, C23).** `end_combat` enqueues a `None` sentinel;
   `narration_events` takes it off the queue and returns without putting it
@@ -335,14 +309,13 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   Pre-existing, but this release's migration guide now advertises a late
   consumer draining `combat_ended` after close.
   (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::narration_events`)
-- **Spell/save/heal damage is not attributed (2026-09-02, narrowed by C15).**
-  C15 added `DamageApplied.source_id` (weapon slug / synthesized activity id
-  / `"mastery:<slug>"` for a mastery proc) and `is_crit`, and threads both
-  through the weapon-attack path. Spell, saving-throw, and healing-adjacent
-  damage paths still emit `source_id=None` — a C17+ seam. (The roll-breakdown
-  half of the original entry closed in F2c: `AttackRolled` / `SaveRolled` /
-  `CheckRolled` now carry `natural`, `modifier` and `sources`; the target's
-  effective AC is still not reported.)
+- **Some damage events lack source activity identity (narrowed 2026-10-07).**
+  Shared activity damage now carries the real `source_actor_id`, including
+  off-turn/reaction damage; death attribution consumes that field instead of
+  the current actor. `DamageApplied.source_id` still remains absent on some
+  save/damage spell paths, so the exact originating activity is not always
+  visible. `AttackRolled` / `SaveRolled` / `CheckRolled` carry `natural`,
+  `modifier` and `sources`; the target's effective AC is still not reported.
   (`packages/dnd5e-engine/src/dnd5e_engine/events.py`)
 
 ## Character building (2026-08-22)
@@ -413,30 +386,27 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
 
 ## Architecture (2026-08-22)
 
-- **Reactions are not data-driven.** `orchestrator.py` recognizes reactions
-  through a closed `ReactionTrigger` literal that names a specific spell
-  (`"targeted_by_magic_missile"`), plus per-spell branches
-  (`_apply_magic_missile_shield_carveout`, `_hellish_rebuke_target_invalid`,
-  `_drain_counterspell_reaction`). This contradicts the project's central design
-  claim that new content is a data change, not an engine change: The typed
-  vocabulary now ships (`ActivationBlock.reaction_conditions` /
-  `ReactionTriggerKind`, C22); the orchestrator's `ReactionTrigger` Literal and
-  the per-spell branches still need to read it (no cluster owns it). Note the
-  shipped canonical still stores the inheriting activity's own `type` (e.g.
-  Shield's utility activity says `action` while carrying populated
-  `reaction_conditions`) — consumers must not gate on
-  `activation.type == "reaction"` until the inheritance regen lands; also, an
-  empty `reaction_conditions` does not mean "not a reaction" (only the four
-  SRD spell phrasings plus exact shape matches are typed).
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py`)
+- **Remaining reaction sources and opportunity producers (narrowed 2026-10-07).**
+  The typed spell queue, attack/cast/damage opportunities, target derivation
+  and payment live in `reactions.py` / `live_reactions.py`. The canonical
+  audit inventories 55 activities: 3 executable, 1 with a typed trigger but
+  no producer, and 51 explicitly deferred. Feather Fall's `CREATURE_FALLS`
+  has no authoritative falling lifecycle. Feature/item/monster reaction
+  sources, untyped prose and compound damage-type/save/movement qualifiers
+  need complete typed execution contracts before admission. Absorb Elements
+  is absent from the bundled canonical spell corpus. Nested reaction chains
+  and a monster AI reaction policy remain deferred. Unsupported declarations
+  are refused before the pre-arm Action is spent.
+  (`packages/dnd5e-engine/src/dnd5e_engine/reaction_audit.py`,
+  `docs/dev/reaction-runtime-audit.json`)
 - **Engine does not yet read `canonical/conditions/`.** The dataset category
   exists (C22, `AssetLoader.get_condition`), mirroring `rules/conditions.py`;
   per campaign design D3 the engine should prefer the data when present and
   fall back to the Python registry. Still open after C12 and C18 (neither
   reads the category); unowned.
   (`packages/dnd5e-engine/src/dnd5e_engine/rules/conditions.py`)
-- **`orchestrator.py` is ~13.4k lines**, well over a third of the engine,
-  holding the reaction queue, item/feature charge accounting, the monster
+- **`orchestrator.py` remains large**, well over a third of the engine,
+  holding item/feature charge accounting, the monster
   turn, the effect lifecycle, the conjurations and the turn loop. Each is a
   coherent module; splitting them would make the combat loop readable
   without changing behaviour.
@@ -842,15 +812,6 @@ zone + apply logic:
   and may leave a stale entry keyed by its id, read by nothing that walks the
   roster.
   (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_purge_entity_state`)
-- **A readied conjuration is refused (2026-09-27, C21b).** SRD 5.2 Ready:
-  "When you Ready a spell, you cast it as normal (expending any resources used
-  to cast it) but hold its energy, which you release with your Reaction when
-  the trigger occurs." A `ready` naming Summon Dragon is refused with
-  `CastFailed(reason="target_invalid")`, as C21a's Spiritual Weapon, Magic
-  Weapon and Polymorph are: the reaction queue's `_PendingReaction` carries
-  only the spell and its slot level, never the space, weapon or form the
-  conjuration needs.
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_readied_conjuration_failure`)
 - **Summon Dragon's "space that you can see" ignores light (2026-09-27,
   C21b).** SRD 5.2: "It manifests in an unoccupied space that you can see
   within range." Placement reads range, line of sight, total cover and a
@@ -1047,9 +1008,6 @@ zone + apply logic:
   neither the cooldown nor interruption tracking exists — a host wanting
   either must gate its OWN call to these resolvers.
   (`packages/dnd5e-engine/src/dnd5e_engine/rest.py`)
-- **Absorb Elements has no reaction path**; Hellish Rebuke is only a
-  `last_damaged_by` target validator, not a trigger. (See "Reactions are not
-  data-driven" above.)
 - **Four concentration spells raise after spending their slot (2026-09-26,
   pre-existing).** Delayed Blast Fireball and Tsunami read `@item.uses.value`,
   Spider Climb reads `@attributes.movement.walk`, and Phantasmal Killer's save
@@ -1059,14 +1017,15 @@ zone + apply logic:
   cast a spell, you expend a slot"): the cast should resolve, or be refused
   before the slot goes.
   (`packages/dnd5e-engine/src/dnd5e_engine/activities/formula.py::_resolve_token`)
-- **A readied spell always targets its own caster (2026-09-26,
-  pre-existing).** SRD 5.2 Ready: "When you Ready a spell, you cast it as
-  normal ... but hold its energy, which you release with your Reaction when
-  the trigger occurs." The engine resolves a readied spell with its reactor as
-  the sole target and ignores the `ready` intent's `target_id`, so a readied
-  Sunbeam or Wall of Ice hits its own caster; only a self-targeted spell
-  (Shield) resolves as written.
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_resolve_readied_spell_cast`)
+- **Arbitrary Ready spell targeting and held-spell rules remain unsupported
+  (narrowed 2026-10-07).** The engine-specific pre-arm API accepts only
+  supported canonical reaction conditions and typed target roles. Shield
+  targets self, Counterspell the triggering caster and Hellish Rebuke the
+  damage source. Sunbeam, Wall of Ice and other non-reaction spells cannot
+  become readied reactions through a host trigger string; they are refused
+  before Action payment. SRD arbitrary Ready and its held concentration/
+  casting-time semantics need a separate contract.
+  (`packages/dnd5e-engine/src/dnd5e_engine/live_reactions.py::prearm_failure`)
 - **A potion's spell concentrates (2026-09-26, pre-existing).** SRD 5.2
   potions give a spell's effect "(no Concentration required)" — Potion of
   Speed: "the effect of the *Haste* spell for 1 minute (no Concentration
@@ -1209,19 +1168,10 @@ a cluster; they are consolidated here so they are not re-discovered.
 
 Surfaced while landing C12-S06 (Characters fall Unconscious at 0 HP).
 
-C15 added `DamageApplied.is_crit`, which closed the Critical Hit half (a
-Critical Hit on a creature at 0 Hit Points costs two failures). The
-per-instance half below remains: `source_id` names a weapon or activity, not
-one hit.
-
-- **A multi-type hit inflicts one death-save failure PER DAMAGE TYPE.** SRD 5.2
-  "Damage at 0 Hit Points" charges one failure per instance of damage, but
-  `activities/apply.py` emits one `DamageApplied` per damage type and the 0-HP
-  fold counts a failure per event, so a fire+slashing hit on a downed Character
-  costs two failures. Needs a per-hit instance id on `DamageApplied` so the
-  fold can collapse the events of one attack.
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_apply_zero_hp_to_character`,
-  `packages/dnd5e-engine/src/dnd5e_engine/activities/apply.py::apply_damage`)
+C15 added `DamageApplied.is_crit`; the reaction architecture now also adds a
+deterministic `damage_instance_id`. The live fold counts one failure for one
+multi-type hit at 0 HP, or two for a critical hit, while separate hits remain
+separate instances.
 - **A death-save failure from damage at 0 HP surfaces no event.** The failure is
   written straight onto `Combatant.death_saves`; hosts narrating from the event
   stream see the `DamageApplied` but never learn a failure landed (only

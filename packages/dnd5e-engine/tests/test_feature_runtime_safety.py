@@ -645,13 +645,26 @@ def test_rage_drops_concentration_and_ends_when_armor_changes():
 
 
 def test_rage_does_not_release_queued_spell_reactions():
-    from dnd5e_engine.orchestrator import _PendingReaction, _pop_pending_reaction
+    from dnd5e_srd_data.schema.common import ReactionTriggerKind
+
+    from dnd5e_engine import PlayerIntent
+    from dnd5e_engine.live_reactions import fire_reaction, register_pending_reaction
+    from dnd5e_engine.reactions import ReactionOpportunity
 
     handle, live = start([pc(class_slug="barbarian", spell_slots={1: 1})], seed=9)
-    live.pending_reactions.append(_PendingReaction("char:hero", "hit_by_attack", "shield", 1))
+    register_pending_reaction(
+        live, "char:hero", PlayerIntent(intent_type="ready", spell_id="shield", slot_level=1)
+    )
     act(handle, "char:hero", intent_type="use_feature", feature_id="rage")
     before = _snapshot(live)
-    assert _pop_pending_reaction(live, "hit_by_attack", triggering_actor_id="mon:foe") is None
+    fire_reaction(
+        live,
+        ReactionOpportunity(
+            kind=ReactionTriggerKind.HIT_BY_ATTACK,
+            triggering_actor_id="mon:foe",
+            affected_target_id="char:hero",
+        ),
+    )
     assert _snapshot(live) == before
 
 

@@ -467,7 +467,7 @@ def test_c24_s15_a_goblins_scimitar_meets_the_movers_readied_shield() -> None:
         [aoo] = _aoos(live)
         return live, aoo
 
-    # Seed 9: Shield fires before the swing; a natural 15 + 4 = 19 still
+    # Seed 9: the provisional hit fires Shield; the same natural 15 + 4 = 19 still
     # beats AC 12 + 5, and the Scimitar deals Slashing damage.
     live, aoo = run(9)
     [shield] = [e for e in events_of(live, ReactionTriggered) if e.actor_id == "char:wiz"]

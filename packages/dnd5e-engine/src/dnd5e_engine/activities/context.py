@@ -5,7 +5,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from dnd5e_engine.events import CombatEvent
+from dnd5e_engine.events import CombatEvent, DamageType
 from dnd5e_engine.types.checks import CheckActorState, CheckRequest
 from dnd5e_engine.types.combat import Combatant
 
@@ -36,6 +36,36 @@ class SourceUses:
 
 
 @dataclass(frozen=True)
+class AttackHitContext:
+    """Provisional hit, before the single authoritative attack event.
+
+    A live callback may resolve reactions and return the target's refreshed
+    effective AC. The resolver retains the original d20 and total.
+    """
+
+    attacker_id: str
+    target_id: str
+    source_activity_id: str
+    natural: int
+    roll_total: int
+    effective_ac: int
+    is_crit: bool
+    is_opportunity_attack: bool
+
+
+@dataclass(frozen=True)
+class DamageInstanceContext:
+    """One target's complete damage instance, after all typed parts fold."""
+
+    damage_instance_id: str
+    source_actor_id: str
+    target_id: str
+    source_id: str | None
+    amount: int
+    damage_types: tuple[DamageType, ...]
+
+
+@dataclass(frozen=True)
 class ActivityResolutionContext:
     """Caster/target state + seeded RNG + event sink for one activity resolution.
 
@@ -50,6 +80,19 @@ class ActivityResolutionContext:
     targets: list[Combatant]
     event_emitter: Callable[[CombatEvent], None]
     caster_abilities: dict[str, int]  # {"str":..,"dex":..,...} six scores
+    # Live reactions run only after a real attack roll provisionally hits.
+    # The callback returns refreshed effective AC, including existing cover.
+    attack_hit_reaction: Callable[[AttackHitContext], int] | None = None
+    # Damage reactions can kill/incapacitate an attacker between attacks in
+    # one shared context. Live state decides whether another roll may begin.
+    attack_continuation_allowed: Callable[[], bool] | None = None
+    # A live combat supplies one deterministic sequence across contexts. The
+    # local fallback is shared by dataclasses.replace, including cast wrappers.
+    damage_instance_id_provider: Callable[[str, str | None], str] | None = None
+    damage_instance_resolved: Callable[[DamageInstanceContext], None] | None = None
+    damage_sequence: list[int] = field(default_factory=lambda: [0])
+    # Scoped to this spell resolution, never a persistent damage immunity.
+    negated_spell_damage_targets: frozenset[str] = frozenset()
     caster_proficiency_bonus: int = 2
     # Caster's total character level, drives cantrip damage scaling (SRD §Cantrips:
     # 1 die ≤4, 2 dice 5–10, 3 dice 11–16, 4 dice 17+). Only consulted for cantrips
@@ -585,6 +628,12 @@ class ActivityResolutionContext:
     # only for the resolution an opportunity attack runs; ``attack.py`` stamps
     # it on every ``AttackRolled`` that resolution emits.
     is_opportunity_attack: bool = False
+
+    def next_damage_instance_id(self, target_id: str, source_id: str | None) -> str:
+        if self.damage_instance_id_provider is not None:
+            return self.damage_instance_id_provider(target_id, source_id)
+        self.damage_sequence[0] += 1
+        return f"damage:{self.caster.entity_id}:{target_id}:{self.damage_sequence[0]}"
 
     def ability_mod(self, ability: str) -> int:
         return (self.caster_abilities.get(ability, 10) - 10) // 2

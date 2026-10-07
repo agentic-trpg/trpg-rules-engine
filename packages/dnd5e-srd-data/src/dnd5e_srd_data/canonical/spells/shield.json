@@ -64,6 +64,16 @@
         "units": "self",
         "value": null
       },
+      "reaction": {
+        "effect_expiry": "owner_next_turn_start",
+        "responses": [
+          {
+            "kind": "negate_triggering_spell_damage",
+            "trigger_kind": "targeted_by_spell"
+          }
+        ],
+        "target_role": "self"
+      },
       "roll": {
         "formula": "",
         "name": "",

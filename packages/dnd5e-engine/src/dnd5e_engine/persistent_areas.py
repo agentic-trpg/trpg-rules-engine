@@ -350,6 +350,7 @@ def _trigger(live: _LiveCombat, area: PersistentArea, target_id: str, trigger: A
 
 def _execute(live: _LiveCombat, area: PersistentArea, target: Combatant) -> None:
     from dnd5e_engine import orchestrator as orch
+    from dnd5e_engine.live_reactions import attach_reaction_hooks
 
     caster = orch._find_combatant(live, area.source_entity_id) or area.caster
     payload = orch._build_hydration_payload(live, caster=caster)
@@ -388,6 +389,7 @@ def _execute(live: _LiveCombat, area: PersistentArea, target: Combatant) -> None
         **geometry,
     )
     before = len(live.event_log)
+    ctx = attach_reaction_hooks(live, ctx)
     resolve_activity(area.activity, ctx)
     orch._sync_legendary_resistance(live, before)
     if area.spec.effects_until_target_turn_start:

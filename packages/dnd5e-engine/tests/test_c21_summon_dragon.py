@@ -280,7 +280,7 @@ def test_no_legal_space_refuses_the_cast_before_anything_is_spent(
 
 
 def test_ready_summon_dragon_is_refused() -> None:
-    """A readied cast resolves from the reaction queue, which carries no space."""
+    """A summon without typed reaction conditions cannot be pre-armed."""
     handle, live = start([summoner()], seed=1)
     act(
         handle,
@@ -291,7 +291,7 @@ def test_ready_summon_dragon_is_refused() -> None:
         reaction_trigger="hit_by_attack",
     )
     assert events(live, CastFailed) == [
-        CastFailed(actor_id=SUMMONER, spell_id=SD, reason="target_invalid")
+        CastFailed(actor_id=SUMMONER, spell_id=SD, reason="unsupported_reaction")
     ]
     assert live.pending_reactions == []
     assert combatant(live, SUMMONER).action_available

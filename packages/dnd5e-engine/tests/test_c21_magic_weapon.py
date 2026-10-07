@@ -269,7 +269,7 @@ def test_a_seeded_enchantment_enchants_the_weapon() -> None:
 
 
 def test_readying_magic_weapon_is_refused() -> None:
-    """A readied cast cannot carry the weapon it enchants."""
+    """An enchantment without typed reaction conditions cannot be pre-armed."""
     handle, live = start([_hero()], seed=11)
     act(
         handle,
@@ -279,7 +279,7 @@ def test_readying_magic_weapon_is_refused() -> None:
         reaction_trigger="hit_by_attack",
     )
     assert [(e.spell_id, e.reason) for e in events(live, CastFailed)] == [
-        ("magic-weapon", "target_invalid")
+        ("magic-weapon", "unsupported_reaction")
     ]
     assert combatant(live).action_available
     assert not live.pending_reactions

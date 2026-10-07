@@ -7,7 +7,7 @@ at execution. No spell slugs, activity names or prose drive runtime behavior.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
 
 from dnd5e_srd_data.schema.common import Activity, ActivityTiming
@@ -121,11 +121,27 @@ def resolve_spell_activities(
     source order is preserved, even when Foundry lists deferred work first.
     """
     from dnd5e_engine import orchestrator as orch
+    from dnd5e_engine.live_reactions import (
+        attach_reaction_hooks,
+        can_continue_resolution,
+        record_reaction_effects,
+        targeted_spell_opportunities,
+    )
     from dnd5e_engine.persistent_areas import register_area
     from dnd5e_engine.types.effects import ActiveEffectDuration
 
+    if ctx.attack_hit_reaction is None:
+        ctx = attach_reaction_hooks(live, ctx)
+    ctx = replace(
+        ctx,
+        negated_spell_damage_targets=targeted_spell_opportunities(
+            live, ctx.caster, spell, ctx.targets
+        ),
+    )
     before = len(live.event_log)
     for activity in spell.activities:
+        if not can_continue_resolution(live, ctx.caster.entity_id):
+            break
         if activity.persistent_area is not None:
             register_area(
                 live,
@@ -138,7 +154,10 @@ def resolve_spell_activities(
             )
         elif activity.timing.trigger == "immediate":
             resolve_activity(activity, ctx)
-    applied = [e.effect for e in live.event_log[before:] if isinstance(e, EffectApplied)]
+    emitted = live.event_log[before:]
+    for activity in spell.activities:
+        record_reaction_effects(live, ctx, activity, emitted)
+    applied = [e.effect for e in emitted if isinstance(e, EffectApplied)]
     for activity in spell.activities:
         if activity.persistent_area is not None:
             continue
@@ -247,6 +266,7 @@ def _execute(
     live: _LiveCombat, pending: PendingTimedActivity, target: Combatant, caster: Combatant
 ) -> None:
     from dnd5e_engine import orchestrator as orch
+    from dnd5e_engine.live_reactions import attach_reaction_hooks
 
     before = len(live.event_log)
     payload = orch._build_hydration_payload(live, caster=caster)
@@ -264,6 +284,7 @@ def _execute(
         spell_book=orch._build_cast_spell_book(pending.spell.activities),
         **orch._monster_context_kwargs(live, caster, [target], payload),
     )
+    ctx = attach_reaction_hooks(live, ctx)
     resolve_activity(pending.activity, ctx)
     orch._sync_legendary_resistance(live, before)
     if pending.concentration and live.concentration_chain.get(caster.entity_id):

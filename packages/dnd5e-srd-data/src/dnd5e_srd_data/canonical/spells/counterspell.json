@@ -50,6 +50,15 @@
         "units": "self",
         "value": null
       },
+      "reaction": {
+        "responses": [
+          {
+            "kind": "cancel_triggering_spell_on_failed_save",
+            "trigger_kind": null
+          }
+        ],
+        "target_role": "triggering_actor"
+      },
       "save": {
         "ability": [
           "con"

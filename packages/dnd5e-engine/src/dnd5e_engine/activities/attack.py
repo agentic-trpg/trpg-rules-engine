@@ -71,6 +71,7 @@ from dnd5e_srd_data.schema.item import WeaponProperty
 from dnd5e_srd_data.schema.monster import MonsterTraitMechanic
 
 from dnd5e_engine.activities.apply import apply_damage
+from dnd5e_engine.activities.context import AttackHitContext
 from dnd5e_engine.activities.d20 import AdvantageSources, roll_d20_test
 from dnd5e_engine.activities.dice import roll_damage_part, roll_expr
 from dnd5e_engine.activities.effects import apply_activity_effects
@@ -174,6 +175,8 @@ def resolve_attack(
     cleave_fired = False
 
     for index, target in enumerate(ctx.targets):
+        if ctx.attack_continuation_allowed is not None and not ctx.attack_continuation_allowed():
+            break
         distance_ft = ctx.target_distance_ft.get(target.entity_id)
         sources, target_vex_advantage = _attack_roll_sources(
             ctx,
@@ -224,6 +227,17 @@ def resolve_attack(
                 natural, total, effective_ac, activity, auto_crit_on_hit=auto_crit
             )
 
+        is_crit, is_hit = _adjudicate_hit_reaction(
+            activity,
+            ctx,
+            target.entity_id,
+            natural=natural,
+            total=total,
+            effective_ac=effective_ac,
+            is_crit=is_crit,
+            is_hit=is_hit,
+            auto_crit=auto_crit,
+        )
         ctx.event_emitter(
             AttackRolled(
                 attacker_id=ctx.caster.entity_id,
@@ -336,6 +350,8 @@ def _resolve_cleave_chain(
       make this extra attack only once per turn" caps the attack, not the
       hit); the orchestrator folds it into ``cleave_spent_this_turn``.
     """
+    if ctx.attack_continuation_allowed is not None and not ctx.attack_continuation_allowed():
+        return
     cid = candidate.entity_id
     distance_ft = ctx.target_distance_ft.get(cid)
     candidate_conditions = ctx.target_conditions.get(cid) or active_condition_names(
@@ -363,6 +379,17 @@ def _resolve_cleave_chain(
     auto_crit = conditions_auto_crit_within_5ft(candidate_conditions, distance_ft=distance_ft)
     is_crit, is_hit = _resolve_hit_outcome(
         roll.kept, total, effective_ac, activity, auto_crit_on_hit=auto_crit
+    )
+    is_crit, is_hit = _adjudicate_hit_reaction(
+        activity,
+        ctx,
+        cid,
+        natural=roll.kept,
+        total=total,
+        effective_ac=effective_ac,
+        is_crit=is_crit,
+        is_hit=is_hit,
+        auto_crit=auto_crit,
     )
     ctx.event_emitter(
         AttackRolled(
@@ -393,6 +420,36 @@ def _resolve_cleave_chain(
         is_crit=is_crit,
         source_id_override="mastery:cleave",
     )
+
+
+def _adjudicate_hit_reaction(
+    activity: AttackActivity,
+    ctx: ActivityResolutionContext,
+    target_id: str,
+    *,
+    natural: int,
+    total: int,
+    effective_ac: int,
+    is_crit: bool,
+    is_hit: bool,
+    auto_crit: bool,
+) -> tuple[bool, bool]:
+    """Resolve a provisional hit's reactions without another attack roll."""
+    if not is_hit or ctx.attack_hit_reaction is None:
+        return is_crit, is_hit
+    refreshed_ac = ctx.attack_hit_reaction(
+        AttackHitContext(
+            attacker_id=ctx.caster.entity_id,
+            target_id=target_id,
+            source_activity_id=activity.id,
+            natural=natural,
+            roll_total=total,
+            effective_ac=effective_ac,
+            is_crit=is_crit,
+            is_opportunity_attack=ctx.is_opportunity_attack,
+        )
+    )
+    return _resolve_hit_outcome(natural, total, refreshed_ac, activity, auto_crit_on_hit=auto_crit)
 
 
 def _attack_roll_sources(

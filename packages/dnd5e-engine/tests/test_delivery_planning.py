@@ -177,7 +177,8 @@ def test_nested_delegation_refreshes_child_spell_book_and_parent_identity(monkey
     reviews = dict(spell_execution.spell_reviews())
     reviews[fireball.foundry_uuid] = reviews[fireball.foundry_uuid].model_copy(
         update={
-            "activities": (ActivityReview(activity_id="nested-cast", kind="cast", role="cast"),)
+            "activities": (ActivityReview(activity_id="nested-cast", kind="cast", role="cast"),),
+            "canonical_sha256": spell_execution.semantic_digest(nested),
         }
     )
     monkeypatch.setattr(spell_execution, "spell_reviews", lambda: reviews)

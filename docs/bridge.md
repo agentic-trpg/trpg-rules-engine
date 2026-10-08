@@ -81,6 +81,15 @@ homebrew entry you've imported is visible everywhere a canonical slug would
 be (`/v1/combat` monster/party lookups, `/v1/srd/...` reads, etc.) without
 restarting the process.
 
+Import, replacement, deletion and item forging return `409` while this bridge
+has an open combat. End every combat with `/v1/combat/{cid}/end` before updating
+homebrew; a rejected update changes neither the store nor its active loader.
+Combat opening and content updates are serialized. Each combat also retains
+the loader it opened with, so configuring another bridge or replacing the
+engine's process default cannot silently alter that combat's assets. Hosts
+must treat installed custom loaders and their assets as immutable and replace
+loader instances when changing content; in-place mutation is not supported.
+
 Party builds include `build.size_choice` when the canonical species offers
 several sizes: for example, a Human uses `"size_choice": "small"` or
 `"size_choice": "medium"`. Missing or disallowed choices return `422`.

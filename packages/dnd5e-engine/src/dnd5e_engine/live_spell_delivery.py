@@ -524,8 +524,12 @@ def execute_spell_delivery(
     failure = admission_failure(spell, selected, direct_carrier=ctx.conjuration is not None)
     if failure is not None:
         raise SpellAdmissionError(failure)
+    # Admission binds the complete source. Plan the reviewed selection directly;
+    # a derived activity subset is not a new canonical spell to review again.
+    plan = plan_activity_delivery(
+        live, ctx.caster, selected, spec, range_spec=spell.range, execution=True
+    )
     spell = spell.model_copy(update={"activities": selected})
-    plan = plan_spell_delivery(live, ctx.caster, spell, spec, execution=True)
     by_id = {c.entity_id: c for c in live.initiative}
     ctx = replace(ctx, targets=[by_id[i] for i in plan.target_ids if i in by_id])
 

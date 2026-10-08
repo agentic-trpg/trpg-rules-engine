@@ -182,15 +182,16 @@ def create_app(state: BridgeState) -> FastAPI:
     # engine's module-global lib loader singleton (`configure_lib_loader`).
     # `combat` routes (routes_combat.py) resolve monsters/spells/weapons
     # through this same overlay via `state.loader`; Task 10's homebrew
-    # mutation routes call `state.refresh_loader()` to rebuild the overlay's
-    # in-memory layer after an add/remove without restarting the process.
+    # mutation routes call `state.refresh_loader()` only between combats.
     store = HomebrewStore(state.homebrew_path)
     state.homebrew_store = store
 
     def _refresh_loader() -> None:
+        if state.combats:
+            raise RuntimeError("end all open combats before refreshing the ruleset")
         loader = OverlayAssetLoader(base=BundledAssetLoader(), overlay=store.as_memory_loader())
-        state.loader = loader
         configure_lib_loader(loader)
+        state.loader = loader
 
     state.refresh_loader = _refresh_loader
     _refresh_loader()

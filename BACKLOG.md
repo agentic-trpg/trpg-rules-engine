@@ -33,6 +33,14 @@ deferred spells, with all 464 canonical Activities. Unknown identities,
 unreviewed Activities, missing effects and mandatory unsupported mechanisms
 fail closed. PC, monster and delegated item paths share the check.
 
+Batch B1 additionally binds runtime admission to the existing semantic digest,
+restores public execution state/events/RNG on unexpected errors, and pins each
+combat's opening loader. Bridge Homebrew mutations conflict while combats are
+open. Public fault-injection and retry replay regressions cover direct, delegated,
+monster and reaction casts. Custom loaders must remain immutable after install;
+host listener errors are post-commit. These safeguards do not change the spell
+support inventory or close the missing mechanics below.
+
 Slow/Haste action rules, teleportation, general summons/enchantments/transforms,
 restoration/resurrection, object/world transactions, conditional sequences and
 wall geometry remain deferred. A supported target filter, save, heal or damage

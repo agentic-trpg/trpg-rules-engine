@@ -55,10 +55,12 @@ import logging
 import random
 import re
 from collections import deque
-from collections.abc import AsyncIterator, Callable, Collection, Mapping, Sequence
+from collections.abc import AsyncIterator, Callable, Collection, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from typing import Any, Final, Literal, cast
 
+from dnd5e_srd_data.loader import AssetLoader
 from dnd5e_srd_data.schema.common import (
     ActivationBlock,
     Activity,
@@ -194,7 +196,7 @@ from dnd5e_engine.feature_runtime import (
 from dnd5e_engine.feature_runtime import (
     FeatureInvocation as _FeatureInvocation,
 )
-from dnd5e_engine.lib_loader import get_lib_loader
+from dnd5e_engine.lib_loader import get_lib_loader, scoped_lib_loader
 from dnd5e_engine.live_attack_riders import (
     attach_attack_riders,
     attack_origin,
@@ -3085,6 +3087,9 @@ class _LiveCombat:
     rng: random.Random
     event_queue: asyncio.Queue[CombatEvent | None]
     scene_location_id: str
+    # A host may replace the default loader for future combats. This combat
+    # keeps the exact asset source it hydrated from throughout its lifetime.
+    ruleset_loader: AssetLoader = field(default_factory=get_lib_loader, repr=False)
     # C18 §Monster action economy — SRD 5.2 stat-block trait "Sunlight
     # Sensitivity": whole-scene sunlight flag, projected from
     # ``GridScene.sunlight`` at ``start_combat``. Read by ``_monster_context_
@@ -7608,6 +7613,29 @@ async def start_combat(
     scene_location_id: str = "loc:unknown",
     active_effects: Sequence[ActiveEffect] = (),
 ) -> StartCombatResult:
+    """Open a combat using the current ruleset for its entire lifetime."""
+    with scoped_lib_loader(get_lib_loader()):
+        return await _start_combat(
+            session_id=session_id,
+            party=party,
+            encounter=encounter,
+            grid_scene=grid_scene,
+            rng_seed=rng_seed,
+            scene_location_id=scene_location_id,
+            active_effects=active_effects,
+        )
+
+
+async def _start_combat(
+    *,
+    session_id: str,
+    party: list[PartyMemberSpec],
+    encounter: list[EncounterMemberSpec],
+    grid_scene: GridScene,
+    rng_seed: int,
+    scene_location_id: str,
+    active_effects: Sequence[ActiveEffect],
+) -> StartCombatResult:
     """Open a combat, materialize runtime state, kick off the initiative loop.
 
     Returns a ``StartCombatResult`` envelope wrapping the ``CombatHandle``
@@ -11532,67 +11560,80 @@ def _prepare_feature_invocation(
     return feature_invocation, False
 
 
-async def submit_player_intent(
-    handle: CombatHandle,
-    actor_id: str,
-    intent: PlayerIntent,
-) -> None:
-    """Submit an intent; feature resolver data errors restore state and propagate.
+@contextmanager
+def _execution_transaction(live: _LiveCombat) -> Iterator[None]:
+    """Buffer public execution events and restore live state on any exception.
 
-    Events are buffered until a feature invocation returns. An unexpected
-    ValueError is a defect, never a rule rejection, and is logged and re-raised
-    after restoring every live field and the RNG. Normal refusals keep their
-    authoritative rejection events. The pure preflight remains the primary gate.
+    Rule refusals and countered casts return normally and commit their typed
+    events and legal costs. Unexpected failures (including cancellation) escape
+    unchanged after rollback. Host listeners observe only committed events.
     """
-    live = _get_live(handle)
-    if intent.attack_riders or intent.reckless_attack:
-        _validate_intent_preconditions(live, handle, actor_id, intent=intent)
-        if reject_nonattack_riders(live, actor_id, intent):
-            return
-    if (
-        intent.intent_type not in ("use_feature", "attack")
-        and not intent.attack_riders
-        and not intent.reckless_attack
-    ):
-        await _submit_player_intent(handle, actor_id, intent)
-        return
     queue = live.event_queue
     listeners = live.event_listeners
     original_rng = live.rng
     original_rng_state = original_rng.getstate()
     snapshot = copy.deepcopy(
-        live, {id(queue): queue, id(listeners): listeners, id(original_rng): original_rng}
+        live,
+        {
+            id(queue): queue,
+            id(listeners): listeners,
+            id(original_rng): original_rng,
+            id(live.ruleset_loader): live.ruleset_loader,
+        },
     )
     buffered: asyncio.Queue[CombatEvent | None] = asyncio.Queue()
     live.event_queue = buffered
     live.event_listeners = []
     try:
-        await _submit_player_intent(handle, actor_id, intent)
-    except FeaturePreflightError:
+        with scoped_lib_loader(live.ruleset_loader):
+            yield
+    except BaseException:
         original_rng.setstate(original_rng_state)
+        live.__dict__.clear()
         live.__dict__.update(snapshot.__dict__)
-        while not buffered.empty():
-            buffered.get_nowait()
-        live.event_queue = buffered
-        live.event_listeners = []
-        _emit(
-            live,
-            AttackFailed(actor_id=actor_id, target_id=intent.target_id, reason="unsupported_rider"),
-        )
-    except ValueError:
-        original_rng.setstate(original_rng_state)
-        live.__dict__.update(snapshot.__dict__)
-        _LOGGER.exception("unexpected_feature_resolution_error feature=%s", intent.feature_id)
         raise
     finally:
         live.event_queue = queue
         live.event_listeners = listeners
+    committed = []
     while not buffered.empty():
         event = buffered.get_nowait()
+        committed.append(event)
         queue.put_nowait(event)
+    # Publication is complete before notifying host observers. Their external
+    # side effects cannot be rolled back; an observer error is post-commit.
+    for event in committed:
         if event is not None:
             for listener in listeners:
                 listener(event)
+
+
+async def submit_player_intent(
+    handle: CombatHandle,
+    actor_id: str,
+    intent: PlayerIntent,
+) -> None:
+    """Resolve a public intent atomically, preserving normal typed refusals."""
+    live = _get_live(handle)
+    rider_refused = False
+    try:
+        with _execution_transaction(live):
+            try:
+                if intent.attack_riders or intent.reckless_attack:
+                    _validate_intent_preconditions(live, handle, actor_id, intent=intent)
+                    if reject_nonattack_riders(live, actor_id, intent):
+                        return
+                await _submit_player_intent(handle, actor_id, intent)
+            except FeaturePreflightError:
+                rider_refused = intent.intent_type in ("attack", "use_feature")
+                raise
+    except FeaturePreflightError:
+        if not rider_refused:
+            raise
+        _emit(
+            live,
+            AttackFailed(actor_id=actor_id, target_id=intent.target_id, reason="unsupported_rider"),
+        )
 
 
 async def _submit_player_intent(
@@ -12407,6 +12448,17 @@ def _resolve_opportunity_attack(live: _LiveCombat, reactor: Combatant, mover: Co
 
 
 async def advance_monster_turn(
+    handle: CombatHandle,
+    *,
+    legendary: bool = False,
+    actor_id: str | None = None,
+) -> None:
+    """Resolve one monster turn or legendary action as one atomic execution."""
+    with _execution_transaction(_get_live(handle)):
+        await _advance_monster_turn(handle, legendary=legendary, actor_id=actor_id)
+
+
+async def _advance_monster_turn(
     handle: CombatHandle, *, legendary: bool = False, actor_id: str | None = None
 ) -> None:
     """Drive one monster turn through typed selection + the Activity resolver.
@@ -12786,6 +12838,12 @@ def _project_outcome(live: _LiveCombat) -> CombatOutcome:
 
 
 async def end_combat(handle: CombatHandle) -> EndCombatResult:
+    """Close a combat using its original ruleset; repeated closes are idempotent."""
+    with scoped_lib_loader(_get_live(handle).ruleset_loader):
+        return await _end_combat(handle)
+
+
+async def _end_combat(handle: CombatHandle) -> EndCombatResult:
     """Close the combat and return the projected outcome.
 
     Idempotent: calling twice returns the same outcome (with an empty

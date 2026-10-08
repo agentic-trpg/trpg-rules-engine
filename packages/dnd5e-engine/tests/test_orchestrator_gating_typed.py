@@ -374,7 +374,7 @@ def test_bonus_action_spell_keeps_turn_live():
     """
     set_lib_loader_for_tests(
         MemoryAssetLoader(
-            spells=[_spell("healing-word", level=1, casting_unit=CastingTimeUnit.BONUS)],
+            spells=[BundledAssetLoader().get_spell("healing-word")],
             classes=[BundledAssetLoader().get_class("cleric")],
         )
     )

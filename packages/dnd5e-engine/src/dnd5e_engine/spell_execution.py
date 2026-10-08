@@ -7,6 +7,7 @@ Bounded support never means the entire SRD spell has been implemented.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Mapping, Sequence
 from functools import cache
@@ -125,10 +126,25 @@ def spell_reviews() -> Mapping[str, SpellReview]:
     return MappingProxyType({row.uuid: row for row in reviews})
 
 
+def semantic_digest(spell: Spell) -> str:
+    """Hash validated data, independent of checkout newlines and hash seed."""
+    payload = json.dumps(
+        spell.model_dump(mode="json"), sort_keys=True, ensure_ascii=False, separators=(",", ":")
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 def spell_review(spell: Spell) -> SpellReview | None:
     review = spell_reviews().get(spell.foundry_uuid)
-    # A copied identity cannot turn a different source into an admitted spell.
-    return review if review is not None and review.slug == spell.slug else None
+    # UUID/slug identify the review, but only its exact validated payload is
+    # admitted. Spell models are mutable, so recheck content on every lookup.
+    return (
+        review
+        if review is not None
+        and review.slug == spell.slug
+        and review.canonical_sha256 == semantic_digest(spell)
+        else None
+    )
 
 
 def admission_failure(

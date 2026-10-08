@@ -92,6 +92,15 @@ The [generated inventory](audits/spell-execution.json) covers all **339 spells /
 roles, missing mechanisms and entrypoint restrictions. It is static evidence,
 not a claim of whole-corpus runtime testing. [Admission contract and regeneration](dev/spell-execution-admission.md).
 
+Runtime admission also binds the review to the loaded spell's semantic digest;
+matching UUID/slug with changed Activities, effects or formulas fails closed.
+Public player and monster execution rolls back state, resources, events and RNG
+on unexpected execution errors, including delegated casts and reactions. Legal
+Counterspell costs remain unchanged. Active combats keep their opening loader;
+Bridge Homebrew updates conflict until all its combats close. Custom installed
+loaders must remain immutable, and host listener failures occur after commit.
+These B1 integrity guarantees add no spell coverage.
+
 The previous structural probe remains below for comparison. These are historical
 kind/effect counts, **not executable-spell counts or current paid-cast admission**:
 

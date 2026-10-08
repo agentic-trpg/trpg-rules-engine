@@ -183,11 +183,10 @@ def test_invalid_monster_child_save_policy_skips_before_uses_or_rng(loader):
     bad = activity.model_copy(
         update={"damage": activity.damage.model_copy(update={"on_save": "unknown"})}
     )
-    set_lib_loader_for_tests(
-        MemoryAssetLoader(
-            monsters=[monster], spells=[spell.model_copy(update={"activities": [bad]})]
-        )
+    live.ruleset_loader = MemoryAssetLoader(
+        monsters=[monster], spells=[spell.model_copy(update={"activities": [bad]})]
     )
+    set_lib_loader_for_tests(live.ruleset_loader)
     before = (_state(live), live.rng.getstate(), list(live.event_log))
     assert orch._monster_cast_candidate(live, actor, action) is None
     assert (_state(live), live.rng.getstate(), live.event_log) == before

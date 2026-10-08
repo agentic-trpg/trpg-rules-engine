@@ -57,6 +57,7 @@ from dnd5e_engine import (
     start_combat,
     submit_player_intent,
 )
+from dnd5e_engine.lib_loader import scoped_lib_loader
 from dnd5e_engine.movement import MovementMode
 from dnd5e_engine.orchestrator import IntentRejectedError, UnknownHandleError
 from dnd5e_engine.spatial import canonical_cell_id
@@ -407,7 +408,10 @@ def build_combat_router(state: BridgeState) -> APIRouter:
 
     @router.post("/v1/combat")
     async def start(req: _CombatStartRequest) -> dict[str, Any]:
-        return await _start_route(state, req)
+        async with state.ruleset_lock:
+            assert state.loader is not None
+            with scoped_lib_loader(state.loader):
+                return await _start_route(state, req)
 
     @router.post("/v1/combat/{cid}/intent")
     async def intent(cid: str, req: _IntentRequest) -> dict[str, Any]:

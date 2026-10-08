@@ -5,7 +5,8 @@ Reads (`GET /v1/srd/...`) always go through ``state.loader`` — the
 entries resolve alongside canonical SRD content. Every homebrew mutation
 (import, delete, forge-then-store) calls ``state.refresh_loader()`` so the
 overlay (and the engine's module-global lib loader singleton) picks up the
-change without a process restart.
+change without a process restart. Updates conflict while the bridge has an
+open combat and are rejected before the homebrew store is changed.
 """
 
 from __future__ import annotations
@@ -90,6 +91,7 @@ def _get_entry(state: BridgeState, category: str, slug: str) -> dict[str, Any]:
 
 def _homebrew_add(state: BridgeState, category: str, raw: dict[str, Any]) -> dict[str, str]:
     checked = _check_category(category)
+    _require_ruleset_update_allowed(state)
     assert state.homebrew_store is not None
     assert state.refresh_loader is not None
     try:
@@ -107,6 +109,7 @@ def _homebrew_list(state: BridgeState) -> dict[str, dict[str, str]]:
 
 
 def _homebrew_delete(state: BridgeState, slug: str) -> None:
+    _require_ruleset_update_allowed(state)
     assert state.homebrew_store is not None
     assert state.refresh_loader is not None
     removed = state.homebrew_store.remove(slug)
@@ -116,6 +119,7 @@ def _homebrew_delete(state: BridgeState, slug: str) -> None:
 
 
 def _forge(state: BridgeState, req: _ForgeItemRequest) -> dict[str, str]:
+    _require_ruleset_update_allowed(state)
     assert state.loader is not None
     assert state.homebrew_store is not None
     assert state.refresh_loader is not None
@@ -135,6 +139,11 @@ def _forge(state: BridgeState, req: _ForgeItemRequest) -> dict[str, str]:
     return {"slug": slug, "summary": summary}
 
 
+def _require_ruleset_update_allowed(state: BridgeState) -> None:
+    if state.combats:
+        raise HTTPException(status_code=409, detail="end all open combats before updating homebrew")
+
+
 def build_content_router(state: BridgeState) -> APIRouter:
     router = APIRouter()
 
@@ -147,20 +156,23 @@ def build_content_router(state: BridgeState) -> APIRouter:
         return _get_entry(state, category, slug)
 
     @router.post("/v1/homebrew/{category}")
-    def homebrew_add(category: str, raw: dict[str, Any]) -> dict[str, str]:
-        return _homebrew_add(state, category, raw)
+    async def homebrew_add(category: str, raw: dict[str, Any]) -> dict[str, str]:
+        async with state.ruleset_lock:
+            return _homebrew_add(state, category, raw)
 
     @router.get("/v1/homebrew")
     def homebrew_list() -> dict[str, dict[str, str]]:
         return _homebrew_list(state)
 
     @router.delete("/v1/homebrew/{slug}", status_code=204)
-    def homebrew_delete(slug: str) -> None:
-        _homebrew_delete(state, slug)
+    async def homebrew_delete(slug: str) -> None:
+        async with state.ruleset_lock:
+            _homebrew_delete(state, slug)
 
     @router.post("/v1/forge/item")
-    def forge(req: _ForgeItemRequest) -> dict[str, str]:
-        return _forge(state, req)
+    async def forge(req: _ForgeItemRequest) -> dict[str, str]:
+        async with state.ruleset_lock:
+            return _forge(state, req)
 
     return router
 

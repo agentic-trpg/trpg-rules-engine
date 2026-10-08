@@ -86,11 +86,22 @@ def burst(
     )
 
 
-def setup(loader, action, enemies, *, allies=(), at=(5, 5), grid=None, seed=19, extra_actions=()):
+def setup(
+    loader,
+    action,
+    enemies,
+    *,
+    allies=(),
+    at=(5, 5),
+    grid=None,
+    seed=19,
+    extra_actions=(),
+    spells=(),
+):
     monster = loader.get_monster("magma-mephit").model_copy(
         update={"actions": [action, *extra_actions]}, deep=True
     )
-    set_lib_loader_for_tests(MemoryAssetLoader(monsters=[monster]))
+    set_lib_loader_for_tests(MemoryAssetLoader(monsters=[monster], spells=spells))
     party = [_sturdy(f"char:{i}", cell(*position), 10 - i) for i, position in enumerate(enemies)]
     foes = [_foe("mon:actor", cell(*at), monster.slug, initiative=30, hp_current=1000, hp_max=1000)]
     foes.extend(

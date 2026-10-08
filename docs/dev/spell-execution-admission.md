@@ -14,7 +14,12 @@ There is no runtime description parsing or spell-slug resolver dispatch.
 Unknown sources, kinds or Activity IDs fail closed. Updating canonical data
 requires reviewing the affected record; the audit rejects missing, stale and
 orphaned records. Digests use normalized validated JSON, independent of Windows
-newlines or Python hash seed.
+newlines or Python hash seed. Runtime admission recomputes that same
+`semantic_digest()` for the actual loaded spell, including Activities, effects
+and formulas. A custom loader cannot reuse a canonical UUID/slug to inherit a
+review for different mechanical content; mismatches return the existing typed
+`unreviewed_spell` failure before payment. The digest is not cached by identity,
+so changing a loaded spell after an earlier review does not retain admission.
 
 The corpus has 339 spells and 464 Activities. Current classes are **25
 executable**, **44 bounded**, **26 host narrative**, and **244 deferred**.
@@ -99,6 +104,36 @@ Stinking Cloud's action denial, and Enthrall's combat auto-success rule are also
 mandatory deferred mechanics. Their existing damage/effect/area primitives do
 not admit a paid spell transaction. Tests for those primitives remain separate
 from public admission refusal tests.
+
+## Execution integrity and ruleset lifetime (Batch B1)
+
+`submit_player_intent` and `advance_monster_turn` share one snapshot and event
+buffer transaction, including delegated child spells, automatically triggered
+reactions and legendary actions. Unexpected execution exceptions and cancellation
+restore every live state field and the original RNG state before propagating.
+Restoration includes action budgets, slots, charges, HP, effects, concentration,
+timed activities, persistent areas and pending reactions. Events from a failed
+execution reach neither the narration queue nor host listeners. Normal typed
+refusals and legal Counterspell interruptions return normally and retain their
+existing costs and event order.
+
+Host listeners run after state and the complete event batch commit. A listener
+exception propagates without undoing committed combat state or already published
+events; external observer side effects are outside the rollback boundary.
+
+Each combat captures its loader at opening and binds it for all nested execution
+and closing operations. `configure_lib_loader` changes the default for future
+combats. Bridge Homebrew import, overwrite, delete and forge return HTTP 409
+before persistence while that Bridge has an open combat; opening and updates are
+serialized. Installed custom loaders and their assets must remain immutable:
+in-place mutation by host code is unsupported. The resource-free Activity
+Resolver remains an unchecked host building block.
+
+Public regressions inject failures after real payment and resolution, compare
+complete authoritative state, RNG, queued events and listener isolation, and
+verify retry replay, real concentration/timed/area restoration, normal successful
+casts, failed saves, Counterspell costs and ruleset update conflicts. This adds
+execution integrity guarantees without increasing admitted SRD coverage.
 
 ## Regeneration and validation
 

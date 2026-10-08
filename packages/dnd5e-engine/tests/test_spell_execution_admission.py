@@ -216,7 +216,8 @@ def test_public_monster_unsupported_spell_preserves_daily_use_and_selects_fallba
             }
         )
     monster = monster.model_copy(update={"actions": [action]})
-    set_lib_loader_for_tests(MemoryAssetLoader(monsters=[monster], spells=[spell, legal]))
+    live.ruleset_loader = MemoryAssetLoader(monsters=[monster], spells=[spell, legal])
+    set_lib_loader_for_tests(live.ruleset_loader)
     uses = copy.deepcopy(live.monster_action_uses_by_entity[actor.entity_id])
     rng = live.rng.getstate()
     before = (_state(live), rng, list(live.event_log))

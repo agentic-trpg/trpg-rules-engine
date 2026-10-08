@@ -51,3 +51,6 @@ class BridgeState:
     homebrew_store: HomebrewStore | None = None
     loader: AssetLoader | None = None
     refresh_loader: Callable[[], None] | None = None
+    # Serialize combat opening with content updates before the active handle
+    # is registered, so a concurrent update cannot slip past the conflict check.
+    ruleset_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)

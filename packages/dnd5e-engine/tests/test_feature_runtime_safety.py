@@ -39,7 +39,7 @@ from dnd5e_engine.feature_audit import (
 )
 from dnd5e_engine.feature_repertoire import feature_repertoire
 from dnd5e_engine.feature_runtime import resource_identity, resource_payments
-from dnd5e_engine.lib_loader import set_lib_loader_for_tests
+from dnd5e_engine.lib_loader import get_lib_loader, set_lib_loader_for_tests
 from dnd5e_engine.orchestrator import _emit, _granted_feature_slugs
 from dnd5e_engine.spatial import cell_id
 from dnd5e_engine.specs import PartyMemberSpec
@@ -60,7 +60,17 @@ def _loader():
 
 
 def _snapshot(live):
-    excluded = {"event_log", "event_queue", "event_listeners", "lifecycle", "topology", "rng"}
+    # The pinned loader is an immutable dependency, not JSON combat state.
+    assert live.ruleset_loader is get_lib_loader()
+    excluded = {
+        "event_log",
+        "event_queue",
+        "event_listeners",
+        "lifecycle",
+        "topology",
+        "rng",
+        "ruleset_loader",
+    }
     state = {key: value for key, value in vars(live).items() if key not in excluded}
 
     def normalize(value):

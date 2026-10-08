@@ -6,26 +6,21 @@ python -m dnd5e_engine.spell_capability_audit --output docs/audits/spell-executi
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import sys
 from collections import Counter
 from pathlib import Path
 
 from dnd5e_srd_data.loader import AssetLoader, BundledAssetLoader
-from dnd5e_srd_data.schema.spell import Spell
 
 from dnd5e_engine.live_spell_delivery import delivery_activities
 from dnd5e_engine.spell_delivery import SpellDeliverySpec
-from dnd5e_engine.spell_execution import admission_failure, spell_review, spell_reviews
-
-
-def semantic_digest(spell: Spell) -> str:
-    """Hash validated data, independent of checkout newlines and hash seed."""
-    payload = json.dumps(
-        spell.model_dump(mode="json"), sort_keys=True, ensure_ascii=False, separators=(",", ":")
-    )
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+from dnd5e_engine.spell_execution import (
+    admission_failure,
+    semantic_digest,
+    spell_review,
+    spell_reviews,
+)
 
 
 def audit_document(loader: AssetLoader) -> dict[str, object]:

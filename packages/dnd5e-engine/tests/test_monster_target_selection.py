@@ -14,6 +14,7 @@ from dnd5e_engine.events import AttackRolled, DamageApplied, IntentSubmitted, Sa
 from dnd5e_engine.lib_loader import set_lib_loader_for_tests
 from tests.c20_support import act, events
 from tests.e2e.harness import run_async
+from tests.spell_review_support import review_spell_variant
 from tests.test_delivery_hardening import _restricted_action, _state
 from tests.test_monster_spatial_execution import setup
 from tests.test_monster_spell_delivery import _cast_action
@@ -57,14 +58,16 @@ def _drive(live, *, legendary=False):
 
 def _legendary_window(live, actor, monster, action, *, spells=()):
     template = monster.model_copy(update={"actions": [], "legendary_actions": [action]})
-    set_lib_loader_for_tests(MemoryAssetLoader(monsters=[template], spells=list(spells)))
+    # This helper deliberately installs a synthetic legendary encounter fixture.
+    live.ruleset_loader = MemoryAssetLoader(monsters=[template], spells=list(spells))
+    set_lib_loader_for_tests(live.ruleset_loader)
     actor.legendary_actions_max = actor.legendary_actions_remaining = 1
     _drive(live)  # No ordinary action; open the first PC's turn.
     act(orch.CombatHandle(live.handle_id), "char:0", intent_type="pass")
 
 
 @pytest.mark.parametrize("mode", ["action", "multiattack", "legendary", "spell", "legendary_spell"])
-def test_public_monster_chooses_legal_undead_over_lower_hp_humanoid(loader, mode):
+def test_public_monster_chooses_legal_undead_over_lower_hp_humanoid(loader, mode, monkeypatch):
     def run():
         child = _restricted_action(loader)
         if mode == "multiattack":
@@ -77,6 +80,7 @@ def test_public_monster_chooses_legal_undead_over_lower_hp_humanoid(loader, mode
             spell = loader.get_spell("sacred-flame")
             filtered = spell.activities[0].model_copy(update={"target": child.activities[0].target})
             spell = spell.model_copy(update={"activities": [filtered]})
+            review_spell_variant(monkeypatch, spell)
             spells = [spell]
             root = _cast_action(spell)
         live, actor, _, monster = setup(
@@ -91,7 +95,8 @@ def test_public_monster_chooses_legal_undead_over_lower_hp_humanoid(loader, mode
         if mode in ("legendary", "legendary_spell"):
             _legendary_window(live, actor, monster, root, spells=spells)
         elif spells:
-            set_lib_loader_for_tests(MemoryAssetLoader(monsters=[monster], spells=spells))
+            live.ruleset_loader = MemoryAssetLoader(monsters=[monster], spells=spells)
+            set_lib_loader_for_tests(live.ruleset_loader)
         pre = len(live.event_log)
         _drive(live, legendary=mode in ("legendary", "legendary_spell"))
         assert [e.target_id for e in live.event_log[pre:] if isinstance(e, SaveRolled)] == [
@@ -319,7 +324,7 @@ def test_execution_rechecks_candidate_after_public_action_selection(loader, monk
 
 
 @pytest.mark.parametrize("mode", ["legendary", "spell"])
-def test_stationary_selection_tries_next_in_range_legal_candidate(loader, mode):
+def test_stationary_selection_tries_next_in_range_legal_candidate(loader, mode, monkeypatch):
     action = _restricted_action(loader)
     spells = []
     if mode == "spell":
@@ -331,6 +336,7 @@ def test_stationary_selection_tries_next_in_range_legal_candidate(loader, mode):
                 ]
             }
         )
+        review_spell_variant(monkeypatch, spell)
         spells = [spell]
         action = _cast_action(spell)
     live, actor, _, monster = setup(loader, action, [(6, 5), (29, 29), (8, 5)])
@@ -339,26 +345,29 @@ def test_stationary_selection_tries_next_in_range_legal_candidate(loader, mode):
     if mode == "legendary":
         _legendary_window(live, actor, monster, action)
     else:
-        set_lib_loader_for_tests(MemoryAssetLoader(monsters=[monster], spells=spells))
+        live.ruleset_loader = MemoryAssetLoader(monsters=[monster], spells=spells)
+        set_lib_loader_for_tests(live.ruleset_loader)
     _drive(live, legendary=mode == "legendary")
     assert [e.target_id for e in events(live, SaveRolled)] == ["char:2"]
     assert live.actor_zone[actor.entity_id] == "5,5"
 
 
 @pytest.mark.parametrize("fallback", [False, True])
-def test_no_legal_monster_spell_is_pure_before_fallback_or_pass(loader, fallback):
+def test_no_legal_monster_spell_is_pure_before_fallback_or_pass(loader, fallback, monkeypatch):
     spell = loader.get_spell("sacred-flame")
     target = _restricted_action(loader).activities[0].target
     spell = spell.model_copy(
         update={"activities": [spell.activities[0].model_copy(update={"target": target})]}
     )
+    review_spell_variant(monkeypatch, spell)
     action = _cast_action(spell)
     claw = next(a for a in loader.get_monster("magma-mephit").actions if a.slug == "claw")
     live, actor, _, monster = setup(
         loader, action, [(6, 5), (7, 5), (8, 5)], extra_actions=[claw] if fallback else []
     )
     _candidates(live, types=("humanoid",) * 3)
-    set_lib_loader_for_tests(MemoryAssetLoader(monsters=[monster], spells=[spell]))
+    live.ruleset_loader = MemoryAssetLoader(monsters=[monster], spells=[spell])
+    set_lib_loader_for_tests(live.ruleset_loader)
     before = (_state(live), live.rng.getstate(), list(live.event_log))
     assert orch._monster_cast_candidate(live, actor, action) is None
     assert orch._monster_cast_candidate(live, actor, action) is None

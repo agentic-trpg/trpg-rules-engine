@@ -27,6 +27,7 @@ from dnd5e_engine.events import (
 from dnd5e_engine.lib_loader import set_lib_loader_for_tests
 from dnd5e_engine.types.effects import ActiveEffect, ActiveEffectChange
 from tests.c20_support import act, combatant, events, foe, pc, start
+from tests.spell_review_support import review_spell_variant
 
 HERO = "char:hero"
 FOE = "mon:foe"
@@ -322,8 +323,10 @@ class _TwoTargetAttackLoader(BundledAssetLoader):
         )
 
 
-def test_every_roll_in_one_counted_attack_activity_updates_first_roll_gate() -> None:
-    set_lib_loader_for_tests(_TwoTargetAttackLoader())
+def test_every_roll_in_one_counted_attack_activity_updates_first_roll_gate(monkeypatch) -> None:
+    loader = _TwoTargetAttackLoader()
+    review_spell_variant(monkeypatch, loader.get_spell("fire-bolt"))
+    set_lib_loader_for_tests(loader)
     handle, live = start(
         [
             _barbarian(

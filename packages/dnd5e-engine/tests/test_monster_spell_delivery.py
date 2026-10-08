@@ -5,7 +5,7 @@ from __future__ import annotations
 import copy
 
 import pytest
-from dnd5e_srd_data import BundledAssetLoader, MemoryAssetLoader
+from dnd5e_srd_data import BundledAssetLoader
 from dnd5e_srd_data.schema.common import (
     CastActivity,
     CastChallengeBlock,
@@ -67,8 +67,7 @@ def _cast_action(spell, *, activity_id="cast:spell", count=2):
 def _spell_setup(loader, slug="thunderwave", *, enemies=((6, 5), (7, 6)), seed=19):
     spell = loader.get_spell(slug)
     action = _cast_action(spell)
-    live, actor, target, monster = setup(loader, action, enemies, seed=seed)
-    set_lib_loader_for_tests(MemoryAssetLoader(monsters=[monster], spells=[spell]))
+    live, actor, target, monster = setup(loader, action, enemies, seed=seed, spells=[spell])
     actor.spellcasting_ability = "int"
     actor.intelligence = 18
     return live, actor, target, monster, action, spell
@@ -161,7 +160,8 @@ def test_public_monster_turn_uses_the_canonical_spell_movement_fold(loader):
 
 
 def test_monster_skips_unsupported_cast_and_selects_next_legal_spell_without_draws(loader):
-    live, actor, _, monster, action, spell = _spell_setup(loader)
+    spell = loader.get_spell("thunderwave")
+    action = _cast_action(spell)
     bad_activity = spell.activities[0].model_copy(
         update={
             "target": spell.activities[0].target.model_copy(
@@ -178,8 +178,7 @@ def test_monster_skips_unsupported_cast_and_selects_next_legal_spell_without_dra
     )
     bad_wrapper = _cast_action(bad_spell, activity_id="cast:unsupported").activities[0]
     action = action.model_copy(update={"activities": [bad_wrapper, *action.activities]})
-    monster = monster.model_copy(update={"actions": [action]})
-    set_lib_loader_for_tests(MemoryAssetLoader(monsters=[monster], spells=[bad_spell, spell]))
+    live, actor, _, _ = setup(loader, action, ((6, 5), (7, 6)), spells=[bad_spell, spell])
     before = (
         live.rng.getstate(),
         list(live.event_log),

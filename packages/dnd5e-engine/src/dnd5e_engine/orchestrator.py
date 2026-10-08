@@ -2251,15 +2251,9 @@ def _monster_activity_available(
         return area_template(activity) is not None
     if isinstance(activity, CastActivity):
         return True  # Cast-only actions validate the child in their shared preflight.
-    from dnd5e_engine.live_monster_delivery import named_activity_delivery
+    from dnd5e_engine.live_monster_delivery import select_named_activity_target
 
-    target = _lowest_hp_target(_select_monster_targets(live, current))
-    return (
-        named_activity_delivery(
-            live, current, activity, [target] if target else [], check_range=False
-        )
-        is not None
-    )
+    return select_named_activity_target(live, current, [activity]) is not None
 
 
 def _monster_action_available(live: _LiveCombat, current: Combatant, action: MonsterAction) -> bool:
@@ -2311,7 +2305,10 @@ def _select_monster_targets(live: _LiveCombat, current: Combatant) -> list[Comba
     enemies = [
         c
         for c in live.initiative
-        if _is_enemy(live, current.entity_id, c.entity_id) and c.is_alive and c.hp_current > 0
+        if _is_enemy(live, current.entity_id, c.entity_id)
+        and c.is_alive
+        and c.hp_current > 0
+        and c.entity_id not in live.dead_ids
     ]
     charmer_id = (
         _condition_source_entity(live, current, "charmed")
@@ -2380,8 +2377,7 @@ def _resolve_monster_activities(
                     live, current, a
                 ),
             )
-            monster_action = ranked[0] if ranked else None
-            if monster_action is not None:
+            for monster_action in ranked:
                 action_activities = monster_action.activities
                 if action_activities and all(
                     isinstance(a, CastActivity) for a in action_activities
@@ -2390,6 +2386,7 @@ def _resolve_monster_activities(
                     if candidate is not None:
                         cast_activity, spell = candidate
                         cast_selection = (monster_action, cast_activity, spell)
+                        break
                 else:
                     # hand the labelless-multiattack fallback the live
                     # distance + profile so it can prefer a sibling whose own range
@@ -2409,6 +2406,11 @@ def _resolve_monster_activities(
                             live, current, a, b
                         ),
                     )
+                    # An empty Multiattack wrapper can pass the resource gate
+                    # while every referenced child has no legal target. Try
+                    # the next ranked action without paying for that wrapper.
+                    if monster_plan.activities:
+                        break
     return monster_plan, cast_selection
 
 
@@ -2516,14 +2518,23 @@ def _monster_cast_delivery_spec(
             return None
         spec = placement.spec.model_copy(update={"source_activity_id": activity.id})
     else:
-        target = chosen_target or _lowest_hp_target(_select_monster_targets(live, actor))
-        if target is None:
-            return None
-        spec = SpellDeliverySpec(
-            primary_target_id=target.entity_id,
-            source_kind="monster_cast",
-            source_activity_id=activity.id,
+        targets = (
+            [chosen_target]
+            if chosen_target is not None
+            else sorted(_select_monster_targets(live, actor), key=lambda c: c.hp_current)
         )
+        for target in targets:
+            spec = SpellDeliverySpec(
+                primary_target_id=target.entity_id,
+                source_kind="monster_cast",
+                source_activity_id=activity.id,
+            )
+            try:
+                plan_spell_delivery(live, actor, spell, spec)
+            except DeliveryPlanningError:
+                continue
+            return spec
+        return None
     try:
         plan_spell_delivery(live, actor, spell, spec)
     except DeliveryPlanningError:
@@ -2722,6 +2733,7 @@ def _resolve_monster_attack_activities(
     is_opportunity_attack: bool = False,
     execution_plan: MonsterActionPlan | None = None,
     source_id: str = "",
+    select_targets: bool = False,
 ) -> None:
     """Resolve a monster's own attack/save ``Activity`` list against
     ``target_list``: Shield drain, ``build_activity_context`` (via
@@ -2738,12 +2750,35 @@ def _resolve_monster_attack_activities(
     (``is_opportunity_attack``). Extracted (C18 Task 6 fix round 1) so a
     future hook added to one caller can't silently miss the other.
     """
-    from dnd5e_engine.live_monster_delivery import named_activity_delivery
+    from dnd5e_engine.live_monster_delivery import (
+        named_activity_delivery,
+        select_named_activity_target,
+    )
+
+    # Keep hydration scoped to the movement target. Each child refreshes its
+    # own defenses; grant cleanup must also include the other legal picks.
+    grant_targets = _select_monster_targets(live, actor) if select_targets else target_list
+    # Declare each child's target once. Repeated invocations revalidate that
+    # declaration; a death/departure never authorizes an attack on a new enemy.
+    named_targets = (
+        {
+            a.id: target.entity_id
+            for a in activities
+            if (target := select_named_activity_target(live, actor, [a], check_range=True))
+            is not None
+        }
+        if select_targets
+        else None
+    )
 
     if not any(
         _monster_area_placement(live, actor, [a]) is not None
         if area_activity([a]) is not None
-        else named_activity_delivery(live, actor, a, target_list) is not None
+        else (
+            a.id in named_targets
+            if named_targets is not None
+            else named_activity_delivery(live, actor, a, target_list) is not None
+        )
         for a in activities
     ):
         return
@@ -2782,16 +2817,18 @@ def _resolve_monster_attack_activities(
     )
     actx = attach_reaction_hooks(live, actx)
     if execution_plan is None:
-        _resolve_monster_execution(live, actor, actx, activities, source_id)
+        _resolve_monster_execution(
+            live, actor, actx, activities, source_id, named_targets=named_targets
+        )
     else:
-        _execute_monster_plan(live, actor, execution_plan, actx)
+        _execute_monster_plan(live, actor, execution_plan, actx, named_targets=named_targets)
     # SRD 5.2 §Actions in Combat — Help; §Weapon Mastery — Vex / Sap
     # (C15 Task 6): one-use pops, shared with the C18 monster-cast
     # attack-roll branch via ``_consume_attack_roll_grants``. A monster
     # attack never produces a Vex/Sap proc itself (no ``Weapon``), so
     # the fold below is a no-op here in practice — wired for symmetry /
     # future monster weapons.
-    _consume_attack_roll_grants(live, actor, target_list, pre_event_count)
+    _consume_attack_roll_grants(live, actor, grant_targets, pre_event_count)
     _fold_mastery_procs(live, actor.entity_id, actx)
     # SRD 5.2 §Actions in Combat — Hide, break clause: mirrors the PC
     # site. A monster hidden via a prior Hide loses Invisible the
@@ -2817,6 +2854,8 @@ def _execute_monster_plan(
     actor: Combatant,
     plan: MonsterActionPlan,
     actx: ActivityResolutionContext,
+    *,
+    named_targets: Mapping[str, str] | None = None,
 ) -> None:
     """Recheck each invocation and spend only after its activities resolve."""
     root = plan.source_action
@@ -2837,7 +2876,12 @@ def _execute_monster_plan(
         if not available:
             continue
         resolved = _resolve_monster_execution(
-            live, actor, actx, available, action.slug if action is not None else ""
+            live,
+            actor,
+            actx,
+            available,
+            action.slug if action is not None else "",
+            named_targets=named_targets,
         )
         if not resolved:
             continue
@@ -2859,6 +2903,8 @@ def _resolve_monster_execution(
     actx: ActivityResolutionContext,
     activities: Sequence[Activity],
     source_id: str,
+    *,
+    named_targets: Mapping[str, str] | None = None,
 ) -> tuple[Activity, ...]:
     """Resolve each area child with its own targets, retaining shared outcome state."""
     from dnd5e_engine.live_monster_delivery import named_activity_delivery
@@ -2875,7 +2921,11 @@ def _resolve_monster_execution(
             activity_plan = placement.activity_plan
             spec = placement.spec
         else:
-            delivery = named_activity_delivery(live, actor, activity, actx.targets)
+            targets = actx.targets
+            if named_targets is not None:
+                target = _find_combatant(live, named_targets.get(activity.id, ""))
+                targets = [target] if target is not None else []
+            delivery = named_activity_delivery(live, actor, activity, targets)
             if delivery is None:
                 continue
             activity_plan, spec = delivery
@@ -2949,31 +2999,35 @@ def _take_legendary_action(live: _LiveCombat, monster: Combatant) -> None:
             if candidate is None:
                 continue
             cast_activity, spell = candidate
+            spec = _monster_cast_delivery_spec(live, monster, spell, cast_activity)
+            if spec is None:
+                continue
+            cast_target = _find_combatant(live, spec.primary_target_id or "") or target
             if (
                 area_activity(spell.activities) is not None
                 and _monster_area_placement(live, monster, spell.activities, spell=spell) is None
             ):
                 continue
             _spend_legendary_use(live, monster, action.slug)
-            _resolve_monster_cast(live, monster, target, action, cast_activity, spell)
+            _resolve_monster_cast(live, monster, cast_target, action, cast_activity, spell)
             return
         is_offensive = any(
             isinstance(a, (AttackActivity, SaveActivity, DamageActivity)) for a in activities
         )
         if not is_offensive:
             continue
-        from dnd5e_engine.live_monster_delivery import named_activity_delivery
+        from dnd5e_engine.live_monster_delivery import select_named_activity_target
 
         if not any(
             _monster_area_placement(live, monster, [a]) is not None
             if area_activity([a]) is not None
-            else named_activity_delivery(live, monster, a, [target]) is not None
+            else select_named_activity_target(live, monster, [a], check_range=True) is not None
             for a in activities
         ):
             continue
         _spend_legendary_use(live, monster, action.slug)
         _resolve_monster_attack_activities(
-            live, monster, [target], activities, source_id=action.slug
+            live, monster, [target], activities, source_id=action.slug, select_targets=True
         )
         return
 
@@ -12093,6 +12147,18 @@ def _opportunity_attackers(
             continue
         if not _combatant_can_see(live, reactor, mover):
             continue
+        if attack.weapon is None:
+            from dnd5e_engine.live_monster_delivery import named_activity_delivery
+
+            if not any(
+                isinstance(a, AttackActivity)
+                # Geometry above uses the supplied from_cell. This pure threat
+                # probe can be hypothetical; execution checks actual range.
+                and named_activity_delivery(live, reactor, a, [mover], check_range=False)
+                is not None
+                for a in attack.activities
+            ):
+                continue
         if (
             conditions_cannot_attack_charmer(_condition_names(reactor))
             and _condition_source_entity(live, reactor, "charmed") == mover_id
@@ -12436,6 +12502,15 @@ async def advance_monster_turn(
         live, current, monster_slug, skip_to_record_pass, chosen_target
     )
     monster_activities = monster_plan.activities
+    if monster_activities and area_activity(monster_activities) is None:
+        from dnd5e_engine.live_monster_delivery import select_named_activity_target
+
+        chosen_target = select_named_activity_target(live, current, monster_activities)
+    elif cast_selection is not None:
+        _, cast_activity, spell = cast_selection
+        spec = _monster_cast_delivery_spec(live, current, spell, cast_activity)
+        if spec is not None:
+            chosen_target = _find_combatant(live, spec.primary_target_id or "") or chosen_target
     has_action = bool(monster_activities) or cast_selection is not None
 
     # Monster gambit range awareness. When the chosen attack is
@@ -12542,7 +12617,12 @@ async def advance_monster_turn(
         assert chosen_target is not None  # mypy: narrowed by will_attack
         target_list = [chosen_target]
         _resolve_monster_attack_activities(
-            live, current, target_list, monster_activities, execution_plan=monster_plan
+            live,
+            current,
+            target_list,
+            monster_activities,
+            execution_plan=monster_plan,
+            select_targets=True,
         )
 
     # Advance the turn — the single shared path (F3a); this site used to carry

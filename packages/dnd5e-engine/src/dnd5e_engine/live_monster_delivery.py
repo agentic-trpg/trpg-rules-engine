@@ -99,6 +99,32 @@ def named_activity_delivery(
     return (plan, spec) if plan.target_ids else None
 
 
+def select_named_activity_target(
+    live: _LiveCombat,
+    actor: Combatant,
+    activities: Sequence[Activity],
+    *,
+    check_range: bool = False,
+) -> Combatant | None:
+    """Apply HP priority only after shared eligibility, preserving roster ties.
+
+    Own-turn selection permits the existing approach gambit; stationary
+    legendary actions and execution require a currently reachable target.
+    Area aiming and explicitly targeted opportunity attacks keep their owners.
+    """
+    from dnd5e_engine import orchestrator as orch
+
+    for target in sorted(orch._select_monster_targets(live, actor), key=lambda c: c.hp_current):
+        if any(
+            area_activity([activity]) is None
+            and named_activity_delivery(live, actor, activity, [target], check_range=check_range)
+            is not None
+            for activity in activities
+        ):
+            return target
+    return None
+
+
 def area_range_ft(activity: Activity, spell: Spell | None = None) -> int | None:
     """Canonical range to an origin, honoring the activity's range override."""
     rng = spell.range if spell is not None and not activity.range.override else activity.range

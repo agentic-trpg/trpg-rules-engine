@@ -245,20 +245,39 @@ It is deterministic and draws no RNG. An unsupported or unusable area mode
 spends no Recharge or daily uses and does not prevent trying another legal
 action.
 
-Non-area monster activities validate the AI's existing chosen target through
-the same pure `plan_delivery` eligibility rules, including typed filters and
-live/departed state. Candidate ranking checks eligibility without range so
-the existing approach gambit can still move toward a legal target. Execution
-rechecks each child's established reach/LoS before context construction or
-RNG, and again before resolution. An empty target plan does not count as an
-invocation or spend Recharge/daily/activity uses; legendary targeting is
-validated before spending its separate pool. Target priority is unchanged;
-an ineligible mode may fall through to another legal action.
+Non-area monster activities first validate enemy candidates through
+`named_activity_delivery` and the same pure `plan_delivery` eligibility rules,
+including typed filters and live/departed state. Lowest current HP wins among
+legal candidates; ties retain initiative roster order. A low-HP ineligible
+enemy cannot hide another legal enemy. Candidate ranking omits range so the
+existing approach gambit can still move toward a legal target. The turn uses
+its existing single approach movement, then each Multiattack child declares
+its legal target before context construction. Each invocation rechecks that
+target's eligibility and its own reach/LoS before resolution. A target's death
+or departure skips later invocations; it never authorizes a new target.
+Explicit target calls also retain their declaration and only revalidate it.
+
+An empty target plan does not count as an invocation or spend
+Recharge/daily/activity uses. An empty Multiattack plan tries the next ranked
+action without spending its wrapper. Stationary legendary targeting includes
+range/LoS before spending its separate pool. Non-area Monster Spell Casting
+tries candidates in the same HP/initiative order through `plan_spell_delivery`;
+it still casts from its current position without an approach movement.
+Opportunity Attacks remain bound to the provoking mover and validate its
+typed eligibility before Reaction payment; they never retarget another enemy.
 
 `tests/test_delivery_hardening.py` adds rejection, resource and purity
 regressions and compares event bytes, final RNG state and public final combat
 state plus timed/persistent owners across seeded reruns. It covers the six
 primary acceptances without promoting their deferred rule clauses.
+
+`tests/test_monster_target_selection.py` exercises public own-turn and
+legendary dispatch, heterogeneous Multiattack children, stale/type-changed
+targets, approach movement, stationary range checks, empty-plan fallback and
+Reaction payment. Seeded reruns compare event bytes, final RNG state and final
+combat/lifecycle state. Availability probes are checked for zero events,
+state changes, resource payment and RNG draws. These changes do not alter
+canonical data, audit classifications or the supported rule boundaries.
 
 ## Audit and unsupported boundaries
 

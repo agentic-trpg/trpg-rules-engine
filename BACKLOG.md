@@ -59,8 +59,8 @@ Shared projection feeds lighting, physical obscurement, magical Darkness,
 Sunlight, vision, Hide/Attack/OA/Dodge and explicit sight-required checks.
 Reviewed overlap dispels use actual spell levels and clipped footprints; source
 removal restores the surviving projection without static scene mutation. Host
-StrongWind attestations disperse fog; wind spells/weather simulation, Darkness /
-Daylight object anchoring, Monster AI point declarations and cross-combat
+StrongWind attestations disperse fog; wind spells/weather simulation,
+Monster AI point declarations and cross-combat
 world-clock persistence remain deferred. Public faults restore environment,
 resources, events and RNG. See `docs/dev/dynamic-environment.md`.
 
@@ -149,6 +149,31 @@ not a resource-paying complete-spell API. See `docs/dev/spell-execution-admissio
   Monster activation, item concentration and world clocks remain deferred.
   See `docs/dev/ongoing-spell-activation.md` and
   `packages/dnd5e-engine/src/dnd5e_engine/ongoing_spell_activation.py`.
+
+## B8 typed object anchoring (2026-10-09)
+
+- CombatObject records provide stable combat-local IDs, Host mutation authority,
+  provenance, one ground/holder position, worn/carried state and complete opaque
+  cover. Atomic registration/mutations, immutable snapshots, typed events and
+  identity tombstones reuse the existing transaction; no second spell owner exists.
+- Darkness/Daylight target any legal unattended object regardless of mutation
+  owner, using true 15-/60-ft object Emanations. Movement, pickup/wear/drop and
+  voluntary/forced holder movement refresh the shared environment. Object-origin
+  exclusion is by identity; the holder's cell has no light/darkness hole.
+- Cover suppresses illumination/darkness and both directions of dispelling, with
+  original clocks continuing. Uncover restores the same source. Removal/holder
+  departure retires attached areas; holder death drops the object at its last cell.
+  Caster concentration/death/departure and combat closure reuse area lifecycle.
+- Source-based adjudication restricts Daylight dispelling to its primary 60-ft
+  area; outer additional 60-ft Dim Light remains illumination. Darkness still
+  tests actual Bright/Dim overlap and fixed actual-level thresholds remain 2/3.
+  Public casts, boundaries/both orders, lethal holder damage, Counterspell, cost/
+  RNG/rollback/replay and exact canonical regeneration protect these contracts.
+- Both spell reviews remain Bounded with expanded object modes (30/48/26/235).
+  Host authority claims are not player authentication. General inventory/equipment
+  synchronization, capacity, object HP, physics, full 3D, SRD interaction costs and
+  out-of-combat world-clock transfer remain unimplemented. See
+  `docs/dev/dynamic-environment.md` and `combat_objects.py`.
 
 ## Unimplemented activity kinds (2026-08-22)
 
@@ -559,8 +584,10 @@ not a resource-paying complete-spell API. See `docs/dev/spell-execution-admissio
   the corrected consumer and explicit sight-ray convention.
 - **Dynamic point environments added; portable light remains open (B3).**
   Fog Cloud, Darkness and Daylight now affect authoritative spatial consumers.
-  Torches, Light, object carriers/covering, general weather and wind spell
-  execution are still absent. Nonconcentration Daylight survives caster death;
+  Torches, Light, general weather and wind spell
+  execution are still absent. B8 adds reviewed Darkness/Daylight object carriers
+  and cover suppression; general inventory, physics and SRD interaction action
+  execution remain Host boundaries. Nonconcentration Daylight survives caster death;
   explicit roster removal and combat closure retire combat-local sources.
   Sunlight Sensitivity attacks/checks read the actor's projected cell.
   No *See Invisibility*-style effect flag

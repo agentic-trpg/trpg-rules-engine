@@ -148,6 +148,7 @@ from dnd5e_engine.areas import (
 )
 from dnd5e_engine.attack_declarations import observe_attack_roll
 from dnd5e_engine.attack_riders import AttackRiderRequest
+from dnd5e_engine.combat_objects import CombatObjectState
 from dnd5e_engine.death_saves import DeathSaveState, roll_death_save
 from dnd5e_engine.effect_lifecycle import EffectIdentity, OngoingEffectLifecycle
 from dnd5e_engine.events import (
@@ -399,6 +400,8 @@ class PlayerIntent(BaseModel):
     # ``"move"``; also the space a conjuration names (Spiritual Weapon's force,
     # Summon Dragon's spirit).
     target_zone_id: str | None = None
+    target_object_id: str | None = None
+    object_include_origin: bool = Field(default=False, strict=True)
     movement_mode: MovementMode = "walk"
 
     @field_validator("target_zone_id")
@@ -3131,6 +3134,7 @@ class _LiveCombat:
     turn_serial: int = 0
     timed_activities: TimedActivityState = field(default_factory=TimedActivityState)
     persistent_areas: PersistentAreaState = field(default_factory=PersistentAreaState)
+    combat_objects: CombatObjectState = field(default_factory=CombatObjectState)
     ended: bool = False
     final_outcome: CombatOutcome | None = None
     # each combatant's cell, per entity_id (read through ``topology``)
@@ -4860,6 +4864,7 @@ def _emit(live: _LiveCombat, event: CombatEvent) -> None:
     for listener in live.event_listeners:
         listener(event)
     live.persistent_areas.observe(live, event)
+    live.combat_objects.observe(live, event)
     if isinstance(event, CheckRolled):
         observe_check(live, event)
     if isinstance(event, AttackRolled):
@@ -5580,6 +5585,7 @@ def _record_death(live: _LiveCombat, event: Death, *, killer_id: str | None) -> 
     live.dead_ids.add(event.target_id)
     observe_reaction_lifecycle(live, event)
     live.persistent_areas.observe(live, event)
+    live.combat_objects.observe(live, event)
     live.deaths_recorded.append(
         DeathRecord(
             target_id=event.target_id,

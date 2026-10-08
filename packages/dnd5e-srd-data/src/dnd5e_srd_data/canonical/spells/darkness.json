@@ -41,6 +41,7 @@
           "dispels_light_through_level": 2,
           "kind": "magical_darkness",
           "light": "dark",
+          "object_anchoring": true,
           "obscurement": "none",
           "radius_increase_per_slot_ft": 0,
           "strong_wind_dispersal": false,

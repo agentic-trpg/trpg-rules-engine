@@ -1999,14 +1999,15 @@
   {
     "slug": "darkness",
     "uuid": "Compendium.dnd5e.spells24.Item.phbsplDarkness00",
-    "canonical_sha256": "0693fe9aa299152be70b5d3c6314b971349e881746f411d440f8df3b94daf55d",
+    "canonical_sha256": "8da129a90bbe782e76dd06cb3074d49fcad138892ea94f88b05fa61d6fe2830b",
     "source_url": "https://github.com/foundryvtt/dnd5e/blob/965ad2d0cf5d063dac675ba078b5bd3c3c0dd449/packs/_source/spells24/2nd-level/darkness.yml",
     "classification": "bounded",
     "required_mechanisms": [],
     "missing_details": [],
     "limitations": [
-      "Stationary point mode on the combat grid only; explicit target_zone_id required.",
-      "Object-anchored movement, covering and world object state remain deferred."
+      "Combat-local stationary point or typed unattended-object Emanation; requires exactly target_zone_id or target_object_id.",
+      "Trusted Host attests object identity, legal interaction costs/physics and opaque complete cover; no general inventory/world simulation or world-clock transfer.",
+      "Object Emanation excludes the origin object identity unless chosen; its cell illuminates/obscures holders and other creatures."
     ],
     "requires_direct_carrier": false,
     "activities": [
@@ -2044,14 +2045,15 @@
   {
     "slug": "daylight",
     "uuid": "Compendium.dnd5e.spells24.Item.phbsplDaylight00",
-    "canonical_sha256": "64d4f9920ee2a1a953c38b8b6688f507084dae2e76d1b33a92a2f1ee2f09d54f",
+    "canonical_sha256": "b286154d78b55a423e511283bb77c1e5f6d89705d831d94fff620e74b2a94122",
     "source_url": "https://github.com/foundryvtt/dnd5e/blob/965ad2d0cf5d063dac675ba078b5bd3c3c0dd449/packs/_source/spells24/3rd-level/daylight.yml",
     "classification": "bounded",
     "required_mechanisms": [],
     "missing_details": [],
     "limitations": [
-      "Stationary point mode on the combat grid only; explicit target_zone_id required.",
-      "Object-anchored movement, covering and world object state remain deferred."
+      "Combat-local stationary point or typed unattended-object Emanation; requires exactly target_zone_id or target_object_id.",
+      "Trusted Host attests object identity, legal interaction costs/physics and opaque complete cover; no general inventory/world simulation or world-clock transfer.",
+      "Object Emanation excludes the origin object identity unless chosen; its cell illuminates/obscures holders and other creatures."
     ],
     "requires_direct_carrier": false,
     "activities": [

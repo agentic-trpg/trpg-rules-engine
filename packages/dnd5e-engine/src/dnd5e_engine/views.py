@@ -20,6 +20,7 @@ from dnd5e_engine.activities.conjuration import TransformSource
 from dnd5e_engine.environment import EnvironmentalSource
 from dnd5e_engine.outcome import CombatOutcome
 from dnd5e_engine.types.combat import Combatant
+from dnd5e_engine.types.objects import CombatObjectView
 
 if TYPE_CHECKING:
     from dnd5e_engine.orchestrator import _LiveCombat
@@ -143,6 +144,7 @@ class LiveCombatView:
     # C21 — summoned creatures keyed by entity id; empty when none is seated.
     summons: dict[str, SummonView] = field(default_factory=dict)
     environment_sources: tuple[EnvironmentalSource, ...] = ()
+    combat_objects: tuple[CombatObjectView, ...] = ()
     ongoing_spells: tuple[OngoingSpellView, ...] = ()
 
     @classmethod
@@ -171,6 +173,7 @@ class LiveCombatView:
                 if a.spec.ongoing_activation is not None
             ),
             environment_sources=live.topology.environment_sources,
+            combat_objects=live.combat_objects.views(live),
             initiative=list(live.initiative),
             party_ids=set(live.party_ids),
             encounter_ids=set(live.encounter_ids),

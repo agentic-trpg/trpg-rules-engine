@@ -28,7 +28,12 @@ _REVIEWED: dict[str, tuple[int, int, bool, str, int, str, str, EnvironmentalSpec
         10,
         "15",
         "15",
-        EnvironmentalSpec(kind="magical_darkness", light="dark", dispels_light_through_level=2),
+        EnvironmentalSpec(
+            kind="magical_darkness",
+            light="dark",
+            dispels_light_through_level=2,
+            object_anchoring=True,
+        ),
     ),
     "daylight": (
         3,
@@ -40,6 +45,7 @@ _REVIEWED: dict[str, tuple[int, int, bool, str, int, str, str, EnvironmentalSpec
         "60",
         EnvironmentalSpec(
             kind="light",
+            object_anchoring=True,
             light="bright",
             sunlight=True,
             dim_extension_ft=60,
@@ -58,12 +64,16 @@ _CLAUSES = {
         "nonmagical light can't illuminate it",
         "spell of level 2 or lower",
         "object that isn't being worn or carried",
+        "15-foot Emanation originating from that object",
+        "Covering that object with something opaque",
     ),
     "daylight": (
         "sunlight spreads from a point",
         "Dim Light for an additional 60 feet",
         "spell of level 3 or lower",
         "object that isn't being worn or carried",
+        "60-foot Emanation originating from that object",
+        "Covering that object with something opaque",
     ),
 }
 

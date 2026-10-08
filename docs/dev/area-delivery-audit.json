@@ -531,6 +531,13 @@
       "counted_target": null,
       "creature_filter": null,
       "forced_movement": null,
+      "object_anchor": {
+        "shape": "emanation",
+        "size_ft": "15",
+        "initial_disposition": "unattended",
+        "opaque_cover_blocks": true,
+        "origin_exclusion": "object_identity"
+      },
       "runtime_status": "persistent_environment",
       "deferred_reason": null
     },
@@ -550,6 +557,13 @@
       "counted_target": null,
       "creature_filter": null,
       "forced_movement": null,
+      "object_anchor": {
+        "shape": "emanation",
+        "size_ft": "60",
+        "initial_disposition": "unattended",
+        "opaque_cover_blocks": true,
+        "origin_exclusion": "object_identity"
+      },
       "runtime_status": "persistent_environment",
       "deferred_reason": null
     },

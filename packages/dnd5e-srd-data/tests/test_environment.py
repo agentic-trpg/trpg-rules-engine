@@ -105,3 +105,25 @@ def test_unrelated_canonical_activity_serialization_is_unchanged():
     assert "persistent_area" not in UtilityActivity().model_dump(mode="json")
     spell = BundledAssetLoader().get_spell("fireball")
     assert apply_environment(spell) is spell
+
+
+@pytest.mark.parametrize("slug,radius", [("darkness", 15), ("daylight", 60)])
+def test_object_radius_source_drift_cannot_inherit_point_radius(slug, radius):
+    spell = BundledAssetLoader().get_spell(slug)
+    description = spell.description.replace(f"{radius}-foot Emanation", "999-foot Emanation")
+    assert description != spell.description
+    # Restore the raw point template so only the object clause is changed.
+    activity = spell.activities[0]
+    activity = activity.model_copy(
+        update={
+            "target": activity.target.model_copy(
+                update={
+                    "template": activity.target.template.model_copy(update={"stationary": False})
+                }
+            )
+        }
+    )
+    with pytest.raises(ValueError, match="environment source drift"):
+        apply_environment(
+            spell.model_copy(update={"description": description, "activities": [activity]})
+        )

@@ -110,6 +110,8 @@ def _validate_spell_inputs(
 def spec_from_intent(intent: PlayerIntent) -> SpellDeliverySpec:
     return SpellDeliverySpec(
         primary_target_id=intent.target_id,
+        target_object_id=intent.target_object_id,
+        object_include_origin=intent.object_include_origin,
         selected_target_ids=tuple(intent.target_ids) if intent.target_ids is not None else None,
         origin_cell=intent.target_zone_id,
         direction=intent.direction,
@@ -183,6 +185,7 @@ def plan_activity_delivery(
                 actor_id=actor.entity_id,
                 topology=live.topology,
                 positions=live.actor_zone,
+                objects=live.combat_objects.objects,
                 creatures=creatures,
                 enemy_ids=frozenset(
                     c.entity_id

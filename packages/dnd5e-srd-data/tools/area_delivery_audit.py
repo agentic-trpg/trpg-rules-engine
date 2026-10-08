@@ -123,6 +123,21 @@ def _area_row(
         "forced_movement": activity.forced_movement.model_dump(mode="json")
         if activity.forced_movement
         else None,
+        **(
+            {
+                "object_anchor": {
+                    "shape": "emanation",
+                    "size_ft": template.size,
+                    "initial_disposition": "unattended",
+                    "opaque_cover_blocks": True,
+                    "origin_exclusion": "object_identity",
+                }
+            }
+            if activity.persistent_area
+            and activity.persistent_area.environment
+            and activity.persistent_area.environment.object_anchoring
+            else {}
+        ),
         "runtime_status": status,
         "deferred_reason": reason,
         **(

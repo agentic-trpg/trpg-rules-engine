@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 class EnvironmentalSpec(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    object_anchoring: bool = Field(default=False, strict=True, exclude_if=lambda v: not v)
     kind: Literal["fog", "magical_darkness", "light"]
     light: Literal["bright", "dim", "dark"] | None = None
     obscurement: Literal["none", "light", "heavy"] = "none"
@@ -48,6 +49,8 @@ class EnvironmentalSpec(BaseModel):
                 and (not self.sunlight or self.light == "bright")
                 and (not self.dim_extension_ft or self.light == "bright")
             )
+        if self.object_anchoring and self.kind == "fog":
+            valid = False
         if self.sunlight_in_dim and not (self.sunlight and self.dim_extension_ft):
             valid = False
         if not valid:

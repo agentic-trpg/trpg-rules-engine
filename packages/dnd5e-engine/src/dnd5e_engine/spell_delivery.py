@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from dnd5e_engine.activities.save import validate_on_save
 from dnd5e_engine.areas import (
@@ -20,7 +20,9 @@ from dnd5e_engine.areas import (
     is_harmful,
     select_affected,
 )
+from dnd5e_engine.combat_objects import object_position
 from dnd5e_engine.spatial import GridTopology, SpatialTopology, cell_id, parse_cell
+from dnd5e_engine.types.objects import CombatObject
 
 if TYPE_CHECKING:
     from dnd5e_srd_data.schema.common import Activity
@@ -43,6 +45,8 @@ class SpellDeliverySpec(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
     primary_target_id: str | None = None
+    target_object_id: str | None = None
+    object_include_origin: bool = Field(default=False, strict=True)
     selected_target_ids: tuple[str, ...] | None = None
     origin_cell: str | None = None
     direction: tuple[int, int] | None = None
@@ -236,11 +240,13 @@ def plan_delivery(
     expand_areas: bool = True,
     cast_level: int | None = None,
     base_level: int | None = None,
+    objects: Mapping[str, CombatObject] | None = None,
 ) -> DeliveryPlan:
     """Plan each activity independently in stable roster order, without I/O."""
     plans = []
     live_ids = {c.entity_id for c in creatures}
     for activity in activities:
+        resolved_spec = spec
         persistent = activity.persistent_area
         environment = persistent.environment if persistent else None
         environment_only = (
@@ -248,8 +254,26 @@ def plan_delivery(
             and persistent is not None
             and persistent.ongoing_activation is None
         )
+        if spec.target_object_id is not None and activity.kind != "cast":
+            obj = (objects or {}).get(spec.target_object_id)
+            if (
+                not environment_only
+                or environment is None
+                or not environment.object_anchoring
+                or obj is None
+                or obj.disposition != "unattended"
+                or obj.opaque_cover
+                or spec.origin_cell is not None
+            ):
+                raise DeliveryPlanningError("object mode requires a legal unattended object")
+            position = object_position(obj, positions)
+            if position is None:
+                raise DeliveryPlanningError("object has no authoritative position")
+            resolved_spec = spec.model_copy(update={"origin_cell": position})
+        elif spec.object_include_origin and spec.target_object_id is None:
+            raise DeliveryPlanningError("origin inclusion requires an object Emanation")
         if environment_only and (
-            spec.origin_cell is None
+            resolved_spec.origin_cell is None
             or spec.primary_target_id is not None
             or spec.selected_target_ids is not None
             or spec.excluded_target_ids is not None
@@ -260,7 +284,7 @@ def plan_delivery(
             )
         ):
             raise DeliveryPlanningError(
-                "environment requires a stationary point without creature/object selection"
+                "environment requires one point or object without creature selection"
             )
         if activity.kind == "save":
             try:
@@ -288,7 +312,11 @@ def plan_delivery(
                 raise DeliveryPlanningError(
                     "activity area geometry is unsupported", "unsupported_area"
                 )
-            origin = _origin(topology, positions, actor_id, spec, template, range_ft)
+            if spec.target_object_id is not None:
+                # Exclusion concerns the originating object identity, not every
+                # creature in its cell. Environment always covers that cell.
+                template = replace(template, shape="emanation", includes_origin=True)
+            origin = _origin(topology, positions, actor_id, resolved_spec, template, range_ft)
             if environment is not None and not topology.is_valid_cell(origin):
                 raise DeliveryPlanningError("environment origin is blocked")
             direction = _direction(positions, actor_id, spec, template)

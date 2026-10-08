@@ -32,6 +32,7 @@ from dnd5e_engine.events import (
 )
 from dnd5e_engine.types.combat import Combatant
 from dnd5e_engine.types.effects import ActiveEffectDuration
+from dnd5e_engine.types.objects import CombatObject
 
 if TYPE_CHECKING:
     from dnd5e_srd_data.schema.spell import Spell
@@ -53,6 +54,12 @@ class FollowSourceEmanation:
     source_entity_id: str
 
 
+@dataclass(frozen=True)
+class FollowObjectEmanation:
+    object_id: str
+    includes_origin_object: bool = False
+
+
 @dataclass
 class PersistentArea:
     id: str
@@ -62,7 +69,7 @@ class PersistentArea:
     caster: Combatant
     activity: Activity
     spec: PersistentAreaSpec
-    geometry: StationaryArea | FollowSourceEmanation
+    geometry: StationaryArea | FollowSourceEmanation | FollowObjectEmanation
     template: AreaTemplate
     cast_origin: str
     excluded_ids: tuple[str, ...]
@@ -86,20 +93,32 @@ class PersistentArea:
     def source_entity_id(self) -> str:
         return self.caster.entity_id
 
-    def origin(self, positions: Mapping[str, str]) -> str | None:
+    def origin(
+        self, positions: Mapping[str, str], objects: Mapping[str, CombatObject] | None = None
+    ) -> str | None:
+        if isinstance(self.geometry, FollowObjectEmanation):
+            from dnd5e_engine.combat_objects import object_position
+
+            obj = (objects or {}).get(self.geometry.object_id)
+            return object_position(obj, positions) if obj is not None else None
         if isinstance(self.geometry, StationaryArea):
             return self.geometry.origin
         return positions.get(self.geometry.source_entity_id)
 
-    def cells(self, topology: GridTopology, positions: Mapping[str, str]) -> frozenset[str]:
-        origin = self.origin(positions)
+    def cells(
+        self,
+        topology: GridTopology,
+        positions: Mapping[str, str],
+        objects: Mapping[str, CombatObject] | None = None,
+    ) -> frozenset[str]:
+        origin = self.origin(positions, objects)
         return (
             area_cells(topology, self.template, origin, None) if origin is not None else frozenset()
         )
 
     def contains(self, live: _LiveCombat, entity_id: str) -> bool:
         return entity_id not in self.excluded_ids and live.actor_zone.get(entity_id) in self.cells(
-            live.topology, live.actor_zone
+            live.topology, live.actor_zone, live.combat_objects.objects
         )
 
 
@@ -212,6 +231,14 @@ def register_area(
         template = AreaTemplate("sphere", "sphere", spec.source_radius_ft, "actor", True)
     if spec is None or template is None or template.directional:
         return
+    object_id = ctx.spell_delivery.target_object_id if ctx.spell_delivery else None
+    if object_id is not None:
+        from dnd5e_engine.combat_objects import object_position
+
+        obj = live.combat_objects.objects.get(object_id)
+        if obj is None:
+            raise ValueError("object source disappeared during execution")
+        origin = object_position(obj, live.actor_zone)
     if origin is None and ctx.spell_delivery is not None:
         origin = (
             live.actor_zone.get(ctx.caster.entity_id)
@@ -246,6 +273,8 @@ def register_area(
             if activity.target.affects.choice
             else ()
         )
+    if object_id is not None:
+        template = replace(template, shape="emanation", includes_origin=True)
     rounds = _duration_rounds(spell)
     state = live.persistent_areas
     area = PersistentArea(
@@ -256,7 +285,9 @@ def register_area(
         caster=ctx.caster,
         activity=activity,
         spec=spec,
-        geometry=FollowSourceEmanation(ctx.caster.entity_id)
+        geometry=FollowObjectEmanation(object_id, ctx.spell_delivery.object_include_origin)
+        if object_id is not None and ctx.spell_delivery is not None
+        else FollowSourceEmanation(ctx.caster.entity_id)
         if spec.placement == "follow-source"
         else StationaryArea(origin),
         template=template,
@@ -299,7 +330,11 @@ def register_area(
             source_id=source_id,
             source_kind=area.source_kind,
             activity_id=activity.id,
-            placement=spec.placement,
+            placement="follow-object" if object_id is not None else spec.placement,
+            origin_object_id=object_id,
+            includes_origin_object=ctx.spell_delivery.object_include_origin
+            if object_id and ctx.spell_delivery
+            else None,
             shape=template.shape,
             grid_shape=template.grid_shape,
             size_ft=template.size_ft,
@@ -371,8 +406,8 @@ def after_movement_step(live: _LiveCombat, mover_id: str, from_cell: str) -> Non
     old_positions[mover_id] = from_cell
     for area in tuple(live.persistent_areas.areas):
         release_shape_locks(live, area)
-        old_cells = area.cells(live.topology, old_positions)
-        new_cells = area.cells(live.topology, live.actor_zone)
+        old_cells = area.cells(live.topology, old_positions, live.combat_objects.objects)
+        new_cells = area.cells(live.topology, live.actor_zone, live.combat_objects.objects)
         if from_cell not in old_cells and live.actor_zone.get(mover_id) in new_cells:
             _trigger(live, area, mover_id, "enter")
         if isinstance(area.geometry, FollowSourceEmanation) and area.source_entity_id == mover_id:
@@ -461,7 +496,10 @@ def _execute(live: _LiveCombat, area: PersistentArea, targets: Sequence[Combatan
     payload = orch._build_hydration_payload(live, caster=caster)
     geometry = orch._monster_context_kwargs(live, caster, list(targets), payload)
     geometry["target_cover"] = orch._target_cover_map(
-        live, caster.entity_id, list(targets), origin_cell=area.origin(live.actor_zone)
+        live,
+        caster.entity_id,
+        list(targets),
+        origin_cell=area.origin(live.actor_zone, live.combat_objects.objects),
     )
     transformed = {t.entity_id for t in targets if t.entity_id in live.transforms}
     saves: dict[str, bool] = {}
@@ -609,4 +647,10 @@ def register_item_areas(
             register_area(live, activity, ctx, source_id=intent.item_id or "", intent=intent)
 
 
-__all__ = ["FollowSourceEmanation", "PersistentArea", "PersistentAreaState", "StationaryArea"]
+__all__ = [
+    "FollowObjectEmanation",
+    "FollowSourceEmanation",
+    "PersistentArea",
+    "PersistentAreaState",
+    "StationaryArea",
+]

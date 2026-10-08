@@ -40,6 +40,13 @@ from dnd5e_engine.build_spec import (
     make_build_spec,
 )
 from dnd5e_engine.check import CheckKind, CheckResult, CheckSpec, resolve_check
+from dnd5e_engine.combat_objects import (
+    CombatObject,
+    CombatObjectView,
+    ObjectMutation,
+    mutate_combat_object,
+    register_combat_objects,
+)
 from dnd5e_engine.environment import StrongWind, apply_strong_wind
 from dnd5e_engine.events import AdvantageSource, CombatEvent, IntentType
 from dnd5e_engine.lib_loader import configure_lib_loader
@@ -105,6 +112,8 @@ __all__ = [
     "CombatEvent",
     "CombatHandle",
     "CombatInstance",
+    "CombatObject",
+    "CombatObjectView",
     "CombatOutcome",
     "DeathRecord",
     "DerivedSheet",
@@ -118,6 +127,7 @@ __all__ = [
     "IntentType",
     "LiveCombatView",
     "LootDrop",
+    "ObjectMutation",
     "PartyMemberSpec",
     "PlayerIntent",
     "RecoveryPeriod",
@@ -140,10 +150,12 @@ __all__ = [
     "get_actor_active_effects",
     "get_live",
     "make_build_spec",
+    "mutate_combat_object",
     "narration_events",
     "parse_cell",
     "recover_feature_uses",
     "recover_item_uses",
+    "register_combat_objects",
     "resolve_check",
     "resolve_legendary_resistance",
     "resolve_long_rest",

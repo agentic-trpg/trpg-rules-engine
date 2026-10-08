@@ -36,6 +36,25 @@ For what the engine actually resolves behind these signatures, see the
         - StrongWind
         - apply_strong_wind
 
+## Combat object Host boundary
+
+See [typed object anchoring](dev/dynamic-environment.md#typed-object-carrier-b8)
+for authority, interaction costs, cover and lifecycle conventions. Mutation APIs
+accept trusted Host attestations, not player authentication or physics requests.
+
+::: dnd5e_engine.combat_objects
+    options:
+      members:
+        - register_combat_objects
+        - mutate_combat_object
+
+::: dnd5e_engine.types.objects
+    options:
+      members:
+        - CombatObject
+        - CombatObjectView
+        - ObjectMutation
+
 ## Results and outcome
 
 ::: dnd5e_engine.results

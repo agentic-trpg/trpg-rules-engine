@@ -29,6 +29,9 @@ class EnvironmentalSource:
     duration_rounds: int | None
     concentration_identity: tuple[str, str, str] | None
     dim_cells: frozenset[str] = frozenset()
+    origin_object_id: str | None = None
+    includes_origin_object: bool | None = None
+    suppressed: bool = False
 
     @property
     def illuminated_cells(self) -> frozenset[str]:
@@ -36,17 +39,30 @@ class EnvironmentalSource:
 
 
 def refresh_environment(live: "_LiveCombat") -> None:
+    from dnd5e_engine.persistent_areas import FollowObjectEmanation
+
     sources = []
     for area in live.persistent_areas.areas:
         spec = area.spec.environment
         if spec is None:
             continue
-        origin = area.origin(live.actor_zone)
+        geometry = area.geometry
+        obj = (
+            live.combat_objects.objects.get(geometry.object_id)
+            if isinstance(geometry, FollowObjectEmanation)
+            else None
+        )
+        suppressed = bool(obj and obj.opaque_cover)
+        origin = area.origin(live.actor_zone, live.combat_objects.objects)
         if origin is None:
             continue
-        cells = area.cells(live.topology, live.actor_zone)
+        cells = (
+            area.cells(live.topology, live.actor_zone, live.combat_objects.objects)
+            if not suppressed
+            else frozenset()
+        )
         dim: frozenset[str] = frozenset()
-        if spec.dim_extension_ft:
+        if spec.dim_extension_ft and not suppressed:
             dim = (
                 area_cells(
                     live.topology,
@@ -69,6 +85,11 @@ def refresh_environment(live: "_LiveCombat") -> None:
                 area.duration.rounds,
                 area.concentration_identity,
                 dim,
+                geometry.object_id if isinstance(geometry, FollowObjectEmanation) else None,
+                geometry.includes_origin_object
+                if isinstance(geometry, FollowObjectEmanation)
+                else None,
+                suppressed,
             )
         )
     live.topology.environment_sources = tuple(sources)
@@ -96,7 +117,7 @@ def reconcile_environment(live: "_LiveCombat") -> None:
                 dark_level is not None
                 and other.spec.kind == "magical_darkness"
                 and other.spell_level <= dark_level
-                and (source.cells | source.dim_cells) & other.cells
+                and source.cells & other.cells
             ):
                 victims.setdefault(other.area_id, source.area_id)
     for area in tuple(live.persistent_areas.areas):

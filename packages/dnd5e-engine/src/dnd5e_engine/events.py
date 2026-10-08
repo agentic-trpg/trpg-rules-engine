@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 from dnd5e_engine.movement import MovementMode
 from dnd5e_engine.spell_execution import ExecutionClass, ExecutionFailure
 from dnd5e_engine.types.effects import ActiveEffect
+from dnd5e_engine.types.objects import CombatObject, ObjectChangeOperation
 
 # ── canonical closed-set aliases ────────────────────────────────────────────
 
@@ -693,6 +694,15 @@ class AttackFailed(BaseModel):
 AreaShape = Literal["cone", "cube", "cylinder", "emanation", "line", "sphere"]
 
 
+class CombatObjectChanged(BaseModel):
+    type: Literal["combat_object_changed"] = "combat_object_changed"
+    object_id: str
+    source_id: str
+    operation: ObjectChangeOperation
+    before: CombatObject | None
+    after: CombatObject | None
+
+
 class AreaCreated(BaseModel):
     """A persistent area now exists; hosts need not infer it from narration."""
 
@@ -702,7 +712,9 @@ class AreaCreated(BaseModel):
     source_id: str
     source_kind: Literal["spell", "item"]
     activity_id: str
-    placement: Literal["stationary", "follow-source"]
+    placement: Literal["stationary", "follow-source", "follow-object"]
+    origin_object_id: str | None = Field(default=None, exclude_if=lambda v: v is None)
+    includes_origin_object: bool | None = Field(default=None, exclude_if=lambda v: v is None)
     shape: AreaShape
     grid_shape: Literal["sphere", "cone", "line", "cube", "cylinder", "square"]
     size_ft: int
@@ -948,6 +960,7 @@ CombatEvent = Annotated[
     | AttackFailed
     | AreaTargeted
     | AreaCreated
+    | CombatObjectChanged
     | AreaRelocated
     | AreaExpired
     | CastFailed
@@ -1001,6 +1014,7 @@ ALL_COMBAT_EVENT_TYPES: tuple[type[BaseModel], ...] = (
     AttackFailed,
     AreaTargeted,
     AreaCreated,
+    CombatObjectChanged,
     AreaRelocated,
     AreaExpired,
     CastFailed,
@@ -1035,6 +1049,7 @@ __all__ = [
     "CheckRolled",
     "CombatEnded",
     "CombatEvent",
+    "CombatObjectChanged",
     "CombatantJoined",
     "CombatantLeft",
     "CombatantLeftReason",

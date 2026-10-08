@@ -223,26 +223,23 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   combat turn at all, and `start_combat` has no input for a creature summoned
   before the combat that outlives it, so all three stay narrative.
   (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_classify_action_cost`)
-- **Concentration can start for a caster who fell Unconscious during its own
-  cast (2026-09-26, C21a).** SRD 5.2 Incapacitated: "Your Concentration is
-  broken." The fold records concentration after the resolution — C13's
-  writeback and the anchor alike — without checking the caster, so a readied
-  Wall of Ice that drops its own caster to 0 Hit Points (see "A readied spell
-  always targets its own caster") leaves it concentrating until its death.
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_apply_concentration_anchor`)
-- **A concentration spell cast from an item concentrates only through an
-  effect of its own (2026-09-26, C21a).** SRD 5.2 Staff of Frost: "you can
-  cast one of the spells on the following table from it" — a cast, so its Fog
-  Cloud or Wall of Ice concentrates. The anchor runs at the three cast sites
-  (a turn, a monster's stat block, a Ready) but not at `use_item`, whose fold
-  gets no spell: a Staff of Frost's Fog Cloud leaves no concentration, while a
-  Necklace of Prayer Beads' Bless, which applies a concentration effect, does
-  concentrate. Item-cast replacement also still occurs in the post-resolution
-  fold rather than at cast start. Typed deferred activities now use the shared
-  scheduler, but do not supply the missing item concentration anchors/caps.
-  Potions are the SRD's stated exception (see "A potion's spell
-  concentrates").
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_fold_resolution_outcome`)
+- **Caster-disabled concentration finalization resolved (2026-10-08).**
+  Shared finalization refuses a new concentration anchor when the live caster
+  is dead, at 0 Hit Points or Incapacitated. Existing final-fold cleanup still
+  removes any concentration links attached before that state change. The
+  0-HP and Incapacitated regression cases both verify that the resolution tail
+  creates no anchor or concentration chain.
+  (`packages/dnd5e-engine/tests/test_delivery_planning.py::test_concentration_finalize_cannot_create_anchor_for_disabled_caster`)
+- **Item-cast concentration remains explicitly deferred (narrowed
+  2026-10-08).** Recursive delivery preflight now refuses a concentration child
+  before item payment. Complete caster-owned replacement timing, anchor,
+  maximum duration and death/Incapacitated cleanup must land together; a
+  target-held effect alone is insufficient. The CastActivity inventory records
+  77 item concentration producers. Typed timing and verified persistent-area
+  engines remain shared, but do not silently authorize incomplete item
+  concentration. Potions retain their separate no-Concentration rules gap.
+  (`packages/dnd5e-engine/src/dnd5e_engine/live_spell_delivery.py::preflight_delivery`)
+
 - **`CombatOutcome.expended_resources` counts a concentration spell where its
   effect lands (2026-09-26, C21a).** SRD 5.2: "When you cast a spell, you
   expend a slot of that spell's level or higher" — the caster's resource,
@@ -296,12 +293,15 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   Pre-existing, but this release's migration guide now advertises a late
   consumer draining `combat_ended` after close.
   (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::narration_events`)
-- **Some damage events lack source activity identity (narrowed 2026-10-07).**
+- **Attribution outside shared delivery remains incomplete (narrowed
+  2026-10-08).**
   Shared activity damage now carries the real `source_actor_id`, including
   off-turn/reaction damage; death attribution consumes that field instead of
-  the current actor. `DamageApplied.source_id` still remains absent on some
-  save/damage spell paths, so the exact originating activity is not always
-  visible. `AttackRolled` / `SaveRolled` / `CheckRolled` carry `natural`,
+  the current actor. Shared spell delivery populates deterministic child
+  spell/activity `DamageApplied.source_id` and retains parent invocation
+  identity separately. External, environmental and manual callers still need
+  their own source identity; delivery coverage does not guarantee complete
+  attribution for them. `AttackRolled` / `SaveRolled` / `CheckRolled` carry `natural`,
   `modifier` and `sources`; the target's effective AC is still not reported.
   (`packages/dnd5e-engine/src/dnd5e_engine/events.py`)
 
@@ -406,18 +406,24 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   helper's contract. They do not rank opportunity-attack exposure or creature
   footprints.
 
-- **Thunderwave's push is an engine-side registry, not data** (2026-08-27).
-  `activities/forced_movement.py::FORCED_MOVEMENT_RIDERS` names the spell by
-  slug because the canonical activity carries the push only as prose. C22 seam:
-  a typed push field on the save activity + a translator rule, then delete the
-  registry.
-  (`packages/dnd5e-engine/src/dnd5e_engine/activities/forced_movement.py`)
-- **Line width is not modelled (narrowed 2026-10-08).** Monster closing and
-  flee now share PC occupancy and weighted cost rules. `cells_in_template("line")`
-  remains one cell wide, so a
-  5-ft-wide Lightning Bolt is treated as a 1-cell ray and a wider
-  `template.width` is ignored.
+- **Unified area and spell delivery implemented (2026-10-08).** Direct PC,
+  monster and item-delegated spells share immutable delivery declarations,
+  draw-free preflight and activity execution. Child Fireball uses its own
+  20-ft Sphere, point/range/LoE gates, DC override and cast level rather than
+  the parent's named target list. Slow checks selected creatures inside its
+  point-placed Cube; Phantasmal Force's Cube is display geometry. Typed origin
+  and inclusion replace caller-specific assumptions. Thunderwave's canonical
+  failed-save 10-ft push records the same request on PC, monster and delegated
+  paths; the old spell-slug registry is deleted. Monster point origins include
+  all legal grid cells, with deterministic ties and no RNG. See
+  `docs/dev/spell-area-delivery.md` and its two checked-in audits.
+
+- **Canonical Line widths implemented (2026-10-08).** Width reaches shared
+  grid rasterization. The audit includes 5-ft Lines and real 10-ft ancient
+  dragon breath; the 5-ft grid's lanes use a fixed perpendicular convention.
+  Continuous geometry and 3-D remain outside the grid contract.
   (`packages/dnd5e-engine/src/dnd5e_engine/spatial.py::cells_in_template`)
+
 - **Truesight sees into Heavily Obscured cells (2026-09-27, C23).** SRD 5.2
   Truesight: "your vision pierces through" Darkness, Invisibility, visual
   illusions, transformations and the Ethereal Plane — not fog or foliage. The
@@ -441,48 +447,15 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   `orchestrator.py::_pierces_invisibility`; an effect-vocabulary carve-out is
   a future cluster's seam.
   (`packages/dnd5e-engine/src/dnd5e_engine/spatial.py::GridTopology.can_see`)
-- **Unsupported area geometry remains deferred
-  (2026-10-03, C25; amended 2026-10-07, Monster Spatial).** A `wall` template (Blade
-  Barrier, Tsunami, Wall of Fire, Wall of Thorns, Wind Wall) or a size written
-  as a formula (Confusion's `@item.level`) has no grid geometry, so the engine
-  logs `aoe_template_unsupported` on the PC path and resolves it against the
-  named target alone (nobody, if the intent names none), with no `AreaTargeted`.
-  Monster actions and casts skip unmappable templates without spending
-  Recharge or daily uses. Supported monster cone, line, cube, sphere, cylinder
-  and emanation activities now share `areas.py`, select all affected creatures
-  and aim deterministically using actual `affects` filters to avoid friendly
-  fire when possible. Candidate burst origins remain enemy cells, and aims
-  remain the eight grid directions. Player point-based Sphere/Cylinder/Square
-  casts accept legal empty cells, and verified persistent producers use shared
-  area state. Monster AI still selects occupied origins; altitude / 3-D,
-  wall templates and formula sizes remain outside this execution seam.
-  (`packages/dnd5e-engine/src/dnd5e_engine/areas.py::area_template`,
-  `packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_area_targets`)
-- **A counted area's named creatures aren't checked against its template
-  (2026-10-04, C26a).** For "up to N creatures" (Slow's six, Mass Cure Wounds'
-  six, Phantasmal Force's one) the engine takes the creatures
-  `PlayerIntent.target_ids` names — or a lone `target_id` when N is 1 —
-  wherever they stand: it anchors a Cube, Cone or Line at the caster and can't
-  place Slow's 40-foot Cube "within range", and Phantasmal Force's Cube is the
-  illusion's size, not its target area. Only too many names, a repeated name
-  and a name not in the combat are refused.
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_area_plan`)
-- **Directional and monster-selected origins remain limited
-  (2026-10-07).** Player Sphere/Cylinder/Square origins accept a legal
-  `target_zone_id`, checked for canonical cell identity, range and line of
-  effect before spending. Cone/Cube/Line origins remain caster-anchored, and
-  monster AI still selects occupied burst origins.
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_area_origin`)
-- **A delegated cast resolves against its named target only (2026-10-04,
-  C26a).** An item whose activity casts a spell (the Wand of Fireballs, a Spell
-  Scroll) resolves the spell's activities against the item intent's target
-  list, which a `cast` activity never expands: a Wand of Fireballs hits one
-  creature.
-  (`packages/dnd5e-engine/src/dnd5e_engine/activities/cast.py`)
-- **Monster-cast AoE applies no forced-movement rider** (2026-08-27). Only the
-  player-intent cast path calls `activities/forced_movement.py`, so a monster
-  casting Thunderwave deals damage but pushes nobody.
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::advance_monster_turn`)
+- **Unsupported area geometry remains deferred (narrowed 2026-10-08).** Wall
+  templates, formula-sized areas, altitude/3-D and multi-cell creature
+  footprints remain unsupported. Real unsupported target geometry now refuses
+  before Action, slot, charge or RNG payment; it never quietly resolves against
+  a named target alone. Monster AI skips unusable modes without spending
+  Recharge or daily uses and may choose another legal action. Verified
+  persistent producers retain their existing shared state.
+  (`packages/dnd5e-engine/src/dnd5e_engine/spell_delivery.py`)
+
 ## Effect-change sidecars (2026-07-02)
 
 - **Two effect-key namespaces for check/save bonuses (2026-08-26).** The public
@@ -577,34 +550,31 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   `use_feature cunning-action` activities explicitly reject. Use dedicated
   `dash`, `disengage`, and `hide` intents with `use_bonus_action=True`; cosmetic
   canonical markers are not a second implementation.
-- **An Emanation never includes its creature of origin, even when its text
-  says otherwise (2026-10-04, C26a).** SRD 5.2 Dust of Sneezing and Choking:
-  "forcing yourself and every creature in a 30-foot Emanation originating
-  from you to make a DC 15 Constitution saving throw." `area_template`'s
-  `radius` row always sets `includes_origin=False`, so its `use_item` now
-  catches everyone else within 30 feet, but never the user. Preserve Life's
-  "which can include you" (below) is the healing twin.
-  (`packages/dnd5e-engine/src/dnd5e_engine/areas.py::area_template`)
-- **Preserve Life's "divide those Hit Points among them" is not modelled
-  (2026-10-04, C26a).** Its heal is an area of your choice (a 30-foot
-  Emanation), and an area heal gives every creature it affects the whole
-  amount. Its `5 * @classes.cleric.levels` formula now parses, but feature
-  preflight rejects the invocation: a generic area heal would grant the whole
-  pool to every ally rather than a share. The cleric's own space is outside its Emanation (an
-  Emanation never includes its creator — see above), so it can't heal
-  itself ("which can include you"), and the "no more than half its Hit
-  Point maximum" cap is not applied.
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_area_targets`)
-- **`affects.special` creature-type restrictions are not honoured
-  (2026-10-04, C26a).** Sear Undead's save and the Helm of Brilliance's
-  Diamond Light both carry `target.affects.special == "Undead"`; a Calm
-  Emotions-style "Each Humanoid" is narrower still — its restriction lives
-  only in description prose, with no typed field at all. `select_affected`
-  reads `affects_type` (`"enemy"`/`"ally"`), `choice` and `count`, but never
-  `special`. Feature preflight now rejects Sear Undead before payment; the
-  item-area path still catches every creature, or every enemy, in range rather
-  than only the named creature type.
-  (`packages/dnd5e-engine/src/dnd5e_engine/areas.py::select_affected`)
+- **Dust targeting resolved; ongoing semantics remain deferred (2026-10-08).**
+  Typed Emanation metadata includes the user in the real 30-ft save targets.
+  Construct, Elemental, Ooze, Plant and Undead remain targeted and emit
+  successful saves with zero d20 draws and no failed-save effect. Complete
+  suffocation and Lesser Restoration removal remain unsupported; target/save
+  corrections do not make the whole item fully supported. Intimidating Presence
+  and Spirit Guardians keep their reviewed source and exclusion semantics.
+  (`packages/dnd5e-engine/src/dnd5e_engine/live_spell_delivery.py`)
+
+- **Preserve Life's divided pool remains deferred (narrowed 2026-10-08).**
+  The typed area model can express creator inclusion, but the producer still
+  needs a total healing pool divided among selected targets and a per-target
+  half-maximum cap. Feature preflight refuses it before spending; ordinary
+  area healing must not grant the complete pool to every ally.
+  (`packages/dnd5e-engine/src/dnd5e_engine/feature_runtime.py`)
+
+- **Reviewed creature-type targeting resolved (narrowed 2026-10-08).** Closed
+  typed include/exclude/automatic-save lists replace arbitrary source strings
+  at runtime. Exact reviewed source normalizations include Undead for Sear
+  Undead and Helm of Brilliance/Diamond Light. Unreviewed area restrictions
+  carry a deferred marker and fail closed. This does not implement Turn Undead
+  fleeing/source termination, Diamond Light's ongoing gem/start-turn producer,
+  arbitrary description-only filters, or legacy named size/grapple/object
+  restrictions. Do not promote whole features/items on filter support alone.
+  (`packages/dnd5e-srd-data/tools/translators/area_delivery.py`)
 
 ### Passive-stat projection (`activities/passive_stats.py`)
 
@@ -994,14 +964,14 @@ zone + apply logic:
   neither the cooldown nor interruption tracking exists — a host wanting
   either must gate its OWN call to these resolvers.
   (`packages/dnd5e-engine/src/dnd5e_engine/rest.py`)
-- **Four concentration spells raise after spending their slot (2026-09-26,
-  pre-existing).** Delayed Blast Fireball and Tsunami read `@item.uses.value`,
+- **Unsupported activity formulas and empty saves need earlier validation
+  (narrowed 2026-10-08).** Delayed Blast Fireball reads `@item.uses.value`,
   Spider Climb reads `@attributes.movement.walk`, and Phantasmal Killer's save
   names no ability; the formula resolver has no handler for either token and
-  the save resolver refuses an empty ability, so `submit_player_intent` raises
-  `ValueError` once the slot is spent. All four are SRD 5.2 spells ("When you
-  cast a spell, you expend a slot"): the cast should resolve, or be refused
-  before the slot goes.
+  the save resolver refuses an empty ability. These clauses remain unsupported
+  and require validation before payment wherever they can reach resolution.
+  Tsunami's unsupported wall geometry is now refused by shared delivery
+  preflight before slot payment; it is no longer evidence of a late wall cast.
   (`packages/dnd5e-engine/src/dnd5e_engine/activities/formula.py::_resolve_token`)
 - **Arbitrary Ready spell targeting and held-spell rules remain unsupported
   (narrowed 2026-10-07).** The engine-specific pre-arm API accepts only

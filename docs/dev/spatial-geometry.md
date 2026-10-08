@@ -67,21 +67,14 @@ orchestrator (`_target_cover_map`, mirroring the existing
 each target's cell via `topology.cover_between` — the two resolvers
 never import the spatial seam directly.
 
-**Per-activity "ignores cover for save" flag — shrunk, not built.** The
-BACKLOG entry named a per-activity override (Sacred Flame's SRD 5.2 text:
-"The target gains no benefit from Half Cover or Three-Quarters Cover for this
-save"). No such boolean exists on `SaveActivity`/`SaveBlock` in the canonical
-schema today (`dnd5e_srd_data.schema.common.SaveBlock` carries only
-`ability`/`dc`) — inventing one without a real data-layer field to back it
-would be a data fabrication, which this campaign's licensing/ground-truth
-rules forbid. This sub-piece remains open, narrowed to: add a
-`SaveBlock.ignore_cover: bool` (or similar) field to the schema + translator,
-then have `activities/save.py` skip the cover fold when set. Tracked as a
-shrunk BACKLOG line, not closed.
+**Per-activity cover override.** Canonical `SaveBlock.ignore_cover` records
+reviewed exceptions such as Sacred Flame. The shared save consumer skips
+Half/Three-Quarters Cover when that typed flag is set; runtime does not parse
+the spell's description.
 
 ## AoE templates
 
-`GridTopology.cells_in_template(origin, shape, size_ft, *, direction=None) ->
+`GridTopology.cells_in_template(origin, shape, size_ft, *, direction=None, width_ft=None) ->
 list[str]` — the BACKLOG's named seam. All three shapes share the settled
 **Chebyshev** metric (maintainer decision, catalog a pinned scenario — not
 relitigated): `radius_cells = size_ft // cell_size_ft`.
@@ -89,18 +82,21 @@ relitigated): `radius_cells = size_ft // cell_size_ft`.
 - **`"sphere"`** (a pinned scenario, e2e-pinned): every cell with
   `max(|dx|, |dy|) <= radius_cells` from the origin, origin included. 20 ft on
   a 5 ft grid → `radius_cells=4` → the full `9x9 = 81`-cell block.
-- **`"line"`**: a `direction` unit vector
-  (any of the 8 grid directions) is required; the cells are the
-  `radius_cells + 1` cells stepping from the origin along that direction
-  (Bresenham-exact for cardinal/diagonal directions), origin included. Models
-  a 1-cell-wide line (Lightning Bolt's 5 ft width on a 5 ft grid); a
-  variable-width line is not modeled (no SRD spell in the corpus needs it
-  today; the ignored `template.width` is a recorded BACKLOG line).
+- **`"line"`**: a `direction` unit vector selects one of the eight grid
+  directions. `width_ft` reaches rasterization as parallel cell lanes. A
+  5-ft-wide Line has one lane on a 5-ft grid; a 10-ft Line has two. Odd lane
+  counts are symmetric and even counts use the positive perpendicular side
+  for the additional lane, giving a deterministic grid convention. Sub-cell
+  widths use one lane. The typed area's inclusion rule removes the actor
+  origin where required. The canonical audit includes actual 10-ft ancient
+  dragon breath producers; width support is exercised by real data.
 - **`"cube"`** — a `direction` unit vector is required. The cube's SRD point of
   origin is a *face*, not the centre, so the cube is placed **adjacent to and
   extending away from** the origin cell along `direction`: a `size_ft` cube is
   the `n x n` block (`n = size_ft // cell_size_ft`) whose near face abuts the
   origin, and the origin cell itself is **not** in the area.
+  Typed `point_within_range` Cubes such as Slow instead use the Square
+  footprint below, including the declared origin; they need no direction.
 - **`"square"`** — a point-based footprint includes its origin at the
   minimum-column/minimum-row corner, extending toward positive columns/rows
   by `size_ft / cell_size_ft` cells per side. No direction is required.
@@ -133,6 +129,12 @@ obstruction must provide **Total Cover**" — so the test is precisely
 `has_line_of_sight` (walls and `blocked_cells`) plus a `cover_between(...) ==
 "total"` check. Half and three-quarters cover do **not** exclude a cell; they
 only feed the covered creature's AC / Dexterity save.
+
+Rule origin, inclusion, creature-type filters, choice and count belong to the
+shared [spell/area delivery planner](spell-area-delivery.md), rather than
+`GridTopology`. The planner distinguishes real target templates from
+Phantasmal Force's effect geometry. Unsupported target geometry fails closed
+before payment; PC, monster and delegated spells use the same boundary.
 
 ## Legal steps
 

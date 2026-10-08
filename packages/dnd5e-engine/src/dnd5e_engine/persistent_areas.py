@@ -73,6 +73,8 @@ class PersistentArea:
     rounds_remaining: int | None
     concentration_identity: EffectIdentity | None
     not_before_turn: int
+    activity_source_id: str | None = None
+    source_parent_id: str | None = None
     last_trigger_turn: dict[str, int] = field(default_factory=dict)
 
     @property
@@ -176,6 +178,15 @@ def register_area(
     template = area_template(activity)
     if spec is None or template is None or template.directional:
         return
+    if origin is None and ctx.spell_delivery is not None:
+        origin = (
+            live.actor_zone.get(ctx.caster.entity_id)
+            if template.anchor == "actor"
+            else (
+                ctx.spell_delivery.origin_cell
+                or live.actor_zone.get(ctx.spell_delivery.primary_target_id or "")
+            )
+        )
     if origin is None:
         origin = (
             orch._area_origin(live, ctx.caster.entity_id, intent, template)
@@ -184,7 +195,11 @@ def register_area(
         )
     if origin is None:
         return
-    excluded = intent.excluded_target_ids if intent else None
+    excluded = (
+        ctx.spell_delivery.excluded_target_ids
+        if ctx.spell_delivery is not None
+        else (intent.excluded_target_ids if intent else None)
+    )
     if excluded is None:
         # Same default as existing harmful choice AoE, persisted at cast time
         # for every combatant, including those currently outside the area.
@@ -232,6 +247,9 @@ def register_area(
         else None,
         not_before_turn=live.turn_serial
         + int(activity.timing.next_turn and activity.timing.trigger != "immediate"),
+        activity_source_id=ctx.activity_source_id
+        or f"{'spell' if spell else 'item'}:{source_id}:{activity.id}",
+        source_parent_id=ctx.source_parent_id,
     )
     state.next_sequence += 1
     state.areas.append(area)
@@ -306,6 +324,7 @@ def _trigger(live: _LiveCombat, area: PersistentArea, target_id: str, trigger: A
     from dnd5e_engine import orchestrator as orch
 
     target = orch._find_combatant(live, target_id)
+    creature_filter = area.activity.target.creature_filter
     if (
         area not in live.persistent_areas.areas
         or trigger not in area.spec.triggers
@@ -313,6 +332,17 @@ def _trigger(live: _LiveCombat, area: PersistentArea, target_id: str, trigger: A
         or target is None
         or not target.is_alive
         or target_id in live.dead_ids
+        or (
+            creature_filter is not None
+            and (
+                creature_filter.deferred_reason is not None
+                or (
+                    creature_filter.include_creature_types
+                    and target.creature_type not in creature_filter.include_creature_types
+                )
+                or target.creature_type in creature_filter.exclude_creature_types
+            )
+        )
         or area.not_before_turn > live.turn_serial
         or (area.spec.once_per_turn and area.last_trigger_turn.get(target_id) == live.turn_serial)
     ):
@@ -324,6 +354,7 @@ def _trigger(live: _LiveCombat, area: PersistentArea, target_id: str, trigger: A
 def _execute(live: _LiveCombat, area: PersistentArea, target: Combatant) -> None:
     from dnd5e_engine import orchestrator as orch
     from dnd5e_engine.live_reactions import attach_reaction_hooks
+    from dnd5e_engine.live_spell_delivery import fold_forced_movement_requests
 
     caster = orch._find_combatant(live, area.source_entity_id) or area.caster
     payload = orch._build_hydration_payload(live, caster=caster)
@@ -362,8 +393,25 @@ def _execute(live: _LiveCombat, area: PersistentArea, target: Combatant) -> None
         **geometry,
     )
     before = len(live.event_log)
-    ctx = attach_reaction_hooks(live, ctx)
+    creature_filter = area.activity.target.creature_filter
+    ctx = attach_reaction_hooks(
+        live,
+        replace(
+            ctx,
+            activity_source_id=area.activity_source_id,
+            source_parent_id=area.source_parent_id,
+            lifecycle_source_kind=area.source_kind,
+            lifecycle_source_slug=area.source_id,
+            target_auto_success_ids=frozenset(
+                [target.entity_id]
+                if creature_filter
+                and target.creature_type in creature_filter.auto_success_creature_types
+                else []
+            ),
+        ),
+    )
     resolve_activity(area.activity, ctx)
+    fold_forced_movement_requests(live, ctx)
     orch._sync_legendary_resistance(live, before)
     if area.spec.effects_until_target_turn_start:
         for event in live.event_log[before:]:

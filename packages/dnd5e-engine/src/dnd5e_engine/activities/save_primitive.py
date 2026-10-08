@@ -62,7 +62,7 @@ class SaveRoll:
     ``SaveRolled``.
 
     * ``natural`` is the KEPT die (post advantage/disadvantage), or ``None``
-      when the save auto-failed and no die was drawn.
+      for an automatic outcome where no die was drawn.
     * ``modifier`` is the FLAT, deterministic part of the total — the resolved
       per-ability save modifier plus any Dexterity cover bonus. It EXCLUDES the
       ``passive_save_bonus`` dice (SRD §Bless / §Bane), which must be rolled
@@ -70,7 +70,7 @@ class SaveRoll:
       ``AttackRolled.modifier`` convention. So ``total == natural + modifier``
       holds only when no Bless/Bane-style sidecar is active on the target.
     * ``mode`` is the resolved SRD 5.2 D20 Test mode (advantage and
-      disadvantage cancel to ``"normal"``); an auto-failed save reports
+      disadvantage cancel to ``"normal"``); an automatic save reports
       ``"normal"`` since no die was rolled.
     * ``sources`` is the advantage/disadvantage provenance actually applied.
     """
@@ -106,6 +106,9 @@ def roll_save(
     Mirrors the full target-side save sidecar the OLD the legacy evaluator path
     (``effects/save.py``) consumed:
 
+    * ``ctx.target_auto_success_ids`` — a canonical activity's type predicate
+      makes these selected creatures automatically succeed, without d20 or
+      bonus dice. The outcome takes precedence over condition auto-failure.
     * ``ctx.passive_save_auto_fail[id]`` — if ``ability`` (upper-case) is listed
       (Paralyzed / Stunned / Petrified / Unconscious auto-fail STR + DEX), the
       save short-circuits to a failed ``SaveRoll`` with NO d20 draw, so the
@@ -135,13 +138,17 @@ def roll_save(
     ``SaveRolled`` (the event field set differs per call site). Empty
     sidecars reproduce the prior single-d20 + per-ability-mod behavior exactly.
     """
-    # An automatic failure is still a saving throw. Consume the one-use clause
+    # An automatic outcome is still a saving throw. Consume the one-use clause
     # once, even though no d20 is drawn and no advantage mode applies.
     next_disadvantage = (
         ctx.consume_next_save_modifier(target.entity_id)
         if ctx.consume_next_save_modifier is not None
         else False
     )
+    if target.entity_id in ctx.target_auto_success_ids:
+        return SaveRoll(
+            total=dc, succeeded=True, natural=None, modifier=0, mode="normal", sources=()
+        )
     if _is_auto_fail(ctx, target, ability):
         return _convert_if_legendary_resistance_armed(
             ctx,

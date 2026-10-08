@@ -14,7 +14,6 @@ from dnd5e_engine.activities.context import ActivityResolutionContext, AttackHit
 from dnd5e_engine.activities.dice import damage_part_to_expr, validate_expression
 from dnd5e_engine.activities.effects import passive_effect_to_active_effect
 from dnd5e_engine.activities.formula import resolve_damage_block, resolve_roll_data
-from dnd5e_engine.activities.resolver import resolve_activity
 from dnd5e_engine.activities.save import _resolve_dc, _resolve_save_ability
 from dnd5e_engine.events import (
     CastFailed,
@@ -39,6 +38,7 @@ from dnd5e_engine.reactions import (
     reaction_target_id,
 )
 from dnd5e_engine.rules.conditions import conditions_block_actions
+from dnd5e_engine.spell_delivery import SpellDeliverySpec
 
 if TYPE_CHECKING:
     from dnd5e_srd_data.schema.common import Activity
@@ -282,6 +282,7 @@ def _eligible(
     opportunity: ReactionOpportunity,
 ) -> tuple[Spell, Activity, Combatant] | None:
     from dnd5e_engine import orchestrator as orch
+    from dnd5e_engine.live_spell_delivery import plan_activity_delivery
 
     if not can_take_reaction(live, reactor, spell=True):
         return None
@@ -307,13 +308,32 @@ def _eligible(
             activity,
             _context(live, reactor, [target], spell, pending.slot_level, draw_free=True),
         )
+        plan_activity_delivery(
+            live,
+            reactor,
+            [activity],
+            _delivery_spec(activity, target.entity_id),
+            range_spec=spell.range,
+        )
     except ValueError:
         return None
     return spell, activity, target
 
 
+def _delivery_spec(activity: Activity, target_id: str) -> SpellDeliverySpec:
+    return SpellDeliverySpec(
+        primary_target_id=target_id,
+        source_kind="reaction_cast",
+        source_activity_id=activity.id,
+    )
+
+
 def fire_reaction(live: _LiveCombat, opportunity: ReactionOpportunity) -> ReactionResult:
     from dnd5e_engine import orchestrator as orch
+    from dnd5e_engine.live_spell_delivery import (
+        execute_activity_delivery,
+        plan_activity_delivery,
+    )
     from dnd5e_engine.timed_activities import begin_spell_cast
 
     # Nested reaction chains are deliberately bounded to zero nested releases.
@@ -347,12 +367,32 @@ def fire_reaction(live: _LiveCombat, opportunity: ReactionOpportunity) -> Reacti
         )
         orch._emit_spell_cast(live, reactor.entity_id, spell, pending.slot_level)
         reactor = begin_spell_cast(live, reactor, spell)
-        ctx = _context(live, reactor, [target], spell, pending.slot_level)
+        ctx = replace(
+            _context(live, reactor, [target], spell, pending.slot_level),
+            activity_source_id=f"spell:{spell.slug}:{activity.id}",
+            spell_delivery=_delivery_spec(activity, target.entity_id),
+        )
         ctx = attach_reaction_hooks(live, ctx)
         before = len(live.event_log)
         live.reaction_resolution_depth += 1
         try:
-            resolve_activity(activity, ctx)
+            assert ctx.spell_delivery is not None
+            plan = plan_activity_delivery(
+                live,
+                reactor,
+                [activity],
+                ctx.spell_delivery,
+                range_spec=spell.range,
+                execution=True,
+            )
+            ctx = execute_activity_delivery(
+                live,
+                ctx,
+                activity,
+                plan.activities[0],
+                ctx.spell_delivery,
+                spell.slug,
+            )
         finally:
             live.reaction_resolution_depth -= 1
         orch._fold_resolution_outcome(

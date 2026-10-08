@@ -91,6 +91,11 @@
           "special": "",
           "type": "creature"
         },
+        "area_semantics": {
+          "includes_origin": false,
+          "origin_policy": "actor",
+          "template_role": "target_area"
+        },
         "override": true,
         "prompt": true,
         "template": {

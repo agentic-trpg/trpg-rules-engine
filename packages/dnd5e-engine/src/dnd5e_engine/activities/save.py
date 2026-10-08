@@ -52,6 +52,7 @@ from typing import TYPE_CHECKING, Final, get_args
 from dnd5e_engine.activities.apply import apply_damage
 from dnd5e_engine.activities.dice import roll_damage_part, roll_expr
 from dnd5e_engine.activities.effects import apply_activity_effects
+from dnd5e_engine.activities.forced_movement import request_forced_movement
 from dnd5e_engine.activities.formula import resolve_damage_block, resolve_roll_data
 from dnd5e_engine.activities.save_primitive import roll_save
 from dnd5e_engine.events import Ability, LegendaryResistanceUsed, SaveRolled
@@ -136,6 +137,12 @@ def resolve_save(activity: SaveActivity, ctx: ActivityResolutionContext) -> None
             cast_level=cast_level,
             save_ability=ability,
             save_dc=dc,
+        )
+        request_forced_movement(
+            activity,
+            ctx,
+            target.entity_id,
+            trigger="successful_save" if succeeded else "failed_save",
         )
 
 
@@ -273,7 +280,6 @@ def _apply_save_damage(
             raw_part, activity.damage.on_save, succeeded=succeeded
         )
 
-    # cast attribution is a C17+ seam — source_id left None here.
     apply_damage(target, dict(by_type), ctx, magical=ctx.base_spell_level is not None)
 
 

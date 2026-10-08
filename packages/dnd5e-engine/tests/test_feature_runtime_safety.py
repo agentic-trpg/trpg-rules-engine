@@ -390,7 +390,7 @@ def test_multiple_resource_costs_validate_together_and_commit_once(focus_spent):
 
 
 def test_unexpected_resolver_value_error_is_rolled_back_and_propagates(monkeypatch):
-    import dnd5e_engine.orchestrator as orch
+    import dnd5e_engine.live_spell_delivery as delivery
 
     handle, live = start([pc(class_slug="fighter", character_level=2)], seed=9)
     before, log = _snapshot(live), copy.deepcopy(live.event_log)
@@ -403,7 +403,7 @@ def test_unexpected_resolver_value_error_is_rolled_back_and_propagates(monkeypat
         ctx.event_emitter(HealingApplied(target_id="char:hero", amount=3))
         raise ValueError("injected resolver defect")
 
-    monkeypatch.setattr(orch, "resolve_activity", broken)
+    monkeypatch.setattr(delivery, "resolve_activity", broken)
     with pytest.raises(ValueError, match="injected resolver defect"):
         act(handle, "char:hero", intent_type="use_feature", feature_id="second-wind")
     assert _snapshot(live) == before

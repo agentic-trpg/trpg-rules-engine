@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
+from copy import deepcopy
 
 import pytest
 from dnd5e_srd_data import MemoryAssetLoader
@@ -297,7 +298,9 @@ def test_multi_activity_item_usable_at_full_pool():
     the FIRST consuming activity's cost, not the sum of all of them."""
     item = BundledAssetLoader().get_item("staff-of-frost")
     assert item is not None
-    set_lib_loader_for_tests(MemoryAssetLoader(items=[item]))
+    spell = BundledAssetLoader().get_spell("cone-of-cold")
+    assert spell is not None
+    set_lib_loader_for_tests(MemoryAssetLoader(items=[item], spells=[spell]))
     expected_cost = _first_consuming_activity_cost(item)
     assert 0 < expected_cost < 10
 
@@ -365,12 +368,14 @@ def test_symbolic_and_negative_targets_ignored():
 
 
 def test_activity_id_selects_invocation_and_cost():
-    """``cube-of-force`` (cap 10) has multiple consuming cast activities with
+    """``staff-of-fire`` (cap 10) has multiple consuming cast activities with
     distinct costs. Selecting one by ``activity_id`` must charge exactly that
     activity's cost, not the first-in-order activity's."""
-    item = BundledAssetLoader().get_item("cube-of-force")
+    item = BundledAssetLoader().get_item("staff-of-fire")
     assert item is not None
-    set_lib_loader_for_tests(MemoryAssetLoader(items=[item]))
+    spells = [BundledAssetLoader().get_spell(slug) for slug in ("burning-hands", "fireball")]
+    assert all(spell is not None for spell in spells)
+    set_lib_loader_for_tests(MemoryAssetLoader(items=[item], spells=spells))
 
     consuming = []
     for activity in item.activities:
@@ -390,7 +395,7 @@ def test_activity_id_selects_invocation_and_cost():
 
     async def _run():
         start = await start_combat(
-            session_id="sess-cube-of-force",
+            session_id="sess-staff-of-fire-selected",
             party=_party(),
             encounter=_encounter(),
             grid_scene=_topology(),
@@ -402,7 +407,7 @@ def test_activity_id_selects_invocation_and_cost():
             actor_id="char:hero",
             intent=PlayerIntent(
                 intent_type="use_item",
-                item_id="cube-of-force",
+                item_id="staff-of-fire",
                 activity_id=target_activity_id,
                 target_id="mon:foe",
             ),
@@ -410,7 +415,8 @@ def test_activity_id_selects_invocation_and_cost():
         return live
 
     live = asyncio.run(_run())
-    counter_key = "item_use:cube-of-force"
+    assert not _events_of(live, CastFailed)
+    counter_key = "item_use:staff-of-fire"
     assert live.custom_counters_by_entity["char:hero"][counter_key] == {"spent": target_cost}
 
 
@@ -438,7 +444,9 @@ WAND_COUNTER_KEY = f"item_use:{WAND_SLUG}"
 def _load_wand():
     item = BundledAssetLoader().get_item(WAND_SLUG)
     assert item is not None
-    set_lib_loader_for_tests(MemoryAssetLoader(items=[item]))
+    spell = BundledAssetLoader().get_spell("lightning-bolt")
+    assert spell is not None
+    set_lib_loader_for_tests(MemoryAssetLoader(items=[item], spells=[spell]))
     return item
 
 
@@ -597,10 +605,7 @@ WAND_SPELL_SLUG = "lightning-bolt"
 
 
 def _load_wand_with_spell():
-    """Unlike ``_load_wand`` (item only — the delegation seam this task
-    builds is exactly the thing those pre-existing tests exercise as a
-    no-op), the lib here also carries the referenced spell so
-    ``_build_cast_spell_book`` resolves the wand's ``CastActivity`` uuid."""
+    """Return both canonical carriers for real delegated cast assertions."""
     item = BundledAssetLoader().get_item(WAND_SLUG)
     assert item is not None
     spell = BundledAssetLoader().get_spell(WAND_SPELL_SLUG)
@@ -782,25 +787,22 @@ def test_item_cast_without_challenge_override_resolves():
 
 def test_unselected_multi_cast_item_resolves_single_activity():
     """C2: a ``use_item`` intent with NO ``activity_id`` against an item
-    carrying MULTIPLE alternative cast activities (wand-of-binding: Hold
-    Monster cost 5, Hold Person cost 2) must resolve exactly the ONE
-    activity ``_item_charge_activity`` selects and charges for (Hold
-    Monster, the first consuming activity) — never every activity on the
-    item. Live proof of the pre-fix bug: BOTH Hold Monster and Hold Person
-    used to emit ``SaveRolled`` while only Hold Monster's 5 charges were
-    spent.
+    carrying MULTIPLE alternative cast activities (staff-of-fire: Burning
+    Hands cost 1, Fireball cost 3) must resolve exactly the ONE activity
+    ``_item_charge_activity`` selects and charges for. Both children are
+    resolvable, so resolving the unselected Fireball would produce extra saves.
     """
-    item = BundledAssetLoader().get_item(WAND_OF_BINDING_SLUG)
+    item = BundledAssetLoader().get_item(STAFF_OF_FIRE_SLUG)
     assert item is not None
-    hold_monster = BundledAssetLoader().get_spell(HOLD_MONSTER_SPELL_SLUG)
-    hold_person = BundledAssetLoader().get_spell(HOLD_PERSON_SPELL_SLUG)
-    assert hold_monster is not None
-    assert hold_person is not None
-    set_lib_loader_for_tests(MemoryAssetLoader(items=[item], spells=[hold_monster, hold_person]))
+    burning_hands = BundledAssetLoader().get_spell("burning-hands")
+    fireball = BundledAssetLoader().get_spell("fireball")
+    assert burning_hands is not None
+    assert fireball is not None
+    set_lib_loader_for_tests(MemoryAssetLoader(items=[item], spells=[burning_hands, fireball]))
 
     async def _run():
         start = await start_combat(
-            session_id="sess-wand-of-binding-unselected",
+            session_id="sess-staff-of-fire-unselected",
             party=_party(),
             encounter=_encounter(),
             grid_scene=_topology(),
@@ -812,7 +814,7 @@ def test_unselected_multi_cast_item_resolves_single_activity():
             actor_id="char:hero",
             intent=PlayerIntent(
                 intent_type="use_item",
-                item_id=WAND_OF_BINDING_SLUG,
+                item_id=STAFF_OF_FIRE_SLUG,
                 target_id="mon:foe",
             ),
         )
@@ -823,9 +825,70 @@ def test_unselected_multi_cast_item_resolves_single_activity():
 
     saves = _events_of(live, SaveRolled)
     assert len(saves) == 1, "exactly one delegated activity must resolve, not both"
-    assert saves[0].dc == 17  # wand-of-binding's fixed challenge override
+    assert saves[0].dc == 13  # inherited caster challenge, with no staff override
 
-    assert live.custom_counters_by_entity["char:hero"][WAND_OF_BINDING_COUNTER_KEY] == {"spent": 5}
+    assert live.custom_counters_by_entity["char:hero"][STAFF_OF_FIRE_COUNTER_KEY] == {"spent": 1}
+
+
+@pytest.mark.parametrize(
+    ("item_slug", "spell_slug", "select_activity"),
+    [
+        ("staff-of-frost", "fog-cloud", True),
+        ("wand-of-binding", "hold-monster", True),
+        ("wand-of-binding", "hold-monster", False),
+    ],
+)
+def test_deferred_item_concentration_refuses_before_charges_action_or_rng(
+    item_slug, spell_slug, select_activity
+):
+    loader = BundledAssetLoader()
+    item = loader.get_item(item_slug)
+    spell = loader.get_spell(spell_slug)
+    assert item is not None
+    assert spell is not None
+    assert spell.concentration
+    activity = next(
+        activity
+        for activity in item.activities
+        if activity.kind == "cast" and activity.spell.uuid == spell.foundry_uuid
+    )
+    set_lib_loader_for_tests(MemoryAssetLoader(items=[item], spells=[spell]))
+    counter_key = f"item_use:{item_slug}"
+
+    async def run():
+        started = await start_combat(
+            session_id=f"sess-deferred-concentration-{item_slug}-{select_activity}",
+            party=_party(custom_counters={counter_key: {"spent": 1}}),
+            encounter=_encounter(),
+            grid_scene=_topology(),
+            rng_seed=1,
+        )
+        live = _get_live(started.handle)
+        before = (live.rng.getstate(), deepcopy(live.custom_counters_by_entity))
+        await submit_player_intent(
+            started.handle,
+            actor_id="char:hero",
+            intent=PlayerIntent(
+                intent_type="use_item",
+                item_id=item_slug,
+                activity_id=activity.id if select_activity else None,
+                target_id="mon:foe",
+            ),
+        )
+        return live, before
+
+    live, before = asyncio.run(run())
+    assert [event.reason for event in _events_of(live, CastFailed)] == ["unsupported_area"]
+    assert live.rng.getstate() == before[0]
+    assert live.custom_counters_by_entity == before[1]
+    assert live.current_actor_id == "char:hero"
+    caster = next(creature for creature in live.initiative if creature.entity_id == "char:hero")
+    assert caster.action_available
+    assert caster.bonus_action_available
+    assert caster.reaction_available
+    assert not _events_of(live, SaveRolled)
+    assert not _events_of(live, DamageApplied)
+    assert not live.concentration_chain
 
 
 def test_charges_to_spend_on_non_cast_activity_rejected():

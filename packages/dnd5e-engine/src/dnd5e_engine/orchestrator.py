@@ -57,7 +57,7 @@ import re
 from collections import deque
 from collections.abc import AsyncIterator, Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from typing import Any, Final, Literal
+from typing import Any, Final, Literal, cast
 
 from dnd5e_srd_data.schema.common import (
     ActivationBlock,
@@ -120,7 +120,6 @@ from dnd5e_engine.activities.effects import (
     applicable_effect_statuses,
     is_condition_immune,
 )
-from dnd5e_engine.activities.forced_movement import FORCED_MOVEMENT_RIDERS
 from dnd5e_engine.activities.monster_actions import (
     MonsterActionExecution,
     MonsterActionPlan,
@@ -139,15 +138,10 @@ from dnd5e_engine.activities.passive_stats import (
 from dnd5e_engine.activities.resolver import resolve_activity
 from dnd5e_engine.activities.scale import build_scale_values, feature_owners
 from dnd5e_engine.areas import (
-    AreaSelection,
     AreaTemplate,
     area_activity,
-    area_cells,
     area_template,
     creature_count,
-    is_choice,
-    is_harmful,
-    select_affected,
 )
 from dnd5e_engine.attack_declarations import observe_attack_roll
 from dnd5e_engine.attack_riders import AttackRiderRequest
@@ -155,7 +149,6 @@ from dnd5e_engine.death_saves import DeathSaveState, roll_death_save
 from dnd5e_engine.effect_lifecycle import EffectIdentity, OngoingEffectLifecycle
 from dnd5e_engine.events import (
     Ability,
-    AreaTargeted,
     AttackFailed,
     AttackRolled,
     CastFailed,
@@ -229,6 +222,7 @@ from dnd5e_engine.live_features import (
 from dnd5e_engine.live_features import (
     feature_target_failure as _feature_target_failure,
 )
+from dnd5e_engine.live_monster_delivery import MonsterAreaPlacement
 from dnd5e_engine.live_reactions import (
     attach_reaction_hooks,
     can_continue_resolution,
@@ -238,6 +232,15 @@ from dnd5e_engine.live_reactions import (
     prearm_failure,
     register_pending_reaction,
     spell_cast_opportunity,
+)
+from dnd5e_engine.live_spell_delivery import (
+    execute_activity_delivery,
+    execute_spell_delivery,
+    fold_forced_movement_requests,
+    plan_activity_delivery,
+    plan_spell_delivery,
+    preflight_delivery,
+    spec_from_intent,
 )
 from dnd5e_engine.movement import MovementLedger, MovementMode
 from dnd5e_engine.outcome import (
@@ -287,6 +290,7 @@ from dnd5e_engine.specs import (
     GridScene,
     PartyMemberSpec,
 )
+from dnd5e_engine.spell_delivery import DeliveryPlanningError, SpellDeliverySpec
 from dnd5e_engine.spellcasting import (
     count_scales_with_cast_level,
     resolve_target_count,
@@ -296,7 +300,6 @@ from dnd5e_engine.timed_activities import (
     TimedActivityState,
     begin_spell_cast,
     register_timed_activity_hooks,
-    resolve_spell_activities,
 )
 from dnd5e_engine.turn_lifecycle import (
     TurnLifecycle,
@@ -1816,36 +1819,6 @@ def push_combatant(live: _LiveCombat, target_id: str, origin_cell: str, distance
     live_movement.push(live, target_id, origin_cell, distance_ft)
 
 
-def _apply_forced_movement_riders(
-    live: _LiveCombat, caster: Combatant, intent: PlayerIntent, pre_event_count: int
-) -> None:
-    """After a cast resolves, apply the spell's typed forced-movement rider to
-    every target whose save against the SPELL failed (trigger ``failed_save``).
-
-    Only the FIRST ``SaveRolled`` per target in this resolution's event slice
-    is the spell's own save: the damage can trigger a later one (Undead
-    Fortitude's Constitution save), and a target that SAVED against the spell
-    must not be shoved because of it. The save resolver always emits before
-    ``DamageApplied``, so "first per target" is well defined; keying on it also
-    caps each target at one push.
-
-    Pushes happen after all saves/damage so the rider never perturbs the
-    seeded roll order."""
-    rider = FORCED_MOVEMENT_RIDERS.get(intent.spell_id or "")
-    if rider is None or rider.trigger != "failed_save" or rider.direction != "away_from_caster":
-        return
-    origin_cell = live.actor_zone.get(caster.entity_id)
-    if origin_cell is None:
-        return
-    seen: set[str] = set()
-    for ev in list(live.event_log[pre_event_count:]):
-        if not isinstance(ev, SaveRolled) or ev.target_id in seen:
-            continue
-        seen.add(ev.target_id)
-        if not ev.succeeded:
-            push_combatant(live, ev.target_id, origin_cell, rider.distance_ft)
-
-
 def _path_total_distance(topology: SpatialTopology, path: Sequence[str]) -> int | None:
     """Sum a shortest-path's edge distances; ``None`` if any step is missing.
 
@@ -2242,6 +2215,8 @@ def _monster_cast_candidate(
             isinstance(a, (AttackActivity, SaveActivity, DamageActivity)) for a in spell.activities
         ):
             continue
+        if _monster_cast_delivery_spec(live, current, spell, activity) is None:
+            continue
         return activity, spell
     return None
 
@@ -2270,7 +2245,9 @@ def _monster_activity_available(
     live: _LiveCombat, current: Combatant, action: MonsterAction, activity: Activity
 ) -> bool:
     entry = live.monster_action_uses_by_entity.get(current.entity_id, {}).get(action.slug)
-    return activity_resources_available(action, activity, entry)
+    return activity_resources_available(action, activity, entry) and not (
+        area_activity([activity]) is not None and area_template(activity) is None
+    )
 
 
 def _monster_action_available(live: _LiveCombat, current: Combatant, action: MonsterAction) -> bool:
@@ -2281,7 +2258,7 @@ def _monster_action_available(live: _LiveCombat, current: Combatant, action: Mon
     if action.activities and all(isinstance(a, CastActivity) for a in action.activities):
         return _monster_cast_candidate(live, current, action) is not None
     return not action.activities or any(
-        activity_resources_available(action, a, entry) for a in action.activities
+        _monster_activity_available(live, current, action, a) for a in action.activities
     )
 
 
@@ -2340,42 +2317,11 @@ def _lowest_hp_target(enemies: list[Combatant]) -> Combatant | None:
     return min(enemies, key=lambda c: c.hp_current) if enemies else None
 
 
-@dataclass(frozen=True)
-class _MonsterAreaPlacement:
-    template: AreaTemplate
-    origin: str
-    direction: tuple[int, int] | None
-    selection: AreaSelection
-    targets: tuple[Combatant, ...]
-
-
-# Cardinal directions first, then diagonals clockwise from north-east. Target
-# priority breaks ties before this order; aiming never draws from the RNG.
-_MONSTER_AREA_DIRECTIONS: Final = (
-    (0, -1),
-    (1, 0),
-    (0, 1),
-    (-1, 0),
-    (1, -1),
-    (1, 1),
-    (-1, 1),
-    (-1, -1),
-)
-
-
 def _monster_area_range_ft(activity: Activity, spell: Spell | None = None) -> int | None:
-    """Range to a burst's origin; a spell owns it unless the activity overrides."""
-    rng = spell.range if spell is not None and not activity.range.override else activity.range
-    if rng.units == "self":
-        return 0
-    if rng.units == "touch":
-        return 5
-    if rng.units == "ft":
-        try:
-            return max(0, int(rng.value)) if rng.value is not None else None
-        except (TypeError, ValueError):
-            return None
-    return None
+    """Thin adapter for the canonical range consumed by monster delivery."""
+    from dnd5e_engine.live_monster_delivery import area_range_ft
+
+    return area_range_ft(activity, spell)
 
 
 def _monster_area_placement(
@@ -2384,92 +2330,11 @@ def _monster_area_placement(
     activities: Sequence[Activity],
     *,
     spell: Spell | None = None,
-) -> _MonsterAreaPlacement | None:
-    """Pure aiming over the existing area geometry and actual affects filter.
+) -> MonsterAreaPlacement | None:
+    """Thin adapter for aiming over the shared activity delivery planner."""
+    from dnd5e_engine.live_monster_delivery import area_placement
 
-    Try eight grid directions or enemy-centred bursts, require a legal enemy,
-    prefer zero actual friendly fire, then most enemies, lowest-HP target
-    priority (stable initiative ties), and finally the direction/origin order.
-    Unsupported templates have no placement and never spend an invocation.
-    """
-    activity = area_activity(activities)
-    if activity is None or (template := area_template(activity)) is None:
-        return None
-    actor_cell = live.actor_zone.get(actor.entity_id)
-    if actor_cell is None:
-        return None
-    enemies = sorted(_select_monster_targets(live, actor), key=lambda c: c.hp_current)
-    enemy_ids = {c.entity_id for c in enemies}
-    allies = _allied_ids(live, actor.entity_id)
-    alive = [c for c in live.initiative if c.is_alive and c.entity_id not in live.dead_ids]
-    candidates: list[tuple[str, tuple[int, int] | None]]
-    if template.anchor == "target":
-        reach = _monster_area_range_ft(activity, spell)
-        candidates = [
-            (cell, None)
-            for enemy in enemies
-            if (cell := live.actor_zone.get(enemy.entity_id)) is not None
-            and reach is not None
-            and _in_range_with_los(live.topology, actor_cell, cell, reach)
-        ]
-    else:
-        candidates = [
-            (actor_cell, direction)
-            for direction in (_MONSTER_AREA_DIRECTIONS if template.directional else (None,))
-        ]
-    best: _MonsterAreaPlacement | None = None
-    best_key: tuple[bool, int, tuple[int, ...]] | None = None
-    for origin, direction in candidates:
-        cells = area_cells(live.topology, template, origin, direction)
-        in_area = [c.entity_id for c in alive if live.actor_zone.get(c.entity_id) in cells]
-        selection = select_affected(
-            in_area,
-            affects_type=activity.target.affects.type,
-            choice=is_choice(activity),
-            count=creature_count(activity),
-            harmful=is_harmful([activity]),
-            excluded_ids=None,
-            is_enemy=enemy_ids.__contains__,
-            is_ally=allies.__contains__,
-        )
-        affected = set(selection.affected_ids)
-        priorities = tuple(i for i, enemy in enumerate(enemies) if enemy.entity_id in affected)
-        if not priorities:
-            continue
-        # Preserve the existing Charmed target prohibition for damaging areas.
-        if any(
-            _is_enemy(live, actor.entity_id, other) and other not in enemy_ids for other in affected
-        ):
-            continue
-        key = (bool(affected & allies), -len(priorities), priorities)
-        if best_key is None or key < best_key:
-            best_key = key
-            best = _MonsterAreaPlacement(
-                template,
-                origin,
-                direction,
-                selection,
-                tuple(c for c in alive if c.entity_id in affected),
-            )
-    return best
-
-
-def _emit_monster_area(
-    live: _LiveCombat, actor: Combatant, source_id: str, placement: _MonsterAreaPlacement
-) -> None:
-    _emit(
-        live,
-        AreaTargeted(
-            actor_id=actor.entity_id,
-            source_id=source_id,
-            shape=placement.template.shape,
-            size_ft=placement.template.size_ft,
-            origin=placement.origin,
-            direction=placement.direction,
-            affected_ids=list(placement.selection.affected_ids),
-            excluded_ids=list(placement.selection.spared_ids),
-        ),
-    )
+    return area_placement(live, actor, activities, spell=spell)
 
 
 def _resolve_monster_activities(
@@ -2622,6 +2487,38 @@ def _monster_context_kwargs(
     }
 
 
+def _monster_cast_delivery_spec(
+    live: _LiveCombat,
+    actor: Combatant,
+    spell: Spell,
+    activity: CastActivity,
+    chosen_target: Combatant | None = None,
+) -> SpellDeliverySpec | None:
+    """Resolve a legal AI declaration before any action or stat-block payment."""
+    from dnd5e_engine.live_spell_delivery import plan_spell_delivery
+    from dnd5e_engine.spell_delivery import DeliveryPlanningError
+
+    if area_activity(spell.activities) is not None:
+        placement = _monster_area_placement(live, actor, spell.activities, spell=spell)
+        if placement is None:
+            return None
+        spec = placement.spec.model_copy(update={"source_activity_id": activity.id})
+    else:
+        target = chosen_target or _lowest_hp_target(_select_monster_targets(live, actor))
+        if target is None:
+            return None
+        spec = SpellDeliverySpec(
+            primary_target_id=target.entity_id,
+            source_kind="monster_cast",
+            source_activity_id=activity.id,
+        )
+    try:
+        plan_spell_delivery(live, actor, spell, spec)
+    except DeliveryPlanningError:
+        return None
+    return spec
+
+
 def _resolve_monster_cast(
     live: _LiveCombat,
     current: Combatant,
@@ -2655,10 +2552,14 @@ def _resolve_monster_cast(
     """
     if not _monster_activity_available(live, current, action, activity):
         return
-    placement = _monster_area_placement(live, current, spell.activities, spell=spell)
-    if area_activity(spell.activities) is not None and placement is None:
+    from dnd5e_engine.live_spell_delivery import execute_spell_delivery, plan_spell_delivery
+
+    spec = _monster_cast_delivery_spec(live, current, spell, activity, chosen_target)
+    if spec is None:
         return
-    target_list = list(placement.targets) if placement is not None else [chosen_target]
+    delivery_plan = plan_spell_delivery(live, current, spell, spec)
+    target_ids = set(delivery_plan.target_ids)
+    target_list = [c for c in live.initiative if c.entity_id in target_ids]
     slot_level = activity.spell.level if activity.spell.level is not None else spell.level
     spellcasting_ability = activity.spell.ability or current.spellcasting_ability
 
@@ -2686,19 +2587,20 @@ def _resolve_monster_cast(
         spell_book=_build_cast_spell_book(spell.activities),
         **_monster_context_kwargs(live, current, target_list, payload),
     )
-    if placement is not None:
-        actx = replace(
-            actx,
-            target_cover=_target_cover_map(
-                live, current.entity_id, target_list, origin_cell=placement.origin
-            ),
-        )
-    _emit_spell_cast(live, current.entity_id, spell, slot_level)
-    if placement is not None:
-        _emit_monster_area(live, current, spell.slug, placement)
-    resolve_spell_activities(
-        live, spell, actx, area_origin=placement.origin if placement is not None else None
+    challenge = activity.spell.challenge
+    actx = replace(
+        actx,
+        spell_delivery=spec,
+        lifecycle_source_kind="spell",
+        lifecycle_source_slug=spell.slug,
+        save_dc_override=challenge.save if challenge.override else actx.save_dc_override,
+        attack_bonus_override=challenge.attack
+        if challenge.override
+        else actx.attack_bonus_override,
+        source_parent_id=f"monster:{current.entity_id}:{action.slug}:{activity.id}",
     )
+    _emit_spell_cast(live, current.entity_id, spell, slot_level)
+    actx = execute_spell_delivery(live, spell, actx, spec)
 
     # SRD 5.2 §Actions in Combat — Help; §Weapon Mastery — Vex / Sap: a
     # monster cast whose resolved spell includes an ``AttackActivity``
@@ -2864,13 +2766,7 @@ def _resolve_monster_attack_activities(
     )
     actx = attach_reaction_hooks(live, actx)
     if execution_plan is None:
-        for activity in activities:
-            if not can_continue_resolution(live, actor.entity_id):
-                break
-            if area_activity([activity]) is None:
-                resolve_activity(activity, actx, weapon=None)
-            else:
-                _resolve_monster_execution(live, actor, actx, [activity], source_id)
+        _resolve_monster_execution(live, actor, actx, activities, source_id)
     else:
         _execute_monster_plan(live, actor, execution_plan, actx)
     # SRD 5.2 §Actions in Combat — Help; §Weapon Mastery — Vex / Sap
@@ -2949,27 +2845,27 @@ def _resolve_monster_execution(
     source_id: str,
 ) -> tuple[Activity, ...]:
     """Resolve each area child with its own targets, retaining shared outcome state."""
+    from dnd5e_engine.live_spell_delivery import execute_activity_delivery
+    from dnd5e_engine.spell_delivery import ActivityDeliveryPlan
+
     resolved: list[Activity] = []
     for activity in activities:
         if not can_continue_resolution(live, actor.entity_id):
             break
-        child_context = actx
         if area_activity([activity]) is not None:
             placement = _monster_area_placement(live, actor, [activity])
             if placement is None:
                 continue
-            targets = list(placement.targets)
-            child_context = replace(
-                actx,
-                targets=targets,
-                target_cover=_target_cover_map(
-                    live, actor.entity_id, targets, origin_cell=placement.origin
-                ),
+            activity_plan = placement.activity_plan
+            spec = placement.spec
+        else:
+            if not _monster_execution_in_range(live, actor, actx.targets, [activity]):
+                continue
+            activity_plan = ActivityDeliveryPlan(
+                activity.id, tuple(target.entity_id for target in actx.targets)
             )
-            _emit_monster_area(live, actor, source_id, placement)
-        elif not _monster_execution_in_range(live, actor, actx.targets, [activity]):
-            continue
-        resolve_activity(activity, child_context, weapon=None)
+            spec = SpellDeliverySpec(source_kind="monster_cast", source_activity_id=activity.id)
+        execute_activity_delivery(live, actx, activity, activity_plan, spec, source_id)
         resolved.append(activity)
     return tuple(resolved)
 
@@ -6167,7 +6063,7 @@ class _AreaPlan:
     def places_template(self) -> bool:
         """The engine enumerates the template's cells: a template it can place,
         unless the intent names the creatures a counted area affects."""
-        return self.template is not None and not (self.count is not None and self.named_ids)
+        return self.template is not None
 
 
 def _area_plan(intent: PlayerIntent, activities: Sequence[Any]) -> _AreaPlan | None:
@@ -6206,22 +6102,6 @@ def _area_plan(intent: PlayerIntent, activities: Sequence[Any]) -> _AreaPlan | N
     )
 
 
-def _aoe_direction(
-    live: _LiveCombat, caster_id: str, intent: PlayerIntent
-) -> tuple[int, int] | None:
-    """Aim vector for a directional template: the intent's ``direction``, else
-    caster → named target (sign per axis); ``None`` when neither exists."""
-    if intent.direction is not None:
-        return intent.direction
-    caster_cell = live.actor_zone.get(caster_id)
-    target_cell = live.actor_zone.get(intent.target_id) if intent.target_id else None
-    if caster_cell is None or target_cell is None or caster_cell == target_cell:
-        return None
-    cc, cr = parse_cell(caster_cell)
-    tc, tr = parse_cell(target_cell)
-    return ((tc > cc) - (tc < cc), (tr > cr) - (tr < cr))
-
-
 def _area_origin(
     live: _LiveCombat, actor_id: str, intent: PlayerIntent, template: AreaTemplate
 ) -> str:
@@ -6249,38 +6129,6 @@ def _area_cover_origin(
     return _area_origin(live, actor_id, intent, plan.template)
 
 
-def _point_area_failure(
-    live: _LiveCombat, current: Combatant, intent: PlayerIntent, plan: _AreaPlan | None
-) -> CombatEvent | None:
-    if plan is None or plan.template is None or plan.template.anchor != "target":
-        return None
-    if intent.target_zone_id is None and plan.activity.persistent_area is None:
-        return None
-    origin = _area_origin(live, current.entity_id, intent, plan.template)
-    if live.topology.distance_ft(origin, origin) is None or cell_id(*parse_cell(origin)) != origin:
-        return CastFailed(
-            actor_id=current.entity_id, spell_id=intent.spell_id or "", reason="target_invalid"
-        )
-    spell = get_lib_loader().get_spell(intent.spell_id) if intent.spell_id else None
-    metric_range = spell.range if spell else plan.activity.range
-    try:
-        range_ft = (
-            int(metric_range.value)
-            if metric_range.units == "ft" and metric_range.value is not None
-            else None
-        )
-    except (ValueError, TypeError):
-        range_ft = None
-    caster_cell = live.actor_zone[current.entity_id]
-    if range_ft is not None and not _in_range_with_los(
-        live.topology, caster_cell, origin, range_ft
-    ):
-        return CastFailed(
-            actor_id=current.entity_id, spell_id=intent.spell_id or "", reason="out_of_range"
-        )
-    return None
-
-
 def _area_target_failure(
     live: _LiveCombat,
     current: Combatant,
@@ -6288,62 +6136,48 @@ def _area_target_failure(
     intent: PlayerIntent,
     feature_invocation: _FeatureInvocation | None,
 ) -> CombatEvent | None:
-    """``target_invalid`` for an area the intent can't resolve, before anything
-    is spent; ``None`` otherwise. One of the ``pre_resolution_gates``.
-
-    - A Cone, Cube or Line with no aim: no ``direction`` and no other named
-      creature (SRD 5.2: it extends "in a direction its creator chooses").
-    - ``excluded_target_ids`` naming a creature not in the combat, or sent with
-      an intent that resolves no area of your choice.
-    - A counted area naming more creatures than it affects, one creature
-      twice, or a creature not in the combat.
-    """
+    """Plan canonical and delegated delivery before the caller pays."""
     if intent.intent_type not in _AREA_INTENTS:
         return None
     if intent.intent_type == "attack":
-        if intent.excluded_target_ids is None:
-            return None
-        return AttackFailed(actor_id=actor_id, target_id=intent.target_id, reason="target_invalid")
-    activities = _resolve_intent_activities(
+        if intent.excluded_target_ids is not None:
+            return AttackFailed(
+                actor_id=actor_id, target_id=intent.target_id, reason="target_invalid"
+            )
+        return None
+    resolved = _resolve_intent_activities(
         intent,
         feature_invocation,
         current,
         stat_block_slug=_current_stat_block_slug(live, actor_id),
-    ).activities
-    plan = _area_plan(intent, activities)
-    point_failure = _point_area_failure(live, current, intent, plan)
-    if point_failure is not None:
-        return point_failure
-    in_combat = {c.entity_id for c in live.initiative}
-    invalid = (
-        (
-            plan is not None
-            and plan.template is not None
-            and plan.places_template
-            and plan.template.directional
-            and _aoe_direction(live, actor_id, intent) is None
-        )
-        or (
-            intent.excluded_target_ids is not None
-            and (
-                plan is None
-                or not is_choice(plan.activity)
-                or not set(intent.excluded_target_ids) <= in_combat
-            )
-        )
-        or (
-            plan is not None
-            and plan.count is not None
-            and (
-                len(plan.named_ids) > plan.count
-                or len(set(plan.named_ids)) != len(plan.named_ids)
-                or not set(plan.named_ids) <= in_combat
-            )
-        )
     )
-    if not invalid:
-        return None
-    return CastFailed(actor_id=actor_id, spell_id=intent.spell_id or "", reason="target_invalid")
+    area = _area_plan(intent, resolved.activities)
+    if (
+        intent.excluded_target_ids is not None
+        and area is None
+        and not any(a.kind == "cast" for a in resolved.activities)
+    ):
+        return CastFailed(
+            actor_id=actor_id, spell_id=intent.spell_id or "", reason="target_invalid"
+        )
+    try:
+        preflight_delivery(
+            live,
+            current,
+            resolved.activities,
+            spec_from_intent(intent),
+            spell=resolved.cast_spell,
+            expand_areas=area is not None or intent.intent_type == "cast_spell",
+            cast_level=intent.slot_level,
+            delegated_level_override=_item_cast_level_override(intent),
+        )
+    except DeliveryPlanningError as exc:
+        return CastFailed(
+            actor_id=actor_id,
+            spell_id=intent.spell_id or "",
+            reason=cast(CastFailedReason, exc.reason),
+        )
+    return None
 
 
 def _activities_bear_effects(activities: Sequence[Any]) -> bool:
@@ -6388,61 +6222,52 @@ def _spell_is_self_or_targetless(cast_spell: Spell | None, named_target_id: str 
 def _area_targets(
     live: _LiveCombat, actor: Combatant, intent: PlayerIntent, plan: _AreaPlan
 ) -> list[Combatant]:
-    """The creatures an intent's area affects (SRD 5.2 §Areas of Effect).
+    """Thin adapter; canonical delivery owns geometry and selection."""
+    delivery = plan_activity_delivery(
+        live, actor, [plan.activity], spec_from_intent(intent), execution=True
+    )
+    ids = delivery.target_ids
+    return [
+        c
+        for c in live.initiative
+        if c.entity_id in ids and c.is_alive and c.entity_id not in live.dead_ids
+    ]
 
-    A template the engine can place is placed at its point of origin, aimed,
-    trimmed to the cells with line of effect, and reported in an
-    ``AreaTargeted``; ``areas.select_affected`` then applies the activity's
-    ``affects`` (an "each enemy" type, "of your choice", "up to N"), the
-    caster included only where the geometry and the choice say so — Fireball
-    still hits the caster in its own radius. A counted area whose creatures
-    the intent names affects exactly those. A template the engine can't place
-    (a ``wall``, a formula size) affects the named target only.
-    """
-    alive = [c for c in live.initiative if c.is_alive and c.entity_id not in live.dead_ids]
-    excluded = intent.excluded_target_ids or ()
-    if plan.template is None:
-        _LOGGER.warning(
-            "aoe_template_unsupported type=%s size=%r — falling back to the named target",
-            plan.activity.target.template.type,
-            plan.activity.target.template.size,
-        )
-        return [c for c in alive if c.entity_id == intent.target_id and c.entity_id not in excluded]
-    by_id = {c.entity_id: c for c in alive}
-    if not plan.places_template:
-        return [by_id[i] for i in plan.named_ids if i in by_id and i not in excluded]
-    template = plan.template
-    origin = _area_origin(live, actor.entity_id, intent, template)
-    # The ``_area_target_failure`` gate already refused an unaimed Cone, Cube
-    # or Line before anything was spent.
-    direction = _aoe_direction(live, actor.entity_id, intent) if template.directional else None
-    cells = area_cells(live.topology, template, origin, direction)
-    in_area = [c.entity_id for c in alive if live.actor_zone.get(c.entity_id) in cells]
-    allies = _allied_ids(live, actor.entity_id)
-    selection = select_affected(
-        in_area,
-        affects_type=plan.activity.target.affects.type,
-        choice=is_choice(plan.activity),
-        count=plan.count,
-        harmful=is_harmful([plan.activity]),
-        excluded_ids=intent.excluded_target_ids,
-        is_enemy=lambda other: _is_enemy(live, actor.entity_id, other),
-        is_ally=allies.__contains__,
-    )
-    _emit(
-        live,
-        AreaTargeted(
-            actor_id=actor.entity_id,
-            source_id=_area_source_id(intent),
-            shape=template.shape,
-            size_ft=template.size_ft,
-            origin=origin,
-            direction=direction,
-            affected_ids=list(selection.affected_ids),
-            excluded_ids=list(selection.spared_ids),
-        ),
-    )
-    return [by_id[i] for i in selection.affected_ids]
+
+def _execute_nonspell_delivery(
+    live: _LiveCombat,
+    current: Combatant,
+    intent: PlayerIntent,
+    activities: Sequence[Activity],
+    actx: ActivityResolutionContext,
+    fetched_weapon: Weapon | None,
+) -> ActivityResolutionContext:
+    register_item_areas(live, activities, actx, intent)
+    for activity in activities:
+        if not can_continue_resolution(live, current.entity_id):
+            break
+        if activity.persistent_area is None:
+            if intent.intent_type != "attack":
+                delivery = plan_activity_delivery(
+                    live,
+                    current,
+                    [activity],
+                    spec_from_intent(intent),
+                    execution=True,
+                    default_target_ids=tuple(t.entity_id for t in actx.targets),
+                    expand_areas=_area_plan(intent, activities) is not None,
+                )
+                actx = execute_activity_delivery(
+                    live,
+                    actx,
+                    activity,
+                    delivery.activities[0],
+                    spec_from_intent(intent),
+                    _area_source_id(intent),
+                )
+            else:
+                resolve_activity(activity, actx, weapon=fetched_weapon)
+    return actx
 
 
 def _area_source_id(intent: PlayerIntent) -> str:
@@ -6620,6 +6445,15 @@ def _apply_concentration_anchor(
     identical chain entry across resolutions, so a recast of the same spell
     first ends the running one — otherwise its dependents would outlive it."""
     if spell is None or not spell.concentration:
+        return
+    latest = _find_combatant(live, caster.entity_id)
+    if (
+        latest is None
+        or not latest.is_alive
+        or caster.entity_id in live.dead_ids
+        or latest.hp_current <= 0
+        or conditions_break_concentration(_condition_names(latest))
+    ):
         return
     if any(
         isinstance(ev, EffectApplied) and ev.effect.flags.get("concentration")
@@ -10097,7 +9931,7 @@ def _apply_transform_riders(
     number of Temporary Hit Points equal to the Hit Points of the Beast form".
     A target's FIRST ``SaveRolled`` in the resolution is the spell's own; a
     later one is a roll the damage triggered (the
-    ``_apply_forced_movement_riders`` rule). The form rides the spell's
+    typed forced-movement delivery rule). The form rides the spell's
     concentration effect (id and origin by the spell-effect convention), so
     C13 governs it; a successful save applies nothing and the concentration
     anchor follows."""
@@ -11316,6 +11150,11 @@ def _resolve_targets(
     caster for an effect-bearing self/targetless buff or a self-targeting
     feature. A count-bearing activity (R5 — Magic Missile darts) expands via
     ``_count_scaled_targets`` in place of the plain ``target_id`` lookup."""
+    if cast_spell is not None:
+        delivery = plan_spell_delivery(
+            live, current, cast_spell, spec_from_intent(intent), execution=True
+        )
+        return [c for c in live.initiative if c.entity_id in delivery.target_ids]
     targets: list[Combatant]
     plan = _area_plan(intent, activities)
     if plan is not None:
@@ -12079,23 +11918,19 @@ async def _submit_player_intent(
             if cast_spell
             else "item",
             source_uses=feature_invocation.source_uses if feature_invocation else None,
-            spell_dispatch=lambda spell, child_ctx: resolve_spell_activities(
-                live, spell, child_ctx, intent=intent
-            ),
+            spell_delivery=spec_from_intent(intent),
+            spell_dispatch=lambda spell, child_ctx: execute_spell_delivery(live, spell, child_ctx),
         )
         actx = attach_reaction_hooks(live, actx)
         actx = attach_attack_riders(
             live, actx, rider_plans, origin=rider_origin, reckless_attack=intent.reckless_attack
         )
         if cast_spell is not None:
-            resolve_spell_activities(live, cast_spell, actx, intent=intent)
+            actx = execute_spell_delivery(live, cast_spell, actx)
         else:
-            register_item_areas(live, activities, actx, intent)
-            for activity in activities:
-                if not can_continue_resolution(live, current.entity_id):
-                    break
-                if activity.persistent_area is None:
-                    resolve_activity(activity, actx, weapon=fetched_weapon)
+            actx = _execute_nonspell_delivery(
+                live, current, intent, activities, actx, fetched_weapon
+            )
 
         # SRD 5.2 Bardic Inspiration — a die rolled this resolution is spent.
         _expend_granted_die(live, current, actx)
@@ -12128,7 +11963,7 @@ async def _submit_player_intent(
         # Thunderwave's "pushed 10 feet away from you") fire after the
         # save/damage resolution so the push never perturbs the seeded roll
         # order and a target that died is left where it fell.
-        _apply_forced_movement_riders(live, current, intent, pre_event_count)
+        fold_forced_movement_requests(live, actx)
 
         # SRD 5.2 §Two-Weapon Fighting — after a resolved MAIN-HAND swing
         # (never the off-hand swing itself) with a Light weapon, record its

@@ -3,18 +3,25 @@ one event.
 
 ``start_combat`` takes a required ``GridScene``; the zone graph and its
 ``scene_zones`` keyword are gone. A template the engine can't map onto the grid
-still resolves, against its named target.
+is refused before payment or resolution.
 """
 
 from __future__ import annotations
 
 import asyncio
-import logging
+from copy import deepcopy
 
 import pytest
 from pydantic import ValidationError
 
-from dnd5e_engine.events import ConcentrationCheck, MoveFailed, SaveRolled
+from dnd5e_engine.events import (
+    AreaTargeted,
+    CastFailed,
+    ConcentrationCheck,
+    DamageApplied,
+    MoveFailed,
+    SaveRolled,
+)
 from dnd5e_engine.orchestrator import _extends_rage, start_combat
 from dnd5e_engine.spatial import cell_id
 from dnd5e_engine.specs import GridScene
@@ -60,24 +67,35 @@ def test_a_zone_name_destination_is_unreachable_on_the_grid() -> None:
     assert combatant(live).movement_remaining == budget
 
 
-def test_an_unmappable_area_targets_the_named_target_only(caplog: pytest.LogCaptureFixture) -> None:
+def test_an_unmappable_area_is_refused_before_payment_or_rng() -> None:
     """Confusion's sphere size is a formula the engine can't map, so the cast
-    falls back to its named target — never its neighbour, never the caster."""
+    rejects before any target saves, payment or random draw."""
     caster = wizard(spells_known=["confusion"], spell_slots={4: 1}, character_level=7)
     near = foe(entity_id="mon:a", name="A", zone_id=cell_id(4, 0))
     neighbour = foe(entity_id="mon:b", name="B", zone_id=cell_id(4, 1))
     handle, live = start([caster], seed=1, encounter=[near, neighbour])
-    with caplog.at_level(logging.WARNING, logger="dnd5e_engine.orchestrator"):
-        act(
-            handle,
-            "char:wiz",
-            intent_type="cast_spell",
-            spell_id="confusion",
-            target_id="mon:a",
-            slot_level=4,
-        )
-    assert [e.target_id for e in events(live, SaveRolled)] == ["mon:a"]
-    assert "falling back to the named target" in caplog.text
+    before = deepcopy(
+        (live.initiative, live.spell_slots_by_entity, live.concentration_chain, live.rng.getstate())
+    )
+    act(
+        handle,
+        "char:wiz",
+        intent_type="cast_spell",
+        spell_id="confusion",
+        target_id="mon:a",
+        slot_level=4,
+    )
+    assert [event.reason for event in events(live, CastFailed)] == ["unsupported_area"]
+    assert not events(live, SaveRolled)
+    assert not events(live, DamageApplied)
+    assert not events(live, AreaTargeted)
+    assert (
+        live.initiative,
+        live.spell_slots_by_entity,
+        live.concentration_chain,
+        live.rng.getstate(),
+    ) == before
+    assert live.current_actor_id == "char:wiz"
 
 
 def test_an_enemy_concentration_check_does_not_extend_rage() -> None:

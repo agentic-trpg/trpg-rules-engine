@@ -7,6 +7,7 @@ at execution. No spell slugs, activity names or prose drive runtime behavior.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
 
@@ -56,6 +57,9 @@ class PendingTimedActivity:
     duration: ActiveEffectDuration | None
     concentration: bool
     concentration_identity: EffectIdentity | None
+    activity_source_id: str | None = None
+    source_parent_id: str | None = None
+    attack_bonus_override: int | None = None
 
 
 @dataclass
@@ -113,7 +117,10 @@ def resolve_spell_activities(
     *,
     intent: PlayerIntent | None = None,
     area_origin: str | None = None,
-) -> None:
+    prepare_activity: (
+        Callable[[Activity, ActivityResolutionContext], ActivityResolutionContext] | None
+    ) = None,
+) -> ActivityResolutionContext:
     """Resolve only immediate activities, then register deferred work.
 
     Effect attachment events determine eligibility, so only failed saves/hits
@@ -141,33 +148,42 @@ def resolve_spell_activities(
         ),
     )
     before = len(live.event_log)
+    contexts: dict[str, ActivityResolutionContext] = {}
     for activity in spell.activities:
         if not can_continue_resolution(live, ctx.caster.entity_id):
             break
+        activity_ctx = (
+            prepare_activity(activity, ctx)
+            if prepare_activity is not None
+            else replace(ctx, activity_source_id=f"spell:{spell.slug}:{activity.id}")
+        )
+        contexts[activity.id] = activity_ctx
         if activity.persistent_area is not None:
             register_area(
                 live,
                 activity,
-                ctx,
+                activity_ctx,
                 source_id=spell.slug,
                 spell=spell,
                 intent=intent,
                 origin=area_origin,
             )
         elif activity.timing.trigger == "immediate":
-            resolve_activity(activity, ctx)
+            resolve_activity(activity, activity_ctx)
     emitted = live.event_log[before:]
     for activity in spell.activities:
-        record_reaction_effects(live, ctx, activity, emitted)
+        if activity.id in contexts:
+            record_reaction_effects(live, contexts[activity.id], activity, emitted)
     applied = [e.effect for e in emitted if isinstance(e, EffectApplied)]
     for activity in spell.activities:
-        if activity.persistent_area is not None:
+        if activity.persistent_area is not None or activity.id not in contexts:
             continue
+        activity_ctx = contexts[activity.id]
         timing = activity.timing
         if timing.trigger not in ("turn_start", "turn_end") or timing.subject == "area":
             continue
-        for target in ctx.targets:
-            linked = _linked_effect(spell, ctx, timing, target, applied)
+        for target in activity_ctx.targets:
+            linked = _linked_effect(spell, activity_ctx, timing, target, applied)
             if timing.effect_id is not None and linked is None:
                 continue
             identity = (linked.target_id, linked.id, linked.origin) if linked else None
@@ -184,11 +200,11 @@ def resolve_spell_activities(
                     sequence=state.next_sequence,
                     spell=spell,
                     activity=activity,
-                    caster=ctx.caster,
+                    caster=activity_ctx.caster,
                     target_id=target.entity_id,
-                    slot_level=ctx.slot_level,
-                    spellcasting_ability=ctx.spellcasting_ability,
-                    save_dc_override=ctx.save_dc_override,
+                    slot_level=activity_ctx.slot_level,
+                    spellcasting_ability=activity_ctx.spellcasting_ability,
+                    save_dc_override=activity_ctx.save_dc_override,
                     timing=timing,
                     not_before_turn=live.turn_serial + int(timing.next_turn),
                     effect_identity=identity,
@@ -197,13 +213,17 @@ def resolve_spell_activities(
                     else ActiveEffectDuration(rounds=orch._concentration_max_rounds(spell)),
                     concentration=spell.concentration,
                     concentration_identity=(
-                        identity or orch._anchor_identity(spell.slug, ctx.caster.entity_id)
+                        identity or orch._anchor_identity(spell.slug, activity_ctx.caster.entity_id)
                     )
                     if spell.concentration
                     else None,
+                    activity_source_id=activity_ctx.activity_source_id,
+                    source_parent_id=activity_ctx.source_parent_id,
+                    attack_bonus_override=activity_ctx.attack_bonus_override,
                 )
             )
             state.next_sequence += 1
+    return ctx
 
 
 def _linked_effect(
@@ -269,6 +289,7 @@ def _execute(
 ) -> None:
     from dnd5e_engine import orchestrator as orch
     from dnd5e_engine.live_reactions import attach_reaction_hooks
+    from dnd5e_engine.live_spell_delivery import fold_forced_movement_requests
 
     before = len(live.event_log)
     payload = orch._build_hydration_payload(live, caster=caster)
@@ -287,9 +308,26 @@ def _execute(
         **orch._monster_context_kwargs(live, caster, [target], payload),
     )
     ctx = attach_reaction_hooks(
-        live, replace(ctx, lifecycle_source_kind="spell", lifecycle_source_slug=pending.spell.slug)
+        live,
+        replace(
+            ctx,
+            lifecycle_source_kind="spell",
+            lifecycle_source_slug=pending.spell.slug,
+            activity_source_id=pending.activity_source_id
+            or f"spell:{pending.spell.slug}:{pending.activity.id}",
+            source_parent_id=pending.source_parent_id,
+            attack_bonus_override=pending.attack_bonus_override,
+            target_auto_success_ids=frozenset(
+                [target.entity_id]
+                if pending.activity.target.creature_filter
+                and target.creature_type
+                in pending.activity.target.creature_filter.auto_success_creature_types
+                else []
+            ),
+        ),
     )
     resolve_activity(pending.activity, ctx)
+    fold_forced_movement_requests(live, ctx)
     orch._sync_legendary_resistance(live, before)
     if pending.concentration and live.concentration_chain.get(caster.entity_id):
         chain = live.concentration_chain[caster.entity_id]

@@ -89,6 +89,7 @@ from dnd5e_srd_data import (
     WeaponProperty,
 )
 from dnd5e_srd_data.schema.common import ReactionCondition, ReactionTriggerKind
+from tools.translators.area_delivery import apply_area_delivery, normalize_target_filters
 from tools.translators.attack_riders import (
     attack_rider_activities,
     attack_rider_choice_limits,
@@ -465,7 +466,7 @@ def _translate_activities(system: dict[str, Any]) -> list[Activity]:
         if built is None:
             continue
         out.append(built)
-    return out
+    return normalize_target_filters(out)
 
 
 def _load_yaml(yaml_path: Path) -> dict[str, Any]:
@@ -2088,8 +2089,13 @@ def translate_generic_item_yaml(
         rarity=rarity,
         provenance=_provenance(yaml_path, ingest_date, ingest_version),
         review=ReviewState(),
-        activities=apply_persistent_areas(
-            _slug(doc, yaml_path), _description(doc), _translate_activities(system)
+        activities=apply_area_delivery(
+            "item",
+            _slug(doc, yaml_path),
+            _description(doc),
+            apply_persistent_areas(
+                _slug(doc, yaml_path), _description(doc), _translate_activities(system)
+            ),
         ),
         passive_effects=_passive_effects(doc),
         requires_attunement=requires_attunement,
@@ -2386,23 +2392,28 @@ def translate_spell_yaml(
         duration=_spell_duration(system.get("duration") or {}),
         materials=_spell_materials(system.get("materials") or {}),
         preparation=_spell_preparation(system.get("preparation") or {}),
-        activities=effect_lifecycle_activities(
+        activities=apply_area_delivery(
             "spell",
             slug,
-            apply_reaction_semantics(
+            _description(doc),
+            effect_lifecycle_activities(
+                "spell",
                 slug,
-                apply_persistent_areas(
+                apply_reaction_semantics(
                     slug,
-                    _description(doc),
-                    apply_spell_timing(
+                    apply_persistent_areas(
                         slug,
                         _description(doc),
-                        _apply_affects_corrections(
+                        apply_spell_timing(
                             slug,
-                            _apply_spell_save_cover_overrides(
+                            _description(doc),
+                            _apply_affects_corrections(
                                 slug,
-                                _apply_spell_damage_type_corrections(
-                                    slug, _translate_activities(system)
+                                _apply_spell_save_cover_overrides(
+                                    slug,
+                                    _apply_spell_damage_type_corrections(
+                                        slug, _translate_activities(system)
+                                    ),
                                 ),
                             ),
                         ),
@@ -3114,11 +3125,16 @@ def translate_feature_yaml(
     system = doc.get("system") or {}
     feature_type, source_slug = _feature_type_and_source(yaml_path)
     slug = _feature_slug(doc, yaml_path)
-    activities = effect_lifecycle_activities(
+    activities = apply_area_delivery(
         "feature",
         slug,
-        attack_rider_activities(
-            slug, feature_runtime_activities(slug, _translate_activities(system))
+        _description(doc),
+        effect_lifecycle_activities(
+            "feature",
+            slug,
+            attack_rider_activities(
+                slug, feature_runtime_activities(slug, _translate_activities(system))
+            ),
         ),
     )
     return Feature(

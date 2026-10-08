@@ -799,11 +799,37 @@ _PROBES: dict[str, tuple[Any, str]] = {
         ),
         "✅",
     ),
+    "Unified spell/area delivery": (
+        lambda: (
+            "class SpellDeliverySpec(" in _src("spell_delivery.py")
+            and "def preflight_delivery(" in _src("live_spell_delivery.py")
+            and "def execute_spell_delivery(" in _src("live_spell_delivery.py")
+            and "ctx.spell_dispatch(spell, child_ctx)" in _src("activities/cast.py")
+        ),
+        "✅",
+    ),
+    "Dust of Sneezing and Choking": (
+        lambda: (
+            BundledAssetLoader()
+            .get_item("dust-of-sneezing-and-choking")
+            .activities[0]
+            .target.area_semantics.includes_origin
+            and len(
+                BundledAssetLoader()
+                .get_item("dust-of-sneezing-and-choking")
+                .activities[0]
+                .target.creature_filter.auto_success_creature_types
+            )
+            == 5
+            and "target_auto_success_ids" in _src("activities/save_primitive.py")
+        ),
+        "⚠️ Partial",
+    ),
     # C16/C26: shared geometry, including monster actions and casts.
     "AoE templates (sphere / cone / line / cube / cylinder / emanation)": (
         lambda: (
             "cells_in_template(" in _src("areas.py")
-            and "AreaTargeted(" in _src("orchestrator.py")
+            and "AreaTargeted(" in _src("live_spell_delivery.py")
             and "excluded_target_ids" in _src("orchestrator.py")
         ),
         "✅",
@@ -811,10 +837,10 @@ _PROBES: dict[str, tuple[Any, str]] = {
     "Monster area execution and aiming": (
         lambda: (
             "def _monster_area_placement(" in _src("orchestrator.py")
-            and "_monster_area_placement(live, current, spell.activities, spell=spell)"
+            and "_monster_area_placement(live, actor, spell.activities, spell=spell)"
             in _src("orchestrator.py")
             and "_monster_area_placement(live, actor, [activity])" in _src("orchestrator.py")
-            and "_MONSTER_AREA_DIRECTIONS" in _src("orchestrator.py")
+            and "MONSTER_AREA_DIRECTIONS" in _src("live_monster_delivery.py")
             and "_mark_monster_action_used(live, actor, action, resolved)"
             in _src("orchestrator.py")
         ),

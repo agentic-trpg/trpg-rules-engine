@@ -200,6 +200,8 @@ def test_actual_source_departure_retains_nonconcentration_repeat_and_target_depa
 
 
 def test_public_feature_rollback_restores_registration_consumption_and_damage_cache(monkeypatch):
+    import dnd5e_engine.live_spell_delivery as delivery
+
     handle, live = start(
         [pc(class_slug="barbarian", subclass_slug="berserker", character_level=14)], seed=4
     )
@@ -215,7 +217,7 @@ def test_public_feature_rollback_restores_registration_consumption_and_damage_ca
         }
     )
     orch._emit(live, EffectApplied(effect=grant))
-    original = orch.resolve_activity
+    original = delivery.resolve_activity
 
     def broken(activity, ctx, **kwargs):
         original(activity, ctx, **kwargs)
@@ -231,7 +233,7 @@ def test_public_feature_rollback_restores_registration_consumption_and_damage_ca
         )
         raise ValueError("injected lifecycle failure")
 
-    monkeypatch.setattr(orch, "resolve_activity", broken)
+    monkeypatch.setattr(delivery, "resolve_activity", broken)
     before = deepcopy(
         (
             live.initiative,

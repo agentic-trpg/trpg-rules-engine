@@ -63,6 +63,7 @@ class AreaTemplate:
     size_ft: int
     anchor: OriginAnchor
     includes_origin: bool
+    width_ft: int = 5
 
     @property
     def directional(self) -> bool:
@@ -82,7 +83,16 @@ def area_activity(activities: Sequence[Any]) -> Any | None:
     """The first save, damage or heal activity that carries a measured
     template, or ``None`` when the activities resolve against a named target."""
     return next(
-        (a for a in activities if a.kind in _AREA_KINDS and a.target.template.type),
+        (
+            a
+            for a in activities
+            if a.kind in _AREA_KINDS
+            and a.target.template.type
+            and (
+                a.target.area_semantics is None
+                or a.target.area_semantics.template_role == "target_area"
+            )
+        ),
         None,
     )
 
@@ -100,7 +110,23 @@ def area_template(activity: Any) -> AreaTemplate | None:
     if mapped is None or size_ft <= 0:
         return None
     shape, grid_shape, anchor, includes_origin = mapped
-    return AreaTemplate(shape, grid_shape, size_ft, anchor, includes_origin)
+    semantics = activity.target.area_semantics
+    if semantics is not None:
+        if semantics.template_role == "effect_geometry":
+            return None
+        anchor = "actor" if semantics.origin_policy == "actor" else "target"
+        includes_origin = semantics.includes_origin
+        if grid_shape == "cube" and anchor == "target":
+            # Placed Cubes use the point-based square footprint. Actor Cubes
+            # retain their directional face anchor and excluded creator cell.
+            grid_shape = "square"
+    try:
+        width_ft = int(float(template.width)) if template.width else 5
+    except (TypeError, ValueError):
+        return None
+    if grid_shape == "line" and width_ft <= 0:
+        return None
+    return AreaTemplate(shape, grid_shape, size_ft, anchor, includes_origin, width_ft)
 
 
 def creature_count(activity: Any) -> int | None:
@@ -147,7 +173,11 @@ def area_cells(
     its point of origin, the origin itself dropped where the shape excludes it.
     ``direction`` is required for a directional template."""
     cells = topology.cells_in_template(
-        origin, template.grid_shape, template.size_ft, direction=direction
+        origin,
+        template.grid_shape,
+        template.size_ft,
+        direction=direction,
+        width_ft=template.width_ft,
     )
     area = {c for c in cells if has_line_of_effect(topology, origin, c)}
     if not template.includes_origin:

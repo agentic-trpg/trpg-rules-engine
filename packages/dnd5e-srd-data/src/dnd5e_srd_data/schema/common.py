@@ -312,6 +312,57 @@ class TargetAffectsBlock(BaseModel, frozen=True):
     special: str = ""
 
 
+TargetCreatureType = Literal[
+    "aberration",
+    "beast",
+    "celestial",
+    "construct",
+    "dragon",
+    "elemental",
+    "fey",
+    "fiend",
+    "giant",
+    "humanoid",
+    "monstrosity",
+    "ooze",
+    "plant",
+    "undead",
+]
+
+
+class TargetCreatureFilter(BaseModel, frozen=True):
+    """Reviewed creature-type predicates, never arbitrary target prose.
+
+    An unreviewed source restriction carries a deferred reason so delivery can
+    refuse it without interpreting ``target.affects.special`` at runtime.
+    """
+
+    model_config = {"extra": "forbid"}
+    include_creature_types: tuple[TargetCreatureType, ...] = ()
+    exclude_creature_types: tuple[TargetCreatureType, ...] = ()
+    auto_success_creature_types: tuple[TargetCreatureType, ...] = ()
+    deferred_reason: str | None = Field(default=None, exclude_if=lambda value: value is None)
+
+
+class AreaSemantics(BaseModel, frozen=True):
+    """Rule meaning of a measured template, separate from grid geometry."""
+
+    model_config = {"extra": "forbid"}
+    template_role: Literal["target_area", "effect_geometry"] = "target_area"
+    origin_policy: Literal["actor", "point_within_range"]
+    includes_origin: bool = False
+
+
+class ForcedMovementSpec(BaseModel, frozen=True):
+    """A closed activity outcome, emitted only after that target resolves."""
+
+    model_config = {"extra": "forbid"}
+    trigger: Literal["failed_save", "successful_save", "hit"]
+    distance_ft: PositiveInt
+    direction: Literal["away_from_source", "toward_source"]
+    target_role: Literal["activity_target"] = "activity_target"
+
+
 class TargetBlock(BaseModel, frozen=True):
     """Foundry ``shared/target-field.mjs`` + base-activity additions
     (``override``, ``prompt``)."""
@@ -320,6 +371,12 @@ class TargetBlock(BaseModel, frozen=True):
     affects: TargetAffectsBlock = Field(default_factory=TargetAffectsBlock)
     override: bool = False
     prompt: bool = True
+    area_semantics: AreaSemantics | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    creature_filter: TargetCreatureFilter | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
 
 class UsesRecoveryEntry(BaseModel, frozen=True):
@@ -714,6 +771,9 @@ class _ActivityBase(BaseModel):
     timing: ActivityTiming = Field(default_factory=ActivityTiming)
     persistent_area: PersistentAreaSpec | None = None
     reaction: ReactionSemantics | None = None
+    forced_movement: ForcedMovementSpec | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
     model_config = {"populate_by_name": True}
 

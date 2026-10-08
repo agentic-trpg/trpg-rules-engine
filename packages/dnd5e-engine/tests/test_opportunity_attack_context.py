@@ -22,6 +22,7 @@ from dnd5e_engine.events import (
     ConditionRemoved,
     DamageApplied,
 )
+from dnd5e_engine.lib_loader import get_lib_loader
 from dnd5e_engine.orchestrator import (
     _find_combatant,
     _get_live,
@@ -306,17 +307,25 @@ def test_an_unarmed_strike_at_ten_feet_rolls_no_long_range_disadvantage() -> Non
     assert "range:long" not in aoo.sources
 
 
-def test_a_template_monsters_opportunity_attack_reports_no_source_id() -> None:
-    # The on-turn convention for a stat-block attack's damage: source_id is
-    # the attack's own typed slug, never surfaced here, so DamageApplied
-    # reports None (mirrors the on-turn monster-attack path).
+def test_a_template_monsters_opportunity_attack_reports_its_typed_activity_source() -> None:
+    # The shared activity delivery seam preserves the stat-block activity
+    # identity for off-turn attacks as well as ordinary monster attacks.
     handle, live = _start(
         [_hero(initiative=20)],
         [_monster(monster_template_slug="goblin-warrior", initiative=1, attack_bonus=20)],
     )
     _act(handle, "char:hero", intent_type="move", target_zone_id=cell_id(0, 3))
     [damage] = [e for e in live.event_log if isinstance(e, DamageApplied)]
-    assert damage.source_id is None
+    monster = get_lib_loader().get_monster("goblin-warrior")
+    assert monster is not None
+    activity = next(
+        activity
+        for action in monster.actions
+        for activity in action.activities
+        if activity.kind == "attack"
+    )
+    assert damage.source_id == f"monster::{activity.id}"
+    assert damage.source_actor_id == "mon:foe"
     assert damage.damage_type == "slashing"
 
 

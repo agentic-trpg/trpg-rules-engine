@@ -167,6 +167,13 @@
           "special": "target is Humanoid",
           "type": "creature"
         },
+        "creature_filter": {
+          "auto_success_creature_types": [],
+          "exclude_creature_types": [],
+          "include_creature_types": [
+            "humanoid"
+          ]
+        },
         "override": true,
         "prompt": true,
         "template": {

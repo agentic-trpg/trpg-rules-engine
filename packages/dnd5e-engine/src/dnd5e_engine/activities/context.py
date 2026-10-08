@@ -22,6 +22,8 @@ if TYPE_CHECKING:
         SummonRequest,
         TransformRequest,
     )
+    from dnd5e_engine.activities.forced_movement import ForcedMovementRequest
+    from dnd5e_engine.spell_delivery import SpellDeliverySpec
     from dnd5e_engine.types.effects import ActiveEffect
 
 
@@ -245,7 +247,21 @@ class ActivityResolutionContext:
     cast_level_override: int | None = None
     # Live-combat spell dispatch also schedules typed deferred activities.
     # Standalone resolution has no lifecycle and resolves only immediate work.
-    spell_dispatch: Callable[[Spell, ActivityResolutionContext], None] | None = None
+    spell_dispatch: (
+        Callable[[Spell, ActivityResolutionContext], ActivityResolutionContext | None] | None
+    ) = None
+    # A host's choices survive a delegated cast, while the shared dispatcher
+    # replans targets using the child spell's own canonical semantics.
+    spell_delivery: SpellDeliverySpec | None = None
+    # Canonical source identity for this activity and the parent invocation.
+    # These are observability carriers, independent of the recursion guard.
+    activity_source_id: str | None = None
+    source_parent_id: str | None = None
+    # Selected creatures that automatically succeed this activity's save.
+    # A successful save remains a real save and consumes one-use save clauses.
+    target_auto_success_ids: frozenset[str] = frozenset()
+    # Pure resolvers describe movement; the live boundary owns its geometry.
+    forced_movement_requests: list[ForcedMovementRequest] = field(default_factory=list)
     # Player-supplied damage-type choice per activity id, for parts that offer a
     # CHOICE of damage type (``DamagePartBlock.types`` with >1 entry — e.g.
     # Chromatic Orb's [acid, cold, fire, ...]). Keyed by activity id; the chosen

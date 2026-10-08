@@ -636,7 +636,9 @@ def handle_move(live: _LiveCombat, actor: Combatant, intent: PlayerIntent) -> No
     flush()
 
 
-def push(live: _LiveCombat, target_id: str, origin_cell: str, distance_ft: int) -> None:
+def push(
+    live: _LiveCombat, target_id: str, origin_cell: str, distance_ft: int, *, toward: bool = False
+) -> None:
     """Reuse GridTopology.push_path; forced steps share all position hooks."""
     from dnd5e_engine import orchestrator as o
 
@@ -648,6 +650,7 @@ def push(live: _LiveCombat, target_id: str, origin_cell: str, distance_ft: int) 
         start,
         distance_ft,
         occupied_cells=o._occupied_cells(live, exclude=(target_id,)),
+        toward=toward,
     )
     target = o._find_combatant(live, target_id)
     split = bool(

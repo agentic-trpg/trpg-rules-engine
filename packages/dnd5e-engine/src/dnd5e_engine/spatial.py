@@ -457,6 +457,7 @@ class GridTopology:
         size_ft: int,
         *,
         direction: tuple[int, int] | None = None,
+        width_ft: int | None = None,
     ) -> list[str]:
         """SRD 5.2 §Areas of Effect — the in-bounds cell set for a template.
 
@@ -533,11 +534,14 @@ class GridTopology:
         sdr = (ddr > 0) - (ddr < 0)
 
         if shape == "line":
-            line_cells: list[str] = []
-            for step in range(radius_cells + 1):
-                cid = cell_id(oc + sdc * step, orow + sdr * step)
-                if self._in_bounds(cid):
-                    line_cells.append(cid)
+            line_cells: list[str] = [origin]
+            lanes = max(1, (width_ft or self._cell_size_ft) // self._cell_size_ft)
+            offsets = range(-((lanes - 1) // 2), lanes // 2 + 1)
+            for step in range(1, radius_cells + 1):
+                for offset in offsets:
+                    cid = cell_id(oc + sdc * step - sdr * offset, orow + sdr * step + sdc * offset)
+                    if self._in_bounds(cid):
+                        line_cells.append(cid)
             return line_cells
 
         if shape == "cube":
@@ -568,6 +572,7 @@ class GridTopology:
         distance_ft: int,
         *,
         occupied_cells: Collection[str] = (),
+        toward: bool = False,
     ) -> list[str]:
         """Forced movement "straight away from" ``origin``: the cells a creature
         at ``target`` crosses when pushed ``distance_ft`` (SRD 5.2 Thunderwave
@@ -583,6 +588,8 @@ class GridTopology:
         tc, tr = parse_cell(target)
         sdc = (tc > oc) - (tc < oc)
         sdr = (tr > orow) - (tr < orow)
+        if toward:
+            sdc, sdr = -sdc, -sdr
         occupied = set(occupied_cells)
         out: list[str] = []
         current = target

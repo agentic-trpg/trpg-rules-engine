@@ -47,6 +47,7 @@ nav:
       - Reaction queue: dev/reaction-queue.md
       - Passive-stat projection: dev/passive-projection.md
       - Spatial geometry: dev/spatial-geometry.md
+      - Unified spell and area delivery: dev/spell-area-delivery.md
       - Physical movement and positioning: dev/movement-positioning.md
       - Spell timed activities: dev/spell-timed-activities.md
       - Typed effect lifecycle: dev/effect-lifecycle.md

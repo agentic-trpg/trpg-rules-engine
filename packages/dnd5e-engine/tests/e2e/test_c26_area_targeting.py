@@ -451,15 +451,15 @@ def test_c26_s14_slow_affects_six_enemies_in_its_cube() -> None:
         intent_type="cast_spell",
         spell_id="slow",
         slot_level=3,
-        direction=(1, 0),
+        target_zone_id=cell(1, 0),
     )
     assert _saved(live) == ["mon:g1", "mon:g2", "mon:g3", "mon:g4", "mon:g5", "mon:g6"]
     [area] = _areas(live)
     assert (area.shape, area.size_ft, area.origin, area.direction) == (
         "cube",
         40,
-        cell(0, 0),
-        (1, 0),
+        cell(1, 0),
+        None,
     )
     assert area.excluded_ids == ["char:ally", "mon:g7"]
 

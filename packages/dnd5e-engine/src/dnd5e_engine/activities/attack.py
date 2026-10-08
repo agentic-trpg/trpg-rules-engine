@@ -82,6 +82,7 @@ from dnd5e_engine.activities.context import (
 from dnd5e_engine.activities.d20 import AdvantageSources, roll_d20_test
 from dnd5e_engine.activities.dice import roll_damage_part, roll_expr
 from dnd5e_engine.activities.effects import apply_activity_effects
+from dnd5e_engine.activities.forced_movement import request_forced_movement
 from dnd5e_engine.activities.formula import resolve_damage_block, resolve_roll_data
 from dnd5e_engine.activities.mastery import apply_mastery_on_hit, apply_mastery_on_miss
 from dnd5e_engine.events import (
@@ -1279,7 +1280,11 @@ def _apply_on_hit_damage(
             dict(by_type),
             damage_ctx,
             magical=(weapon is not None and weapon.magical) or ctx.base_spell_level is not None,
-            source_id=_damage_source_id(activity, weapon, source_id_override),
+            source_id=(
+                source_id_override
+                or ctx.activity_source_id
+                or _damage_source_id(activity, weapon, None)
+            ),
             is_crit=is_crit,
         )
     finally:
@@ -1288,6 +1293,7 @@ def _apply_on_hit_damage(
                 ctx.variables.pop(_IN_CRIT, None)
             else:
                 ctx.variables[_IN_CRIT] = previous
+    request_forced_movement(activity, ctx, target.entity_id, trigger="hit")
     if ctx.attack_rider_resolved is not None:
         ctx.attack_rider_resolved(replace(plan, damage_dealt=total_dealt))
     return total_dealt

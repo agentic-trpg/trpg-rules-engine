@@ -186,6 +186,14 @@
           "special": "Fiend or Undead",
           "type": "creature"
         },
+        "creature_filter": {
+          "auto_success_creature_types": [],
+          "exclude_creature_types": [],
+          "include_creature_types": [
+            "fiend",
+            "undead"
+          ]
+        },
         "override": false,
         "prompt": true,
         "template": {

@@ -426,6 +426,12 @@
               "special": "one Medium or smaller creature",
               "type": "creature"
             },
+            "creature_filter": {
+              "auto_success_creature_types": [],
+              "deferred_reason": "unreviewed_target_restriction",
+              "exclude_creature_types": [],
+              "include_creature_types": []
+            },
             "override": false,
             "prompt": true,
             "template": {

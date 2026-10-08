@@ -554,16 +554,18 @@ def test_move_to_own_cell_or_without_destination_keeps_not_adjacent() -> None:
 # ── Task 9: forced movement ──────────────────────────────────────────────
 
 
-def test_forced_movement_registry_is_typed_and_names_thunderwave():
-    from dnd5e_engine.activities.forced_movement import (
-        FORCED_MOVEMENT_RIDERS,
-        ForcedMovementRider,
-    )
+def test_forced_movement_is_canonical_typed_metadata_without_engine_registry():
+    from dnd5e_srd_data.loader import BundledAssetLoader
+    from dnd5e_srd_data.schema.common import ForcedMovementSpec
 
-    rider = FORCED_MOVEMENT_RIDERS["thunderwave"]
-    assert rider == ForcedMovementRider(
-        distance_ft=10, trigger="failed_save", direction="away_from_caster"
+    from dnd5e_engine.activities import forced_movement
+
+    spell = BundledAssetLoader().get_spell("thunderwave")
+    assert spell is not None
+    assert spell.activities[0].forced_movement == ForcedMovementSpec(
+        distance_ft=10, trigger="failed_save", direction="away_from_source"
     )
+    assert not hasattr(forced_movement, "FORCED_MOVEMENT_RIDERS")
 
 
 def test_push_combatant_emits_combatant_moved_without_spending_budget():
@@ -621,12 +623,14 @@ def test_thunderwave_push_skips_a_creature_that_saved():
 
 
 def test_forced_movement_ignores_a_later_save_of_a_target_that_saved():
-    """SRD 5.2 Thunderwave — "On a failed save … is pushed". The rule keys on
-    the target's FIRST ``SaveRolled`` in the slice — the spell's own save —
-    because the damage it deals can trigger a later ``SaveRolled`` (Undead
-    Fortitude's Constitution save); a target that SAVED against the spell
-    must not be shoved because of it."""
-    from dnd5e_engine.orchestrator import _apply_forced_movement_riders
+    """Movement requests use the activity's actual save outcome. A later
+    failed save in the event log cannot manufacture or duplicate its push."""
+    from dnd5e_srd_data.loader import BundledAssetLoader
+
+    from dnd5e_engine.activities.context import ActivityResolutionContext
+    from dnd5e_engine.activities.resolver import resolve_activity
+    from dnd5e_engine.live_spell_delivery import fold_forced_movement_requests
+    from dnd5e_engine.orchestrator import _emit
 
     live = run_async(
         _move(
@@ -637,7 +641,20 @@ def test_forced_movement_ignores_a_later_save_of_a_target_that_saved():
         )
     )
     caster = next(c for c in live.initiative if c.entity_id == "char:hero")
-    pre = len(live.event_log)
+    spell = BundledAssetLoader().get_spell("thunderwave")
+    assert spell is not None
+
+    def context(natural):
+        return ActivityResolutionContext(
+            rng=live.rng,
+            caster=caster,
+            targets=[next(c for c in live.initiative if c.entity_id == "mon:foe")],
+            event_emitter=lambda event: _emit(live, event),
+            caster_abilities={"con": 10},
+            base_spell_level=1,
+            save_dc_override=10,
+            variables={"force_save_d20": natural},
+        )
 
     def _save(succeeded: bool) -> events_module.SaveRolled:
         return events_module.SaveRolled(
@@ -653,18 +670,20 @@ def test_forced_movement_ignores_a_later_save_of_a_target_that_saved():
         )
 
     # Spell save SUCCEEDED, then a later save (Undead Fortitude's) FAILED.
-    live.event_log.append(_save(True))
+    ctx = context(20)
+    resolve_activity(spell.activities[0], ctx)
+    assert not ctx.forced_movement_requests
     live.event_log.append(_save(False))
-    intent = PlayerIntent(intent_type="cast_spell", spell_id="thunderwave", target_id="mon:foe")
-    _apply_forced_movement_riders(live, caster, intent, pre)
+    fold_forced_movement_requests(live, ctx)
     assert not [e for e in live.event_log if isinstance(e, events_module.CombatantMoved)]
     assert live.actor_zone["mon:foe"] == cell(1, 0)
 
     # Spell save FAILED, then a second failed save in the same slice: one push.
-    pre = len(live.event_log)
+    ctx = context(1)
+    resolve_activity(spell.activities[0], ctx)
+    assert len(ctx.forced_movement_requests) == 1
     live.event_log.append(_save(False))
-    live.event_log.append(_save(False))
-    _apply_forced_movement_riders(live, caster, intent, pre)
+    fold_forced_movement_requests(live, ctx)
     pushes = [e for e in live.event_log if isinstance(e, events_module.CombatantMoved)]
     assert len(pushes) == 1
     assert pushes[0].to_zone == cell(3, 0)

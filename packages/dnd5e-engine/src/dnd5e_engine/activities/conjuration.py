@@ -274,9 +274,8 @@ def uses_summon_roll_data(monster: Monster) -> bool:
 
 @dataclass(frozen=True)
 class TransformRider:
-    """A spell whose shape-shift rides its own saving throw (the
-    ``FORCED_MOVEMENT_RIDERS`` pattern): on a ``failed_save`` the target takes
-    the cast's Beast form as ``source``."""
+    """A spell whose shape-shift rides its own saving throw: on a
+    ``failed_save`` the target takes the cast's Beast form as ``source``."""
 
     trigger: Literal["failed_save"]
     source: TransformSource

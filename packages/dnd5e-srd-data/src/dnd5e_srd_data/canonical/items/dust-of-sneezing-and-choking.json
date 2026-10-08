@@ -83,6 +83,22 @@
           "special": "",
           "type": "creature"
         },
+        "area_semantics": {
+          "includes_origin": true,
+          "origin_policy": "actor",
+          "template_role": "target_area"
+        },
+        "creature_filter": {
+          "auto_success_creature_types": [
+            "construct",
+            "elemental",
+            "ooze",
+            "plant",
+            "undead"
+          ],
+          "exclude_creature_types": [],
+          "include_creature_types": []
+        },
         "override": false,
         "prompt": true,
         "template": {

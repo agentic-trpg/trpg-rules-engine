@@ -478,6 +478,9 @@ def test_hellish_rebuke_fires_after_positive_damage_on_its_actual_source():
     [reaction] = events(live, ReactionTriggered)
     incoming = next(e for e in events(live, DamageApplied) if e.target_id == REACTOR)
     returned = [e for e in events(live, DamageApplied) if e.target_id == ATTACKER]
+    spell = LOADER.get_spell("hellish-rebuke")
+    assert spell is not None
+    assert returned[0].source_id == f"spell:hellish-rebuke:{spell.activities[0].id}"
     assert incoming.amount > 0
     assert incoming.source_actor_id == ATTACKER
     assert returned

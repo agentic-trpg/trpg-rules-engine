@@ -8,8 +8,6 @@ SRD 5.2: "Each creature of your choice in a 5-foot-radius Sphere" (Sleep);
 
 from __future__ import annotations
 
-import logging
-
 import pytest
 from pydantic import ValidationError
 
@@ -219,19 +217,25 @@ def test_the_pipes_spare_the_bards_allies_unless_it_opts_everyone_in() -> None:
     assert sorted(_saved(play(excluded_target_ids=()))) == ["char:ally", "mon:g1"]
 
 
-def test_slow_names_up_to_six_creatures_wherever_they_stand() -> None:
+def test_slow_rejects_a_named_creature_outside_its_chosen_cube() -> None:
     goblins = [_goblin(f"mon:g{i}", i, 0) for i in range(1, 3)] + [_goblin("mon:far", 9, 9)]
     handle, live = start([_slow_caster()], seed=1, encounter=goblins)
+    rng = live.rng.getstate()
     act(
         handle,
         "char:wiz",
         intent_type="cast_spell",
         spell_id="slow",
         slot_level=3,
+        target_zone_id=cell_id(1, 0),
         target_ids=("mon:g2", "mon:far"),
     )
-    assert _saved(live) == ["mon:g2", "mon:far"]
+    assert [e.reason for e in events(live, CastFailed)] == ["target_invalid"]
+    assert _saved(live) == []
     assert _areas(live) == []
+    assert live.spell_slots_by_entity["char:wiz"][3] == 1
+    assert combatant(live, "char:wiz").action_available
+    assert live.rng.getstate() == rng
 
 
 @pytest.mark.parametrize(
@@ -276,26 +280,27 @@ def test_an_unaimed_breath_weapon_is_refused_before_its_use_is_spent() -> None:
     assert combatant(live, "char:drake").action_available is True
 
 
-def test_a_wall_template_affects_only_its_named_target(caplog: pytest.LogCaptureFixture) -> None:
-    """Wall of Fire's ``wall`` template is one the engine can't place, so the
-    cast falls back to its named target — never its neighbour."""
+def test_an_unsupported_wall_template_is_refused_before_payment() -> None:
+    """An unsupported target area cannot fall back to a partial named cast."""
     caster = wizard(spells_known=["wall-of-fire"], spell_slots={4: 1}, character_level=7)
     handle, live = start(
         [caster], seed=1, encounter=[_goblin("mon:a", 4, 0), _goblin("mon:b", 4, 1)]
     )
-    with caplog.at_level(logging.WARNING, logger="dnd5e_engine.orchestrator"):
-        act(
-            handle,
-            "char:wiz",
-            intent_type="cast_spell",
-            spell_id="wall-of-fire",
-            target_id="mon:a",
-            slot_level=4,
-        )
-    # Both of its save activities resolve on the named target.
-    assert set(_saved(live)) == {"mon:a"}
+    rng = live.rng.getstate()
+    act(
+        handle,
+        "char:wiz",
+        intent_type="cast_spell",
+        spell_id="wall-of-fire",
+        target_id="mon:a",
+        slot_level=4,
+    )
+    assert [e.reason for e in events(live, CastFailed)] == ["unsupported_area"]
+    assert _saved(live) == []
     assert _areas(live) == []
-    assert "falling back to the named target" in caplog.text
+    assert live.spell_slots_by_entity["char:wiz"][4] == 1
+    assert combatant(live, "char:wiz").action_available
+    assert live.rng.getstate() == rng
 
 
 def test_mass_cure_wounds_heals_the_casters_side_by_default() -> None:

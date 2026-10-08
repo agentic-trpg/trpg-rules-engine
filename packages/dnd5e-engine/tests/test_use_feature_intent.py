@@ -92,19 +92,19 @@ def _run_use_feature(
     target_id=None,
 ):
     """Drive a USE_FEATURE intent. When ``monkeypatch`` is supplied, the
-    activities the orchestrator routes into ``resolve_activity`` are captured
+    activities the shared delivery boundary routes into ``resolve_activity`` are captured
     so a test can assert exactly which (and how many) were invoked."""
     routed: list[object] = []
     if monkeypatch is not None:
-        import dnd5e_engine.orchestrator as orch
+        import dnd5e_engine.live_spell_delivery as delivery
 
-        real = orch.resolve_activity
+        real = delivery.resolve_activity
 
         def _spy(activity, actx, *, weapon=None):
             routed.append(activity)
             return real(activity, actx, weapon=weapon)
 
-        monkeypatch.setattr(orch, "resolve_activity", _spy)
+        monkeypatch.setattr(delivery, "resolve_activity", _spy)
 
     async def _run():
         start = await start_combat(

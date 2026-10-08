@@ -305,6 +305,13 @@
           "special": "Undead of your choice",
           "type": "creature"
         },
+        "creature_filter": {
+          "auto_success_creature_types": [],
+          "exclude_creature_types": [],
+          "include_creature_types": [
+            "undead"
+          ]
+        },
         "override": false,
         "prompt": false,
         "template": {

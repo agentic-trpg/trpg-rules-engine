@@ -277,9 +277,11 @@ def test_area_targeted_carries_every_field_a_host_draws_with() -> None:
         "affected_ids",
         "excluded_ids",
     ]
-    assert list(AreaTargeted.model_fields) == ["type", *fields]
+    source_fields = ["source_spell_id", "source_activity_id", "source_parent_id"]
+    assert list(AreaTargeted.model_fields) == ["type", *fields, *source_fields]
     required = [name for name, f in AreaTargeted.model_fields.items() if f.is_required()]
     assert required == fields
+    assert all(AreaTargeted.model_fields[name].default is None for name in source_fields)
 
 
 def test_area_shapes_are_the_six_srd_shapes() -> None:

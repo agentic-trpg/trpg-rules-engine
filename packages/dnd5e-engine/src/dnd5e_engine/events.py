@@ -115,6 +115,7 @@ CastFailedReason = Literal[
     "raging",
     "unsupported_feature",
     "unsupported_reaction",
+    "unsupported_area",
     "out_of_range",
     "no_slot",
     "target_invalid",
@@ -389,9 +390,11 @@ class DamageApplied(BaseModel):
     damage_type: DamageType
     is_overkill: bool
     # C15 — damage-source attribution: weapon slug / synthesized activity id /
-    # ``"mastery:<slug>"`` for procs. ``None`` for paths not yet threaded
-    # (spell/save/heal damage — a C17+ seam).
+    # ``"mastery:<slug>"`` for procs, or ``spell:<slug>:<activity_id>``.
+    # ``None`` remains valid for external or environmental producers.
     source_id: str | None = None
+    # Parent invocation, such as the item activity that delegated this spell.
+    source_parent_id: str | None = Field(default=None, exclude_if=lambda value: value is None)
     # The creature that caused the damage; None for environmental/unknown
     # sources. Independent of whose turn the event happens on.
     source_actor_id: str | None = None
@@ -736,6 +739,9 @@ class AreaTargeted(BaseModel):
     direction: tuple[int, int] | None
     affected_ids: list[str]
     excluded_ids: list[str]
+    source_spell_id: str | None = Field(default=None, exclude_if=lambda v: v is None)
+    source_activity_id: str | None = Field(default=None, exclude_if=lambda v: v is None)
+    source_parent_id: str | None = Field(default=None, exclude_if=lambda v: v is None)
 
 
 # ── spell / reaction outcomes ───────────────────────────────────────────────

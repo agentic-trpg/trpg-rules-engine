@@ -82,6 +82,11 @@
           "special": "",
           "type": "creature"
         },
+        "area_semantics": {
+          "includes_origin": true,
+          "origin_policy": "point_within_range",
+          "template_role": "target_area"
+        },
         "override": true,
         "prompt": true,
         "template": {

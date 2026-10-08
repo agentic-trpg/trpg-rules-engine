@@ -142,6 +142,7 @@ def apply_damage(
     final damage must not proc the rider), not the pre-modifier rolled sum.
     Existing callers that ignore the return are unaffected.
     """
+    source_id = source_id if source_id is not None else ctx.activity_source_id
     sidecar = ctx.passive_damage_modifiers.get(target.entity_id, {})
     resistances = _effective_resistances(target, sidecar, magical=magical)
     immunities = _damage_immunities(target, ctx)
@@ -198,6 +199,7 @@ def apply_damage(
                 ctx,
                 base_spell_level=None,
                 save_is_magical=False,
+                target_auto_success_ids=frozenset(),
                 passive_save_modifiers=save_modifiers,
             )
             roll = roll_save(save_ctx, target, "con", dc, ignore_cover=True)
@@ -242,6 +244,7 @@ def apply_damage(
                 damage_type=srd_type,
                 is_overkill=is_overkill,
                 source_id=source_id,
+                source_parent_id=ctx.source_parent_id,
                 source_actor_id=ctx.caster.entity_id,
                 damage_instance_id=damage_instance_id,
                 is_crit=is_crit,

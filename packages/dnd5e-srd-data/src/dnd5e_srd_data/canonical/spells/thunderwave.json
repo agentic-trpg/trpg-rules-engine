@@ -51,6 +51,12 @@
       },
       "effects": [],
       "flags": {},
+      "forced_movement": {
+        "direction": "away_from_source",
+        "distance_ft": 10,
+        "target_role": "activity_target",
+        "trigger": "failed_save"
+      },
       "id": "dnd5eactivity000",
       "img": "",
       "kind": "save",
@@ -78,6 +84,11 @@
           "count": "",
           "special": "",
           "type": ""
+        },
+        "area_semantics": {
+          "includes_origin": false,
+          "origin_policy": "actor",
+          "template_role": "target_area"
         },
         "override": false,
         "prompt": true,

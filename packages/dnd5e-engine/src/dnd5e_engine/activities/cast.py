@@ -101,6 +101,11 @@ def resolve_cast(activity: CastActivity, ctx: ActivityResolutionContext) -> None
     from .resolver import resolve_activity  # function-local: breaks the resolver↔cast import cycle
 
     challenge = activity.spell.challenge
+    delivery = ctx.spell_delivery
+    if delivery is not None:
+        delivery = delivery.model_copy(
+            update={"source_kind": "item_cast", "source_activity_id": activity.id}
+        )
     child_ctx = dataclasses.replace(
         ctx,
         spellcasting_ability=activity.spell.ability or ctx.spellcasting_ability,
@@ -125,6 +130,12 @@ def resolve_cast(activity: CastActivity, ctx: ActivityResolutionContext) -> None
         # ``CastActivity`` consumes it; the referenced spell's own activities
         # cast at ``cast_level`` computed above, not the raw override again.
         cast_level_override=None,
+        spell_delivery=delivery,
+        activity_source_id=None,
+        source_parent_id=ctx.activity_source_id
+        or ctx.source_parent_id
+        or f"activity:{activity.id}",
+        target_auto_success_ids=frozenset(),
         parent_chain=(*ctx.parent_chain, uuid),
     )
     if ctx.spell_dispatch is not None:
@@ -135,4 +146,10 @@ def resolve_cast(activity: CastActivity, ctx: ActivityResolutionContext) -> None
                 child_activity.timing.trigger == "immediate"
                 and child_activity.persistent_area is None
             ):
-                resolve_activity(child_activity, child_ctx)
+                resolve_activity(
+                    child_activity,
+                    dataclasses.replace(
+                        child_ctx,
+                        activity_source_id=f"spell:{spell.slug}:{child_activity.id}",
+                    ),
+                )

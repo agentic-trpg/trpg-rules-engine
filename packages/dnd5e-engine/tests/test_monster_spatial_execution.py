@@ -184,14 +184,18 @@ def test_aiming_uses_actual_affects_and_prefers_safety_over_enemy_count(
     assert (area.direction, area.affected_ids, area.excluded_ids) == (direction, affected, excluded)
 
 
-def test_sphere_avoids_ally_even_when_that_reduces_enemy_count(loader):
+def test_sphere_can_avoid_ally_from_an_empty_origin_and_hit_more_enemies(loader):
     action = burst(loader, "sphere", size="5", distance="150")
     live, actor, target, monster = setup(
         loader, action, [(8, 5), (9, 5), (17, 5)], at=(0, 5), allies=[(8, 6)]
     )
     execute(live, actor, target, monster, action)
     [area] = events_of(live, AreaTargeted)
-    assert (area.origin, area.direction, area.affected_ids) == (cell(17, 5), None, ["char:2"])
+    assert (area.origin, area.direction, area.affected_ids) == (
+        cell(8, 4),
+        None,
+        ["char:0", "char:1"],
+    )
 
 
 def test_unavoidable_friendly_fire_has_stable_events_and_exact_rng_draws(loader):
@@ -240,7 +244,10 @@ def test_no_legal_placement_preserves_resources_events_and_rng(
     loader, shape, size, distance, affects
 ):
     action = burst(loader, shape, size=size, distance=distance, affects=affects, uses=2)
-    live, actor, target, monster = setup(loader, action, [(8, 5)], allies=[(6, 5)])
+    # A point origin can now be empty and still reach a creature beyond its
+    # own casting range. Keep this no-placement case beyond range + radius.
+    enemies = [(9, 5)] if shape == "sphere" else [(8, 5)]
+    live, actor, target, monster = setup(loader, action, enemies, allies=[(6, 5)])
     events, rng = list(live.event_log), live.rng.getstate()
     pools = copy.deepcopy(live.monster_action_uses_by_entity)
     execute(live, actor, target, monster, action)
@@ -348,11 +355,11 @@ def test_burst_checks_range_to_origin_and_cover_from_origin(loader):
     )
     execute(live, actor, target, monster, action)
     [area] = events_of(live, AreaTargeted)
-    assert area.origin == cell(8, 5)
+    assert area.origin == cell(8, 1)
     assert area.affected_ids == ["char:0", "char:1"]
     # The second victim lies beyond the casting range but inside the burst.
     # The obstruction between caster and burst grants neither victim cover
-    # from the burst point (the first victim occupies the origin itself).
+    # from the burst point, which is a legal empty cell within range.
     assert [e.modifier for e in events_of(live, SaveRolled)] == [0, 0]
 
 
@@ -362,7 +369,11 @@ def test_target_anchored_area_cannot_place_through_total_cover(loader):
         loader,
         action,
         [(8, 5)],
-        grid=GridScene(width=30, height=30, cover_cells={cell(7, 5): "total"}),
+        grid=GridScene(
+            width=30,
+            height=30,
+            cover_cells={cell(7, row): "total" for row in range(30)},
+        ),
     )
     before = (
         list(live.event_log),

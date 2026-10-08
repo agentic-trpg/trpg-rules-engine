@@ -20,6 +20,7 @@ from dnd5e_engine.activities.passive_stats import CombatantSenses
 from dnd5e_engine.events import (
     ActorMoved,
     AttackRolled,
+    CastFailed,
     CheckRolled,
     CombatantLeft,
     ConcentrationCheck,
@@ -306,8 +307,8 @@ def test_zero_hp_removes_the_summon_without_a_death() -> None:
 
 def test_a_hit_that_drops_a_summon_finishes_without_error() -> None:
     # SRD 5.2 Hill Giant Multiattack: "two attacks". The first swing drops
-    # the 1-HP spirit; the second still resolves against its id, and the
-    # giant's turn ends normally.
+    # the 1-HP spirit. Shared delivery drops that departed target before
+    # the second swing, and the giant's turn ends normally.
     giant = foe(
         entity_id="mon:giant",
         name="Giant",
@@ -323,7 +324,7 @@ def test_a_hit_that_drops_a_summon_finishes_without_error() -> None:
     act(handle, SPIRIT, intent_type="pass")
     monster_turn(handle)
     swings = [e for e in events(live, AttackRolled) if e.attacker_id == "mon:giant"]
-    assert [e.target_id for e in swings] == [SPIRIT, SPIRIT]
+    assert [e.target_id for e in swings] == [SPIRIT]
     assert events(live, CombatantLeft) == [CombatantLeft(entity_id=SPIRIT, reason="zero_hp")]
     assert not events(live, Death)
     assert roster(live) == [OWNER, "mon:giant"]
@@ -388,14 +389,35 @@ def test_the_anchor_ending_dismisses_the_summon(path: str) -> None:
 def test_a_new_concentration_spell_dismisses_the_summon() -> None:
     # SRD 5.2 §Concentration: "You lose Concentration on an effect the moment
     # you start casting a spell that requires Concentration".
-    handle, live = _summoned()
-    act(handle, OWNER, intent_type="cast_spell", spell_id="fog-cloud", target_zone_id=cell_id(5, 5))
+    handle, live = start(
+        [summoner(spells_known=["summon-dragon", "detect-magic"])],
+        seed=1,
+        active_effects=[anchor_effect(OWNER)],
+    )
+    seat_summon(live, OWNER, zone_id=cell_id(0, 1))
+    act(handle, OWNER, intent_type="cast_spell", spell_id="detect-magic")
     assert events(live, CombatantLeft) == [
         CombatantLeft(entity_id=SPIRIT, reason="concentration_drop")
     ]
-    assert live.concentration_chain[OWNER] == [_anchor_identity("fog-cloud", OWNER)]
+    assert live.concentration_chain[OWNER] == [_anchor_identity("detect_magic", OWNER)]
     assert roster(live) == [OWNER, "mon:foe"]
     assert _current_actor(live).entity_id == "mon:foe"  # the cast ended the summoner's turn
+
+
+def test_an_unsupported_formula_area_preserves_the_summon_and_concentration() -> None:
+    # Fog Cloud's formula geometry has no typed spatial implementation yet.
+    # Refusal must happen before replacing the existing concentration anchor.
+    handle, live = _summoned()
+    rng = live.rng.getstate()
+    slots = dict(live.spell_slots_by_entity[OWNER])
+    act(handle, OWNER, intent_type="cast_spell", spell_id="fog-cloud", target_zone_id=cell_id(5, 5))
+    assert [event.reason for event in events(live, CastFailed)] == ["unsupported_area"]
+    assert not events(live, CombatantLeft)
+    assert live.concentration_chain[OWNER] == [ANCHOR]
+    assert SPIRIT in roster(live)
+    assert combatant(live, OWNER).action_available
+    assert live.spell_slots_by_entity[OWNER] == slots
+    assert live.rng.getstate() == rng
 
 
 def test_a_summon_dropped_on_its_own_move_hands_the_turn_on() -> None:
@@ -440,14 +462,14 @@ def test_a_legendary_action_that_drops_the_current_summon_opens_no_window() -> N
         hp_max=256,
         ac=19,
         monster_template_slug="lich",
-        zone_id=cell_id(2, 1),
+        zone_id=cell_id(1, 0),
     )
     handle, live = _begin(
-        # Keep the owner outside the blast: this scenario specifically tests
-        # the spirit reaching 0 HP, rather than a concentration-drop dismissal.
+        # Keep both PCs behind the wall. The cornered spirit is the only
+        # reachable foe, and every blast that hits it also includes the lich.
         party=[
             summoner(hp_current=90, hp_max=90, zone_id=cell_id(0, 9)),
-            pc("char:ally", initiative=15, zone_id=cell_id(0, 2)),
+            pc("char:ally", initiative=15, zone_id=cell_id(0, 8)),
         ],
         seed=1,
         encounter=[lich],
@@ -457,7 +479,7 @@ def test_a_legendary_action_that_drops_the_current_summon_opens_no_window() -> N
             wall_segments=[{"x1": 0, "y1": 5, "x2": 10, "y2": 5}],
         ),
     )
-    seat_summon(live, OWNER, zone_id=cell_id(1, 1), hp=3)
+    seat_summon(live, OWNER, zone_id=cell_id(0, 0), hp=3)
     act(handle, OWNER, intent_type="pass")
     assert _current_actor(live).entity_id == SPIRIT
     first = len(live.event_log)
@@ -467,7 +489,6 @@ def test_a_legendary_action_that_drops_the_current_summon_opens_no_window() -> N
     assert CombatantLeft(entity_id=SPIRIT, reason="zero_hp") in tail[:started]
     assert {e.target_id for e in tail if isinstance(e, DamageApplied)} == {
         SPIRIT,
-        "char:ally",
         "mon:lich",
     }
     assert [type(e) for e in tail[started:]] == [TurnStarted, TurnPhase]

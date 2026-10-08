@@ -4,8 +4,8 @@
   "scope": "Combat creature payloads; material inventory, narrative and world objects remain host-owned.",
   "counts": {
     "bounded": 44,
-    "deferred": 244,
-    "executable": 25,
+    "deferred": 241,
+    "executable": 28,
     "host_narrative": 26
   },
   "spell_count": 339,
@@ -6186,41 +6186,18 @@
     {
       "slug": "enhance-ability",
       "uuid": "Compendium.dnd5e.spells24.Item.phbsplEnhanceAbi",
-      "classification": "deferred",
-      "canonical_sha256": "49ac7e6cd637aed1767d4b7333465aad3317d0658ed862f7a3c3890307e7c184",
+      "classification": "executable",
+      "canonical_sha256": "8f1deddf9c298c4d77b18dd545b1a255750cd5a74a8ff0e873420db18f9f2aa7",
       "source_url": "https://github.com/foundryvtt/dnd5e/blob/965ad2d0cf5d063dac675ba078b5bd3c3c0dd449/packs/_source/spells24/2nd-level/enhance-ability.yml",
-      "missing_mechanisms": [
-        "effect_choice"
+      "missing_mechanisms": [],
+      "missing_details": [],
+      "limitations": [
+        "Combat creatures and touch range only; each target has an independent canonical ability choice."
       ],
-      "missing_details": [
-        "explicit typed mutually exclusive effect selection"
-      ],
-      "limitations": [],
       "entrypoints": {
-        "pc_direct": {
-          "code": "missing_mechanism",
-          "spell_id": "enhance-ability",
-          "activity_id": null,
-          "mechanisms": [
-            "effect_choice"
-          ]
-        },
-        "monster_cast": {
-          "code": "missing_mechanism",
-          "spell_id": "enhance-ability",
-          "activity_id": null,
-          "mechanisms": [
-            "effect_choice"
-          ]
-        },
-        "item_delegated": {
-          "code": "missing_mechanism",
-          "spell_id": "enhance-ability",
-          "activity_id": null,
-          "mechanisms": [
-            "effect_choice"
-          ]
-        }
+        "pc_direct": null,
+        "monster_cast": "Monster AI effect selection declaration unavailable",
+        "item_delegated": "item concentration ownership deferred"
       },
       "activities": [
         {
@@ -6232,13 +6209,17 @@
           "selected_by_default": true,
           "timing": "immediate",
           "persistent": false,
-          "admission_failure": {
-            "code": "missing_mechanism",
-            "spell_id": "enhance-ability",
-            "activity_id": null,
-            "mechanisms": [
-              "effect_choice"
-            ]
+          "admission_failure": null,
+          "effect_selection": {
+            "mode": "one_per_target",
+            "candidate_ids": [
+              "gg9dU0SnvU03C803",
+              "GGEj4zNginSIp6VV",
+              "NTaFTBr1uam93jHS",
+              "EGnngHgGBzTyThW6",
+              "e02u2XLDltCT5D5x"
+            ],
+            "requires_willing_attestation": false
           }
         }
       ]
@@ -9116,41 +9097,18 @@
     {
       "slug": "guidance",
       "uuid": "Compendium.dnd5e.spells24.Item.phbsplGuidance00",
-      "classification": "deferred",
-      "canonical_sha256": "413732f16e56317774b96f778d3cfadfb4cdc48c2f83513eb47d8a23773f841e",
+      "classification": "executable",
+      "canonical_sha256": "8173eb0fa65bbf60267b15e43ea52a9fea6be3fd12dc3fb5f697e90d52850252",
       "source_url": "https://github.com/foundryvtt/dnd5e/blob/965ad2d0cf5d063dac675ba078b5bd3c3c0dd449/packs/_source/spells24/cantrips/guidance.yml",
-      "missing_mechanisms": [
-        "effect_choice"
+      "missing_mechanisms": [],
+      "missing_details": [],
+      "limitations": [
+        "Combat creatures and touch range only; the Host must explicitly attest target willingness."
       ],
-      "missing_details": [
-        "explicit typed mutually exclusive effect selection"
-      ],
-      "limitations": [],
       "entrypoints": {
-        "pc_direct": {
-          "code": "missing_mechanism",
-          "spell_id": "guidance",
-          "activity_id": null,
-          "mechanisms": [
-            "effect_choice"
-          ]
-        },
-        "monster_cast": {
-          "code": "missing_mechanism",
-          "spell_id": "guidance",
-          "activity_id": null,
-          "mechanisms": [
-            "effect_choice"
-          ]
-        },
-        "item_delegated": {
-          "code": "missing_mechanism",
-          "spell_id": "guidance",
-          "activity_id": null,
-          "mechanisms": [
-            "effect_choice"
-          ]
-        }
+        "pc_direct": null,
+        "monster_cast": "Monster AI effect selection declaration unavailable",
+        "item_delegated": "item concentration ownership deferred"
       },
       "activities": [
         {
@@ -9162,13 +9120,30 @@
           "selected_by_default": true,
           "timing": "immediate",
           "persistent": false,
-          "admission_failure": {
-            "code": "missing_mechanism",
-            "spell_id": "guidance",
-            "activity_id": null,
-            "mechanisms": [
-              "effect_choice"
-            ]
+          "admission_failure": null,
+          "effect_selection": {
+            "mode": "one_per_target",
+            "candidate_ids": [
+              "GezMMzvZhWXEYyGm",
+              "y6aODSkiubtFt6Ap",
+              "Vlfh8IFOezrSpeBZ",
+              "sPkLWVpkJ7NqDQT0",
+              "Je4xWElmaiSDsOjU",
+              "cw02ZbuiRn6GyoEv",
+              "VsU5vUhMioT9pCwG",
+              "UQixxmOdHUDjVYNh",
+              "Cpte6tynFFJbraX2",
+              "Vl1YSG1DlZvx9nSI",
+              "IqxGXju1tYDWoda6",
+              "fCdLUO5DoSIT4wVK",
+              "qPowjrduxnzKpH8x",
+              "E4BqoCkyoKLJbGmb",
+              "jVKWknHHFuMwvTct",
+              "pwFahx7uqM4DOgnu",
+              "Vb4iRJ73Nw78UUMW",
+              "A1T0X0DUFIxx3qhE"
+            ],
+            "requires_willing_attestation": true
           }
         }
       ]
@@ -14141,41 +14116,18 @@
     {
       "slug": "protection-from-energy",
       "uuid": "Compendium.dnd5e.spells24.Item.phbProtectionFro",
-      "classification": "deferred",
-      "canonical_sha256": "d6ce1e08ed65730aa49f6a901c7bdf5c60b28cc64a737aaad87f63b242d7ff1e",
+      "classification": "executable",
+      "canonical_sha256": "83f1384a22ce60207a1b2bd2f6e7b7a1cc0026f74eacb84b93e3f280f94978ec",
       "source_url": "https://github.com/foundryvtt/dnd5e/blob/965ad2d0cf5d063dac675ba078b5bd3c3c0dd449/packs/_source/spells24/3rd-level/protection-from-energy.yml",
-      "missing_mechanisms": [
-        "effect_choice"
+      "missing_mechanisms": [],
+      "missing_details": [],
+      "limitations": [
+        "Combat creatures and touch range only; the Host must explicitly attest target willingness."
       ],
-      "missing_details": [
-        "explicit typed mutually exclusive effect selection"
-      ],
-      "limitations": [],
       "entrypoints": {
-        "pc_direct": {
-          "code": "missing_mechanism",
-          "spell_id": "protection-from-energy",
-          "activity_id": null,
-          "mechanisms": [
-            "effect_choice"
-          ]
-        },
-        "monster_cast": {
-          "code": "missing_mechanism",
-          "spell_id": "protection-from-energy",
-          "activity_id": null,
-          "mechanisms": [
-            "effect_choice"
-          ]
-        },
-        "item_delegated": {
-          "code": "missing_mechanism",
-          "spell_id": "protection-from-energy",
-          "activity_id": null,
-          "mechanisms": [
-            "effect_choice"
-          ]
-        }
+        "pc_direct": null,
+        "monster_cast": "Monster AI effect selection declaration unavailable",
+        "item_delegated": "item concentration ownership deferred"
       },
       "activities": [
         {
@@ -14187,13 +14139,17 @@
           "selected_by_default": true,
           "timing": "immediate",
           "persistent": false,
-          "admission_failure": {
-            "code": "missing_mechanism",
-            "spell_id": "protection-from-energy",
-            "activity_id": null,
-            "mechanisms": [
-              "effect_choice"
-            ]
+          "admission_failure": null,
+          "effect_selection": {
+            "mode": "one_per_target",
+            "candidate_ids": [
+              "RrJ5b1A9TghFe5QK",
+              "xDm8bqlMGiPq7nlt",
+              "DsflUNYKqETaLgxG",
+              "0ODEqmz3M45lwd8q",
+              "M13rFIPjAIMwKzQp"
+            ],
+            "requires_willing_attestation": true
           }
         }
       ]

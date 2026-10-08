@@ -291,7 +291,24 @@ def apply_activity_effects(
     """
     by_id: dict[str, PassiveEffect] = {pe.id: pe for pe in ctx.source_passive_effects}
 
-    for ref in activity.effects:
+    refs = activity.effects
+    if activity.effect_selection is not None:
+        spec = ctx.spell_delivery
+        selections = (
+            []
+            if spec is None
+            else [
+                selection
+                for selection in spec.effect_selections
+                if selection.spell_id == ctx.lifecycle_source_slug
+                and selection.activity_id == activity.id
+                and selection.target_id == target.entity_id
+            ]
+        )
+        if len(selections) != 1 or selections[0].effect_id not in {ref.id for ref in refs}:
+            raise ValueError("effect choice reached execution without valid selection")
+        refs = [ref for ref in refs if ref.id == selections[0].effect_id]
+    for ref in refs:
         pe = by_id.get(ref.id)
         if pe is None:
             _LOGGER.warning(

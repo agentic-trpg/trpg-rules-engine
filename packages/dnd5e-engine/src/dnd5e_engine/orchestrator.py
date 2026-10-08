@@ -292,7 +292,7 @@ from dnd5e_engine.specs import (
     GridScene,
     PartyMemberSpec,
 )
-from dnd5e_engine.spell_delivery import DeliveryPlanningError, SpellDeliverySpec
+from dnd5e_engine.spell_delivery import DeliveryPlanningError, EffectSelection, SpellDeliverySpec
 from dnd5e_engine.spellcasting import (
     count_scales_with_cast_level,
     resolve_target_count,
@@ -355,6 +355,8 @@ class PlayerIntent(BaseModel):
     # Mass Cure Wounds: at most N, no repeats). Ignored (with ``target_id`` used)
     # for activities without a count.
     target_ids: tuple[str, ...] | None = None
+    effect_selections: tuple[EffectSelection, ...] = ()
+    willing_target_ids: tuple[str, ...] = ()
     item_id: str | None = None
     weapon_id: str | None = None
     feature_id: str | None = None
@@ -5700,7 +5702,9 @@ def _fold_active_effect_changes(
     Pure projection over the passed dicts — no ``live`` mutation.
     """
     dmg_dirty = False
-    for active_effect in active:
+    from dnd5e_engine.rules.effects import effective_effects
+
+    for active_effect in effective_effects(active):
         # codex equipped enchantments and other
         # ActiveEffects carry mechanically-relevant `changes` entries
         # (Foundry-shaped: attack.roll.bonus / damage.bonus /

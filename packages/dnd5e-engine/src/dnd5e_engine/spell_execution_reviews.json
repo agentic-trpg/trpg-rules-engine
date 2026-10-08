@@ -2752,16 +2752,14 @@
   {
     "slug": "enhance-ability",
     "uuid": "Compendium.dnd5e.spells24.Item.phbsplEnhanceAbi",
-    "canonical_sha256": "49ac7e6cd637aed1767d4b7333465aad3317d0658ed862f7a3c3890307e7c184",
+    "canonical_sha256": "8f1deddf9c298c4d77b18dd545b1a255750cd5a74a8ff0e873420db18f9f2aa7",
     "source_url": "https://github.com/foundryvtt/dnd5e/blob/965ad2d0cf5d063dac675ba078b5bd3c3c0dd449/packs/_source/spells24/2nd-level/enhance-ability.yml",
-    "classification": "deferred",
-    "required_mechanisms": [
-      "effect_choice"
+    "classification": "executable",
+    "required_mechanisms": [],
+    "missing_details": [],
+    "limitations": [
+      "Combat creatures and touch range only; each target has an independent canonical ability choice."
     ],
-    "missing_details": [
-      "explicit typed mutually exclusive effect selection"
-    ],
-    "limitations": [],
     "requires_direct_carrier": false,
     "activities": [
       {
@@ -4019,16 +4017,14 @@
   {
     "slug": "guidance",
     "uuid": "Compendium.dnd5e.spells24.Item.phbsplGuidance00",
-    "canonical_sha256": "413732f16e56317774b96f778d3cfadfb4cdc48c2f83513eb47d8a23773f841e",
+    "canonical_sha256": "8173eb0fa65bbf60267b15e43ea52a9fea6be3fd12dc3fb5f697e90d52850252",
     "source_url": "https://github.com/foundryvtt/dnd5e/blob/965ad2d0cf5d063dac675ba078b5bd3c3c0dd449/packs/_source/spells24/cantrips/guidance.yml",
-    "classification": "deferred",
-    "required_mechanisms": [
-      "effect_choice"
+    "classification": "executable",
+    "required_mechanisms": [],
+    "missing_details": [],
+    "limitations": [
+      "Combat creatures and touch range only; the Host must explicitly attest target willingness."
     ],
-    "missing_details": [
-      "explicit typed mutually exclusive effect selection"
-    ],
-    "limitations": [],
     "requires_direct_carrier": false,
     "activities": [
       {
@@ -6326,16 +6322,14 @@
   {
     "slug": "protection-from-energy",
     "uuid": "Compendium.dnd5e.spells24.Item.phbProtectionFro",
-    "canonical_sha256": "d6ce1e08ed65730aa49f6a901c7bdf5c60b28cc64a737aaad87f63b242d7ff1e",
+    "canonical_sha256": "83f1384a22ce60207a1b2bd2f6e7b7a1cc0026f74eacb84b93e3f280f94978ec",
     "source_url": "https://github.com/foundryvtt/dnd5e/blob/965ad2d0cf5d063dac675ba078b5bd3c3c0dd449/packs/_source/spells24/3rd-level/protection-from-energy.yml",
-    "classification": "deferred",
-    "required_mechanisms": [
-      "effect_choice"
+    "classification": "executable",
+    "required_mechanisms": [],
+    "missing_details": [],
+    "limitations": [
+      "Combat creatures and touch range only; the Host must explicitly attest target willingness."
     ],
-    "missing_details": [
-      "explicit typed mutually exclusive effect selection"
-    ],
-    "limitations": [],
     "requires_direct_carrier": false,
     "activities": [
       {

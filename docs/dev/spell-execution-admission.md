@@ -21,8 +21,8 @@ review for different mechanical content; mismatches return the existing typed
 `unreviewed_spell` failure before payment. The digest is not cached by identity,
 so changing a loaded spell after an earlier review does not retain admission.
 
-The corpus has 339 spells and 464 Activities. Current classes are **25
-executable**, **44 bounded**, **26 host narrative**, and **244 deferred**.
+The corpus has 339 spells and 464 Activities. Current classes are **28
+executable**, **44 bounded**, **26 host narrative**, and **241 deferred**.
 This is a static admission inventory, not 339 end-to-end execution proofs.
 The earlier 234 mechanical-kind / 105 inert-kind probe did not distinguish
 required missing semantics and must not be used as a support percentage.
@@ -134,6 +134,70 @@ complete authoritative state, RNG, queued events and listener isolation, and
 verify retry replay, real concentration/timed/area restoration, normal successful
 casts, failed saves, Counterspell costs and ruleset update conflicts. This adds
 execution integrity guarantees without increasing admitted SRD coverage.
+
+## Typed effect choices (Batch B2)
+
+Guidance, Enhance Ability and Protection from Energy are executable through
+`submit_player_intent()`. Their reviewed canonical Utility Activities declare
+`effect_selection="one_per_target"`; `effects[]` supplies the legal canonical
+candidate IDs. Every selected target requires exactly one `EffectSelection`
+containing `spell_id`, `activity_id`, `target_id` and `effect_id`. These declarations
+travel through `PlayerIntent.effect_selections` and `SpellDeliverySpec`, including
+recursive delegated preflight. Missing, duplicate, foreign, level-ineligible or
+incomplete choices refuse before payment, concentration replacement or RNG.
+
+For example, choose Guidance's canonical Perception effect without a runtime
+spell-name or effect-name lookup:
+
+```python
+from dnd5e_engine import EffectSelection, PlayerIntent
+
+intent = PlayerIntent(
+    intent_type="cast_spell",
+    spell_id="guidance",
+    target_id="char:ally",
+    effect_selections=(EffectSelection(
+        spell_id="guidance",
+        activity_id="R6Fs3rsgXlgHPOFn",
+        target_id="char:ally",
+        effect_id="qPowjrduxnzKpH8x",
+    ),),
+    willing_target_ids=("char:ally",),
+)
+```
+
+The Host explicitly attests willingness for Guidance and Protection from Energy;
+allegiance never implies consent. Enhance Ability does not require willingness.
+Live creature eligibility, touch distance and clear path remain authoritative
+engine checks. Material inventory and narrative/world circumstances remain Host
+responsibilities. Monster AI supplies no choice declaration and refuses these
+casts; item concentration ownership remains deferred even with valid choices.
+
+Reviewed Foundry skill bonus keys map to the existing Check bonus arithmetic:
+Guidance rolls 1d4 after the d20 only for the selected Skill, on every matching
+check while active. Reviewed ability-check mode keys grant Enhance Ability's
+Advantage for the selected ability, including matching Skill checks, never
+attacks or saves. Its canonical `@item.level - 1` target cap permits additional
+distinct creatures at higher slots, each with an independent ability selection.
+Protection from Energy selects Acid, Cold, Fire, Lightning or Thunder and reuses
+the existing damage resistance union and immunity ordering.
+
+The Effect Resolver filters refs before application and retains the established
+runtime effect identity/origin convention, canonical ref IDs, lifecycle and
+concentration links. Reviewed `latest_applies` lifecycle groups suppress older
+equal-potency casts in consumer projection without deleting their authoritative
+effects or concentration. They resume when a newer cast ends. Guidance's minute
+and the other spells' hour retain existing combat duration boundaries.
+These choices and stacking rules were checked against
+[SRD 5.2.1, pp. 106, 127, 138, 157](https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf).
+
+Canonical translation pins IDs, Change Keys, modes, formulas, target counts and
+durations; regeneration fails on mechanical source drift. Only these three
+reviews/digests change classification, reducing Deferred from 244 to 241.
+Public regressions cover each candidate, per-target upcasting, all payment/RNG
+refusals, check/damage consumption, overlapping casters, expiry, replacement,
+Counterspell, post-payment fault rollback and deterministic replay. Other choice
+spells retain their existing reviews and missing-mechanism restrictions.
 
 ## Regeneration and validation
 

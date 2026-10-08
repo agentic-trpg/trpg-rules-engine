@@ -27,8 +27,8 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
 Paid combat spell no-ops are now gated by shared typed admission before payment,
 RNG, concentration replacement and reaction opportunities. This closes the
 acceptance/payment safety gap, **not** the missing mechanics below. The stable
-inventory in `docs/audits/spell-execution.json` records 25 executable combat
-contracts, 44 bounded contracts, 26 explicit host narrative contracts and 244
+inventory in `docs/audits/spell-execution.json` records 28 executable combat
+contracts, 44 bounded contracts, 26 explicit host narrative contracts and 241
 deferred spells, with all 464 canonical Activities. Unknown identities,
 unreviewed Activities, missing effects and mandatory unsupported mechanisms
 fail closed. PC, monster and delegated item paths share the check.
@@ -40,6 +40,18 @@ open. Public fault-injection and retry replay regressions cover direct, delegate
 monster and reaction casts. Custom loaders must remain immutable after install;
 host listener errors are post-commit. These safeguards do not change the spell
 support inventory or close the missing mechanics below.
+
+Batch B2 closes the effect-choice gap for Guidance, Enhance Ability and Protection
+from Energy through public casting: typed per-target canonical Effect IDs,
+draw-free selection preflight, matching skill bonus dice at check resolution,
+ability-check Advantage and existing damage Resistance projection. Invalid choices
+preserve resources and concentration; unexpected execution errors retain B1's full
+rollback. Reviewed equal-potency overlapping casts project the latest effect while
+preserving older duration/concentration ownership. Other effect-choice spells stay
+deferred when they need independent mechanics. Hosts must explicitly attest willing
+targets; item concentration ownership and Monster AI choice declarations remain
+unimplemented. See `live_spell_delivery.py`, `activities/effects.py` and
+`activities/check_pipeline.py` in `packages/dnd5e-engine/src/dnd5e_engine/`.
 
 Slow/Haste action rules, teleportation, general summons/enchantments/transforms,
 restoration/resurrection, object/world transactions, conditional sequences and

@@ -102,6 +102,7 @@ from tools.translators.effect_lifecycle import (
     effect_lifecycle_activities,
     effect_lifecycle_effects,
 )
+from tools.translators.effect_selection import apply_effect_selection
 from tools.translators.feature_runtime import (
     feature_runtime_activities,
     feature_runtime_effects,
@@ -2378,7 +2379,7 @@ def translate_spell_yaml(
     except (TypeError, ValueError):
         level = 0
     slug = _slug(doc, yaml_path)
-    return Spell(
+    spell = Spell(
         slug=slug,
         name=_name(doc),
         description=_description(doc),
@@ -2426,6 +2427,7 @@ def translate_spell_yaml(
         review=ReviewState(),
         foundry_uuid=_spell_foundry_uuid(yaml_path, doc),
     )
+    return apply_effect_selection(spell)
 
 
 # --- advancement (shared by class/subclass/race) ---

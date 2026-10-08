@@ -28,6 +28,16 @@ if TYPE_CHECKING:
     from dnd5e_engine.types.combat import Combatant
 
 
+class EffectSelection(BaseModel):
+    """One explicit canonical spell/activity effect for one creature."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    spell_id: str
+    activity_id: str
+    target_id: str
+    effect_id: str
+
+
 class SpellDeliverySpec(BaseModel):
     """Decisions only: canonical activities retain geometry and rule values."""
 
@@ -42,6 +52,9 @@ class SpellDeliverySpec(BaseModel):
     )
     source_item_id: str | None = None
     source_activity_id: str | None = None
+    effect_selections: tuple[EffectSelection, ...] = ()
+    # Host attestation, never inferred from allegiance or natural-language intent.
+    willing_target_ids: tuple[str, ...] = ()
 
 
 class DeliveryPlanningError(ValueError):

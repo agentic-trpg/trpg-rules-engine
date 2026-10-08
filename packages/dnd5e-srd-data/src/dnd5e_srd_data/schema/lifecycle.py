@@ -10,6 +10,7 @@ from pydantic import (
     PositiveInt,
     SerializerFunctionWrapHandler,
     model_serializer,
+    model_validator,
 )
 
 EffectExpiryBoundary = Literal[
@@ -45,6 +46,8 @@ class EffectLifecycleSpec(BaseModel):
     Exact next boundaries are separate from finite round counts. The one-use modifier
     ``next_save_disadvantage`` binds ``flags.save.next_disadvantage`` and
     consumes only that change on the next actual saving throw.
+    ``latest_applies`` is for reviewed equal-potency spell groups: older
+    applications keep their ownership/clocks but are suppressed in projection.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -54,10 +57,16 @@ class EffectLifecycleSpec(BaseModel):
     expiry_boundary: EffectExpiryBoundary | None = None
     expire_on_positive_damage: bool = False
     one_use_modifiers: tuple[OneUseModifier, ...] = ()
-    stacking: Literal["latest_only"] | None = None
+    stacking: Literal["latest_only", "latest_applies"] | None = None
     stacking_group: str | None = None
     next_attack_scope: Literal["other_creature"] | None = None
     next_attack_bonus_group: str | None = None
+
+    @model_validator(mode="after")
+    def _projection_group_required(self) -> EffectLifecycleSpec:
+        if self.stacking == "latest_applies" and not self.stacking_group:
+            raise ValueError("latest_applies requires an explicit stacking group")
+        return self
 
     @model_serializer(mode="wrap")
     def _serialize_lifecycle(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:

@@ -46,12 +46,22 @@
         "units": "inst",
         "value": null
       },
+      "effect_selection": "one_per_target",
       "effects": [
         {
           "id": "GezMMzvZhWXEYyGm",
           "level": {
             "max": null,
             "min": null
+          },
+          "lifecycle": {
+            "expire_on_positive_damage": false,
+            "expiry_boundary": null,
+            "maximum_rounds": 10,
+            "one_use_modifiers": [],
+            "repeat_save": null,
+            "stacking": "latest_applies",
+            "stacking_group": "Compendium.dnd5e.spells24.Item.phbsplGuidance00"
           },
           "on_save": null,
           "riders": null
@@ -62,6 +72,15 @@
             "max": null,
             "min": null
           },
+          "lifecycle": {
+            "expire_on_positive_damage": false,
+            "expiry_boundary": null,
+            "maximum_rounds": 10,
+            "one_use_modifiers": [],
+            "repeat_save": null,
+            "stacking": "latest_applies",
+            "stacking_group": "Compendium.dnd5e.spells24.Item.phbsplGuidance00"
+          },
           "on_save": null,
           "riders": null
         },
@@ -70,6 +89,15 @@
           "level": {
             "max": null,
             "min": null
+          },
+          "lifecycle": {
+            "expire_on_positive_damage": false,
+            "expiry_boundary": null,
+            "maximum_rounds": 10,
+            "one_use_modifiers": [],
+            "repeat_save": null,
+            "stacking": "latest_applies",
+            "stacking_group": "Compendium.dnd5e.spells24.Item.phbsplGuidance00"
           },
           "on_save": null,
           "riders": null
@@ -80,6 +108,15 @@
             "max": null,
             "min": null
           },
+          "lifecycle": {
+            "expire_on_positive_damage": false,
+            "expiry_boundary": null,
+            "maximum_rounds": 10,
+            "one_use_modifiers": [],
+            "repeat_save": null,
+            "stacking": "latest_applies",
+            "stacking_group": "Compendium.dnd5e.spells24.Item.phbsplGuidance00"
+          },
           "on_save": null,
           "riders": null
         },
@@ -88,6 +125,15 @@
           "level": {
             "max": null,
             "min": null
+          },
+          "lifecycle": {
+            "expire_on_positive_damage": false,
+            "expiry_boundary": null,
+            "maximum_rounds": 10,
+            "one_use_modifiers": [],
+            "repeat_save": null,
+            "stacking": "latest_applies",
+            "stacking_group": "Compendium.dnd5e.spells24.Item.phbsplGuidance00"
           },
           "on_save": null,
           "riders": null
@@ -98,6 +144,15 @@
             "max": null,
             "min": null
           },
+          "lifecycle": {
+            "expire_on_positive_damage": false,
+            "expiry_boundary": null,
+            "maximum_rounds": 10,
+            "one_use_modifiers": [],
+            "repeat_save": null,
+            "stacking": "latest_applies",
+            "stacking_group": "Compendium.dnd5e.spells24.Item.phbsplGuidance00"
+          },
           "on_save": null,
           "riders": null
         },
@@ -106,6 +161,15 @@
           "level": {
             "max": null,
             "min": null
+          },
+          "lifecycle": {
+            "expire_on_positive_damage": false,
+            "expiry_boundary": null,
+            "maximum_rounds": 10,
+            "one_use_modifiers": [],
+            "repeat_save": null,
+            "stacking": "latest_applies",
+            "stacking_group": "Compendium.dnd5e.spells24.Item.phbsplGuidance00"
           },
           "on_save": null,
           "riders": null
@@ -116,6 +180,15 @@
             "max": null,
             "min": null
           },
+          "lifecycle": {
+            "expire_on_positive_damage": false,
+            "expiry_boundary": null,
+            "maximum_rounds": 10,
+            "one_use_modifiers": [],
+            "repeat_save": null,
+            "stacking": "latest_applies",
+            "stacking_group": "Compendium.dnd5e.spells24.Item.phbsplGuidance00"
+          },
           "on_save": null,
           "riders": null
         },
@@ -124,6 +197,15 @@
           "level": {
             "max": null,
             "min": null
+          },
+          "lifecycle": {
+            "expire_on_positive_damage": false,
+            "expiry_boundary": null,
+            "maximum_rounds": 10,
+            "one_use_modifiers": [],
+            "repeat_save": null,
+            "stacking": "latest_applies",
+            "stacking_group": "Compendium.dnd5e.spells24.Item.phbsplGuidance00"
           },
           "on_save": null,
           "riders": null
@@ -134,6 +216,15 @@
             "max": null,
             "min": null
           },
+          "lifecycle": {
+            "expire_on_positive_damage": false,
+            "expiry_boundary": null,
+            "maximum_rounds": 10,
+            "one_use_modifiers": [],
+            "repeat_save": null,
+            "stacking": "latest_applies",
+            "stacking_group": "Compendium.dnd5e.spells24.Item.phbsplGuidance00"
+          },
           "on_save": null,
           "riders": null
         },
@@ -142,6 +233,15 @@
           "level": {
             "max": null,
             "min": null
+          },
+          "lifecycle": {
+            "expire_on_positive_damage": false,
+            "expiry_boundary": null,
+            "maximum_rounds": 10,
+            "one_use_modifiers": [],
+            "repeat_save": null,
+            "stacking": "latest_applies",
+            "stacking_group": "Compendium.dnd5e.spells24.Item.phbsplGuidance00"
           },
           "on_save": null,
           "riders": null
@@ -152,6 +252,15 @@
             "max": null,
             "min": null
           },
+          "lifecycle": {
+            "expire_on_positive_damage": false,
+            "expiry_boundary": null,
+            "maximum_rounds": 10,
+            "one_use_modifiers": [],
+            "repeat_save": null,
+            "stacking": "latest_applies",
+            "stacking_group": "Compendium.dnd5e.spells24.Item.phbsplGuidance00"
+          },
           "on_save": null,
           "riders": null
         },
@@ -160,6 +269,15 @@
           "level": {
             "max": null,
             "min": null
+          },
+          "lifecycle": {
+            "expire_on_positive_damage": false,
+            "expiry_boundary": null,
+            "maximum_rounds": 10,
+            "one_use_modifiers": [],
+            "repeat_save": null,
+            "stacking": "latest_applies",
+            "stacking_group": "Compendium.dnd5e.spells24.Item.phbsplGuidance00"
           },
           "on_save": null,
           "riders": null
@@ -170,6 +288,15 @@
             "max": null,
             "min": null
           },
+          "lifecycle": {
+            "expire_on_positive_damage": false,
+            "expiry_boundary": null,
+            "maximum_rounds": 10,
+            "one_use_modifiers": [],
+            "repeat_save": null,
+            "stacking": "latest_applies",
+            "stacking_group": "Compendium.dnd5e.spells24.Item.phbsplGuidance00"
+          },
           "on_save": null,
           "riders": null
         },
@@ -178,6 +305,15 @@
           "level": {
             "max": null,
             "min": null
+          },
+          "lifecycle": {
+            "expire_on_positive_damage": false,
+            "expiry_boundary": null,
+            "maximum_rounds": 10,
+            "one_use_modifiers": [],
+            "repeat_save": null,
+            "stacking": "latest_applies",
+            "stacking_group": "Compendium.dnd5e.spells24.Item.phbsplGuidance00"
           },
           "on_save": null,
           "riders": null
@@ -188,6 +324,15 @@
             "max": null,
             "min": null
           },
+          "lifecycle": {
+            "expire_on_positive_damage": false,
+            "expiry_boundary": null,
+            "maximum_rounds": 10,
+            "one_use_modifiers": [],
+            "repeat_save": null,
+            "stacking": "latest_applies",
+            "stacking_group": "Compendium.dnd5e.spells24.Item.phbsplGuidance00"
+          },
           "on_save": null,
           "riders": null
         },
@@ -197,6 +342,15 @@
             "max": null,
             "min": null
           },
+          "lifecycle": {
+            "expire_on_positive_damage": false,
+            "expiry_boundary": null,
+            "maximum_rounds": 10,
+            "one_use_modifiers": [],
+            "repeat_save": null,
+            "stacking": "latest_applies",
+            "stacking_group": "Compendium.dnd5e.spells24.Item.phbsplGuidance00"
+          },
           "on_save": null,
           "riders": null
         },
@@ -205,6 +359,15 @@
           "level": {
             "max": null,
             "min": null
+          },
+          "lifecycle": {
+            "expire_on_positive_damage": false,
+            "expiry_boundary": null,
+            "maximum_rounds": 10,
+            "one_use_modifiers": [],
+            "repeat_save": null,
+            "stacking": "latest_applies",
+            "stacking_group": "Compendium.dnd5e.spells24.Item.phbsplGuidance00"
           },
           "on_save": null,
           "riders": null

@@ -16,7 +16,7 @@ Pure functions, zero I/O.
 from __future__ import annotations
 
 import random
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 
 from dnd5e_srd_data.schema.condition import (
     ConditionEffect,
@@ -26,6 +26,32 @@ from dnd5e_srd_data.schema.condition import (
 
 from dnd5e_engine.rules.character import ABILITY_NAME_BY_CODE
 from dnd5e_engine.types.effects import ActiveEffect, ActiveEffectChange
+
+
+def effective_effects(effects: Sequence[ActiveEffect]) -> tuple[ActiveEffect, ...]:
+    """Project the latest equal-potency spell per target without ending older casts.
+
+    Reviewed ``latest_applies`` groups keep independent duration/concentration
+    ownership. An earlier overlapping spell resumes when the newer one ends.
+    """
+    latest = {
+        (effect.target_id, effect.lifecycle.spec.stacking_group): index
+        for index, effect in enumerate(effects)
+        if not effect.disabled
+        and effect.lifecycle is not None
+        and effect.lifecycle.spec.stacking == "latest_applies"
+    }
+    return tuple(
+        effect
+        for index, effect in enumerate(effects)
+        if effect.lifecycle is None
+        or effect.lifecycle.spec.stacking != "latest_applies"
+        or (
+            not effect.disabled
+            and latest.get((effect.target_id, effect.lifecycle.spec.stacking_group)) == index
+        )
+    )
+
 
 # Reuse the existing full-name save flag suffixes (e.g. ``save.dexterity``).
 # Both projection and sidecar consumption share this vocabulary; no key parsing

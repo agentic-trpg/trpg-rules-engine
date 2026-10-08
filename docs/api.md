@@ -25,6 +25,11 @@ For what the engine actually resolves behind these signatures, see the
         - PlayerIntent
         - CombatHandle
 
+::: dnd5e_engine.spell_delivery
+    options:
+      members:
+        - EffectSelection
+
 ## Results and outcome
 
 ::: dnd5e_engine.results

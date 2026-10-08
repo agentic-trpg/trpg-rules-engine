@@ -80,6 +80,7 @@ from dnd5e_engine.specs import (
     PartyMemberSpec,
     WallSegment,
 )
+from dnd5e_engine.spell_delivery import EffectSelection
 from dnd5e_engine.spellcasting import RitualCast, derive_pact_slots, resolve_ritual_cast
 from dnd5e_engine.types.checks import CheckRequest, HelpCheckSpec
 from dnd5e_engine.types.effects import (
@@ -106,6 +107,7 @@ __all__ = [
     "CombatOutcome",
     "DeathRecord",
     "DerivedSheet",
+    "EffectSelection",
     "EncounterMemberSpec",
     "EndCombatResult",
     "GridScene",

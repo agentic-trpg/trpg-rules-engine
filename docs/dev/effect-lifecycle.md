@@ -154,18 +154,27 @@ Run from `packages/dnd5e-srd-data`:
 uv run python -m tools.effect_lifecycle_audit --output ../../docs/dev/effect-lifecycle-audit.json
 ```
 
-The [deterministic inventory](effect-lifecycle-audit.json) has 160 rows:
-105 spell, 17 feature and 38 item rows. Seven bindings have executable typed
-lifecycles; seven typed duration boundaries are supported. The other 146 rows
+The [deterministic inventory](effect-lifecycle-audit.json) has 188 rows:
+133 spell, 17 feature and 38 item rows. Seven bindings have executable typed
+lifecycles; 35 typed duration/overlap bindings are supported. The other 146 rows
 are explicit deferred or candidate records: 39 repeat-save candidates,
 23 damage-break candidates and 84 other deferred rows. Candidate discovery during ingestion does not
 authorize runtime execution. Dominate variants' damage-triggered escape saves
 do not become end-of-turn repeats.
 
 There are five typed repeat producers, one typed positive-damage break producer,
-three reviewed finite-duration producers and two canonical one-use producers:
+31 reviewed finite-duration producers and two canonical one-use producers:
 Staggering and Sundering. Reckless and Hamstring carry exact next-turn boundaries;
 Hamstring additionally declares its latest-only stacking group.
+
+Batch B2 adds 28 canonical effect-choice bindings across Guidance, Enhance Ability
+and Protection from Energy. Their `latest_applies` groups project only the latest
+equal-potency spell on a target while retaining older casts and their independent
+concentration/duration ownership. An older effect resumes when the newer one ends.
+The finite caps are 10 rounds for Guidance and 600 for the other two spells;
+direct casts also retain the existing caster-owned concentration cap. Public
+selection and consumer acceptance tests cover these bindings; this inventory
+alone does not establish whole-spell execution support.
 
 `test_typed_effect_lifecycle.py` covers registration, exact source identity,
 repeat success/failure, captured spell DC and magic, Legendary Resistance,

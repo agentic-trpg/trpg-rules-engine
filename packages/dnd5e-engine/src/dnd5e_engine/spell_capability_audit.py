@@ -59,6 +59,18 @@ def audit_document(loader: AssetLoader) -> dict[str, object]:
                     "timing": activity.timing.trigger,
                     "persistent": activity.persistent_area is not None,
                     "admission_failure": failure.model_dump(mode="json") if failure else None,
+                    **(
+                        {
+                            "effect_selection": {
+                                "mode": activity.effect_selection,
+                                "candidate_ids": [ref.id for ref in activity.effects],
+                                "requires_willing_attestation": activity.target.affects.type
+                                == "willing",
+                            }
+                        }
+                        if activity.kind != "cast" and activity.effect_selection
+                        else {}
+                    ),
                 }
             )
         rows.append(
@@ -75,6 +87,8 @@ def audit_document(loader: AssetLoader) -> dict[str, object]:
                     "pc_direct": direct_failure.model_dump(mode="json") if direct_failure else None,
                     "monster_cast": no_carrier_failure.model_dump(mode="json")
                     if no_carrier_failure
+                    else "Monster AI effect selection declaration unavailable"
+                    if any(getattr(a, "effect_selection", None) for a in selected)
                     else None,
                     "item_delegated": (
                         no_carrier_failure.model_dump(mode="json")

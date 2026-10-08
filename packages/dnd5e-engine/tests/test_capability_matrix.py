@@ -550,6 +550,53 @@ def _physical_movement_contract_resolves() -> bool:
     )
 
 
+def _typed_spell_effect_choices_resolve() -> bool:
+    """The published support row requires real public casting of all three spells."""
+    from dnd5e_engine.events import CastFailed, EffectApplied
+    from dnd5e_engine.lib_loader import scoped_lib_loader
+    from tests.c21_support import act, events, pc, start
+
+    loader = BundledAssetLoader()
+    for slug in ("guidance", "enhance-ability", "protection-from-energy"):
+        spell = loader.get_spell(slug)
+        assert spell is not None
+        with scoped_lib_loader(loader):
+            handle, live = start(
+                [
+                    pc(
+                        class_slug="cleric",
+                        character_level=7,
+                        spells_known=[slug],
+                        spell_slots={2: 1, 3: 1},
+                    )
+                ],
+                seed=7,
+            )
+        act(
+            handle,
+            "char:hero",
+            intent_type="cast_spell",
+            spell_id=slug,
+            slot_level=spell.level,
+            target_id="char:hero",
+            willing_target_ids=["char:hero"],
+            effect_selections=[
+                {
+                    "spell_id": slug,
+                    "activity_id": spell.activities[0].id,
+                    "target_id": "char:hero",
+                    "effect_id": spell.passive_effects[0].id,
+                }
+            ],
+        )
+        applied = events(live, EffectApplied)
+        if events(live, CastFailed) or len(applied) != 1:
+            return False
+        if applied[0].effect.changes[0].key != spell.passive_effects[0].changes[0].key:
+            return False
+    return True
+
+
 def _typed_lifecycle_contract_resolves() -> bool:
     from dnd5e_srd_data.schema.lifecycle import EffectLifecycleSpec, RepeatSaveSpec
 
@@ -1208,6 +1255,7 @@ _PROBES: dict[str, tuple[Any, str]] = {
         _typed_lifecycle_contract_resolves,
         "⚠️ Partial",
     ),
+    "| Typed per-target spell Effect Selection |": (_typed_spell_effect_choices_resolve, "✅"),
     # C20: Rage ends unless extended (and on Incapacitated).
     "| Rage |": (
         lambda: (

@@ -198,12 +198,19 @@ def test_lifecycle_audit_is_deterministic_matches_golden_and_keeps_deferrals_exp
     assert first["producer_counts"] == {
         "typed_repeat_save": 5,
         "typed_expire_on_positive_damage": 1,
-        "finite_reviewed_duration": 3,
+        "finite_reviewed_duration": 31,
         "typed_one_use_modifier": 2,
-        "supported_lifecycle": 14,
+        "supported_lifecycle": 42,
         "deferred": 146,
     }
     assert {row["source_kind"] for row in first["rows"]} == {"spell", "feature", "item"}
+    assert first["inventory_rows"] == 188
+    for slug in ("guidance", "enhance-ability", "protection-from-energy"):
+        spell = BundledAssetLoader().get_spell(slug)
+        rows = [row for row in first["rows"] if row["source_slug"] == slug]
+        assert {row["effect_id"] for row in rows} == {e.id for e in spell.passive_effects}
+        assert all(row["lifecycle"]["stacking"] == "latest_applies" for row in rows)
+        assert all(row["lifecycle"]["stacking_group"] == spell.foundry_uuid for row in rows)
     for row in first["rows"]:
         assert row["fully_executable"] is (row["lifecycle"] is not None)
         assert row["deferred_reason"] is None if row["fully_executable"] else row["deferred_reason"]

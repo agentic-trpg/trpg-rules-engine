@@ -117,6 +117,8 @@ def spec_from_intent(intent: PlayerIntent) -> SpellDeliverySpec:
         source_kind="item_cast" if intent.item_id else "direct_spell",
         source_item_id=intent.item_id,
         source_activity_id=intent.activity_id,
+        effect_selections=intent.effect_selections,
+        willing_target_ids=intent.willing_target_ids,
     )
 
 
@@ -267,10 +269,14 @@ def preflight_delivery(
     spellcasting_ability: str | None = None,
     fixed_dc: int | None = None,
     fixed_attack: int | None = None,
+    _validated_selections: set[tuple[str, str, str]] | None = None,
 ) -> DeliveryPlan:
     """Resolve delegated geometry recursively before the outer caller pays."""
     from dnd5e_engine import orchestrator as orch
 
+    root = _validated_selections is None
+    validated = set() if root else _validated_selections
+    assert validated is not None
     spellcasting_ability = spellcasting_ability or (
         actor.spellcasting_ability
         if spec.source_kind == "monster_cast"
@@ -306,6 +312,7 @@ def preflight_delivery(
             fixed_dc=fixed_dc,
             fixed_attack=fixed_attack,
         )
+        _validate_effect_selections(spell, activities, plan, spec, cast_level, validated)
     for activity in activities:
         if activity.kind != "cast":
             continue
@@ -337,12 +344,60 @@ def preflight_delivery(
             fixed_attack=activity.spell.challenge.attack
             if activity.spell.challenge.override
             else (fixed_attack if not chain else None),
+            _validated_selections=validated,
         )
         # Support is shared even for concentration children; outer item
         # ownership is a separate, still-deferred delivery capability.
         if spec.source_kind == "item_cast" and child.concentration:
             raise DeliveryPlanningError("item concentration is deferred", "unsupported_area")
+    if root:
+        keys = [(s.spell_id, s.activity_id, s.target_id) for s in spec.effect_selections]
+        if len(keys) != len(set(keys)) or set(keys) != validated:
+            raise DeliveryPlanningError("effect selections repeat or name an unselected payload")
+        if len(spec.willing_target_ids) != len(set(spec.willing_target_ids)):
+            raise DeliveryPlanningError("willing targets repeat")
+        if not set(spec.willing_target_ids) <= {key[2] for key in validated}:
+            raise DeliveryPlanningError("willing attestations must name selected effect targets")
     return plan
+
+
+def _validate_effect_selections(
+    spell: Spell,
+    activities: Sequence[Activity],
+    plan: DeliveryPlan,
+    spec: SpellDeliverySpec,
+    cast_level: int | None,
+    validated: set[tuple[str, str, str]],
+) -> None:
+    """Validate exact, complete choices against the draw-free target plan."""
+    level = spell.level if cast_level is None else cast_level
+    by_id = {p.activity_id: p for p in plan.activities}
+    for activity in activities:
+        if getattr(activity, "effect_selection", None) is None:
+            continue
+        targets = by_id[activity.id].target_ids
+        selections = [
+            s
+            for s in spec.effect_selections
+            if s.spell_id == spell.slug and s.activity_id == activity.id
+        ]
+        if not targets or len(targets) != len(set(targets)):
+            raise DeliveryPlanningError("effect selection requires distinct live targets")
+        if len(selections) != len(targets) or {s.target_id for s in selections} != set(targets):
+            raise DeliveryPlanningError("each target requires exactly one effect selection")
+        candidates = {
+            ref.id
+            for ref in getattr(activity, "effects", ())
+            if (ref.level.min is None or level >= ref.level.min)
+            and (ref.level.max is None or level <= ref.level.max)
+        }
+        if any(s.effect_id not in candidates for s in selections):
+            raise DeliveryPlanningError("selected effect is not a legal canonical candidate")
+        if activity.target.affects.type == "willing" and not set(targets) <= set(
+            spec.willing_target_ids
+        ):
+            raise DeliveryPlanningError("host must attest the selected targets are willing")
+        validated.update((s.spell_id, s.activity_id, s.target_id) for s in selections)
 
 
 def _validate_cast_count(

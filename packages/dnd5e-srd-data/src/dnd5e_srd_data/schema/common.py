@@ -805,6 +805,10 @@ class _ActivityBaseWithEffects(_ActivityBase):
 
     effects: list[AppliedEffectRef] = Field(default_factory=list)
     applied_effects: list[str] = Field(default_factory=list)
+    # All effects[] are alternatives, with exactly one canonical ref per target.
+    effect_selection: Literal["one_per_target"] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
 
 class AttackActivity(_ActivityBaseWithEffects):

@@ -10,6 +10,10 @@ from dnd5e_engine.events import Ability
 from dnd5e_engine.rules.skills import SKILL_CODE_TO_SLUG, Skill
 from dnd5e_engine.rules.uses import UsesRollData, evaluate_uses_formula
 
+SKILL_CHECK_CHANGE_KEYS = {
+    f"system.skills.{code}.bonuses.check": slug for code, slug in SKILL_CODE_TO_SLUG.items()
+}
+
 
 def skill_check_bonuses(
     changes: Sequence[PassiveEffectChange], ability_modifiers: Mapping[Ability, int]
@@ -19,13 +23,10 @@ def skill_check_bonuses(
     Callers pass transfer effects only. Conditional Primal Knowledge has no
     activation/ability-substitution carrier and deliberately cannot enter here.
     """
-    keys = {
-        f"system.skills.{code}.bonuses.check": slug for code, slug in SKILL_CODE_TO_SLUG.items()
-    }
     out: dict[Skill, int] = {}
     data = UsesRollData(ability_modifiers=ability_modifiers)
     for change in changes:
-        skill = keys.get(change.key)
+        skill = SKILL_CHECK_CHANGE_KEYS.get(change.key)
         if skill is None or change.mode != 2:
             continue
         amount = evaluate_uses_formula(change.value, data)

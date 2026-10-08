@@ -24,6 +24,7 @@ TOP_LEVEL = {
     "DerivedSheet",
     "EncounterMemberSpec",
     "EndCombatResult",
+    "EffectSelection",
     "GridScene",
     "HitDicePool",
     "IntentRejectedError",

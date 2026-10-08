@@ -21,7 +21,12 @@ from dnd5e_engine.rules.conditions import (
     conditions_grant_disadvantage_on_ability_checks,
     d20_test_penalty,
 )
-from dnd5e_engine.rules.effects import apply_changes_to_check, projected_boolean_flag
+from dnd5e_engine.rules.effects import (
+    apply_changes_to_check,
+    effective_effects,
+    projected_boolean_flag,
+)
+from dnd5e_engine.rules.skill_bonuses import SKILL_CHECK_CHANGE_KEYS
 from dnd5e_engine.rules.skills import SKILL_CODE_TO_SLUG
 from dnd5e_engine.types.checks import CheckActorState, CheckRequest
 from dnd5e_engine.types.combat import Combatant
@@ -82,7 +87,7 @@ def _sources(
         )
         if actor.entity_id in target_state.charmer_ids or actor.entity_id in direct_sources:
             adv.append("charmed")
-    changes = [c for effect in state.effects for c in effect.changes]
+    changes = [c for effect in effective_effects(state.effects) for c in effect.changes]
     for prefix, sources in (("advantage", adv), ("disadvantage", dis)):
         keys = [
             f"flags.{prefix}.check",
@@ -92,6 +97,15 @@ def _sources(
         if request.skill:
             keys.append(f"flags.{prefix}.check.{request.skill}")
         if any(projected_boolean_flag(changes, key) for key in keys):
+            sources.append("effect")
+        # Audited Foundry ability-check mode: +1/-1 affects checks only.
+        value = "1" if prefix == "advantage" else "-1"
+        if any(
+            change.key == f"system.abilities.{request.ability}.check.roll.mode"
+            and change.mode == "add"
+            and change.value == value
+            for change in changes
+        ):
             sources.append("effect")
     return AdvantageSources(tuple(adv), tuple(dis))
 
@@ -106,6 +120,7 @@ def _effect_bonus(
         "system.bonuses.abilities.check": "check.bonus",
         "abilities.skill": "check.skill_check.bonus",
         "system.bonuses.abilities.skill": "check.skill_check.bonus",
+        **{key: f"check.skill.{skill}.bonus" for key, skill in SKILL_CHECK_CHANGE_KEYS.items()},
     }
     effects: list[ActiveEffect] = [
         effect.model_copy(
@@ -115,12 +130,14 @@ def _effect_bonus(
                 ]
             }
         )
-        for effect in state.effects
+        for effect in effective_effects(state.effects)
     ]
     total = 0
     buckets = ["check.bonus", f"check.{request.ability}.bonus"]
     if request.skill or request.tool:
         buckets.append("check.skill_check.bonus")
+        if request.skill:
+            buckets.append(f"check.skill.{request.skill}.bonus")
     else:
         buckets.append("check.ability_check.bonus")
     for bucket in buckets:

@@ -417,7 +417,12 @@ def test_countered_cast_spends_casting_time_but_preserves_slot(spell, target, bu
     act(handle, HERO, intent_type="cast_spell", spell_id=spell, target_id=target)
 
     assert [e.reason for e in events(live, CastFailed)] == ["countered"]
-    assert combatant(live) == before.model_copy(update={budget: False})
+    paid = {budget: False}
+    if budget == "action_available":
+        paid["action_taken_this_turn"] = True
+    elif budget == "bonus_action_available":
+        paid["bonus_action_taken_this_turn"] = True
+    assert combatant(live) == before.model_copy(update=paid)
     assert (
         live.spell_slots_by_entity.get(HERO, {}),
         live.pact_slots_by_entity.get(HERO, {}),

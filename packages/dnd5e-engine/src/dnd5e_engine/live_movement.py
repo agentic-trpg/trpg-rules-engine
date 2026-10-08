@@ -47,6 +47,20 @@ def effective_speed(actor: Combatant, mode: str, live: _LiveCombat | None = None
         if live.slow_marks.get(actor.entity_id):
             speed = max(0, speed - 10)
         speed = rider_speed(live, actor.entity_id, speed)
+        from fractions import Fraction
+
+        from dnd5e_engine.rules.effects import effective_effects
+
+        for effect in effective_effects(live.active_effects.get(actor.entity_id, ())):
+            if effect.disabled:
+                continue
+            for change in effect.changes:
+                speed_mode = "walk" if mode == "crawl" else mode
+                if (
+                    change.key == f"system.attributes.movement.{speed_mode}"
+                    and change.mode == "multiply"
+                ):
+                    speed = int(speed * Fraction(str(change.value)))
         speed = area_speed(live, actor.entity_id, speed)
     return speed
 

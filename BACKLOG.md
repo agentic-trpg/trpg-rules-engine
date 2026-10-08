@@ -27,8 +27,8 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
 Paid combat spell no-ops are now gated by shared typed admission before payment,
 RNG, concentration replacement and reaction opportunities. This closes the
 acceptance/payment safety gap, **not** the missing mechanics below. The stable
-inventory in `docs/audits/spell-execution.json` records 28 executable combat
-contracts, 47 bounded contracts, 26 explicit host narrative contracts and 238
+inventory in `docs/audits/spell-execution.json` records 29 executable combat
+contracts, 47 bounded contracts, 26 explicit host narrative contracts and 237
 deferred spells, with all 464 canonical Activities. Unknown identities,
 unreviewed Activities, missing effects and mandatory unsupported mechanisms
 fail closed. PC, monster and delegated item paths share the check.
@@ -64,7 +64,7 @@ Daylight object anchoring, Monster AI point declarations and cross-combat
 world-clock persistence remain deferred. Public faults restore environment,
 resources, events and RNG. See `docs/dev/dynamic-environment.md`.
 
-Slow/Haste action rules, teleportation, general summons/enchantments/transforms,
+Haste's complete restricted Action and end penalty, teleportation, general summons/enchantments/transforms,
 restoration/resurrection, object/world transactions, conditional sequences and
 wall geometry remain deferred. A supported target filter, save, heal or damage
 Activity does not close those gaps. Finger of Death remains deferred because
@@ -91,6 +91,28 @@ not a resource-paying complete-spell API. See `docs/dev/spell-execution-admissio
   suppression are missing. Item concentration, autonomous Monster AI activation
   and out-of-combat duration clocks remain outside this batch. See
   `docs/dev/ongoing-spell-activation.md`.
+
+## B5 action policies and Slow (2026-10-08)
+
+- Reviewed effect-owned policies now constrain Action/Bonus Action use, deny
+  Reactions and cap attacks within each Attack Action. Existing turn budgets
+  retain authority; an explicit full effect identity selects a separately
+  tracked restricted extra Action for Attack (one), Dash, Disengage or Hide.
+  Grants cannot fund Magic or other unreviewed operations.
+- Slow executes its selected-creature Cube, WIS saves, nonstacking sourced
+  effects, half Speed, AC −2, DEX saves −2, Action/Bonus exclusion, one attack
+  per Attack Action, Reaction denial and legal Somatic casting attempts through
+  public APIs. Typed repeats end only the successful target's effect; existing
+  concentration cleanup owns the one-minute cap. Somatic failure pays the
+  normal attempt's costs; Counterspell retains its existing slot semantics.
+- Source-guarded regeneration, semantic Admission, public refusal/payment,
+  lifecycle, fault rollback and deterministic replay regressions protect this
+  contract. Slow moves from Deferred to Executable (29/47/26/237).
+- Haste remains Deferred: the public item API does not distinguish all legal
+  Utilize operations from Magic item activation, and generic effect-end
+  Lethargy (Incapacitated and Speed 0 until the target's next turn ends) is
+  absent. No Haste/Potion of Speed partial paid execution is admitted.
+  See [the action policy contract](docs/dev/action-policy.md).
 
 ## Unimplemented activity kinds (2026-08-22)
 

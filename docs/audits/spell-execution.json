@@ -4,8 +4,8 @@
   "scope": "Combat creature payloads; material inventory, narrative and world objects remain host-owned.",
   "counts": {
     "bounded": 47,
-    "deferred": 238,
-    "executable": 28,
+    "deferred": 237,
+    "executable": 29,
     "host_narrative": 26
   },
   "spell_count": 339,
@@ -9403,7 +9403,7 @@
         "spell_specific_action_rules"
       ],
       "missing_details": [
-        "Grant the restricted additional Action and apply automatic lethargy on expiry."
+        "Complete reviewed Utilize-versus-Magic item permissions for the restricted additional Action, plus an effect-end Lethargy producer imposing Incapacitated and Speed 0 until the target's next turn ends, including replacement and overlapping sources."
       ],
       "limitations": [],
       "entrypoints": {
@@ -16348,44 +16348,32 @@
     {
       "slug": "slow",
       "uuid": "Compendium.dnd5e.spells24.Item.phbsplSlow000000",
-      "classification": "deferred",
-      "canonical_sha256": "9699709668f905ac33c3932c8e0479a07e3bcb170dea95f88de3c968d0bfe666",
+      "classification": "executable",
+      "canonical_sha256": "15a3dcbd9742f913254dafced6f753ed891e35d66d8518017efc25d8f8115a7e",
       "source_url": "https://github.com/foundryvtt/dnd5e/blob/965ad2d0cf5d063dac675ba078b5bd3c3c0dd449/packs/_source/spells24/3rd-level/slow.yml",
-      "missing_mechanisms": [
-        "spell_specific_action_rules"
+      "missing_mechanisms": [],
+      "missing_details": [],
+      "limitations": [
+        "Host owns components and the existing two-dimensional grid boundary. Somatic failure pays normal casting costs; a d100 of 1-25 fails after legal preflight and payment."
       ],
-      "missing_details": [
-        "Enforce limited Action/Bonus Action, attack count, reactions and delayed spell completion."
-      ],
-      "limitations": [],
       "entrypoints": {
-        "pc_direct": {
-          "code": "missing_mechanism",
-          "spell_id": "slow",
-          "activity_id": null,
-          "mechanisms": [
-            "spell_specific_action_rules"
-          ]
-        },
-        "monster_cast": {
-          "code": "missing_mechanism",
-          "spell_id": "slow",
-          "activity_id": null,
-          "mechanisms": [
-            "spell_specific_action_rules"
-          ]
-        },
-        "item_delegated": {
-          "code": "missing_mechanism",
-          "spell_id": "slow",
-          "activity_id": null,
-          "mechanisms": [
-            "spell_specific_action_rules"
-          ]
-        }
+        "pc_direct": null,
+        "monster_cast": null,
+        "item_delegated": "item concentration ownership deferred"
       },
       "activities": [
         {
+          "action_policies": {
+            "z1lkguBohjqXRSHm": {
+              "deny_actions": false,
+              "deny_bonus_actions": false,
+              "deny_reactions": true,
+              "action_or_bonus": true,
+              "attack_count_cap": 1,
+              "somatic_failure_percent": 25,
+              "extra_action": null
+            }
+          },
           "activity_id": "dnd5eactivity000",
           "kind": "save",
           "role": "cast",
@@ -16394,14 +16382,7 @@
           "selected_by_default": true,
           "timing": "immediate",
           "persistent": false,
-          "admission_failure": {
-            "code": "missing_mechanism",
-            "spell_id": "slow",
-            "activity_id": null,
-            "mechanisms": [
-              "spell_specific_action_rules"
-            ]
-          }
+          "admission_failure": null
         }
       ]
     },

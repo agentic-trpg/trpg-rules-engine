@@ -2,8 +2,8 @@
   "counts": {
     "damage_break_candidate": 23,
     "deferred": 82,
-    "executable_typed_lifecycle": 7,
-    "repeated_save_candidate": 39,
+    "executable_typed_lifecycle": 8,
+    "repeated_save_candidate": 38,
     "typed_duration_only": 37
   },
   "inventory_rows": 188,
@@ -13,12 +13,12 @@
     "spell": 133
   },
   "producer_counts": {
-    "typed_repeat_save": 5,
+    "typed_repeat_save": 6,
     "typed_expire_on_positive_damage": 1,
     "finite_reviewed_duration": 31,
     "typed_one_use_modifier": 2,
-    "supported_lifecycle": 44,
-    "deferred": 144
+    "supported_lifecycle": 45,
+    "deferred": 143
   },
   "inventory_notes": {
     "authority": "only reviewed typed metadata grants lifecycle execution; concentration and failed saves do not imply repetition",
@@ -2452,19 +2452,31 @@
     {
       "source_kind": "spell",
       "source_slug": "slow",
-      "activity_id": null,
-      "effect_id": null,
-      "path": "/description",
-      "lifecycle": null,
-      "consumer": null,
+      "activity_id": "dnd5eactivity000",
+      "effect_id": "z1lkguBohjqXRSHm",
+      "path": "/activities/0/effects/0",
+      "lifecycle": {
+        "repeat_save": {
+          "phase": "target_turn_end",
+          "save_source": "triggering_activity",
+          "on_success": "expire_effect"
+        },
+        "maximum_rounds": null,
+        "expiry_boundary": null,
+        "expire_on_positive_damage": false,
+        "one_use_modifiers": [],
+        "stacking": "latest_applies",
+        "stacking_group": "slow"
+      },
+      "consumer": "typed_effect_lifecycle",
       "repeat_save_candidate": true,
       "damage_break_candidate": false,
       "one_use_modifier_candidate": false,
       "finite_reviewed_duration": false,
       "display_duration": null,
-      "fully_executable": false,
-      "classification": "repeated_save_candidate",
-      "deferred_reason": "dedicated Slow marks and their complete budget/modifier consumers require an explicit lifecycle migration"
+      "fully_executable": true,
+      "classification": "executable_typed_lifecycle",
+      "deferred_reason": null
     },
     {
       "source_kind": "spell",

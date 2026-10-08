@@ -224,6 +224,7 @@ def passive_effect_to_active_effect(
         target_id=target_id,
         disabled=pe.disabled,
         transfer=pe.transfer,
+        action_policy=pe.action_policy,
         duration=_duration_from_passive(pe.duration),
         changes=[_passive_change_to_active(ch, ctx) for ch in pe.changes],
         statuses=set(pe.statuses),

@@ -37,6 +37,7 @@ from pydantic import (
     model_validator,
 )
 
+from dnd5e_srd_data.schema.action_policy import ActionPolicy
 from dnd5e_srd_data.schema.environment import EnvironmentalSpec
 from dnd5e_srd_data.schema.lifecycle import EffectLifecycleSpec
 
@@ -1017,6 +1018,7 @@ class PassiveEffect(BaseModel):
     duration: dict[str, Any] | None = None
     disabled: bool = False
     transfer: bool = True
+    action_policy: ActionPolicy | None = Field(default=None, exclude_if=lambda v: v is None)
 
     model_config = {"populate_by_name": True}
 

@@ -114,6 +114,7 @@ EffectExpiryReason = Literal[
 ]
 
 CastFailedReason = Literal[
+    "somatic_failure",
     "raging",
     "unsupported_feature",
     "unsupported_reaction",
@@ -767,6 +768,15 @@ class CastFailed(BaseModel):
     execution_failure: ExecutionFailure | None = Field(default=None, exclude_if=lambda v: v is None)
 
 
+class SomaticSpellRolled(BaseModel):
+    type: Literal["somatic_spell_rolled"] = "somatic_spell_rolled"
+    actor_id: str
+    spell_id: str
+    roll: int = Field(ge=1, le=100)
+    failure_percent: int = Field(ge=1, le=100)
+    failed: bool
+
+
 class SpellCast(BaseModel):
     """SRD 5.2 §Components: "A spell's components are physical requirements
     the spellcaster must meet to cast the spell." Metadata only — never
@@ -925,6 +935,7 @@ CombatEvent = Annotated[
     | AreaCreated
     | AreaExpired
     | CastFailed
+    | SomaticSpellRolled
     | SpellCast
     | ReactionTriggered
     | CombatEnded
@@ -976,6 +987,7 @@ ALL_COMBAT_EVENT_TYPES: tuple[type[BaseModel], ...] = (
     AreaCreated,
     AreaExpired,
     CastFailed,
+    SomaticSpellRolled,
     SpellCast,
     ReactionTriggered,
     CombatEnded,
@@ -1037,6 +1049,7 @@ __all__ = [
     "RoundEnded",
     "RoundStarted",
     "SaveRolled",
+    "SomaticSpellRolled",
     "SpellCast",
     "Stabilized",
     "TempHpApplied",

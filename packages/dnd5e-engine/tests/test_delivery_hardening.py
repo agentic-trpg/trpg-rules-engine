@@ -362,12 +362,10 @@ def test_primary_acceptances_replay_events_rng_and_final_state(loader, slug):
                 **choices,
             )
         if slug == "slow":
-            # Delivery support is retained, but required action restrictions
-            # are missing: the paid spell API must now fail closed.
-            assert [e.reason for e in events(live, CastFailed)] == ["unsupported_activity"]
-            assert not events(live, SaveRolled)
-            assert live.spell_slots_by_entity[CASTER][3] == 1
-            assert next(c for c in live.initiative if c.entity_id == CASTER).action_available
+            assert not events(live, CastFailed)
+            assert [e.target_id for e in events(live, SaveRolled)] == ["mon:chosen", "mon:other"]
+            assert live.spell_slots_by_entity[CASTER][3] == 0
+            assert not next(c for c in live.initiative if c.entity_id == CASTER).action_available
         else:
             assert not events(live, CastFailed)
             assert events(live, SaveRolled)

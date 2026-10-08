@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
+from dnd5e_srd_data.schema.action_policy import ActionPolicy
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 from dnd5e_engine.effect_lifecycle import EffectLifecycleApplication
@@ -158,6 +159,7 @@ class ActiveEffect(BaseModel):
     transfer: bool = False
     duration: ActiveEffectDuration = Field(default_factory=ActiveEffectDuration)
     changes: list[ActiveEffectChange] = Field(default_factory=list)
+    action_policy: ActionPolicy | None = Field(default=None, exclude_if=lambda v: v is None)
     statuses: set[str] = Field(default_factory=set)
     flags: dict[str, Any] = Field(default_factory=dict)
     lifecycle: EffectLifecycleApplication | None = Field(

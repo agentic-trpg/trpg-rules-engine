@@ -60,7 +60,7 @@ def loader():
         "enthrall",
     ],
 )
-def test_unsupported_public_cast_refuses_before_payment_lifecycle_or_rng(loader, slug):
+def test_public_cast_admission_and_payment_contract(loader, slug):
     spell = loader.get_spell(slug)
     handle, live = start(
         [wizard(CASTER, initiative=100, spells_known=[slug], spell_slots={spell.level: 1})],
@@ -77,6 +77,17 @@ def test_unsupported_public_cast_refuses_before_payment_lifecycle_or_rng(loader,
         target_id="mon:foe",
         target_zone_id="1,0",
     )
+    if slug == "slow":
+        from dnd5e_engine.events import EffectApplied, SaveRolled
+
+        assert not events(live, CastFailed)
+        assert len(events(live, SpellCast)) == len(events(live, SaveRolled)) == 1
+        assert live.spell_slots_by_entity[CASTER][spell.level] == 0
+        save = events(live, SaveRolled)[0]
+        assert len(events(live, EffectApplied)) == (0 if save.succeeded else 1)
+        assert not combatant(live, CASTER).action_available
+        assert live.rng.getstate() != before[1]
+        return
     assert [e.reason for e in events(live, CastFailed)] == ["unsupported_activity"]
     assert live.event_log[pre:] == events(live, CastFailed)
     assert not events(live, IntentSubmitted)

@@ -659,6 +659,29 @@ def _ongoing_spell_activation_resolves() -> bool:
     )
 
 
+def _action_policy_resolves() -> bool:
+    from dnd5e_engine.action_policy import policies
+    from dnd5e_engine.lib_loader import scoped_lib_loader
+    from dnd5e_engine.live_movement import effective_speed
+    from dnd5e_engine.live_reactions import can_take_reaction
+    from tests.c21_support import combatant
+    from tests.test_action_policy import FOE, slow, table
+
+    with scoped_lib_loader(BundledAssetLoader()):
+        handle, live = table()
+    slow(handle)
+    target = combatant(live, FOE)
+    projected = policies(live, FOE)
+    return (
+        len(projected) == 1
+        and projected[0].action_or_bonus
+        and projected[0].attack_count_cap == 1
+        and projected[0].somatic_failure_percent == 25
+        and effective_speed(target, "walk", live) == 15
+        and not can_take_reaction(live, target)
+    )
+
+
 def _typed_lifecycle_contract_resolves() -> bool:
     from dnd5e_srd_data.schema.lifecycle import EffectLifecycleSpec, RepeatSaveSpec
 
@@ -833,7 +856,7 @@ _PROBES: dict[str, tuple[Any, str]] = {
         lambda: (
             'if intent.intent_type == "hide"' in _src("orchestrator.py")
             and '_require_cunning_action(current, "Hide")' in _src("orchestrator.py")
-            and '_action_payment(current, "hide")' in _src("orchestrator.py")
+            and '_action_payment(current, "hide", intent.action_grant)' in _src("orchestrator.py")
         ),
         "✅",
     ),
@@ -1320,6 +1343,7 @@ _PROBES: dict[str, tuple[Any, str]] = {
     "| Typed per-target spell Effect Selection |": (_typed_spell_effect_choices_resolve, "✅"),
     "| Dynamic environmental point operations |": (_dynamic_environment_points_resolve, "✅"),
     "| Ongoing spell Magic actions and moving light |": (_ongoing_spell_activation_resolves, "✅"),
+    "| Typed Action Policy and Slow |": (_action_policy_resolves, "✅"),
     # C20: Rage ends unless extended (and on Incapacitated).
     "| Rage |": (
         lambda: (

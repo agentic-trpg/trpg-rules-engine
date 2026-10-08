@@ -38,6 +38,19 @@
             "max": null,
             "min": null
           },
+          "lifecycle": {
+            "expire_on_positive_damage": false,
+            "expiry_boundary": null,
+            "maximum_rounds": null,
+            "one_use_modifiers": [],
+            "repeat_save": {
+              "on_success": "expire_effect",
+              "phase": "target_turn_end",
+              "save_source": "triggering_activity"
+            },
+            "stacking": "latest_applies",
+            "stacking_group": "slow"
+          },
           "on_save": false,
           "riders": null
         }
@@ -134,6 +147,15 @@
   "name": "Slow",
   "passive_effects": [
     {
+      "action_policy": {
+        "action_or_bonus": true,
+        "attack_count_cap": 1,
+        "deny_actions": false,
+        "deny_bonus_actions": false,
+        "deny_reactions": true,
+        "extra_action": null,
+        "somatic_failure_percent": 25
+      },
       "changes": [
         {
           "key": "system.attributes.ac.bonus",

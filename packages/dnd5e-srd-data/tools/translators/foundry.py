@@ -2429,7 +2429,11 @@ def translate_spell_yaml(
         review=ReviewState(),
         foundry_uuid=_spell_foundry_uuid(yaml_path, doc),
     )
-    return apply_ongoing_activation(apply_environment(apply_effect_selection(spell)))
+    from tools.translators.action_policy import apply_action_policy
+
+    return apply_action_policy(
+        apply_ongoing_activation(apply_environment(apply_effect_selection(spell)))
+    )
 
 
 # --- advancement (shared by class/subclass/race) ---

@@ -342,6 +342,7 @@ class PlayerIntent(BaseModel):
     """
 
     model_config = ConfigDict(extra="forbid")
+    action_grant: tuple[str, str] | None = Field(default=None, exclude_if=lambda v: v is None)
 
     intent_type: IntentType
     source_id: str | None = None
@@ -510,6 +511,7 @@ class IntentRejectedError(CombatSeamError):
     """
 
     RejectionReason = Literal[
+        "action_restricted",
         "invalid_spell_activation",
         "actor_not_in_initiative",
         "not_actor_turn",
@@ -2046,7 +2048,9 @@ def _loading_weapon_already_fired_failure(
         return None
     if funding == "light_offhand" and weapon.mastery != "nick":
         return None
-    if funding == "action" and _action_payment(current, "attack"):
+    if funding == "action" and (
+        _action_payment(current, "attack") or intent.action_grant is not None
+    ):
         return None
     return AttackFailed(
         actor_id=actor_id, target_id=intent.target_id, reason="weapon_already_fired"
@@ -2609,6 +2613,11 @@ def _resolve_monster_cast(
     """
     if not _monster_activity_available(live, current, action, activity):
         return
+    from dnd5e_engine.action_policy import denial, fail_somatic_attempt, somatic_chance
+
+    if denial(live, current, "action"):
+        return
+    somatic_percent = somatic_chance(live, current.entity_id, spell)
     from dnd5e_engine.live_spell_delivery import execute_spell_delivery, plan_spell_delivery
 
     spec = _monster_cast_delivery_spec(live, current, spell, activity, chosen_target)
@@ -2629,6 +2638,11 @@ def _resolve_monster_cast(
     current = begin_spell_cast(live, current, spell)
     if spell_cast_opportunity(live, current, spell):
         return
+    if somatic_percent:
+        _emit_spell_cast(live, current.entity_id, spell, slot_level)
+        if fail_somatic_attempt(live, current.entity_id, spell, somatic_percent):
+            _mark_monster_action_used(live, current, action, (activity,))
+            return
     payload = _build_hydration_payload(live, caster=current)
     pre_event_count = len(live.event_log)
     actx = build_activity_context(
@@ -2656,7 +2670,8 @@ def _resolve_monster_cast(
         else actx.attack_bonus_override,
         source_parent_id=f"monster:{current.entity_id}:{action.slug}:{activity.id}",
     )
-    _emit_spell_cast(live, current.entity_id, spell, slot_level)
+    if not somatic_percent:
+        _emit_spell_cast(live, current.entity_id, spell, slot_level)
     actx = execute_spell_delivery(live, spell, actx, spec)
 
     # SRD 5.2 §Actions in Combat — Help; §Weapon Mastery — Vex / Sap: a
@@ -2784,10 +2799,14 @@ def _resolve_monster_attack_activities(
     (``is_opportunity_attack``). Extracted (C18 Task 6 fix round 1) so a
     future hook added to one caller can't silently miss the other.
     """
+    from dnd5e_engine.action_policy import denial
     from dnd5e_engine.live_monster_delivery import (
         named_activity_delivery,
         select_named_activity_target,
     )
+
+    if not is_opportunity_attack and denial(live, actor, "action"):
+        return
 
     # Keep hydration scoped to the movement target. Each child refreshes its
     # own defenses; grant cleanup must also include the other legal picks.
@@ -2947,6 +2966,11 @@ def _resolve_monster_execution(
     resolved: list[Activity] = []
     for activity in activities:
         if not can_continue_resolution(live, actor.entity_id):
+            break
+        from dnd5e_engine.action_policy import denial
+
+        fresh = _find_combatant(live, actor.entity_id) or actor
+        if not actx.is_opportunity_attack and denial(live, fresh, "action"):
             break
         if area_activity([activity]) is not None:
             placement = _monster_area_placement(live, actor, [activity])
@@ -4346,7 +4370,11 @@ def _handle_dash(live: _LiveCombat, current: Combatant, intent: PlayerIntent) ->
     if intent.use_bonus_action:
         _require_cunning_action(current, "Dash")
         budget_consumed = "bonus_action"
-    elif not (current.action_available or _extra_action_funds(current, "dash")):
+    elif not (
+        current.action_available
+        or _extra_action_funds(current, "dash")
+        or intent.action_grant is not None
+    ):
         raise IntentRejectedError(
             "no_action_economy",
             f"actor_id={actor_id!r} has no Action remaining for Dash",
@@ -4357,7 +4385,7 @@ def _handle_dash(live: _LiveCombat, current: Combatant, intent: PlayerIntent) ->
     payment: dict[str, Any] = (
         {"bonus_action_available": False}
         if budget_consumed == "bonus_action"
-        else _action_payment(current, "dash")
+        else _action_payment(current, "dash", intent.action_grant)
     )
     _update_combatant(live, actor_id, **payment)
     _apply_dash(live, _find_combatant(live, actor_id) or current, budget_consumed)
@@ -4437,7 +4465,7 @@ def _handle_hide(live: _LiveCombat, current: Combatant, intent: PlayerIntent) ->
         _require_cunning_action(current, "Hide")
         payment = {"bonus_action_available": False}
     else:
-        payment = _action_payment(current, "hide")
+        payment = _action_payment(current, "hide", intent.action_grant)
     if not payment:
         raise IntentRejectedError(
             "no_action_economy",
@@ -4588,7 +4616,7 @@ def _handle_disengage(live: _LiveCombat, current: Combatant, intent: PlayerInten
         _disengage_as_bonus_action(live, current)
         return
     actor_id = current.entity_id
-    payment = _action_payment(current, "disengage")
+    payment = _action_payment(current, "disengage", intent.action_grant)
     if not payment:
         raise IntentRejectedError(
             "no_action_economy",
@@ -4885,6 +4913,8 @@ def _emit_apply_turn_started(live: _LiveCombat, event: TurnStarted) -> None:
     """Fold a ``TurnStarted`` into running state: set the current actor and
     refresh that actor's per-turn Action / Bonus Action / Reaction / movement
     budgets on the initiative slot."""
+    from dnd5e_engine.action_policy import attack_budget
+
     live.current_actor_id = event.actor_id
     live.turn_serial += 1
     live.rider_uses.clear()
@@ -4905,6 +4935,10 @@ def _emit_apply_turn_started(live: _LiveCombat, event: TurnStarted) -> None:
                     "action_available": True,
                     "bonus_action_available": True,
                     "reaction_available": True,
+                    "action_taken_this_turn": False,
+                    "bonus_action_taken_this_turn": False,
+                    "attack_action_attacks_made": 0,
+                    "action_grants_spent": (),
                     # SRD §Movement — the budget refreshes to the actor's
                     # EFFECTIVE Speed (Speed-0 conditions, Exhaustion) at the
                     # start of their turn. Per-MOVE-intent decrement is the
@@ -4916,7 +4950,7 @@ def _emit_apply_turn_started(live: _LiveCombat, event: TurnStarted) -> None:
                     # SRD §Extra Attack / §Two-Weapon Fighting — refresh the
                     # per-Action attack budget and clear the TWF window at
                     # the start of the actor's own turn.
-                    "attacks_remaining": _attacks_per_action(live, c),
+                    "attacks_remaining": attack_budget(live, c, _attacks_per_action(live, c)),
                     "attack_action_engaged": False,
                     "attack_rolls_made_this_turn": 0,
                     "light_weapon_swing_slug": None,
@@ -5343,6 +5377,11 @@ def _emit_apply_effect_applied(live: _LiveCombat, event: EffectApplied) -> None:
     """Track the unchanged effect, attach its permitted statuses, and record
     concentration spell-slot expenditure for PCs."""
     applied = event.effect
+    moving_actor = _find_combatant(live, applied.target_id)
+    if moving_actor is not None:
+        live.movement_ledgers.setdefault(
+            applied.target_id, live_movement.ledger_for(live, moving_actor)
+        )
     target_effects = live.active_effects.setdefault(applied.target_id, [])
     if applied.lifecycle is not None:
         target_effects[:] = [
@@ -5354,7 +5393,9 @@ def _emit_apply_effect_applied(live: _LiveCombat, event: EffectApplied) -> None:
     added = _attach_effect_statuses(live, applied)
     live_effect_lifecycle.register_effect(live, applied)
     if applied.statuses or any(
-        change.key in ("speed.multiplier", "speed.reduction") for change in applied.changes
+        change.key in ("speed.multiplier", "speed.reduction")
+        or change.key.startswith("system.attributes.movement.")
+        for change in applied.changes
     ):
         _clamp_movement_budget(live, applied.target_id)
     # SRD spell-slot consumption: spell effects with concentration imply
@@ -5382,6 +5423,11 @@ def _emit_apply_effect_expired(live: _LiveCombat, event: EffectExpired) -> None:
     distinct origins sharing an effect id.
     """
     target_effects = live.active_effects.get(event.target_id, [])
+    moving_actor = _find_combatant(live, event.target_id)
+    if moving_actor is not None:
+        live.movement_ledgers.setdefault(
+            event.target_id, live_movement.ledger_for(live, moving_actor)
+        )
     identity = (event.target_id, event.effect_id, event.origin)
     for i, eff in enumerate(target_effects):
         if eff.id == event.effect_id and eff.origin == event.origin:
@@ -7899,8 +7945,11 @@ def _turn_can_continue(
     any intervening Action. Bonus/free completions and Extra Attack preserve
     existing movement windows; other Actions do not hold for movement alone.
     """
+    from dnd5e_engine.action_policy import has_action_grant
+
     return (
         current.action_available
+        or has_action_grant(live, current)
         or current.extra_actions_remaining > 0
         or not _attack_action_is_spent(current)
         or current.flurry_strikes_remaining > 0
@@ -10397,14 +10446,23 @@ def _extra_action_funds(c: Combatant, intent_type: IntentType) -> bool:
     )
 
 
-def _action_payment(c: Combatant, intent_type: IntentType) -> dict[str, Any]:
+def _action_payment(
+    c: Combatant, intent_type: IntentType, grant: tuple[str, str] | None = None
+) -> dict[str, Any]:
     """Pay the restricted slot first, preserving the base Action for Magic."""
     if intent_type == "pass":
         return {}
+    if grant is not None:
+        from dnd5e_engine.action_policy import grant_payment
+
+        return grant_payment(c, grant)
     if _extra_action_funds(c, intent_type):
-        return {"extra_actions_remaining": c.extra_actions_remaining - 1}
+        return {
+            "extra_actions_remaining": c.extra_actions_remaining - 1,
+            "action_taken_this_turn": True,
+        }
     if c.action_available:
-        return {"action_available": False}
+        return {"action_available": False, "action_taken_this_turn": True}
     return {}
 
 
@@ -10421,7 +10479,10 @@ def _consume_action_budget(
     for idx, c in enumerate(live.initiative):
         if c.entity_id == actor_id:
             if cost.is_bonus_action:
-                update: dict[str, Any] = {"bonus_action_available": False}
+                update: dict[str, Any] = {
+                    "bonus_action_available": False,
+                    "bonus_action_taken_this_turn": True,
+                }
             elif cost.is_reaction_cast:
                 update = {"reaction_available": False}
             else:
@@ -10487,7 +10548,9 @@ def _action_economy_gate_failure(
                 reason="no_action_economy",
             )
         return None
-    extra_action = _extra_action_funds(current, intent.intent_type)
+    extra_action = (
+        _extra_action_funds(current, intent.intent_type) or intent.action_grant is not None
+    )
     if intent.intent_type == "attack":
         if current.attacks_remaining <= 0 and not current.action_available and not extra_action:
             return AttackFailed(
@@ -10522,7 +10585,12 @@ def _action_economy_gate_failure(
 
 
 def _consume_attack_budget(
-    live: _LiveCombat, actor_id: str, current: Combatant, *, start_new_action: bool = False
+    live: _LiveCombat,
+    actor_id: str,
+    current: Combatant,
+    *,
+    start_new_action: bool = False,
+    grant: tuple[str, str] | None = None,
 ) -> Combatant:
     """SRD §Extra Attack — soft-consume the Action for a main-hand attack
     (R2): the Action is spent only on the FIRST swing of a multi-attack
@@ -10536,18 +10604,26 @@ def _consume_attack_budget(
     turn)."""
     for idx, c in enumerate(live.initiative):
         if c.entity_id == actor_id:
-            if start_new_action or _attack_action_is_spent(c):
-                update: dict[str, Any] = {
+            if grant is not None:
+                update: dict[str, Any] = _action_payment(c, "attack", grant)
+                live.initiative[idx] = c.model_copy(update=update)
+                return _current_actor(live)
+            from dnd5e_engine.action_policy import attack_budget, needs_new_attack_action
+
+            if start_new_action or _attack_action_is_spent(c) or needs_new_attack_action(live, c):
+                update = {
                     **_action_payment(c, "attack"),
                     "attack_action_engaged": True,
                     "loading_weapon_fired_this_action": False,
                     # The count is read as the Action is taken: a form adopted
                     # earlier this turn (Wild Shape is a Bonus Action) swings
                     # with the form's count.
-                    "attacks_remaining": _attacks_per_action(live, c) - 1,
+                    "attacks_remaining": attack_budget(live, c, _attacks_per_action(live, c)) - 1,
+                    "attack_action_attacks_made": 1,
                 }
             else:
                 update = {"attacks_remaining": c.attacks_remaining - 1}
+            update.setdefault("attack_action_attacks_made", c.attack_action_attacks_made + 1)
             live.initiative[idx] = c.model_copy(update=update)
             break
     return _current_actor(live)
@@ -10620,9 +10696,12 @@ def _consume_offhand_attack_budget(
     once-per-turn cap (the SRD's own "only once per turn"), and the
     positive-ability-mod suppression on the swing's damage."""
     is_nick = weapon is not None and weapon.mastery == "nick"
-    update: dict[str, bool] = {"offhand_attack_spent": True}
+    update: dict[str, Any] = {"offhand_attack_spent": True}
     if not is_nick:
         update["bonus_action_available"] = False
+        update["bonus_action_taken_this_turn"] = True
+    else:
+        update["attack_action_attacks_made"] = current.attack_action_attacks_made + 1
     for idx, c in enumerate(live.initiative):
         if c.entity_id == actor_id:
             live.initiative[idx] = c.model_copy(update=update)
@@ -10650,6 +10729,10 @@ def _update_combatant(live: _LiveCombat, entity_id: str, **fields: Any) -> None:
     later reads of ``live.initiative`` see them."""
     for idx, c in enumerate(live.initiative):
         if c.entity_id == entity_id:
+            if fields.get("action_available") is False:
+                fields["action_taken_this_turn"] = True
+            if fields.get("bonus_action_available") is False:
+                fields["bonus_action_taken_this_turn"] = True
             live.initiative[idx] = c.model_copy(update=fields)
             if "worn_armor" in fields:
                 _reconcile_rage_state(live, entity_id)
@@ -10742,14 +10825,21 @@ def _consume_intent_budget(
     (none with Nick), one owed Flurry strike, or the Bonus Action."""
     if funding == "action":
         if intent.intent_type != "attack":
-            return _consume_action_budget(live, actor_id, cost, intent.intent_type)
+            _consume_action_budget(live, actor_id, cost, intent.intent_type)
+            if intent.intent_type in ("grapple", "shove"):
+                _update_combatant(live, actor_id, attack_action_attacks_made=1)
+            return _current_actor(live)
         fresh_loading_action = (
             weapon is not None
             and WeaponProperty.LOADING in weapon.properties
             and current.loading_weapon_fired_this_action
         )
         return _consume_attack_budget(
-            live, actor_id, current, start_new_action=fresh_loading_action
+            live,
+            actor_id,
+            current,
+            start_new_action=fresh_loading_action,
+            grant=intent.action_grant,
         )
     if funding == "light_offhand":
         return _consume_offhand_attack_budget(live, actor_id, current, weapon)
@@ -11637,7 +11727,11 @@ async def submit_player_intent(
                     _validate_intent_preconditions(live, handle, actor_id, intent=intent)
                     if reject_nonattack_riders(live, actor_id, intent):
                         return
+                before_actor = _find_combatant(live, actor_id)
                 await _submit_player_intent(handle, actor_id, intent)
+                from dnd5e_engine.action_policy import record_budget_changes
+
+                record_budget_changes(live, before_actor)
             except FeaturePreflightError:
                 rider_refused = intent.intent_type in ("attack", "use_feature")
                 raise
@@ -11669,6 +11763,17 @@ async def _submit_player_intent(
     """
     live = _get_live(handle)
     current = _validate_intent_preconditions(live, handle, actor_id, intent=intent)
+    from dnd5e_engine.action_policy import validate_grant
+
+    validate_grant(live, current, intent)
+    if intent.intent_type in ("dash", "disengage", "hide", "activate_spell", "move_mark"):
+        from dnd5e_engine.action_policy import enforce
+
+        enforce(
+            live,
+            current,
+            "bonus" if intent.use_bonus_action or intent.intent_type == "move_mark" else "action",
+        )
     if intent.intent_type == "activate_spell":
         from dnd5e_engine.ongoing_spell_activation import activate_spell
 
@@ -11746,6 +11851,9 @@ async def _submit_player_intent(
         attack_weapon,
         repeats_construct=_repeated_construct(live, current, intent) is not None,
     )
+    from dnd5e_engine.action_policy import preflight_intent_policy
+
+    funding = preflight_intent_policy(live, current, intent, action_cost, funding, attack_weapon)
     rider_origin = attack_origin(intent, attack_weapon, funding)
     rider_plans = prepare_intent_riders(live, current, intent, attack_weapon, rider_origin)
     if rider_plans is None:
@@ -11850,6 +11958,13 @@ async def _submit_player_intent(
             ),
         )
 
+    from dnd5e_engine.action_policy import fail_somatic_attempt, somatic_chance
+
+    somatic_percent = (
+        somatic_chance(live, actor_id, cast_spell_for_timing)
+        if cast_spell_for_timing is not None
+        else 0
+    )
     if cast_spell_for_timing is not None:
         current = begin_spell_cast(live, current, cast_spell_for_timing)
     if cast_spell_for_timing is not None and spell_cast_opportunity(
@@ -11882,6 +11997,12 @@ async def _submit_player_intent(
     # never enforced). Emitted right after the slot gate passes so it is
     # ordered before any resolution events (damage, saves, ...) the cast produces.
     _emit_spell_cast_for_on_turn_intent(live, actor_id, intent)
+    if cast_spell_for_timing is not None and fail_somatic_attempt(
+        live, actor_id, cast_spell_for_timing, somatic_percent
+    ):
+        _break_hide_on_attack_or_verbal_cast(live, current, intent, cast_spell_for_timing)
+        _end_action(live, actor_id, intent, allow_movement=True)
+        return
 
     # SRD §Limited-Use Features — every action-economy / slot gate has
     # passed and the invocation is now committed to resolving; record the spend on
@@ -11966,7 +12087,13 @@ async def _submit_player_intent(
             if targets
             else None
         )
-        cleave_available = _cleave_available(current, fetched_weapon, _primary_distance_ft)
+        from dnd5e_engine.action_policy import needs_new_attack_action
+
+        cleave_available = (
+            _cleave_available(current, fetched_weapon, _primary_distance_ft)
+            and not needs_new_attack_action(live, current)
+            and intent.action_grant is None
+        )
         cleave_candidate = (
             _cleave_candidate(live, current, fetched_weapon, targets) if cleave_available else None
         )
@@ -12140,6 +12267,7 @@ async def _submit_player_intent(
             and funding != "light_offhand"
             and fetched_weapon is not None
             and WeaponProperty.LIGHT in fetched_weapon.properties
+            and intent.action_grant is None
         ):
             current = _record_light_weapon_swing(live, actor_id, current, fetched_weapon.slug)
 
@@ -12150,6 +12278,7 @@ async def _submit_player_intent(
             intent.intent_type == "attack"
             and fetched_weapon is not None
             and WeaponProperty.LOADING in fetched_weapon.properties
+            and intent.action_grant is None
             and (funding == "action" or fetched_weapon.mastery == "nick")
         ):
             current = _record_loading_weapon_fired(live, actor_id, current)
@@ -12566,12 +12695,15 @@ async def _advance_monster_turn(
     # Monster, so a wounded AGGRESSIVE/RANGED monster would otherwise keep
     # attacking instead of fleeing. A fleeing monster takes the same no-action /
     # pass path dead monsters take.
+    from dnd5e_engine.action_policy import denial
+
     skip_to_record_pass = (
         not current.is_alive
         or current.hp_current <= 0
         or _monster_is_fleeing(current)
         # SRD 5.2 Incapacitated — the monster takes no action this turn.
         or conditions_block_actions(_condition_names(current))
+        or denial(live, current, "action")
     )
 
     # Build the target list: every living enemy, a summon included

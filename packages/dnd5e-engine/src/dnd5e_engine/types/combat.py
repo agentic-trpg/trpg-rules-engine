@@ -175,6 +175,10 @@ class Combatant(BaseModel):
     action_available: bool = True
     bonus_action_available: bool = True
     reaction_available: bool = True
+    action_taken_this_turn: bool = False
+    bonus_action_taken_this_turn: bool = False
+    attack_action_attacks_made: int = 0
+    action_grants_spent: tuple[tuple[str, str], ...] = ()
     # SRD §Movement — a creature's walking speed in feet (used as the per-turn
     # movement budget). ``base_speed`` is the constant max (set at combat
     # start from Character race / MonsterTemplate.speed.walk; defaults to 30

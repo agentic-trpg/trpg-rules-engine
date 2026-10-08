@@ -110,6 +110,7 @@ stable insertion order selects one; the others remain available.
 | Source | Lifecycle and complete entrypoint |
 |---|---|
 | Hold Person / Hold Monster | Their failed initial WIS save attaches typed repetition at each target turn end, with captured spell provenance and concentration cleanup. |
+| Slow | Failed initial WIS saves attach independently sourced end-turn WIS repeats and latest-only numeric/action projection. Concentration owns the one-minute cap and shared cleanup. |
 | Cunning Strike: Poison | An eligible attack with a carried canonical `poisoners-kit` sacrifices one Sneak Attack die. Failed CON against `8 + PB + DEX` imposes Poisoned for ten rounds with end-turn repeats; success still pays the sacrifice. |
 | Devious Strikes: Knock Out | An eligible attack sacrifices six Sneak Attack dice. Failed CON against `8 + PB + DEX` imposes Unconscious for ten rounds with end-turn repeats and complete-instance break-on-positive-damage. |
 | Intimidating Presence | Bonus Action, selected targets in a 30-foot Emanation, WIS against `8 + PB + STR`, Frightened for ten rounds with end-turn repeats; its own once-per-Long-Rest use is authoritative. The separate Rage Recharge activity remains deferred. |
@@ -155,15 +156,15 @@ uv run python -m tools.effect_lifecycle_audit --output ../../docs/dev/effect-lif
 ```
 
 The [deterministic inventory](effect-lifecycle-audit.json) has 188 rows:
-133 spell, 17 feature and 38 item rows. Seven bindings have executable typed
+133 spell, 17 feature and 38 item rows. Eight bindings have executable typed
 lifecycles; 37 typed duration/overlap bindings are supported, including B4's two
-Sunbeam source-next-turn-start bindings. The other 144 rows
-are explicit deferred or candidate records: 39 repeat-save candidates,
-23 damage-break candidates and 84 other deferred rows. Candidate discovery during ingestion does not
+Sunbeam source-next-turn-start bindings. The other 143 rows
+are explicit deferred or candidate records: 38 repeat-save candidates,
+23 damage-break candidates and 82 other deferred rows. Candidate discovery during ingestion does not
 authorize runtime execution. Dominate variants' damage-triggered escape saves
 do not become end-of-turn repeats.
 
-There are five typed repeat producers, one typed positive-damage break producer,
+There are six typed repeat producers, one typed positive-damage break producer,
 31 reviewed finite-duration producers and two canonical one-use producers:
 Staggering and Sundering. Reckless and Hamstring carry exact next-turn boundaries;
 Hamstring additionally declares its latest-only stacking group.

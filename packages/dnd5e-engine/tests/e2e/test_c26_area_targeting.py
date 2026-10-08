@@ -460,7 +460,7 @@ def test_c26_s14_slow_affects_six_enemies_in_its_cube() -> None:
         goblins,
         session="e2e-c26-s14",
     )
-    # Target planning remains implemented independently of paid spell admission.
+    # The same selected Cube must survive planning and paid execution.
     plan = plan_spell_delivery(
         live,
         _combatant(live, "char:wiz"),
@@ -485,10 +485,19 @@ def test_c26_s14_slow_affects_six_enemies_in_its_cube() -> None:
         slot_level=3,
         target_zone_id=cell(1, 0),
     )
-    assert [e.reason for e in events_of(live, CastFailed)] == ["unsupported_activity"]
-    assert live.spell_slots_by_entity["char:wiz"][3] == 1
-    assert live.rng.getstate() == rng
-    assert not _saved(live)
+    from dnd5e_engine.events import EffectApplied
+
+    assert not events_of(live, CastFailed)
+    assert live.spell_slots_by_entity["char:wiz"][3] == 0
+    assert not _combatant(live, "char:wiz").action_available
+    assert live.rng.getstate() != rng
+    assert _saved(live) == [f"mon:g{i}" for i in range(1, 7)]
+    [resolved_area] = _areas(live)
+    assert resolved_area.affected_ids == list(area.target_ids)
+    failed = {e.target_id for e in events_of(live, SaveRolled) if not e.succeeded}
+    applied = events_of(live, EffectApplied)
+    assert {e.effect.target_id for e in applied} == failed
+    assert all(e.effect.action_policy.attack_count_cap == 1 for e in applied)
 
 
 def test_c26_s15_breath_weapon_defers_until_attack_replacement_is_modeled() -> None:

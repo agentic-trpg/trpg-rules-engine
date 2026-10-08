@@ -56,6 +56,7 @@ nav:
       - Persistent area lifecycle: dev/persistent-areas.md
       - Dynamic environment: dev/dynamic-environment.md
       - Ongoing spell activation: dev/ongoing-spell-activation.md
+      - Action policies and Slow: dev/action-policy.md
       - Typed ability checks: dev/typed-ability-checks.md
       - Feature runtime safety: dev/feature-runtime.md
       - Attack-triggered feature riders: dev/attack-feature-riders.md

@@ -4162,7 +4162,7 @@
       "spell_specific_action_rules"
     ],
     "missing_details": [
-      "Grant the restricted additional Action and apply automatic lethargy on expiry."
+      "Complete reviewed Utilize-versus-Magic item permissions for the restricted additional Action, plus an effect-end Lethargy producer imposing Incapacitated and Speed 0 until the target's next turn ends, including replacement and overlapping sources."
     ],
     "limitations": [],
     "requires_direct_carrier": false,
@@ -7333,16 +7333,14 @@
   {
     "slug": "slow",
     "uuid": "Compendium.dnd5e.spells24.Item.phbsplSlow000000",
-    "canonical_sha256": "9699709668f905ac33c3932c8e0479a07e3bcb170dea95f88de3c968d0bfe666",
+    "canonical_sha256": "15a3dcbd9742f913254dafced6f753ed891e35d66d8518017efc25d8f8115a7e",
     "source_url": "https://github.com/foundryvtt/dnd5e/blob/965ad2d0cf5d063dac675ba078b5bd3c3c0dd449/packs/_source/spells24/3rd-level/slow.yml",
-    "classification": "deferred",
-    "required_mechanisms": [
-      "spell_specific_action_rules"
+    "classification": "executable",
+    "required_mechanisms": [],
+    "missing_details": [],
+    "limitations": [
+      "Host owns components and the existing two-dimensional grid boundary. Somatic failure pays normal casting costs; a d100 of 1-25 fails after legal preflight and payment."
     ],
-    "missing_details": [
-      "Enforce limited Action/Bonus Action, attack count, reactions and delayed spell completion."
-    ],
-    "limitations": [],
     "requires_direct_carrier": false,
     "activities": [
       {

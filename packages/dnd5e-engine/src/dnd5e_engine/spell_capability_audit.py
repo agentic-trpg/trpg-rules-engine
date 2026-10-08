@@ -57,6 +57,20 @@ def audit_document(loader: AssetLoader) -> dict[str, object]:
             )
             activities.append(
                 {
+                    **(
+                        {
+                            "action_policies": {
+                                effect.id: effect.action_policy.model_dump(mode="json")
+                                for effect in spell.passive_effects
+                                if effect.action_policy is not None
+                                and any(
+                                    ref.id == effect.id for ref in getattr(activity, "effects", ())
+                                )
+                            }
+                        }
+                        if any(effect.action_policy is not None for effect in spell.passive_effects)
+                        else {}
+                    ),
                     **activity_review.model_dump(mode="json"),
                     "selected_by_default": activity in selected,
                     "timing": activity.timing.trigger,

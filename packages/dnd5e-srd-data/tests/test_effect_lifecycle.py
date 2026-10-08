@@ -196,15 +196,17 @@ def test_lifecycle_audit_is_deterministic_matches_golden_and_keeps_deferrals_exp
     assert json.dumps(first).encode() == json.dumps(second).encode()
     assert first == json.loads(GOLDEN.read_text(encoding="utf8"))
     assert first["producer_counts"] == {
-        "typed_repeat_save": 5,
+        "typed_repeat_save": 6,
         "typed_expire_on_positive_damage": 1,
         "finite_reviewed_duration": 31,
         "typed_one_use_modifier": 2,
-        "supported_lifecycle": 44,
-        "deferred": 144,
+        "supported_lifecycle": 45,
+        "deferred": 143,
     }
     assert {row["source_kind"] for row in first["rows"]} == {"spell", "feature", "item"}
     assert first["inventory_rows"] == 188
+    [slow] = [row for row in first["rows"] if row["source_slug"] == "slow"]
+    assert slow["fully_executable"] and slow["lifecycle"]["repeat_save"]
     beams = [row for row in first["rows"] if row["source_slug"] == "sunbeam"]
     assert len(beams) == 2
     assert all(

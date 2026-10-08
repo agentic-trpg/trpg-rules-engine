@@ -53,12 +53,14 @@ if TYPE_CHECKING:
 
 def can_take_reaction(live: _LiveCombat, actor: Combatant, *, spell: bool = False) -> bool:
     from dnd5e_engine import orchestrator as orch
+    from dnd5e_engine.action_policy import denial
 
     return (
         actor.is_alive
         and actor.hp_current > 0
         and actor.entity_id not in live.dead_ids
         and actor.reaction_available
+        and not denial(live, actor, "reaction")
         and not conditions_block_actions(orch._condition_names(actor))
         and (
             not spell
@@ -370,7 +372,12 @@ def fire_reaction(live: _LiveCombat, opportunity: ReactionOpportunity) -> Reacti
             ),
         )
         orch._emit_spell_cast(live, reactor.entity_id, spell, pending.slot_level)
+        from dnd5e_engine.action_policy import fail_somatic_attempt, somatic_chance
+
+        somatic_percent = somatic_chance(live, reactor.entity_id, spell)
         reactor = begin_spell_cast(live, reactor, spell)
+        if fail_somatic_attempt(live, reactor.entity_id, spell, somatic_percent):
+            continue
         ctx = replace(
             _context(live, reactor, [target], spell, pending.slot_level),
             activity_source_id=f"spell:{spell.slug}:{activity.id}",

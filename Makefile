@@ -1,10 +1,30 @@
-# Aggregate developer entrypoint for the nat20 workspace.
-# CI runs each package's `make check` in its own job (.github/workflows/ci.yml);
-# this target mirrors the full gate locally. Run `uv sync --all-packages --extra dev`
-# once first so both packages' dev tools (ruff/mypy/pytest-cov/bandit) are present.
-.PHONY: check check-engine check-srd-data check-bridge check-demo examples smoke format
+# Shared local/CI validation. BASE is an optional exact Git comparison commit.
+VALIDATE = uv run --no-project python tools/validate.py
+BASE_ARG = $(if $(BASE),--base $(BASE),)
+.PHONY: check-fast check-integration check check-plan check-auto docs smoke \
+        check-engine check-srd-data check-bridge check-demo examples format
 
-check: check-srd-data check-engine check-bridge check-demo examples
+# Ordinary batches: scoped lint, types and runtime tests without coverage.
+check-fast:
+	$(VALIDATE) fast $(BASE_ARG)
+
+# Includes Fast once; use INSTEAD OF check-fast for public/high-risk changes.
+check-integration:
+	$(VALIDATE) integration $(BASE_ARG)
+
+# CI uses exactly the same planner, automatically escalating high-risk changes.
+check-auto:
+	$(VALIDATE) fast --auto $(BASE_ARG)
+
+check-plan:
+	$(VALIDATE) fast --plan $(BASE_ARG)
+
+# Original package coverage/security gates, plus docs and clean-wheel smoke.
+check:
+	$(VALIDATE) full $(BASE_ARG)
+
+docs:
+	$(VALIDATE) docs
 
 check-srd-data:
 	$(MAKE) -C packages/dnd5e-srd-data check
@@ -24,13 +44,14 @@ examples:
 	uv run python examples/skill_check.py
 	uv run python examples/build_party_member.py
 
-# Clean-venv install smoke: builds both wheels, installs with no path deps,
-# runs grid combat through the published surface. Slow; CI runs it standalone.
+# Portable clean-wheel smoke, included once in Full.
 smoke:
-	$(MAKE) -C packages/dnd5e-engine smoke
+	$(VALIDATE) smoke
 
 # Auto-apply formatting across both packages.
 format:
 	$(MAKE) -C packages/dnd5e-engine format
 	cd packages/dnd5e-srd-data && uv run ruff format src tests tools
 	cd packages/nat20-bridge && uv run ruff format src tests
+	cd apps/demo && uv run ruff format src tests
+	uv run ruff format tools

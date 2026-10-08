@@ -16,3 +16,11 @@ docs = [
     "mkdocstrings[python]>=1.0.4",
     "pymdown-extensions>=11.0",
 ]
+
+# Validation tooling only; member packages retain their stricter own configs.
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

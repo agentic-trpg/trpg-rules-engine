@@ -9,6 +9,10 @@ rules engine for Python. Deterministic combat, skill checks, saving throws, effe
 and grid movement — driven by a typed, bundled SRD dataset. No network,
 no database, no game host required.
 
+Developer batches follow [AGENTS.md](AGENTS.md): use `make check-fast` normally,
+`make check-integration` for public or high-risk changes, and reserve `make check`
+for full validation. See [validation and CI](docs/dev/validation.md) for scope selection.
+
 ## What is Nat20
 
 Nat20 is a `uv` workspace of two complementary packages:

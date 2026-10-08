@@ -1,55 +1,107 @@
 name: CI
 
 on:
+  push:
+    branches: ['**']
+  pull_request:
   workflow_dispatch:
+    inputs:
+      level:
+        description: Validation tier
+        type: choice
+        options: [full, integration, fast]
+        default: full
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  core:
+  scope:
+    name: Select validation
+    if: github.event_name != 'workflow_dispatch' || inputs.level != 'full'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.scope.outputs.run }}
+      base: ${{ steps.scope.outputs.base }}
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
         with:
-          python-version: "3.12"
-      - name: Check dnd5e-srd-data
-        working-directory: packages/dnd5e-srd-data
+          fetch-depth: 0
+      - name: Select diff and avoid duplicate push/PR runs
+        id: scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          BRANCH: ${{ github.ref_name }}
         run: |
-          uv sync --extra dev
-          make check
-      - name: Check dnd5e-engine
-        working-directory: packages/dnd5e-engine
-        run: |
-          uv sync --extra dev
-          make check
-          bash scripts/smoke_clean_install.sh
-      - name: Check nat20-bridge
-        working-directory: packages/nat20-bridge
-        run: |
-          uv sync --extra dev
-          make check
+          echo "run=true" >> "$GITHUB_OUTPUT"
+          if [ "$EVENT" = pull_request ]; then
+            echo "base=$(git merge-base "$PR_BASE" "$PR_HEAD")" >> "$GITHUB_OUTPUT"
+          elif [ "$EVENT" = push ]; then
+            if ! count=$(gh api --method GET "repos/$GITHUB_REPOSITORY/pulls" -f state=open -f "head=$GITHUB_REPOSITORY_OWNER:$BRANCH" --jq length); then
+              echo "PR lookup unavailable; conservatively keep push validation."
+            elif [ "$count" -gt 0 ]; then
+              echo "run=false" >> "$GITHUB_OUTPUT"
+              echo "Open PR owns validation; push validation is explicitly skipped."
+            fi
+            if [ "$BEFORE" != 0000000000000000000000000000000000000000 ]; then
+              echo "base=$BEFORE" >> "$GITHUB_OUTPUT"
+            else
+              echo "base=$(git merge-base HEAD origin/main)" >> "$GITHUB_OUTPUT"
+            fi
+          fi
 
-  integration:
+  validation:
+    name: Fast / Focused Validation
+    needs: scope
+    if: needs.scope.outputs.run == 'true' && inputs.level != 'full'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: '3.12'
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - uses: raven-actions/actionlint@v2
+      - name: Validate once with shared impact selection
+        env:
+          BASE: ${{ needs.scope.outputs.base }}
+          LEVEL: ${{ inputs.level }}
+        run: |
+          if [ "$LEVEL" = integration ]; then
+            make check-integration BASE="$BASE"
+          elif [ "$LEVEL" = fast ]; then
+            make check-fast BASE="$BASE"
+          else
+            make check-auto BASE="$BASE"
+          fi
+
+  full:
+    name: Full Validation
+    if: github.event_name == 'workflow_dispatch' && inputs.level == 'full'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-      - uses: raven-actions/actionlint@v2
+        with:
+          fetch-depth: 0
       - uses: astral-sh/setup-uv@v5
         with:
-          python-version: "3.12"
-      - name: Check nat20-demo
-        working-directory: apps/demo
-        run: |
-          uv sync --extra dev
-          make check
-      - name: Check examples
-        run: |
-          uv sync --all-packages
-          uv run python examples/grid_combat.py
-          uv run python examples/skill_check.py
-          uv run python examples/build_party_member.py
-      - name: Check docs
-        run: |
-          uv sync --group docs
-          uv run --group docs mkdocs build --strict
+          python-version: '3.12'
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - uses: raven-actions/actionlint@v2
+      - run: make check

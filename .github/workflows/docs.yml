@@ -1,45 +1,58 @@
 name: Deploy docs
 
-# Builds the MkDocs site and publishes it to GitHub Pages on every push to main.
-# Pages source must be set to "GitHub Actions" in the repo settings.
-
+# Ordinary docs changes are built by CI, without touching the Pages API.
+# Enable Pages in Settings, set PAGES_ENABLED=true, then dispatch on main with deploy=true.
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
+    inputs:
+      deploy:
+        description: Deploy to configured GitHub Pages (main only)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
-# Allow one concurrent deployment; don't cancel an in-progress run so a live
-# deploy always finishes.
 concurrency:
   group: pages
   cancel-in-progress: false
 
 jobs:
   build:
+    name: Build docs
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/configure-pages@v6
       - uses: astral-sh/setup-uv@v5
-      - run: uv sync --group docs
-      - run: uv run --group docs mkdocs build --strict
+        with:
+          python-version: '3.12'
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: make docs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: docs-site
+          path: site
       - uses: actions/upload-pages-artifact@v5
+        if: inputs.deploy && vars.PAGES_ENABLED == 'true' && github.ref == 'refs/heads/main'
         with:
           path: site
 
   deploy:
+    name: Deploy configured Pages
     needs: build
+    if: inputs.deploy && vars.PAGES_ENABLED == 'true' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - uses: actions/configure-pages@v6
       - id: deployment
         uses: actions/deploy-pages@v5

@@ -16,4 +16,4 @@ coverage:
 security:
 	uv run bandit -r src/ -c pyproject.toml -q
 smoke:
-	bash scripts/smoke_clean_install.sh
+	uv run --no-project python ../../tools/smoke_clean_install.py

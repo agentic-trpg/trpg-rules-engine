@@ -1,6 +1,7 @@
 {
   "activities": [
     {
+      "action_type": "magic",
       "activation": {
         "condition": "",
         "override": false,
@@ -36,6 +37,21 @@
             "max": null,
             "min": null
           },
+          "lifecycle": {
+            "expire_on_positive_damage": false,
+            "expiry_boundary": null,
+            "maximum_rounds": null,
+            "on_end": [
+              {
+                "effect_id": "S5XcFawnnNHO8bUr",
+                "expiry_boundary": "target_next_turn_end"
+              }
+            ],
+            "one_use_modifiers": [],
+            "repeat_save": null,
+            "stacking": "latest_applies",
+            "stacking_group": "haste"
+          },
           "on_save": null,
           "riders": null
         }
@@ -67,6 +83,8 @@
         },
         "override": false,
         "prompt": true,
+        "requires_sight": true,
+        "requires_willing": true,
         "template": {
           "contiguous": false,
           "count": "",
@@ -217,6 +235,24 @@
   "name": "Haste",
   "passive_effects": [
     {
+      "action_policy": {
+        "action_or_bonus": false,
+        "attack_count_cap": null,
+        "deny_actions": false,
+        "deny_bonus_actions": false,
+        "deny_reactions": false,
+        "extra_action": {
+          "actions": [
+            "attack",
+            "dash",
+            "disengage",
+            "hide",
+            "utilize"
+          ],
+          "attacks": 1
+        },
+        "somatic_failure_percent": 0
+      },
       "changes": [
         {
           "key": "system.attributes.movement.walk",

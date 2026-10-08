@@ -125,7 +125,10 @@ def _row(
     if spec is not None:
         classification = (
             "executable_typed_lifecycle"
-            if spec.repeat_save or spec.expire_on_positive_damage or spec.one_use_modifiers
+            if spec.repeat_save
+            or spec.expire_on_positive_damage
+            or spec.one_use_modifiers
+            or spec.on_end
             else "typed_duration_only"
         )
         reason = None
@@ -198,6 +201,19 @@ def _typed_rows(kind: str, source: BaseModel) -> tuple[list[dict[str, Any]], set
                     consumer=consumer,
                 )
             )
+            for index, follow_up in enumerate(spec.on_end):
+                managed.add(follow_up.effect_id)
+                rows.append(
+                    _row(
+                        kind,
+                        source,
+                        activity_id=activity.id,
+                        effect_id=follow_up.effect_id,
+                        path=f"{path}/lifecycle/on_end/{index}",
+                        spec=EffectLifecycleSpec(expiry_boundary=follow_up.expiry_boundary),
+                        consumer="typed_effect_end_follow_up",
+                    )
+                )
     if isinstance(source, Feature) and source.attack_rider_context is not None:
         for index, binding in enumerate(source.attack_rider_context.effects):
             if binding.lifecycle is None or binding.effect_id in managed:
@@ -265,6 +281,9 @@ def audit_document(loader: AssetLoader) -> dict[str, Any]:
             "finite_reviewed_duration": sum(row["finite_reviewed_duration"] for row in rows),
             "typed_one_use_modifier": sum(
                 bool(row["lifecycle"] and row["lifecycle"]["one_use_modifiers"]) for row in rows
+            ),
+            "typed_effect_end_follow_up": sum(
+                bool(row["lifecycle"] and row["lifecycle"].get("on_end")) for row in rows
             ),
             "supported_lifecycle": sum(row["fully_executable"] for row in rows),
             "deferred": sum(not row["fully_executable"] for row in rows),

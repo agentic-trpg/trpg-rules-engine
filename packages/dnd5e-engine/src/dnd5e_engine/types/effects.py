@@ -165,6 +165,7 @@ class ActiveEffect(BaseModel):
     lifecycle: EffectLifecycleApplication | None = Field(
         default=None, exclude_if=lambda v: v is None
     )
+    end_effects: tuple[ActiveEffect, ...] = Field(default=(), exclude_if=lambda v: not v)
 
     @field_serializer("statuses")
     def _statuses_sorted(self, statuses: set[str]) -> list[str]:

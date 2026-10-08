@@ -1,24 +1,25 @@
 {
   "counts": {
     "damage_break_candidate": 23,
-    "deferred": 82,
-    "executable_typed_lifecycle": 8,
+    "deferred": 81,
+    "executable_typed_lifecycle": 9,
     "repeated_save_candidate": 38,
-    "typed_duration_only": 37
+    "typed_duration_only": 38
   },
-  "inventory_rows": 188,
+  "inventory_rows": 189,
   "source_counts": {
     "feature": 17,
     "item": 38,
-    "spell": 133
+    "spell": 134
   },
   "producer_counts": {
     "typed_repeat_save": 6,
     "typed_expire_on_positive_damage": 1,
     "finite_reviewed_duration": 31,
     "typed_one_use_modifier": 2,
-    "supported_lifecycle": 45,
-    "deferred": 143
+    "typed_effect_end_follow_up": 1,
+    "supported_lifecycle": 47,
+    "deferred": 142
   },
   "inventory_notes": {
     "authority": "only reviewed typed metadata grants lifecycle execution; concentration and failed saves do not imply repetition",
@@ -1595,21 +1596,56 @@
     {
       "source_kind": "spell",
       "source_slug": "haste",
-      "activity_id": "rBQrZnq7cHkSUAK9",
-      "effect_id": "S5XcFawnnNHO8bUr",
-      "path": "/activities/1/effects/0",
-      "lifecycle": null,
-      "consumer": null,
+      "activity_id": "dnd5eactivity000",
+      "effect_id": "NEFWcyysYgsE6de3",
+      "path": "/activities/0/effects/0",
+      "lifecycle": {
+        "repeat_save": null,
+        "maximum_rounds": null,
+        "expiry_boundary": null,
+        "expire_on_positive_damage": false,
+        "one_use_modifiers": [],
+        "stacking": "latest_applies",
+        "stacking_group": "haste",
+        "on_end": [
+          {
+            "effect_id": "S5XcFawnnNHO8bUr",
+            "expiry_boundary": "target_next_turn_end"
+          }
+        ]
+      },
+      "consumer": "typed_effect_lifecycle",
       "repeat_save_candidate": false,
       "damage_break_candidate": false,
       "one_use_modifier_candidate": false,
       "finite_reviewed_duration": false,
-      "display_duration": {
-        "rounds": 1
+      "display_duration": null,
+      "fully_executable": true,
+      "classification": "executable_typed_lifecycle",
+      "deferred_reason": null
+    },
+    {
+      "source_kind": "spell",
+      "source_slug": "haste",
+      "activity_id": "dnd5eactivity000",
+      "effect_id": "S5XcFawnnNHO8bUr",
+      "path": "/activities/0/effects/0/lifecycle/on_end/0",
+      "lifecycle": {
+        "repeat_save": null,
+        "maximum_rounds": null,
+        "expiry_boundary": "target_next_turn_end",
+        "expire_on_positive_damage": false,
+        "one_use_modifiers": []
       },
-      "fully_executable": false,
-      "classification": "deferred",
-      "deferred_reason": "no reviewed typed lifecycle binding; display duration or prose alone does not authorize execution"
+      "consumer": "typed_effect_end_follow_up",
+      "repeat_save_candidate": false,
+      "damage_break_candidate": false,
+      "one_use_modifier_candidate": false,
+      "finite_reviewed_duration": false,
+      "display_duration": null,
+      "fully_executable": true,
+      "classification": "typed_duration_only",
+      "deferred_reason": null
     },
     {
       "source_kind": "spell",

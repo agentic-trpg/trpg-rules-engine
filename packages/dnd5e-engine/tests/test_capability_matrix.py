@@ -672,13 +672,38 @@ def _action_policy_resolves() -> bool:
     slow(handle)
     target = combatant(live, FOE)
     projected = policies(live, FOE)
-    return (
+    slow_ok = (
         len(projected) == 1
         and projected[0].action_or_bonus
         and projected[0].attack_count_cap == 1
         and projected[0].somatic_failure_percent == 25
         and effective_speed(target, "walk", live) == 15
         and not can_take_reaction(live, target)
+    )
+    from dnd5e_engine.events import AreaCreated
+    from tests.c21_support import act, events
+    from tests.test_action_policy import take_turn
+    from tests.test_haste_contract import ALLY, HERO, hasted, lethargies, source
+
+    with scoped_lib_loader(BundledAssetLoader()):
+        handle, live = hasted()
+    grant = source(live)
+    act(
+        handle,
+        ALLY,
+        intent_type="use_item",
+        item_id="caltrops",
+        target_zone_id="2,1",
+        action_grant=grant,
+    )
+    utilized = bool(events(live, AreaCreated)) and combatant(live, ALLY).action_available
+    take_turn(live, HERO)
+    act(handle, HERO, intent_type="drop_concentration")
+    return (
+        slow_ok
+        and utilized
+        and bool(lethargies(live))
+        and effective_speed(combatant(live, ALLY), "walk", live) == 0
     )
 
 
@@ -856,7 +881,8 @@ _PROBES: dict[str, tuple[Any, str]] = {
         lambda: (
             'if intent.intent_type == "hide"' in _src("orchestrator.py")
             and '_require_cunning_action(current, "Hide")' in _src("orchestrator.py")
-            and '_action_payment(current, "hide", intent.action_grant)' in _src("orchestrator.py")
+            and '_action_payment(current, "hide", intent.action_grant, live=live)'
+            in _src("orchestrator.py")
         ),
         "✅",
     ),
@@ -1066,7 +1092,11 @@ _PROBES: dict[str, tuple[Any, str]] = {
         "preserve the spell slot",
     ),
     "feature/item Magic-action classification": (
-        lambda: "_MAGIC_ACTION_INTENTS" in _src("orchestrator.py"),
+        lambda: (
+            "def classify_intent(" in _src("action_policy.py")
+            and "else a.action_type" in _src("action_policy.py")
+            and "kind is not None and kind !=" in _src("orchestrator.py")
+        ),
         "Still partial",
     ),
     # C14 Task 6/7: Grapple/Shove resolve via the shared Unarmed Strike save.
@@ -1343,7 +1373,7 @@ _PROBES: dict[str, tuple[Any, str]] = {
     "| Typed per-target spell Effect Selection |": (_typed_spell_effect_choices_resolve, "✅"),
     "| Dynamic environmental point operations |": (_dynamic_environment_points_resolve, "✅"),
     "| Ongoing spell Magic actions and moving light |": (_ongoing_spell_activation_resolves, "✅"),
-    "| Typed Action Policy and Slow |": (_action_policy_resolves, "✅"),
+    "| Typed Action Policy, Slow and Haste |": (_action_policy_resolves, "✅"),
     # C20: Rage ends unless extended (and on Incapacitated).
     "| Rage |": (
         lambda: (

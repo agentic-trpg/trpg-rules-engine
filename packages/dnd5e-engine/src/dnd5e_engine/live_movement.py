@@ -51,6 +51,8 @@ def effective_speed(actor: Combatant, mode: str, live: _LiveCombat | None = None
 
         from dnd5e_engine.rules.effects import effective_effects
 
+        zero = False
+        multiplier = Fraction(1)
         for effect in effective_effects(live.active_effects.get(actor.entity_id, ())):
             if effect.disabled:
                 continue
@@ -60,7 +62,14 @@ def effective_speed(actor: Combatant, mode: str, live: _LiveCombat | None = None
                     change.key == f"system.attributes.movement.{speed_mode}"
                     and change.mode == "multiply"
                 ):
-                    speed = int(speed * Fraction(str(change.value)))
+                    multiplier *= Fraction(str(change.value))
+                if (
+                    change.key in ("speed.override", f"system.attributes.movement.{speed_mode}")
+                    and change.mode in ("override", "downgrade")
+                    and str(change.value) == "0"
+                ):
+                    zero = True
+        speed = 0 if zero else int(speed * multiplier)
         speed = area_speed(live, actor.entity_id, speed)
     return speed
 

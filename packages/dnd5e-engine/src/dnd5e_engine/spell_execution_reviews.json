@@ -4155,16 +4155,16 @@
   {
     "slug": "haste",
     "uuid": "Compendium.dnd5e.spells24.Item.phbsplHaste00000",
-    "canonical_sha256": "4d87ad5167307d38d1ec766b83388a68b419da560555500b2b6da22a5d152eee",
+    "canonical_sha256": "12550cebe0078839958a83af154e50261604bea5dbec46f11ed671d4bbbe31bc",
     "source_url": "https://github.com/foundryvtt/dnd5e/blob/965ad2d0cf5d063dac675ba078b5bd3c3c0dd449/packs/_source/spells24/3rd-level/haste.yml",
-    "classification": "deferred",
-    "required_mechanisms": [
-      "spell_specific_action_rules"
+    "classification": "executable",
+    "required_mechanisms": [],
+    "missing_details": [],
+    "limitations": [
+      "Material components and free hands remain host-owned.",
+      "Utilize execution is limited to explicitly reviewed item activities.",
+      "Monster AI willing-target declarations remain unavailable."
     ],
-    "missing_details": [
-      "Complete reviewed Utilize-versus-Magic item permissions for the restricted additional Action, plus an effect-end Lethargy producer imposing Incapacitated and Speed 0 until the target's next turn ends, including replacement and overlapping sources."
-    ],
-    "limitations": [],
     "requires_direct_carrier": false,
     "activities": [
       {
@@ -4177,7 +4177,7 @@
       {
         "activity_id": "rBQrZnq7cHkSUAK9",
         "kind": "utility",
-        "role": "alternative",
+        "role": "effect_end",
         "required_mechanisms": [],
         "host_operation": false
       }

@@ -557,7 +557,7 @@ def test_somatic_roll_failure_injection_restores_paid_cost_and_rng(monkeypatch):
     assert snapshot(live) == before
 
 
-def test_haste_remains_fail_closed_until_all_mandatory_clauses_exist():
+def test_haste_requires_willing_attestation_before_payment():
     handle, live = table()
     before = snapshot(live)
     act(
@@ -567,9 +567,8 @@ def test_haste_remains_fail_closed_until_all_mandatory_clauses_exist():
         spell_id="haste",
         slot_level=3,
         target_id="char:ally",
-        willing_target_ids=["char:ally"],
     )
-    assert events(live, CastFailed)[-1].reason == "unsupported_activity"
+    assert events(live, CastFailed)[-1].reason == "target_invalid"
     assert live.rng.getstate() == before[1]
     assert combatant(live).action_available
     assert live.spell_slots_by_entity[HERO][3] == 3

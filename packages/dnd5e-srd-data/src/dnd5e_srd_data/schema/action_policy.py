@@ -4,6 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+ActionType = Literal["attack", "dash", "disengage", "hide", "utilize", "magic", "other"]
+
 
 class RestrictedActionGrant(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)

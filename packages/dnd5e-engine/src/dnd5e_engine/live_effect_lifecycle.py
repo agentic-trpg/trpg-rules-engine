@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, cast, get_args
 
 from dnd5e_engine.activities.build_context import build_activity_context
 from dnd5e_engine.activities.save_primitive import SaveRoll, roll_save
@@ -30,7 +30,11 @@ def register_effect(live: _LiveCombat, effect: ActiveEffect) -> None:
     identity = (effect.target_id, effect.id, effect.origin)
     if app is None or effect.disabled or effect.target_id in live.dead_ids:
         return
-    if effect.statuses and not live.conditions_by_effect.get(identity):
+    if (
+        effect.statuses
+        and not live.conditions_by_effect.get(identity)
+        and not (effect.changes or effect.action_policy or effect.end_effects)
+    ):
         return
     live.effect_lifecycles[identity] = OngoingEffectLifecycle.from_application(
         identity, app, live.turn_serial, live.round_number
@@ -77,6 +81,32 @@ def forget_effect(live: _LiveCombat, identity: EffectIdentity) -> bool:
 
             orch._update_combatant(live, source_id, concentration_effect_id=None)
     return managed
+
+
+def produce_end_effects(live: _LiveCombat, effect: ActiveEffect) -> None:
+    """Called once after actual full-identity removal, inside the caller's transaction.
+
+    Attachment, condition immunity/lineage, concentration cascades and movement
+    use the same event folds as ordinary activity effects. Suppression is not
+    ending; an already absent source produces nothing.
+    """
+    from dnd5e_engine import orchestrator as orch
+    from dnd5e_engine.activities.effects import applicable_effect_statuses
+    from dnd5e_engine.events import ConditionApplied, ConditionType, EffectApplied
+
+    if effect.disabled or effect.target_id in live.dead_ids:
+        return
+    for child in effect.end_effects:
+        orch._emit(live, EffectApplied(effect=child.model_copy(deep=True)))
+        target = orch._find_combatant(live, child.target_id)
+        for status in applicable_effect_statuses(target, child.statuses):
+            if status in get_args(ConditionType):
+                orch._emit(
+                    live,
+                    ConditionApplied(
+                        target_id=child.target_id, condition=cast("ConditionType", status)
+                    ),
+                )
 
 
 def observe_modifier_consumption(live: _LiveCombat, event: CombatEvent) -> None:

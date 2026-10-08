@@ -34,7 +34,10 @@ the closed `EffectLifecycleSpec`. Its independent clauses are:
 `EffectLifecycleApplication` captures source actor, source kind and canonical
 slug, activity ID, initial save ability/DC and magical provenance. The applied
 `ActiveEffect` carries this application; registration does not consume RNG.
-Conditions suppressed by immunity do not register a repeating condition effect.
+Conditions suppressed by immunity do not register a repeating condition-only
+effect. Independent modifiers, action policies and end follow-ups still retain
+their lifecycle; immunity to Incapacitated does not leave Lethargy's Speed 0
+modifier without an expiry.
 
 `live.effect_lifecycles` maps the full identity
 `(target_id, effect_id, origin)` to immutable `OngoingEffectLifecycle` state.
@@ -147,6 +150,39 @@ ends a lifecycle with an explicit source-bound next-turn boundary, or effects
 ended by the existing concentration cascade;
 non-concentration effects such as Poison keep their independent target timer.
 
+## Effect-end follow-ups (B6)
+
+`EffectLifecycleSpec.on_end` names reviewed passive-effect templates and exact
+expiry boundaries. The applying resolver captures each template, source identity
+and mechanics in `ActiveEffect.end_effects`; mutable library content is never
+looked up at expiry. Templates cannot recursively create more follow-ups.
+
+An actual full-identity end (duration, concentration drop/replacement, dispel or
+explicit removal) removes the old effect/lifecycle and owned concentration links,
+clamps movement and removes only its sourced conditions. It then emits ordinary
+`EffectApplied` for each captured child in declaration order. The existing fold
+attaches conditions/lineage, reconciles incapacitation/concentration cascades,
+registers the child's timer and updates movement; `ConditionApplied` follows.
+Action/save/AC projection reads the resulting authoritative effects. The event
+log orders parent `EffectExpired`, child `EffectApplied`, child conditions;
+nested concentration cascades retain depth-first deterministic order. Public
+queues/listeners publish only after B1 transaction commit. Any unexpected fault
+restores old effects, clocks, conditions, budgets, resources, events and RNG.
+
+Suppression never produces a follow-up. Duplicate expiry of an absent identity
+produces none. Each actual overlapping source can produce its own child; origins
+include the full parent identity. Existing sourced condition removal preserves
+other penalties. Dead targets do not receive follow-ups.
+
+Haste uses this producer for Incapacitated and Speed zero until
+`target_next_turn_end`. The existing turn serial must advance beyond the apply
+serial: expiry during the target's own turn persists through the next turn;
+expiry outside its turn lasts through its next turn end, regardless of whether
+it already acted this round. This child has no concentration and stays in the
+ordinary effect container after the parent's concentration ends. Incapacitation
+can end the target's own concentration and thereby produce other reviewed
+follow-ups in the same transaction.
+
 ## Audit and verification
 
 Run from `packages/dnd5e-srd-data`:
@@ -155,18 +191,19 @@ Run from `packages/dnd5e-srd-data`:
 uv run python -m tools.effect_lifecycle_audit --output ../../docs/dev/effect-lifecycle-audit.json
 ```
 
-The [deterministic inventory](effect-lifecycle-audit.json) has 188 rows:
-133 spell, 17 feature and 38 item rows. Eight bindings have executable typed
-lifecycles; 37 typed duration/overlap bindings are supported, including B4's two
-Sunbeam source-next-turn-start bindings. The other 143 rows
+The [deterministic inventory](effect-lifecycle-audit.json) has 189 rows:
+134 spell, 17 feature and 38 item rows. Nine bindings have executable typed
+lifecycles; 38 typed duration/overlap bindings are supported, including B4's two
+Sunbeam source-next-turn-start bindings. The other 142 rows
 are explicit deferred or candidate records: 38 repeat-save candidates,
-23 damage-break candidates and 82 other deferred rows. Candidate discovery during ingestion does not
+23 damage-break candidates and 81 other deferred rows. Candidate discovery during ingestion does not
 authorize runtime execution. Dominate variants' damage-triggered escape saves
 do not become end-of-turn repeats.
 
 There are six typed repeat producers, one typed positive-damage break producer,
 31 reviewed finite-duration producers and two canonical one-use producers:
-Staggering and Sundering. Reckless and Hamstring carry exact next-turn boundaries;
+Staggering and Sundering. Haste adds one captured effect-end producer and one
+exact target-next-turn-end child. Reckless and Hamstring carry exact next-turn boundaries;
 Hamstring additionally declares its latest-only stacking group.
 
 Batch B2 adds 28 canonical effect-choice bindings across Guidance, Enhance Ability

@@ -224,6 +224,7 @@ class ActivityResolutionContext:
     # Ordinary feature activities remain nonmagical regardless of activity kind.
     save_is_magical: bool = False
     lifecycle_source_slug: str = ""
+    effect_application_id: str | None = None
     lifecycle_source_kind: Literal["spell", "feature", "item", "monster"] = "monster"
     slot_level: int | None = None
     # The spell's BASE level (lowest castable slot). Upcast scaling adds

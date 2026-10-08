@@ -2106,6 +2106,11 @@ def translate_generic_item_yaml(
         uses=_item_uses(system),
     )
 
+    from tools.translators.action_policy import apply_item_action_types
+
+    base_kwargs["activities"] = apply_item_action_types(
+        str(doc.get("_id") or ""), base_kwargs["activities"]
+    )
     subdir = _pack_subdir(yaml_path)
     mapped_kind = _ITEM_KIND_BY_PACK_SUBDIR.get(subdir) if subdir is not None else None
     # Magic-item subdirs (potion/scroll/wand/ring/rod) — always magic_item.

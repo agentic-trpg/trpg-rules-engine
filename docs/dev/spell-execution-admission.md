@@ -21,8 +21,8 @@ review for different mechanical content; mismatches return the existing typed
 `unreviewed_spell` failure before payment. The digest is not cached by identity,
 so changing a loaded spell after an earlier review does not retain admission.
 
-The corpus has 339 spells and 464 Activities. Current classes are **28
-executable**, **47 bounded**, **26 host narrative**, and **238 deferred**.
+The corpus has 339 spells and 464 Activities. Current classes are **30
+executable**, **47 bounded**, **26 host narrative**, and **236 deferred**.
 This is a static admission inventory, not 339 end-to-end execution proofs.
 The earlier 234 mechanical-kind / 105 inert-kind probe did not distinguish
 required missing semantics and must not be used as a support percentage.
@@ -47,7 +47,9 @@ supplemented with per-spell details for action-specific rules.
 ## Selection and entrypoints
 
 Reviews distinguish casting payloads, independently invoked alternatives,
-delayed payloads and persistent owners. `delivery_activities` uses these roles:
+delayed payloads, persistent owners and effect-end payloads. Effect-end activities
+are excluded from default selection and refuse explicit paid invocation; the
+reviewed parent lifecycle alone creates their effects. `delivery_activities` uses these roles:
 default cast payloads plus required delayed/persistent work, or a selected
 alternative plus lifecycle work. Required missing **same-cast** mechanics are
 checked at spell level, so selecting Conjure Animals' save cannot bypass its
@@ -55,8 +57,8 @@ missing area/entity contract. Finger of Death requires conditional next-turn
 Zombie creation and is deferred. Freezing Sphere's immediate Cast and Fire
 operation is bounded; its optional held-globe operations are rejected.
 Sunbeam's initial and repeat beams are alternatives, so a default cast does not
-execute both. The repeat operation is deferred until an ongoing spell activation
-carrier can spend its Action without spending another spell slot.
+execute both. B4 supplies the ongoing activation carrier for its reviewed repeat
+operation, spending a Magic Action without another spell slot.
 
 `preflight_delivery` retains existing target/geometry failure precedence, checks
 admission before payment, and recurses into
@@ -86,9 +88,9 @@ existing slot-sparing interruption contract. `execute_spell_delivery` also
 defensively checks admission before dispatch. The standalone, resource-free
 `resolve_activity` primitive is deliberately not a complete-spell API.
 
-Slow and Haste now reject paid casts: their geometry and effect primitives
-remain available, but missing action rules are necessary mechanics. Likewise
-Blur, Misty Step, Animate Dead, True Polymorph and Dimension Door cannot succeed
+B5 admits Slow and B6 admits Haste after complete public action/effect-end
+acceptance; see [action policies](action-policy.md). Potion of Speed remains
+independently deferred at item concentration preflight. Blur, Misty Step, Animate Dead, True Polymorph and Dimension Door cannot succeed
 as effect markers or incidental damage. This is an intentional admission change,
 not removal of their targeting/geometry capability.
 

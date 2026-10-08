@@ -1,0 +1,17 @@
+{
+  "commit": "965ad2d0cf5d063dac675ba078b5bd3c3c0dd449",
+  "files": {
+    "_source/spells24/3rd-level/haste.yml": {
+      "sha256": "957796ad9eb6d4c41a54ffd29669f856e7b00b3157c9dcbef060b2e80342d97b",
+      "source_url": "https://github.com/foundryvtt/dnd5e/blob/965ad2d0cf5d063dac675ba078b5bd3c3c0dd449/packs/_source/spells24/3rd-level/haste.yml"
+    },
+    "_source/equipment24/adventuring-gear/burglars-pack/ball-bearings.yml": {
+      "sha256": "0a8188c8b2694fdea6fabe1e766af801980868acef3277775abcddd2761ec007",
+      "source_url": "https://github.com/foundryvtt/dnd5e/blob/965ad2d0cf5d063dac675ba078b5bd3c3c0dd449/packs/_source/equipment24/adventuring-gear/burglars-pack/ball-bearings.yml"
+    },
+    "_source/equipment24/adventuring-gear/dungeoneers-pack/caltrops.yml": {
+      "sha256": "95eeb09a8b77a411e7152b839f5b749adc2a41accea4e5c2ed3f268870a8e38b",
+      "source_url": "https://github.com/foundryvtt/dnd5e/blob/965ad2d0cf5d063dac675ba078b5bd3c3c0dd449/packs/_source/equipment24/adventuring-gear/dungeoneers-pack/caltrops.yml"
+    }
+  }
+}

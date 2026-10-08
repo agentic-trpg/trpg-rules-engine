@@ -4,8 +4,8 @@
   "scope": "Combat creature payloads; material inventory, narrative and world objects remain host-owned.",
   "counts": {
     "bounded": 47,
-    "deferred": 237,
-    "executable": 29,
+    "deferred": 236,
+    "executable": 30,
     "host_narrative": 26
   },
   "spell_count": 339,
@@ -9396,44 +9396,43 @@
     {
       "slug": "haste",
       "uuid": "Compendium.dnd5e.spells24.Item.phbsplHaste00000",
-      "classification": "deferred",
-      "canonical_sha256": "4d87ad5167307d38d1ec766b83388a68b419da560555500b2b6da22a5d152eee",
+      "classification": "executable",
+      "canonical_sha256": "12550cebe0078839958a83af154e50261604bea5dbec46f11ed671d4bbbe31bc",
       "source_url": "https://github.com/foundryvtt/dnd5e/blob/965ad2d0cf5d063dac675ba078b5bd3c3c0dd449/packs/_source/spells24/3rd-level/haste.yml",
-      "missing_mechanisms": [
-        "spell_specific_action_rules"
+      "missing_mechanisms": [],
+      "missing_details": [],
+      "limitations": [
+        "Material components and free hands remain host-owned.",
+        "Utilize execution is limited to explicitly reviewed item activities.",
+        "Monster AI willing-target declarations remain unavailable."
       ],
-      "missing_details": [
-        "Complete reviewed Utilize-versus-Magic item permissions for the restricted additional Action, plus an effect-end Lethargy producer imposing Incapacitated and Speed 0 until the target's next turn ends, including replacement and overlapping sources."
-      ],
-      "limitations": [],
       "entrypoints": {
-        "pc_direct": {
-          "code": "missing_mechanism",
-          "spell_id": "haste",
-          "activity_id": null,
-          "mechanisms": [
-            "spell_specific_action_rules"
-          ]
-        },
-        "monster_cast": {
-          "code": "missing_mechanism",
-          "spell_id": "haste",
-          "activity_id": null,
-          "mechanisms": [
-            "spell_specific_action_rules"
-          ]
-        },
-        "item_delegated": {
-          "code": "missing_mechanism",
-          "spell_id": "haste",
-          "activity_id": null,
-          "mechanisms": [
-            "spell_specific_action_rules"
-          ]
-        }
+        "pc_direct": null,
+        "monster_cast": "Monster AI willing-target declaration unavailable",
+        "item_delegated": "item concentration ownership deferred"
       },
       "activities": [
         {
+          "action_policies": {
+            "NEFWcyysYgsE6de3": {
+              "deny_actions": false,
+              "deny_bonus_actions": false,
+              "deny_reactions": false,
+              "action_or_bonus": false,
+              "attack_count_cap": null,
+              "somatic_failure_percent": 0,
+              "extra_action": {
+                "actions": [
+                  "attack",
+                  "dash",
+                  "disengage",
+                  "hide",
+                  "utilize"
+                ],
+                "attacks": 1
+              }
+            }
+          },
           "activity_id": "dnd5eactivity000",
           "kind": "utility",
           "role": "cast",
@@ -9442,31 +9441,36 @@
           "selected_by_default": true,
           "timing": "immediate",
           "persistent": false,
-          "admission_failure": {
-            "code": "missing_mechanism",
-            "spell_id": "haste",
-            "activity_id": null,
-            "mechanisms": [
-              "spell_specific_action_rules"
+          "admission_failure": null,
+          "action_type": "magic",
+          "target_requirements": {
+            "sight": true,
+            "willing_attestation": true
+          },
+          "effect_end": {
+            "NEFWcyysYgsE6de3": [
+              {
+                "effect_id": "S5XcFawnnNHO8bUr",
+                "expiry_boundary": "target_next_turn_end"
+              }
             ]
           }
         },
         {
+          "action_policies": {},
           "activity_id": "rBQrZnq7cHkSUAK9",
           "kind": "utility",
-          "role": "alternative",
+          "role": "effect_end",
           "required_mechanisms": [],
           "host_operation": false,
           "selected_by_default": false,
           "timing": "immediate",
           "persistent": false,
           "admission_failure": {
-            "code": "missing_mechanism",
+            "code": "manual_timing",
             "spell_id": "haste",
-            "activity_id": null,
-            "mechanisms": [
-              "spell_specific_action_rules"
-            ]
+            "activity_id": "rBQrZnq7cHkSUAK9",
+            "mechanisms": []
           }
         }
       ]

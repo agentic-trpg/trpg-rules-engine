@@ -37,7 +37,7 @@ from pydantic import (
     model_validator,
 )
 
-from dnd5e_srd_data.schema.action_policy import ActionPolicy
+from dnd5e_srd_data.schema.action_policy import ActionPolicy, ActionType
 from dnd5e_srd_data.schema.environment import EnvironmentalSpec
 from dnd5e_srd_data.schema.lifecycle import EffectLifecycleSpec
 
@@ -370,6 +370,8 @@ class TargetBlock(BaseModel, frozen=True):
     """Foundry ``shared/target-field.mjs`` + base-activity additions
     (``override``, ``prompt``)."""
 
+    requires_sight: bool = Field(default=False, exclude_if=lambda v: not v)
+    requires_willing: bool = Field(default=False, exclude_if=lambda v: not v)
     template: TargetTemplateBlock = Field(default_factory=TargetTemplateBlock)
     affects: TargetAffectsBlock = Field(default_factory=TargetAffectsBlock)
     override: bool = False
@@ -812,6 +814,8 @@ class _ActivityBase(BaseModel):
     forced_movement: ForcedMovementSpec | None = Field(
         default=None, exclude_if=lambda value: value is None
     )
+    # Reviewed action identity, separate from activation cost or resolver kind.
+    action_type: ActionType | None = Field(default=None, exclude_if=lambda v: v is None)
 
     model_config = {"populate_by_name": True}
 

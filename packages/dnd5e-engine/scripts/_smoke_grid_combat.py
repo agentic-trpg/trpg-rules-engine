@@ -13,8 +13,11 @@ from dnd5e_engine import (
     GridScene,
     PartyMemberSpec,
     PlayerIntent,
+    advance_monster_turn,
     cell_id,
+    drain_pending_events,
     end_combat,
+    get_actor_active_effects,
     start_combat,
     submit_player_intent,
 )
@@ -47,10 +50,15 @@ async def _run_grid_combat() -> None:
                 entity_id="char:hero",
                 name="Hero",
                 initiative=20,
-                hp_current=12,
-                hp_max=12,
+                hp_current=120,
+                hp_max=120,
                 ac=12,
                 zone_id=cell_id(0, 0),
+                class_slug="wizard",
+                character_level=5,
+                spells_known=["haste"],
+                spell_slots={3: 1},
+                equipment=("caltrops",),
             )
         ],
         encounter=[
@@ -76,9 +84,43 @@ async def _run_grid_combat() -> None:
     )
     # get_live returns a point-in-time snapshot, so re-fetch after the move.
     assert get_live(start.handle).actor_zone["char:hero"] == "1,1", "grid move did not apply"
+    await submit_player_intent(
+        start.handle,
+        actor_id="char:hero",
+        intent=PlayerIntent(
+            intent_type="cast_spell",
+            spell_id="haste",
+            slot_level=3,
+            target_id="char:hero",
+            willing_target_ids=("char:hero",),
+        ),
+    )
+    effect = next(e for e in get_actor_active_effects(start.handle, "char:hero") if e.action_policy)
+    assert effect.end_effects
+    await submit_player_intent(
+        start.handle,
+        actor_id="char:hero",
+        intent=PlayerIntent(
+            intent_type="use_item",
+            item_id="caltrops",
+            target_zone_id="2,2",
+            action_grant=(effect.id, effect.origin),
+        ),
+    )
+    assert any(event.type == "area_created" for event in drain_pending_events(start.handle))
+    await advance_monster_turn(start.handle)
+    await submit_player_intent(
+        start.handle,
+        actor_id="char:hero",
+        intent=PlayerIntent(intent_type="drop_concentration"),
+    )
+    assert any(
+        "incapacitated" in effect.statuses
+        for effect in get_actor_active_effects(start.handle, "char:hero")
+    )
     result = await end_combat(start.handle)
     assert result is not None
-    print("SMOKE OK: corpus loaded + grid combat ran (hero moved 0,0 -> 1,1)")
+    print("SMOKE OK: installed corpus, grid movement, Haste, consuming Utilize and Lethargy")
 
 
 def main() -> None:

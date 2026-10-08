@@ -76,6 +76,33 @@ def audit_document(loader: AssetLoader) -> dict[str, object]:
                     "timing": activity.timing.trigger,
                     "persistent": activity.persistent_area is not None,
                     "admission_failure": failure.model_dump(mode="json") if failure else None,
+                    **({"action_type": activity.action_type} if activity.action_type else {}),
+                    **(
+                        {
+                            "target_requirements": {
+                                "sight": activity.target.requires_sight,
+                                "willing_attestation": activity.target.requires_willing,
+                            }
+                        }
+                        if activity.target.requires_sight or activity.target.requires_willing
+                        else {}
+                    ),
+                    **(
+                        {
+                            "effect_end": {
+                                ref.id: [
+                                    entry.model_dump(mode="json") for entry in ref.lifecycle.on_end
+                                ]
+                                for ref in getattr(activity, "effects", ())
+                                if ref.lifecycle and ref.lifecycle.on_end
+                            }
+                        }
+                        if any(
+                            ref.lifecycle and ref.lifecycle.on_end
+                            for ref in getattr(activity, "effects", ())
+                        )
+                        else {}
+                    ),
                     **({"ongoing_activation": ongoing.model_dump(mode="json")} if ongoing else {}),
                     **(
                         {
@@ -136,6 +163,8 @@ def audit_document(loader: AssetLoader) -> dict[str, object]:
                     if no_carrier_failure
                     else "Monster AI effect selection declaration unavailable"
                     if any(getattr(a, "effect_selection", None) for a in selected)
+                    else "Monster AI willing-target declaration unavailable"
+                    if any(a.target.requires_willing for a in selected)
                     else "Monster AI point-origin declaration unavailable"
                     if any(
                         a.persistent_area

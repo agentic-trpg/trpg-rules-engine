@@ -7,6 +7,7 @@ from typing import Any, Literal
 from pydantic import (
     BaseModel,
     ConfigDict,
+    Field,
     PositiveInt,
     SerializerFunctionWrapHandler,
     model_serializer,
@@ -37,6 +38,18 @@ class RepeatSaveSpec(BaseModel):
     on_success: Literal["expire_effect"] = "expire_effect"
 
 
+class EffectEndFollowUp(BaseModel):
+    """One reviewed effect template applied to the same target on actual expiry.
+
+    The applying resolver captures the template; expiry never consults source
+    prose or a mutable library. Follow-ups cannot recursively produce effects.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    effect_id: str = Field(min_length=1)
+    expiry_boundary: EffectExpiryBoundary
+
+
 class EffectLifecycleSpec(BaseModel):
     """Independent, typed causes that may expire or consume one effect.
 
@@ -61,16 +74,21 @@ class EffectLifecycleSpec(BaseModel):
     stacking_group: str | None = None
     next_attack_scope: Literal["other_creature"] | None = None
     next_attack_bonus_group: str | None = None
+    on_end: tuple[EffectEndFollowUp, ...] = ()
 
     @model_validator(mode="after")
     def _projection_group_required(self) -> EffectLifecycleSpec:
         if self.stacking == "latest_applies" and not self.stacking_group:
             raise ValueError("latest_applies requires an explicit stacking group")
+        if len({entry.effect_id for entry in self.on_end}) != len(self.on_end):
+            raise ValueError("effect-end templates must be unique")
         return self
 
     @model_serializer(mode="wrap")
     def _serialize_lifecycle(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
         data: dict[str, Any] = handler(self)
+        if not self.on_end:
+            data.pop("on_end", None)
         for key in ("stacking", "stacking_group", "next_attack_scope", "next_attack_bonus_group"):
             if getattr(self, key) is None:
                 data.pop(key, None)

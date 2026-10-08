@@ -207,6 +207,8 @@ def attack_origin(
 ) -> AttackOrigin:
     if funding == "construct_bonus":
         return "construct"
+    if funding == "light_bonus":
+        return "light_offhand"
     if intent.stat_block_action_id:
         return "monster"
     if intent.intent_type == "cast_spell":

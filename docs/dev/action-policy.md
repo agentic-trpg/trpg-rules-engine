@@ -3,7 +3,7 @@
 Batch B5 adds a closed `ActionPolicy` to canonical passive effects and the
 existing runtime `ActiveEffect`. Effective, enabled effects project permissions
 using the existing latest-applies stacking contract. No execution branch reads
-a spell name or description. Source-reviewed ingestion attaches Slow's policy;
+a spell name or description. Source-reviewed ingestion attaches Slow and Haste policies;
 the existing semantic digest includes the policy and lifecycle data.
 
 ## Shared permissions and payment
@@ -30,10 +30,58 @@ effective effect on the actor. Each source grants at most one Action per owner
 turn. Attack performs one swing without changing the ordinary Extra Attack or
 Action Surge ledger; Dash, Disengage and Hide reuse their existing handlers.
 Missing, expired, suppressed, spent or incompatible sources refuse before
-payment. Slow's exclusion still applies to a granted Action. No grant funds
-`cast_spell`, `activate_spell`, arbitrary features or items. The schema names
-Utilize, but that operation deliberately fails closed until item activation
-has a reviewed action classification. No canonical Haste grant is admitted.
+payment. A replay-stable application identity preserves every cast's lineage;
+a stacking-group allowance prevents a newer/older Haste source from supplying a
+second extra Action during the same turn. Ordinary and Surge budgets are untouched.
+Slow's exclusion also applies to a granted Action.
+
+## Reviewed Action classification (B6)
+
+`ActionType` distinguishes Attack, Dash, Disengage, Hide, Utilize, Magic and
+other Actions. Basic intents have fixed typed categories; item/feature operations
+read the actual selected activity's reviewed `action_type`. A `CastActivity` is
+Magic regardless of its parent item. Bonus/free activations cannot masquerade as
+Utilize. Unknown or mixed classifications fail closed for restricted grants and
+Action Surge; ordinary invocation retains its existing contract.
+
+Pinned source hashes authorize the deployment activities of Ball Bearings and
+Caltrops as Utilize. Both execute the existing consuming persistent-area pipeline,
+including placement, save/condition triggers and cleanup. Recovery operations and
+other items/features gain no inferred permissions. Runtime classification never
+reads a name, slug or prose. Explicit activity IDs and default selection use the
+same item selection as payment/resolution.
+
+## Haste execution (B6)
+
+The reviewed Haste cast requires one willing visible creature within 30 feet.
+Monster AI cannot declare willing targets and therefore refuses Haste before
+payment. Host willingness attestation, visibility, range, Action/slot eligibility, admission
+and payload validation complete before payment or concentration replacement.
+Legal Counterspell retains the established slot-sparing interruption contract.
+
+The ordinary ActiveEffect carries Speed x2, AC +2, DEX save Advantage and one
+sourced extra Action per target turn: Attack (one attack, including a single
+Unarmed Strike Grapple/Shove option), Dash, Disengage, Hide or reviewed Utilize.
+It cannot fund casting, ongoing Magic, stat-block Multiattack or unreviewed
+operations. Extra Attack/Action Surge keep their independent ledgers. Light can
+open a separate Bonus Action attack even from the granted Attack; Nick cannot
+add an attack inside that restricted Action, and Cleave is similarly excluded.
+Normal Attack Nick windows survive interleaving. Martial Arts and paid Flurry
+strikes retain their separate Bonus Action funding.
+
+Existing effect consumers project numerical changes. Speed multipliers compose
+before rounding, so Haste and Slow cancel independent of attachment order. Flat
+modifiers, Prone crawl/standing, Dash and Speed-zero effects share the spent-distance
+ledger; Speed zero dominates without forgiving already spent movement. Enabled,
+effective sources alone project save Advantage and AC.
+
+Ending the actual source captures and applies Lethargy through the generic
+[effect-end producer](effect-lifecycle.md#effect-end-follow-ups-b6). It imposes
+Incapacitated and Speed zero through the target's **next** turn end, including
+when Haste ends during the current target turn. Same-spell sources project only
+the latest equal-potency application; suppressed sources retain concentration
+and clocks. Each actual source ending produces its own penalty once. Removing
+one penalty preserves other conditions and their ownership.
 
 ## Slow execution and casting ruling
 
@@ -77,18 +125,26 @@ Host boundary, as do 3-D positioning and out-of-combat clocks.
 
 ## Admission, evidence and remaining gaps
 
-Slow is Executable within the existing combat/Host boundary. Haste stays
-Deferred. It needs complete Utilize-versus-Magic item permissions and a generic
-effect-end producer for Lethargy's Incapacitated/Speed-zero penalty until the
-target's next turn ends, including replacement and overlapping sources.
-Numeric Haste modifiers or the new grant schema do not constitute full support.
-Potion of Speed retains the same fail-closed missing-mechanism boundary.
+Slow and Haste are Executable within the existing combat/Host boundary.
+Potion of Speed stays Deferred: its CastActivity delegates to concentration Haste,
+and shared item preflight refuses that child before consumption. Its independent
+SRD contract requires a one-minute non-concentration effect with no Lethargy and
+no ordinary spell components. No item-specific effect override/ownership review
+exists, so this batch does not certify it by inheriting spell admission.
 
-`tests/test_action_policy.py` in both packages covers exact pinned-source
-regeneration/schema drift, public cast/selection, Action/Bonus orders, Extra
-Attack/Surge/Nick, Martial Arts/Flurry, OA/readied/damage reactions, item/ongoing
-permissions, paid Somatic attempts, monster costs, independent repeats,
-duration/concentration, sourced grants, tampered Admission, rollback and replay.
-The capability matrix executes a public Slow probe. Spell and lifecycle audit
-documents are regenerated from canonical data; classification changes only for
-the completed Slow contract.
+`tests/test_action_policy.py` in both packages covers B5 policy regressions and
+pinned translator contracts. `tests/test_haste_contract.py` exercises public
+casts, every normal/grant/Surge order, all admitted Actions with real Utilize,
+Light/Nick/Cleave, Monk bonuses, Slow, saves, movement, end reasons/timings,
+overlap, Counterspell, rollback and retry replay. Capability probes execute
+public Slow and Haste contracts. Canonical semantic admission and generated
+spell/lifecycle audits record only these reviewed capabilities.
+
+Natural initiative E2E uses public casts, attacks, pass and monster advancement
+to verify damage-broken concentration, caster/target death, overlapping casters,
+self-drop during the target turn and duration expiry at its turn end. Replacing
+self-Haste starts the existing concentration cascade before the new payload;
+Lethargy's Incapacitated state prevents that payload and new concentration.
+The legal casting attempt retains its ordinary Action/slot cost. Mechanism
+tests separately exercise exact start/middle/end boundary serials and duplicate
+expiry, without treating synthetic event emission as a public E2E proof.

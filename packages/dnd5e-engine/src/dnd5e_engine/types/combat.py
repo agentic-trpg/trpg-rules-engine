@@ -179,6 +179,7 @@ class Combatant(BaseModel):
     bonus_action_taken_this_turn: bool = False
     attack_action_attacks_made: int = 0
     action_grants_spent: tuple[tuple[str, str], ...] = ()
+    action_grant_groups_spent: tuple[str, ...] = ()
     # SRD §Movement — a creature's walking speed in feet (used as the per-turn
     # movement budget). ``base_speed`` is the constant max (set at combat
     # start from Character race / MonsterTemplate.speed.walk; defaults to 30
@@ -280,6 +281,7 @@ class Combatant(BaseModel):
     # window. ``None`` closes the window (no Light main-hand swing yet
     # this turn). Reset to ``None`` at the actor's own TurnStarted.
     light_weapon_swing_slug: str | None = None
+    restricted_light_weapon_swing_slug: str | None = None
     # SRD §Two-Weapon Fighting (Task 2) — True once the Bonus Action
     # off-hand attack has been made this turn, closing the TWF window for
     # any further off-hand swing. Reset to False at the actor's own

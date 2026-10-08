@@ -27,8 +27,8 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
 Paid combat spell no-ops are now gated by shared typed admission before payment,
 RNG, concentration replacement and reaction opportunities. This closes the
 acceptance/payment safety gap, **not** the missing mechanics below. The stable
-inventory in `docs/audits/spell-execution.json` records 29 executable combat
-contracts, 47 bounded contracts, 26 explicit host narrative contracts and 237
+inventory in `docs/audits/spell-execution.json` records 30 executable combat
+contracts, 47 bounded contracts, 26 explicit host narrative contracts and 236
 deferred spells, with all 464 canonical Activities. Unknown identities,
 unreviewed Activities, missing effects and mandatory unsupported mechanisms
 fail closed. PC, monster and delegated item paths share the check.
@@ -64,7 +64,7 @@ Daylight object anchoring, Monster AI point declarations and cross-combat
 world-clock persistence remain deferred. Public faults restore environment,
 resources, events and RNG. See `docs/dev/dynamic-environment.md`.
 
-Haste's complete restricted Action and end penalty, teleportation, general summons/enchantments/transforms,
+Teleportation, general summons/enchantments/transforms,
 restoration/resurrection, object/world transactions, conditional sequences and
 wall geometry remain deferred. A supported target filter, save, heal or damage
 Activity does not close those gaps. Finger of Death remains deferred because
@@ -108,11 +108,26 @@ not a resource-paying complete-spell API. See `docs/dev/spell-execution-admissio
 - Source-guarded regeneration, semantic Admission, public refusal/payment,
   lifecycle, fault rollback and deterministic replay regressions protect this
   contract. Slow moves from Deferred to Executable (29/47/26/237).
-- Haste remains Deferred: the public item API does not distinguish all legal
-  Utilize operations from Magic item activation, and generic effect-end
-  Lethargy (Incapacitated and Speed 0 until the target's next turn ends) is
-  absent. No Haste/Potion of Speed partial paid execution is admitted.
   See [the action policy contract](docs/dev/action-policy.md).
+
+## B6 Haste and effect-end follow-ups (2026-10-09)
+
+- Haste now executes its full combat creature contract: willing/visible/range
+  preflight; Action, slot and concentration; doubled Speed, AC +2 and DEX save
+  Advantage; source-owned one-attack/Dash/Disengage/Hide/Utilize extra Action.
+- Closed reviewed Action classification admits real Ball Bearings/Caltrops
+  Utilize deployment while Magic and unknown item/feature operations remain
+  excluded. Normal/Surge/Extra Attack, Light Bonus/Nick/Cleave and Monk budgets
+  remain independently accounted for.
+- Generic captured effect-end follow-ups reuse ActiveEffect, typed events,
+  sourced conditions and lifecycle clocks. Haste's end penalty imposes
+  Incapacitated/Speed zero through the exact next target turn end, including
+  current-turn expiry, overlapping casters, suppressed-source restoration and
+  concentration cascades. Unexpected faults restore all state/events/RNG.
+- Haste moves Deferred -> Executable (30/47/26/236). Potion of Speed remains
+  Deferred: delegated concentration Haste has no reviewed item override for
+  one-minute non-concentration/no-Lethargy ownership. Preflight refuses before
+  consumption; the item must receive its own contract before admission.
 
 ## Unimplemented activity kinds (2026-08-22)
 
@@ -1069,14 +1084,15 @@ zone + apply logic:
   before Action payment. SRD arbitrary Ready and its held concentration/
   casting-time semantics need a separate contract.
   (`packages/dnd5e-engine/src/dnd5e_engine/live_reactions.py::prearm_failure`)
-- **A potion's spell concentrates (2026-09-26, pre-existing).** SRD 5.2
-  potions give a spell's effect "(no Concentration required)" — Potion of
-  Speed: "the effect of the *Haste* spell for 1 minute (no Concentration
-  required) without suffering the wave of lethargy". A potion's effects keep
-  the spell's concentration flag and join the drinker's concentration chain,
-  and both options land at once: Potion of Speed applies `effect:hasted` and
-  `effect:lethargy`, Potion of Growth `effect:enlarged` and `effect:reduced`.
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_writeback_concentration`)
+- **Potion spell-effect overrides remain unimplemented (amended 2026-10-09, B6).**
+  Potion of Speed requires one minute of Haste effects without Concentration
+  or Lethargy. Its CastActivity still delegates to the ordinary concentration
+  spell; shared item preflight refuses before consumption, rather than applying
+  a partial buff. An independently reviewed item-effect override must capture
+  duration, ownership, excluded follow-ups and component-free activation.
+  Other concentration potion contracts (including Growth's effect selection)
+  remain independently deferred.
+  (`packages/dnd5e-engine/src/dnd5e_engine/live_spell_delivery.py::preflight_delivery`)
 
 ## Audit 2026-08-26 — character derivation
 

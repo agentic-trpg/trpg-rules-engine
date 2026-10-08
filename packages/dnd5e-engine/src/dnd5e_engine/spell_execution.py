@@ -20,7 +20,7 @@ from dnd5e_srd_data.schema.spell import Spell
 from pydantic import BaseModel, ConfigDict
 
 ExecutionClass = Literal["executable", "bounded", "host_narrative", "deferred"]
-ActivityRole = Literal["cast", "alternative", "delayed", "persistent"]
+ActivityRole = Literal["cast", "alternative", "delayed", "persistent", "effect_end"]
 MechanismCode = Literal[
     "area_lifecycle",
     "area_terrain",
@@ -191,6 +191,8 @@ def admission_failure(
         identity: _ActivityIdentity = {"spell_id": spell.slug, "activity_id": activity.id}
         if activity.id not in by_id or activity.kind != by_id[activity.id].kind:
             return ExecutionFailure(code="unreviewed_activity", **identity)
+        if by_id[activity.id].role == "effect_end":
+            return ExecutionFailure(code="manual_timing", **identity)
         missing = tuple(
             mechanism
             for mechanism in by_id[activity.id].required_mechanisms
@@ -207,7 +209,14 @@ def admission_failure(
                 code="manual_timing", mechanisms=("conditional_scheduler",), **identity
             )
         refs = getattr(activity, "effects", ())
-        if any(ref.id not in effects for ref in refs):
+        if any(
+            ref.id not in effects
+            or (
+                ref.lifecycle is not None
+                and any(entry.effect_id not in effects for entry in ref.lifecycle.on_end)
+            )
+            for ref in refs
+        ):
             return ExecutionFailure(code="missing_effect", **identity)
         if activity.kind in ("summon", "enchant", "transform") and not (
             review.requires_direct_carrier and direct_carrier

@@ -163,6 +163,18 @@ def _passive_change_to_active(
     and the value carries an ``@``-token, it is resolved here at apply-time via
     the same pure formula layer the dice/heal paths use.
     """
+    # Reviewed Foundry roll-mode changes map into the existing scoped save flag.
+    from dnd5e_engine.rules.character import ABILITY_NAME_BY_CODE
+
+    save_modes = {
+        f"system.abilities.{code}.save.roll.mode": name
+        for code, name in ABILITY_NAME_BY_CODE.items()
+    }
+    if ch.key in save_modes and ch.mode == 2 and ch.value in ("1", "-1"):
+        family = "advantage" if ch.value == "1" else "disadvantage"
+        return ActiveEffectChange(
+            key=f"flags.{family}.save.{save_modes[ch.key]}", mode="override", value=True
+        )
     mode = _MODE_MAP.get(ch.mode)
     if mode is None:
         _LOGGER.warning(
@@ -360,6 +372,20 @@ def apply_activity_effects(
                 save_dc=save_dc,
                 is_magical=ctx.base_spell_level is not None or ctx.save_is_magical,
             )
+            if (
+                ref.lifecycle.on_end or (pe.action_policy and pe.action_policy.extra_action)
+            ) and ctx.effect_application_id is not None:
+                # A replay-stable application identity, with the caster suffix
+                # retained for existing source readers. Equal spell groups still
+                # share a single additional Action allowance on each owner turn.
+                ae = ae.model_copy(
+                    update={
+                        "origin": _origin_from_name(
+                            f"{pe.name}.{ctx.effect_application_id}", ctx.caster.entity_id
+                        )
+                    }
+                )
+            ae = capture_end_effects(ae, by_id, ctx)
         ctx.event_emitter(EffectApplied(effect=ae))
 
         # Conditions land AFTER the EffectApplied using the same deterministic
@@ -376,3 +402,35 @@ def apply_activity_effects(
                 )
             else:
                 _LOGGER.info("effect_status_unmapped status=%s", status)
+
+
+def capture_end_effects(
+    effect: ActiveEffect, templates: Mapping[str, PassiveEffect], ctx: ActivityResolutionContext
+) -> ActiveEffect:
+    """Freeze reviewed payloads in the parent's existing EffectApplied record."""
+    from dnd5e_srd_data.schema.lifecycle import EffectLifecycleSpec
+
+    if effect.lifecycle is None:
+        return effect
+    children = []
+    for entry in effect.lifecycle.spec.on_end:
+        template = templates[entry.effect_id]
+        child = passive_effect_to_active_effect(
+            template, target_id=effect.target_id, caster_id=ctx.caster.entity_id, ctx=ctx
+        ).model_copy(
+            update={
+                "origin": f"end:{effect.id}:{effect.origin}",
+                "duration": ActiveEffectDuration(),
+            }
+        )
+        child = bind_effect_lifecycle(
+            child,
+            EffectLifecycleSpec(expiry_boundary=entry.expiry_boundary),
+            source_id=effect.lifecycle.source_id,
+            source_kind=effect.lifecycle.source_kind,
+            source_slug=effect.lifecycle.source_slug,
+            activity_id=effect.lifecycle.activity_id,
+            is_magical=effect.lifecycle.is_magical,
+        )
+        children.append(child)
+    return effect.model_copy(update={"end_effects": tuple(children)})

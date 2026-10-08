@@ -1,6 +1,7 @@
 {
   "activities": [
     {
+      "action_type": "utilize",
       "activation": {
         "condition": "",
         "override": false,

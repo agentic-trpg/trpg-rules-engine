@@ -200,11 +200,12 @@ def test_lifecycle_audit_is_deterministic_matches_golden_and_keeps_deferrals_exp
         "typed_expire_on_positive_damage": 1,
         "finite_reviewed_duration": 31,
         "typed_one_use_modifier": 2,
-        "supported_lifecycle": 45,
-        "deferred": 143,
+        "typed_effect_end_follow_up": 1,
+        "supported_lifecycle": 47,
+        "deferred": 142,
     }
     assert {row["source_kind"] for row in first["rows"]} == {"spell", "feature", "item"}
-    assert first["inventory_rows"] == 188
+    assert first["inventory_rows"] == 189
     [slow] = [row for row in first["rows"] if row["source_slug"] == "slow"]
     assert slow["fully_executable"] and slow["lifecycle"]["repeat_save"]
     beams = [row for row in first["rows"] if row["source_slug"] == "sunbeam"]
@@ -232,3 +233,31 @@ def test_lifecycle_audit_cli_writes_the_same_document(tmp_path, monkeypatch, cap
     monkeypatch.setattr(sys, "argv", ["effect_lifecycle_audit"])
     main()
     assert json.loads(capsys.readouterr().out) == audit_document(BundledAssetLoader())
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        {"on_end": [{"effect_id": "", "expiry_boundary": "target_next_turn_end"}]},
+        {"on_end": [{"effect_id": "x", "expiry_boundary": "description"}]},
+        {
+            "on_end": [
+                {"effect_id": "x", "expiry_boundary": "target_next_turn_end", "recurse": True}
+            ]
+        },
+        {"on_end": [{"effect_id": "x", "expiry_boundary": "target_next_turn_end"}] * 2},
+    ],
+)
+def test_effect_end_follow_up_is_closed_and_references_are_unique(raw):
+    with pytest.raises(ValidationError):
+        EffectLifecycleSpec.model_validate(raw)
+
+
+def test_haste_audit_covers_the_producer_and_exact_follow_up_boundary():
+    rows = [r for r in audit_document(BundledAssetLoader())["rows"] if r["source_slug"] == "haste"]
+    assert len(rows) == 2
+    parent = next(r for r in rows if r["lifecycle"].get("on_end"))
+    child = next(r for r in rows if r["consumer"] == "typed_effect_end_follow_up")
+    assert parent["lifecycle"]["on_end"][0]["effect_id"] == child["effect_id"]
+    assert child["lifecycle"]["expiry_boundary"] == "target_next_turn_end"
+    assert all(r["fully_executable"] for r in rows)

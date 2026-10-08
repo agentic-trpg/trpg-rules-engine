@@ -76,7 +76,20 @@ def test_public_cast_admission_and_payment_contract(loader, slug):
         slot_level=spell.level,
         target_id="mon:foe",
         target_zone_id="1,0",
+        willing_target_ids=("mon:foe",) if slug == "haste" else (),
     )
+    if slug == "haste":
+        from dnd5e_engine.events import EffectApplied
+
+        assert not events(live, CastFailed)
+        assert len(events(live, SpellCast)) == len(events(live, EffectApplied)) == 1
+        effect = events(live, EffectApplied)[0].effect
+        assert effect.action_policy.extra_action
+        assert effect.end_effects
+        assert live.spell_slots_by_entity[CASTER][spell.level] == 0
+        assert not combatant(live, CASTER).action_available
+        assert live.rng.getstate() == before[1]
+        return
     if slug == "slow":
         from dnd5e_engine.events import EffectApplied, SaveRolled
 

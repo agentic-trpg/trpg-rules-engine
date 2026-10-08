@@ -2,6 +2,8 @@
 
 from typing import TYPE_CHECKING, Literal
 
+from dnd5e_srd_data.schema.action_policy import ActionType
+
 from dnd5e_engine.rules.effects import effective_effects
 
 if TYPE_CHECKING:
@@ -11,6 +13,7 @@ if TYPE_CHECKING:
 
     from dnd5e_engine.orchestrator import AttackFunding, PlayerIntent, _ActionCost, _LiveCombat
     from dnd5e_engine.types.combat import Combatant
+    from dnd5e_engine.types.effects import ActiveEffect
 
 
 def policies(live: "_LiveCombat", actor_id: str) -> tuple["ActionPolicy", ...]:
@@ -53,15 +56,69 @@ def denial(
     return False
 
 
+def classify_intent(intent: "PlayerIntent") -> ActionType | None:
+    """Read reviewed activity identities, never names, prose or item rarity."""
+    from dnd5e_engine import orchestrator as orch
+    from dnd5e_engine.lib_loader import get_lib_loader
+
+    basic: dict[str, ActionType] = {
+        "attack": "attack",
+        "grapple": "attack",
+        "shove": "attack",
+        "dash": "dash",
+        "disengage": "disengage",
+        "hide": "hide",
+        "cast_spell": "magic",
+        "activate_spell": "magic",
+        "dodge": "other",
+        "help": "other",
+        "ready": "other",
+        "escape_grapple": "other",
+        "search": "other",
+        "study": "other",
+    }
+    if intent.intent_type in basic:
+        return basic[intent.intent_type]
+    if intent.intent_type == "use_item" and intent.item_id:
+        item = get_lib_loader().get_item(intent.item_id)
+        if item is None:
+            return None
+        chosen = orch._item_charge_activity(item, intent.activity_id)
+        if intent.activity_id and chosen is None:
+            return None
+        activities = [chosen] if chosen is not None else list(item.activities)
+    elif intent.intent_type == "use_feature" and intent.feature_id:
+        feature = get_lib_loader().get_feature(intent.feature_id)
+        if feature is None:
+            return None
+        activities = (
+            [a for a in feature.activities if a.id == intent.activity_id]
+            if intent.activity_id
+            else list(feature.activities)
+        )
+    else:
+        return None
+    if not activities:
+        return None
+    if any(a.activation.type != "action" for a in activities):
+        return None
+    kinds = {"magic" if a.kind == "cast" else a.action_type for a in activities}
+    return kinds.pop() if len(kinds) == 1 else None
+
+
+def grant_group(effect: "ActiveEffect") -> str | None:
+    return effect.lifecycle.spec.stacking_group if effect.lifecycle else None
+
+
 def validate_grant(live: "_LiveCombat", actor: "Combatant", intent: "PlayerIntent") -> None:
     """An explicit full effect identity selects one live restricted Action."""
     from dnd5e_engine.orchestrator import IntentRejectedError
 
     if intent.action_grant is None:
         return
-    grant = next(
+    effect = next(
         (
-            e.action_policy.extra_action
+            e
             for e in effective_effects(live.active_effects.get(actor.entity_id, ()))
             if not e.disabled
             and (e.id, e.origin) == intent.action_grant
@@ -69,12 +126,25 @@ def validate_grant(live: "_LiveCombat", actor: "Combatant", intent: "PlayerInten
         ),
         None,
     )
+    grant = effect.action_policy.extra_action if effect and effect.action_policy else None
     if (
         grant is None
         or intent.action_grant in actor.action_grants_spent
-        or intent.intent_type not in grant.actions
+        or (effect is not None and grant_group(effect) in actor.action_grant_groups_spent)
+        or classify_intent(intent) not in grant.actions
         or intent.use_bonus_action
-        or intent.intent_type not in ("attack", "dash", "disengage", "hide")
+        or intent.stat_block_action_id is not None
+        or intent.intent_type
+        not in (
+            "attack",
+            "grapple",
+            "shove",
+            "dash",
+            "disengage",
+            "hide",
+            "use_item",
+            "use_feature",
+        )
     ):
         raise IntentRejectedError(
             "action_restricted", "invalid, spent or incompatible action grant"
@@ -82,9 +152,16 @@ def validate_grant(live: "_LiveCombat", actor: "Combatant", intent: "PlayerInten
     enforce(live, actor, "action")
 
 
-def grant_payment(actor: "Combatant", grant: tuple[str, str]) -> dict[str, object]:
+def grant_payment(
+    live: "_LiveCombat", actor: "Combatant", grant: tuple[str, str]
+) -> dict[str, object]:
+    effect = next(e for e in live.active_effects[actor.entity_id] if (e.id, e.origin) == grant)
+    group = grant_group(effect)
     return {
         "action_grants_spent": (*actor.action_grants_spent, grant),
+        "action_grant_groups_spent": (*actor.action_grant_groups_spent, group)
+        if group
+        else actor.action_grant_groups_spent,
         "action_taken_this_turn": True,
     }
 
@@ -129,7 +206,7 @@ def preflight_intent_policy(
     if not cost.is_free_action and intent.intent_type != "pass":
         bonus = (
             cost.is_bonus_action
-            or funding in ("flurry", "martial_arts_bonus", "construct_bonus")
+            or funding in ("light_bonus", "flurry", "martial_arts_bonus", "construct_bonus")
             or (
                 funding == "light_offhand" and not (weapon is not None and weapon.mastery == "nick")
             )
@@ -169,9 +246,11 @@ def has_action_grant(live: "_LiveCombat", actor: "Combatant") -> bool:
         and e.action_policy is not None
         and e.action_policy.extra_action is not None
         and bool(
-            set(e.action_policy.extra_action.actions) & {"attack", "dash", "disengage", "hide"}
+            set(e.action_policy.extra_action.actions)
+            & {"attack", "dash", "disengage", "hide", "utilize"}
         )
         and (e.id, e.origin) not in actor.action_grants_spent
+        and grant_group(e) not in actor.action_grant_groups_spent
         for e in effective_effects(live.active_effects.get(actor.entity_id, ()))
     )
 

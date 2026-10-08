@@ -356,13 +356,32 @@ def preflight_delivery(
         # ownership is a separate, still-deferred delivery capability.
         if spec.source_kind == "item_cast" and child.concentration:
             raise DeliveryPlanningError("item concentration is deferred", "unsupported_area")
+    willing: set[str] = set()
+    by_activity = {a.id: a for a in activities}
+    for planned in plan.activities:
+        activity = by_activity[planned.activity_id]
+        if activity.target.requires_willing:
+            willing.update(planned.target_ids)
+            if not planned.target_ids or not set(planned.target_ids) <= set(
+                spec.willing_target_ids
+            ):
+                raise DeliveryPlanningError("host must attest the selected targets are willing")
+        if activity.target.requires_sight:
+            from dnd5e_engine import orchestrator as orch
+
+            if any(
+                (selected_target := orch._find_combatant(live, target)) is None
+                or not orch._combatant_can_see(live, actor, selected_target)
+                for target in planned.target_ids
+            ):
+                raise DeliveryPlanningError("source must see the selected creature")
     if root:
         keys = [(s.spell_id, s.activity_id, s.target_id) for s in spec.effect_selections]
         if len(keys) != len(set(keys)) or set(keys) != validated:
             raise DeliveryPlanningError("effect selections repeat or name an unselected payload")
         if len(spec.willing_target_ids) != len(set(spec.willing_target_ids)):
             raise DeliveryPlanningError("willing targets repeat")
-        if not set(spec.willing_target_ids) <= {key[2] for key in validated}:
+        if not set(spec.willing_target_ids) <= ({key[2] for key in validated} | willing):
             raise DeliveryPlanningError("willing attestations must name selected effect targets")
     return plan
 
@@ -640,6 +659,7 @@ def execute_spell_delivery(
         spell_book={**ctx.spell_book, **orch._build_cast_spell_book(spell.activities)},
         lifecycle_source_kind="spell",
         lifecycle_source_slug=spell.slug,
+        effect_application_id=f"application-{len(live.event_log)}",
         spell_dispatch=lambda child, child_ctx: execute_spell_delivery(live, child, child_ctx),
     )
     ctx = resolve_spell_activities(live, spell, ctx, prepare_activity=prepare)

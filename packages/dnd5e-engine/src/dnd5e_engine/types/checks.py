@@ -66,6 +66,10 @@ class CheckActorState:
     in_sunlight: bool = False
     help_grants: tuple[HelpCheckGrant, ...] = ()
     charmer_ids: tuple[str, ...] = ()
+    sight_blocked_targets: frozenset[str] = frozenset()
+    sight_dim_targets: frozenset[str] = frozenset()
+    surroundings_blocked: bool = False
+    surroundings_dim: bool = False
 
 
 __all__ = ["CheckActorState", "CheckRequest", "GrantedDie", "HelpCheckGrant", "HelpCheckSpec"]

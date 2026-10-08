@@ -14,6 +14,7 @@ from __future__ import annotations
 from typing import Annotated, Literal
 
 from dnd5e_srd_data.schema.common import ReactionTriggerKind
+from dnd5e_srd_data.schema.environment import EnvironmentalSpec
 from pydantic import BaseModel, Field
 
 from dnd5e_engine.movement import MovementMode
@@ -710,6 +711,9 @@ class AreaCreated(BaseModel):
     triggers: tuple[
         Literal["enter", "area-enters-creature", "turn-start-inside", "turn-end-inside"], ...
     ]
+    environment: EnvironmentalSpec | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
 
 class AreaExpired(BaseModel):
@@ -717,7 +721,10 @@ class AreaExpired(BaseModel):
     area_id: str
     actor_id: str
     source_id: str
-    reason: Literal["duration", "concentration_drop", "source_removed"]
+    reason: Literal[
+        "duration", "concentration_drop", "source_removed", "dispelled", "strong_wind", "combat_end"
+    ]
+    cause_id: str | None = None
 
 
 class AreaTargeted(BaseModel):

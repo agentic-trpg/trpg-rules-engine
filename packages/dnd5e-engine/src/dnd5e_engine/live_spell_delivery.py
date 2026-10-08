@@ -143,6 +143,8 @@ def plan_activity_delivery(
     *,
     range_spec: Any = None,
     execution: bool = False,
+    cast_level: int | None = None,
+    base_level: int | None = None,
     default_target_ids: tuple[str, ...] = (),
     expand_areas: bool = True,
 ) -> DeliveryPlan:
@@ -192,6 +194,8 @@ def plan_activity_delivery(
                 default_target_ids=defaults,
                 execution=execution,
                 expand_areas=expand_areas,
+                cast_level=cast_level,
+                base_level=base_level,
             ).activities
         )
     return DeliveryPlan(tuple(plans))
@@ -296,6 +300,8 @@ def preflight_delivery(
         spec,
         range_spec=spell.range if spell else None,
         expand_areas=expand_areas,
+        cast_level=cast_level,
+        base_level=spell.level if spell else None,
     )
     if spell is not None:
         failure = admission_failure(
@@ -582,7 +588,14 @@ def execute_spell_delivery(
     # Admission binds the complete source. Plan the reviewed selection directly;
     # a derived activity subset is not a new canonical spell to review again.
     plan = plan_activity_delivery(
-        live, ctx.caster, selected, spec, range_spec=spell.range, execution=True
+        live,
+        ctx.caster,
+        selected,
+        spec,
+        range_spec=spell.range,
+        execution=True,
+        cast_level=ctx.slot_level,
+        base_level=spell.level,
     )
     spell = spell.model_copy(update={"activities": selected})
     by_id = {c.entity_id: c for c in live.initiative}
@@ -608,7 +621,14 @@ def execute_spell_delivery(
                     update={"selected_target_ids": (spec.primary_target_id,) * count}
                 )
         plan = plan_activity_delivery(
-            live, current.caster, [activity], activity_spec, range_spec=spell.range, execution=True
+            live,
+            current.caster,
+            [activity],
+            activity_spec,
+            range_spec=spell.range,
+            execution=True,
+            cast_level=current.slot_level,
+            base_level=spell.level,
         )
         return prepare_activity_delivery(
             live, current, activity, plan.activities[0], activity_spec, spell.slug

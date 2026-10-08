@@ -22,11 +22,11 @@ review for different mechanical content; mismatches return the existing typed
 so changing a loaded spell after an earlier review does not retain admission.
 
 The corpus has 339 spells and 464 Activities. Current classes are **28
-executable**, **44 bounded**, **26 host narrative**, and **241 deferred**.
+executable**, **47 bounded**, **26 host narrative**, and **238 deferred**.
 This is a static admission inventory, not 339 end-to-end execution proofs.
 The earlier 234 mechanical-kind / 105 inert-kind probe did not distinguish
 required missing semantics and must not be used as a support percentage.
-No new D&D mechanics are implemented by this batch.
+Batch B3 adds three bounded point-environment contracts; see [dynamic environments](dynamic-environment.md) for the supported operations and deferred modes.
 
 Executable means the reviewed combat creature payload within existing engine
 boundaries, not world-object interactions, component inventory or a complete

@@ -40,6 +40,7 @@ from dnd5e_engine.build_spec import (
     make_build_spec,
 )
 from dnd5e_engine.check import CheckKind, CheckResult, CheckSpec, resolve_check
+from dnd5e_engine.environment import StrongWind, apply_strong_wind
 from dnd5e_engine.events import AdvantageSource, CombatEvent, IntentType
 from dnd5e_engine.lib_loader import configure_lib_loader
 from dnd5e_engine.orchestrator import (
@@ -123,8 +124,10 @@ __all__ = [
     "RestOutcome",
     "RitualCast",
     "StartCombatResult",
+    "StrongWind",
     "WallSegment",
     "advance_monster_turn",
+    "apply_strong_wind",
     "build_party_member",
     "cell_id",
     "configure_lib_loader",

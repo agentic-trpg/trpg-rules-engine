@@ -45,7 +45,22 @@ def project_check_states(live: _LiveCombat) -> dict[str, CheckActorState]:
         c.entity_id: CheckActorState(
             effects=tuple(live.active_effects.get(c.entity_id, ())),
             fear_source_in_sight=orch._fear_source_in_sight(live, c),
-            in_sunlight=live.scene_sunlight,
+            in_sunlight=live.topology.sunlight_on_cell(live.actor_zone[c.entity_id])
+            if c.entity_id in live.actor_zone
+            else live.scene_sunlight,
+            sight_blocked_targets=frozenset(
+                t.entity_id for t in live.initiative if not orch._combatant_can_see(live, c, t)
+            ),
+            sight_dim_targets=frozenset(
+                t.entity_id
+                for t in live.initiative
+                if _dim_for_viewer(live, c, live.actor_zone.get(t.entity_id, ""))
+            ),
+            surroundings_blocked=c.entity_id in live.actor_zone
+            and not live.topology.can_see(
+                live.actor_zone[c.entity_id], live.actor_zone[c.entity_id], c.senses
+            ),
+            surroundings_dim=_dim_for_viewer(live, c, live.actor_zone.get(c.entity_id, "")),
             help_grants=tuple(live.help_check_grants),
             charmer_ids=tuple(
                 dict.fromkeys(
@@ -62,6 +77,26 @@ def project_check_states(live: _LiveCombat) -> dict[str, CheckActorState]:
         )
         for c in live.initiative
     }
+
+
+def _dim_for_viewer(live: _LiveCombat, viewer: Combatant, cell: str) -> bool:
+    origin = live.actor_zone.get(viewer.entity_id, "")
+    if not origin or not cell:
+        return False  # Existing nonpositional contexts impose no spatial penalty.
+    distance = live.topology.distance_ft(origin, cell)
+    if distance is None:
+        return False
+    if not live.topology.can_see(origin, cell, viewer.senses):
+        return False
+    if viewer.senses.blindsight is not None and viewer.senses.blindsight >= distance:
+        return False
+    physical_dim = live.topology._physical_obscurement(cell) == "light"
+    if viewer.senses.truesight is not None and viewer.senses.truesight >= distance:
+        return physical_dim
+    light = live.topology.light_on_cell(cell)
+    if viewer.senses.darkvision is not None and viewer.senses.darkvision >= distance:
+        light = "bright" if light == "dim" else "dim" if light == "dark" else light
+    return light == "dim" or physical_dim
 
 
 def _reject(message: str) -> Never:

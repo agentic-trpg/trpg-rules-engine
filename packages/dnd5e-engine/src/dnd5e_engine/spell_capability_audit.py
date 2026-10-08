@@ -71,6 +71,15 @@ def audit_document(loader: AssetLoader) -> dict[str, object]:
                         if activity.kind != "cast" and activity.effect_selection
                         else {}
                     ),
+                    **(
+                        {
+                            "environment": activity.persistent_area.environment.model_dump(
+                                mode="json"
+                            )
+                        }
+                        if activity.persistent_area and activity.persistent_area.environment
+                        else {}
+                    ),
                 }
             )
         rows.append(
@@ -89,6 +98,8 @@ def audit_document(loader: AssetLoader) -> dict[str, object]:
                     if no_carrier_failure
                     else "Monster AI effect selection declaration unavailable"
                     if any(getattr(a, "effect_selection", None) for a in selected)
+                    else "Monster AI point-origin declaration unavailable"
+                    if any(a.persistent_area and a.persistent_area.environment for a in selected)
                     else None,
                     "item_delegated": (
                         no_carrier_failure.model_dump(mode="json")

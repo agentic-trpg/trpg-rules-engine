@@ -171,18 +171,23 @@ must reproduce byte-identically across releases.
 
 ## Visibility
 
-`GridTopology.can_see(a, b, senses=None) -> bool` is a five-step predicate,
+`GridTopology.can_see(a, b, senses=None) -> bool` queries the shared dynamic/static projection,
 short-circuiting in order:
 
 1. No line of sight from `a` to `b` (walls, blocked cells) ⇒ **unseen** — this
    gate applies to *every* sense, including blindsight, which sees "anything
    that isn't behind Total Cover".
-2. Blindsight or truesight whose range reaches `b` ⇒ **seen**, whatever the
-   light.
-3. `b`'s cell is Heavily Obscured ⇒ **unseen**; darkvision does not help (it
-   re-grades light, not opacity).
-4. `b`'s cell is Bright or Dim ⇒ **seen**.
-5. `b`'s cell is Dark ⇒ **seen** only with darkvision reaching it.
+2. Blindsight whose range reaches `b` ⇒ **seen**.
+3. Physical Heavy Obscurement anywhere on the inclusive Bresenham sight ray ⇒
+   **unseen**, including for Truesight. Geometric line of effect is unchanged.
+4. Truesight reaching `b` ⇒ **seen** through ordinary/magical Darkness.
+5. Unilluminated magical Darkness on the ray ⇒ **unseen** for ordinary sight
+   and Darkvision. Surviving magical light can illuminate its overlap.
+6. Bright or Dim target cells are visible; ordinary Darkness needs Darkvision
+   reaching the target. Ordinary unlit intermediate cells do not hide a lit target.
+
+See [dynamic environmental sources](dynamic-environment.md) for reviewed light /
+Darkness dispel thresholds, opaque-fog convention, lifetime and Host wind inputs.
 
 (A cell the engine has no position for never reaches the predicate:
 `_target_visibility_maps` treats an untracked combatant as seen, so a scene with

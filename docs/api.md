@@ -30,6 +30,12 @@ For what the engine actually resolves behind these signatures, see the
       members:
         - EffectSelection
 
+::: dnd5e_engine.environment
+    options:
+      members:
+        - StrongWind
+        - apply_strong_wind
+
 ## Results and outcome
 
 ::: dnd5e_engine.results

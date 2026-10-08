@@ -217,7 +217,8 @@ def test_can_see_heavy_obscurement_beats_darkvision_but_not_blindsight():
     g = _grid(obscurement_cells={"4,0": "heavy"})
     assert g.can_see("0,0", "4,0", CombatantSenses(darkvision=60)) is False
     assert g.can_see("0,0", "4,0", CombatantSenses(blindsight=30)) is True
-    assert g.can_see("0,0", "4,0", CombatantSenses(truesight=30)) is True
+    # SRD 5.2.1 Truesight pierces Darkness/illusions, not physical fog/foliage.
+    assert g.can_see("0,0", "4,0", CombatantSenses(truesight=30)) is False
     assert g.can_see("0,0", "4,0", CombatantSenses(blindsight=10)) is False
     assert _grid(obscurement_cells={"4,0": "light"}).can_see("0,0", "4,0") is True
 

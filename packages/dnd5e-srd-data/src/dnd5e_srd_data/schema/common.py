@@ -36,6 +36,7 @@ from pydantic import (
     model_serializer,
 )
 
+from dnd5e_srd_data.schema.environment import EnvironmentalSpec
 from dnd5e_srd_data.schema.lifecycle import EffectLifecycleSpec
 
 # ---------------------------------------------------------------------------
@@ -733,6 +734,9 @@ class PersistentAreaSpec(BaseModel, frozen=True):
     once_per_turn: bool = True
     speed_multiplier: float | None = Field(default=None, gt=0, le=1)
     effects_until_target_turn_start: bool = False
+    environment: EnvironmentalSpec | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
 
 class ActivityTiming(BaseModel, frozen=True):

@@ -33,6 +33,24 @@
       "img": "",
       "kind": "utility",
       "name": "",
+      "persistent_area": {
+        "effects_until_target_turn_start": false,
+        "environment": {
+          "dim_extension_ft": 0,
+          "dispels_darkness_through_level": null,
+          "dispels_light_through_level": null,
+          "kind": "fog",
+          "light": null,
+          "obscurement": "heavy",
+          "radius_increase_per_slot_ft": 20,
+          "strong_wind_dispersal": true,
+          "sunlight": false
+        },
+        "once_per_turn": true,
+        "placement": "stationary",
+        "speed_multiplier": null,
+        "triggers": []
+      },
       "range": {
         "override": false,
         "special": "",
@@ -59,8 +77,8 @@
           "contiguous": false,
           "count": "",
           "height": "",
-          "size": "20 * @item.level",
-          "stationary": false,
+          "size": "20",
+          "stationary": true,
           "type": "sphere",
           "units": "ft",
           "width": ""

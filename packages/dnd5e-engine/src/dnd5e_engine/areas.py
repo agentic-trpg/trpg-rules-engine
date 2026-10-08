@@ -86,7 +86,10 @@ def area_activity(activities: Sequence[Any]) -> Any | None:
         (
             a
             for a in activities
-            if a.kind in _AREA_KINDS
+            if (
+                a.kind in _AREA_KINDS
+                or (a.persistent_area is not None and a.persistent_area.environment is not None)
+            )
             and a.target.template.type
             and (
                 a.target.area_semantics is None
@@ -97,7 +100,9 @@ def area_activity(activities: Sequence[Any]) -> Any | None:
     )
 
 
-def area_template(activity: Any) -> AreaTemplate | None:
+def area_template(
+    activity: Any, *, cast_level: int | None = None, base_level: int | None = None
+) -> AreaTemplate | None:
     """The activity's template on the grid, or ``None`` when the engine can't
     place it: a ``wall``, or a size that isn't a positive number of feet
     (Confusion's ``@item.level`` formula)."""
@@ -109,6 +114,11 @@ def area_template(activity: Any) -> AreaTemplate | None:
         return None
     if mapped is None or size_ft <= 0:
         return None
+    area_spec = getattr(activity, "persistent_area", None)
+    if area_spec is not None and area_spec.environment is not None:
+        size_ft += area_spec.environment.radius_increase_per_slot_ft * max(
+            0, (cast_level or base_level or 0) - (base_level or 0)
+        )
     shape, grid_shape, anchor, includes_origin = mapped
     semantics = activity.target.area_semantics
     if semantics is not None:

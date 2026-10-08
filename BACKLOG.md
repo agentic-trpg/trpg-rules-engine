@@ -28,7 +28,7 @@ Paid combat spell no-ops are now gated by shared typed admission before payment,
 RNG, concentration replacement and reaction opportunities. This closes the
 acceptance/payment safety gap, **not** the missing mechanics below. The stable
 inventory in `docs/audits/spell-execution.json` records 28 executable combat
-contracts, 44 bounded contracts, 26 explicit host narrative contracts and 241
+contracts, 47 bounded contracts, 26 explicit host narrative contracts and 238
 deferred spells, with all 464 canonical Activities. Unknown identities,
 unreviewed Activities, missing effects and mandatory unsupported mechanisms
 fail closed. PC, monster and delegated item paths share the check.
@@ -52,6 +52,17 @@ deferred when they need independent mechanics. Hosts must explicitly attest will
 targets; item concentration ownership and Monster AI choice declarations remain
 unimplemented. See `live_spell_delivery.py`, `activities/effects.py` and
 `activities/check_pipeline.py` in `packages/dnd5e-engine/src/dnd5e_engine/`.
+
+Batch B3 adds bounded stationary point operations for Fog Cloud, Darkness and
+Daylight, backed by typed EnvironmentalSpec on existing PersistentAreaState.
+Shared projection feeds lighting, physical obscurement, magical Darkness,
+Sunlight, vision, Hide/Attack/OA/Dodge and explicit sight-required checks.
+Reviewed overlap dispels use actual spell levels and clipped footprints; source
+removal restores the surviving projection without static scene mutation. Host
+StrongWind attestations disperse fog; wind spells/weather simulation, Darkness /
+Daylight object anchoring, Monster AI point declarations and cross-combat
+world-clock persistence remain deferred. Public faults restore environment,
+resources, events and RNG. See `docs/dev/dynamic-environment.md`.
 
 Slow/Haste action rules, teleportation, general summons/enchantments/transforms,
 restoration/resurrection, object/world transactions, conditional sequences and
@@ -464,22 +475,16 @@ not a resource-paying complete-spell API. See `docs/dev/spell-execution-admissio
   Continuous geometry and 3-D remain outside the grid contract.
   (`packages/dnd5e-engine/src/dnd5e_engine/spatial.py::cells_in_template`)
 
-- **Truesight sees into Heavily Obscured cells (2026-09-27, C23).** SRD 5.2
-  Truesight: "your vision pierces through" Darkness, Invisibility, visual
-  illusions, transformations and the Ethereal Plane — not fog or foliage. The
-  scene model treats Truesight like Blindsight at an `obscurement_cells`
-  "heavy" cell (pinned by `test_can_see_heavy_obscurement_beats_darkvision_but_not_blindsight`),
-  and a grid cell can't say whether its heavy obscurement is magical
-  Darkness or fog, so the fix needs that distinction first. (C23 stopped
-  Truesight from working through the Blinded condition.)
-  (`packages/dnd5e-engine/src/dnd5e_engine/spatial.py::GridTopology.can_see`)
-- **Vision is scene-lit only** (2026-08-27, amended 2026-09-02, 2026-09-03).
-  No light sources (torches, *Light*, *Darkness*), no viewer-side
-  obscurement, no Blinded emission from darkness; `can_see` reads
-  `GridScene.lighting` / `obscurement_cells` plus the viewer's projected
-  senses. Sunlight Sensitivity's attack-roll half closed C18 (the new
-  whole-scene `GridScene.sunlight` flag); its ability-check half now shares the typed check pipeline
-  (2026-10-07), applying to all ability checks in sunlight.
+- **Truesight versus physical Heavy Obscurement fixed (2026-10-08, B3).**
+  Truesight pierces Darkness, not opaque fog/foliage; Blindsight retains its
+  independent physical-obscurement bypass. Static and dynamic sources share
+  the corrected consumer and explicit sight-ray convention.
+- **Dynamic point environments added; portable light remains open (B3).**
+  Fog Cloud, Darkness and Daylight now affect authoritative spatial consumers.
+  Torches, Light, object carriers/covering, general weather and wind spell
+  execution are still absent. Nonconcentration Daylight survives caster death;
+  explicit roster removal and combat closure retire combat-local sources.
+  Sunlight Sensitivity attacks/checks read the actor's projected cell.
   No *See Invisibility*-style effect flag
   pierces the Invisible condition either (C16b plan ruling R3) — only
   blindsight/

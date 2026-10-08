@@ -872,7 +872,8 @@ def test_deferred_item_concentration_refuses_before_charges_action_or_rng(
                 intent_type="use_item",
                 item_id=item_slug,
                 activity_id=activity.id if select_activity else None,
-                target_id="mon:foe",
+                target_id=None if spell_slug == "fog-cloud" else "mon:foe",
+                target_zone_id=_FOE_CELL if spell_slug == "fog-cloud" else None,
             ),
         )
         return live, before

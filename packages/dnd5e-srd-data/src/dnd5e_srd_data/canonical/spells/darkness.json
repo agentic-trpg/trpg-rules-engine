@@ -33,6 +33,24 @@
       "img": "",
       "kind": "utility",
       "name": "",
+      "persistent_area": {
+        "effects_until_target_turn_start": false,
+        "environment": {
+          "dim_extension_ft": 0,
+          "dispels_darkness_through_level": null,
+          "dispels_light_through_level": 2,
+          "kind": "magical_darkness",
+          "light": "dark",
+          "obscurement": "none",
+          "radius_increase_per_slot_ft": 0,
+          "strong_wind_dispersal": false,
+          "sunlight": false
+        },
+        "once_per_turn": true,
+        "placement": "stationary",
+        "speed_multiplier": null,
+        "triggers": []
+      },
       "range": {
         "override": false,
         "special": "",
@@ -60,7 +78,7 @@
           "count": "",
           "height": "",
           "size": "15",
-          "stationary": false,
+          "stationary": true,
           "type": "sphere",
           "units": "ft",
           "width": ""

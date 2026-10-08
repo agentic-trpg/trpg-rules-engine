@@ -1,8 +1,8 @@
 {
   "inventory_rows": 560,
   "counts": {
-    "deferred_delivery": 90,
-    "resolvable_child_delivery": 470
+    "deferred_delivery": 88,
+    "resolvable_child_delivery": 472
   },
   "source_counts": {
     "feature": 1,
@@ -15,9 +15,9 @@
     "fixed_save_dc": 41,
     "fixed_attack_bonus": 1,
     "concentration": 254,
-    "persistent_area": 2,
+    "persistent_area": 11,
     "timed_activity": 11,
-    "unsupported_child_geometry": 22
+    "unsupported_child_geometry": 19
   },
   "inventory_notes": {
     "authority": "CastActivity child joins use exact canonical Foundry UUID; unresolved children fail closed",
@@ -671,7 +671,7 @@
           "counted_target": null,
           "creature_filter": null,
           "forced_movement": null,
-          "runtime_status": "non_resolving_template",
+          "runtime_status": "persistent_environment",
           "deferred_reason": null
         }
       ],
@@ -680,7 +680,7 @@
       "fixed_save_dc": null,
       "fixed_attack_bonus": null,
       "concentration": false,
-      "persistent_area": false,
+      "persistent_area": true,
       "timed_activity": false,
       "unsupported_child_geometry": [],
       "runtime_status": "resolvable_child_delivery",
@@ -1110,7 +1110,7 @@
           "counted_target": null,
           "creature_filter": null,
           "forced_movement": null,
-          "runtime_status": "non_resolving_template",
+          "runtime_status": "persistent_environment",
           "deferred_reason": null
         }
       ],
@@ -1119,7 +1119,7 @@
       "fixed_save_dc": null,
       "fixed_attack_bonus": null,
       "concentration": false,
-      "persistent_area": false,
+      "persistent_area": true,
       "timed_activity": false,
       "unsupported_child_geometry": [],
       "runtime_status": "resolvable_child_delivery",
@@ -2847,7 +2847,7 @@
           "activity_id": "dnd5eactivity000",
           "activity_kind": "utility",
           "shape": "sphere",
-          "size_ft": "20 * @item.level",
+          "size_ft": "20",
           "width_ft": "",
           "role": "target_area",
           "origin_policy": "point_within_range",
@@ -2856,8 +2856,8 @@
           "counted_target": null,
           "creature_filter": null,
           "forced_movement": null,
-          "runtime_status": "unsupported_formula_size",
-          "deferred_reason": "nonconstant_positive_area_size"
+          "runtime_status": "persistent_environment",
+          "deferred_reason": null
         }
       ],
       "cast_level": 1,
@@ -2865,13 +2865,11 @@
       "fixed_save_dc": null,
       "fixed_attack_bonus": null,
       "concentration": true,
-      "persistent_area": false,
+      "persistent_area": true,
       "timed_activity": false,
-      "unsupported_child_geometry": [
-        "unsupported_formula_size"
-      ],
+      "unsupported_child_geometry": [],
       "runtime_status": "deferred_delivery",
-      "deferred_reason": "unsupported_child_geometry"
+      "deferred_reason": "item_concentration_deferred"
     },
     {
       "source_kind": "item",
@@ -4542,7 +4540,7 @@
           "counted_target": null,
           "creature_filter": null,
           "forced_movement": null,
-          "runtime_status": "non_resolving_template",
+          "runtime_status": "persistent_environment",
           "deferred_reason": null
         }
       ],
@@ -4551,7 +4549,7 @@
       "fixed_save_dc": null,
       "fixed_attack_bonus": null,
       "concentration": true,
-      "persistent_area": false,
+      "persistent_area": true,
       "timed_activity": false,
       "unsupported_child_geometry": [],
       "runtime_status": "deferred_delivery",
@@ -8911,7 +8909,7 @@
           "activity_id": "dnd5eactivity000",
           "activity_kind": "utility",
           "shape": "sphere",
-          "size_ft": "20 * @item.level",
+          "size_ft": "20",
           "width_ft": "",
           "role": "target_area",
           "origin_policy": "point_within_range",
@@ -8920,8 +8918,8 @@
           "counted_target": null,
           "creature_filter": null,
           "forced_movement": null,
-          "runtime_status": "unsupported_formula_size",
-          "deferred_reason": "nonconstant_positive_area_size"
+          "runtime_status": "persistent_environment",
+          "deferred_reason": null
         }
       ],
       "cast_level": 1,
@@ -8929,13 +8927,11 @@
       "fixed_save_dc": null,
       "fixed_attack_bonus": null,
       "concentration": true,
-      "persistent_area": false,
+      "persistent_area": true,
       "timed_activity": false,
-      "unsupported_child_geometry": [
-        "unsupported_formula_size"
-      ],
-      "runtime_status": "deferred_delivery",
-      "deferred_reason": "unsupported_child_geometry"
+      "unsupported_child_geometry": [],
+      "runtime_status": "resolvable_child_delivery",
+      "deferred_reason": null
     },
     {
       "source_kind": "monster",
@@ -9904,7 +9900,7 @@
           "counted_target": null,
           "creature_filter": null,
           "forced_movement": null,
-          "runtime_status": "non_resolving_template",
+          "runtime_status": "persistent_environment",
           "deferred_reason": null
         }
       ],
@@ -9913,7 +9909,7 @@
       "fixed_save_dc": null,
       "fixed_attack_bonus": null,
       "concentration": true,
-      "persistent_area": false,
+      "persistent_area": true,
       "timed_activity": false,
       "unsupported_child_geometry": [],
       "runtime_status": "resolvable_child_delivery",
@@ -10829,7 +10825,7 @@
           "counted_target": null,
           "creature_filter": null,
           "forced_movement": null,
-          "runtime_status": "non_resolving_template",
+          "runtime_status": "persistent_environment",
           "deferred_reason": null
         }
       ],
@@ -10838,7 +10834,7 @@
       "fixed_save_dc": null,
       "fixed_attack_bonus": null,
       "concentration": true,
-      "persistent_area": false,
+      "persistent_area": true,
       "timed_activity": false,
       "unsupported_child_geometry": [],
       "runtime_status": "resolvable_child_delivery",
@@ -11423,7 +11419,7 @@
           "activity_id": "dnd5eactivity000",
           "activity_kind": "utility",
           "shape": "sphere",
-          "size_ft": "20 * @item.level",
+          "size_ft": "20",
           "width_ft": "",
           "role": "target_area",
           "origin_policy": "point_within_range",
@@ -11432,8 +11428,8 @@
           "counted_target": null,
           "creature_filter": null,
           "forced_movement": null,
-          "runtime_status": "unsupported_formula_size",
-          "deferred_reason": "nonconstant_positive_area_size"
+          "runtime_status": "persistent_environment",
+          "deferred_reason": null
         }
       ],
       "cast_level": 1,
@@ -11441,13 +11437,11 @@
       "fixed_save_dc": null,
       "fixed_attack_bonus": null,
       "concentration": true,
-      "persistent_area": false,
+      "persistent_area": true,
       "timed_activity": false,
-      "unsupported_child_geometry": [
-        "unsupported_formula_size"
-      ],
-      "runtime_status": "deferred_delivery",
-      "deferred_reason": "unsupported_child_geometry"
+      "unsupported_child_geometry": [],
+      "runtime_status": "resolvable_child_delivery",
+      "deferred_reason": null
     },
     {
       "source_kind": "monster",
@@ -12874,7 +12868,7 @@
           "counted_target": null,
           "creature_filter": null,
           "forced_movement": null,
-          "runtime_status": "non_resolving_template",
+          "runtime_status": "persistent_environment",
           "deferred_reason": null
         }
       ],
@@ -12883,7 +12877,7 @@
       "fixed_save_dc": null,
       "fixed_attack_bonus": null,
       "concentration": true,
-      "persistent_area": false,
+      "persistent_area": true,
       "timed_activity": false,
       "unsupported_child_geometry": [],
       "runtime_status": "resolvable_child_delivery",

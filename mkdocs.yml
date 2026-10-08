@@ -54,6 +54,7 @@ nav:
       - Spell timed activities: dev/spell-timed-activities.md
       - Typed effect lifecycle: dev/effect-lifecycle.md
       - Persistent area lifecycle: dev/persistent-areas.md
+      - Dynamic environment: dev/dynamic-environment.md
       - Typed ability checks: dev/typed-ability-checks.md
       - Feature runtime safety: dev/feature-runtime.md
       - Attack-triggered feature riders: dev/attack-feature-riders.md

@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from dnd5e_engine.activities.conjuration import TransformSource
+from dnd5e_engine.environment import EnvironmentalSource
 from dnd5e_engine.outcome import CombatOutcome
 from dnd5e_engine.types.combat import Combatant
 
@@ -126,6 +127,7 @@ class LiveCombatView:
     transformations: dict[str, TransformView] = field(default_factory=dict)
     # C21 — summoned creatures keyed by entity id; empty when none is seated.
     summons: dict[str, SummonView] = field(default_factory=dict)
+    environment_sources: tuple[EnvironmentalSource, ...] = ()
 
     @classmethod
     def from_live(cls, live: _LiveCombat) -> LiveCombatView:
@@ -137,6 +139,7 @@ class LiveCombatView:
                 extra_actions_remaining=actor.extra_actions_remaining,
             )
         return cls(
+            environment_sources=live.topology.environment_sources,
             initiative=list(live.initiative),
             party_ids=set(live.party_ids),
             encounter_ids=set(live.encounter_ids),

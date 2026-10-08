@@ -1999,16 +1999,15 @@
   {
     "slug": "darkness",
     "uuid": "Compendium.dnd5e.spells24.Item.phbsplDarkness00",
-    "canonical_sha256": "7d2a72c21be6b0d74842335d7211e4c49fa27980bdfd860df95f2a0f4b5cecfe",
+    "canonical_sha256": "0693fe9aa299152be70b5d3c6314b971349e881746f411d440f8df3b94daf55d",
     "source_url": "https://github.com/foundryvtt/dnd5e/blob/965ad2d0cf5d063dac675ba078b5bd3c3c0dd449/packs/_source/spells24/2nd-level/darkness.yml",
-    "classification": "deferred",
-    "required_mechanisms": [
-      "light_and_obscurement"
+    "classification": "bounded",
+    "required_mechanisms": [],
+    "missing_details": [],
+    "limitations": [
+      "Stationary point mode on the combat grid only; explicit target_zone_id required.",
+      "Object-anchored movement, covering and world object state remain deferred."
     ],
-    "missing_details": [
-      "light-source/obscurement registration and expiry"
-    ],
-    "limitations": [],
     "requires_direct_carrier": false,
     "activities": [
       {
@@ -2045,16 +2044,15 @@
   {
     "slug": "daylight",
     "uuid": "Compendium.dnd5e.spells24.Item.phbsplDaylight00",
-    "canonical_sha256": "94f16b4000f59d246ee3cde7c92d543d1f2c124a40ebd4429c0cdc84f842bdd2",
+    "canonical_sha256": "64d4f9920ee2a1a953c38b8b6688f507084dae2e76d1b33a92a2f1ee2f09d54f",
     "source_url": "https://github.com/foundryvtt/dnd5e/blob/965ad2d0cf5d063dac675ba078b5bd3c3c0dd449/packs/_source/spells24/3rd-level/daylight.yml",
-    "classification": "deferred",
-    "required_mechanisms": [
-      "light_and_obscurement"
+    "classification": "bounded",
+    "required_mechanisms": [],
+    "missing_details": [],
+    "limitations": [
+      "Stationary point mode on the combat grid only; explicit target_zone_id required.",
+      "Object-anchored movement, covering and world object state remain deferred."
     ],
-    "missing_details": [
-      "light-source/obscurement registration and expiry"
-    ],
-    "limitations": [],
     "requires_direct_carrier": false,
     "activities": [
       {
@@ -3463,16 +3461,14 @@
   {
     "slug": "fog-cloud",
     "uuid": "Compendium.dnd5e.spells24.Item.phbsplFogCloud00",
-    "canonical_sha256": "bda9e8d20df64a3b9251ca742f6e0ca7ac6394d0f35dc1fc660dbb32fc773431",
+    "canonical_sha256": "857ea69148376e270647095c44045cc0884987a780a0ff29a575a55c999eaf00",
     "source_url": "https://github.com/foundryvtt/dnd5e/blob/965ad2d0cf5d063dac675ba078b5bd3c3c0dd449/packs/_source/spells24/1st-level/fog-cloud.yml",
-    "classification": "deferred",
-    "required_mechanisms": [
-      "light_and_obscurement"
+    "classification": "bounded",
+    "required_mechanisms": [],
+    "missing_details": [],
+    "limitations": [
+      "Combat-grid point mode; strong wind requires an explicit Host StrongWind attestation. Gust of Wind and weather simulation remain deferred."
     ],
-    "missing_details": [
-      "light-source/obscurement registration and expiry"
-    ],
-    "limitations": [],
     "requires_direct_carrier": false,
     "activities": [
       {

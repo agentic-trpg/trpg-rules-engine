@@ -2489,7 +2489,9 @@ def _monster_context_kwargs(
         # bearer resolves through today, so both sidecars are projected
         # here rather than at the PC-only sneak-attack call site.
         "pack_tactics_ally_adjacent": _pack_tactics_map(live, current, target_list),
-        "attacker_in_sunlight": live.scene_sunlight,
+        "attacker_in_sunlight": live.topology.sunlight_on_cell(
+            live.actor_zone.get(current.entity_id, "")
+        ),
         # C18 §Monster action economy, fix round 1 — Undead Fortitude is a
         # TARGET-side trait (a monster attacker can just as easily be
         # SWINGING AT a zombie ally as fielding one), so this handshake
@@ -6619,6 +6621,12 @@ def _fold_resolution_outcome(
         _drop_concentration(live, caster.entity_id, reason="source_dead")
     elif latest.hp_current <= 0 or conditions_break_concentration(_condition_names(latest)):
         _drop_concentration(live, caster.entity_id, reason="incapacitated")
+    if live.topology.environment_sources:
+        # Dispel only after the common concentration fold: a source immediately
+        # dispelled on creation must not acquire a fresh orphan anchor afterward.
+        from dnd5e_engine.environment import reconcile_environment
+
+        reconcile_environment(live)
 
 
 def _hook_run_end_of_turn_saves(live: _LiveCombat, actor_id: str | None) -> None:

@@ -22,6 +22,7 @@ from dnd5e_engine.events import (
     AreaCreated,
     AreaExpired,
     CombatantLeft,
+    CombatEnded,
     CombatEvent,
     ConcentrationDropped,
     Death,
@@ -75,6 +76,7 @@ class PersistentArea:
     not_before_turn: int
     activity_source_id: str | None = None
     source_parent_id: str | None = None
+    environment_expires_round: int | None = None
     last_trigger_turn: dict[str, int] = field(default_factory=dict)
 
     @property
@@ -115,13 +117,25 @@ class PersistentAreaState:
         self,
         live: _LiveCombat,
         area: PersistentArea,
-        reason: Literal["duration", "concentration_drop", "source_removed"],
+        reason: Literal[
+            "duration",
+            "concentration_drop",
+            "source_removed",
+            "dispelled",
+            "strong_wind",
+            "combat_end",
+        ],
+        *,
+        cause_id: str | None = None,
     ) -> None:
         from dnd5e_engine import orchestrator as orch
 
         if area not in self.areas:
             return
         self.areas.remove(area)
+        from dnd5e_engine.environment import refresh_environment
+
+        refresh_environment(live)
         _clamp_covered(live)
         orch._emit(
             live,
@@ -130,11 +144,15 @@ class PersistentAreaState:
                 actor_id=area.source_entity_id,
                 source_id=area.source_id,
                 reason=reason,
+                cause_id=cause_id,
             ),
         )
 
     def observe(self, live: _LiveCombat, event: CombatEvent) -> None:
         for area in tuple(self.areas):
+            if isinstance(event, CombatEnded) and area.spec.environment is not None:
+                self.expire(live, area, "combat_end")
+                continue
             if isinstance(event, EffectExpired) and area.concentration_identity == (
                 event.target_id,
                 event.effect_id,
@@ -149,8 +167,15 @@ class PersistentAreaState:
                 and (event.target_id == area.source_entity_id)
             ):
                 self.expire(live, area, "concentration_drop")
-            elif isinstance(event, (Death, CombatantLeft)) and area.source_entity_id == (
-                event.target_id if isinstance(event, Death) else event.entity_id
+            elif (
+                isinstance(event, (Death, CombatantLeft))
+                and not (
+                    isinstance(event, Death)
+                    and area.spec.environment is not None
+                    and area.concentration_identity is None
+                )
+                and area.source_entity_id
+                == (event.target_id if isinstance(event, Death) else event.entity_id)
             ):
                 self.expire(live, area, "source_removed")
         if isinstance(event, EffectExpired):
@@ -175,7 +200,7 @@ def register_area(
     from dnd5e_engine import orchestrator as orch
 
     spec = activity.persistent_area
-    template = area_template(activity)
+    template = area_template(activity, cast_level=ctx.slot_level, base_level=ctx.base_spell_level)
     if spec is None or template is None or template.directional:
         return
     if origin is None and ctx.spell_delivery is not None:
@@ -250,6 +275,9 @@ def register_area(
         activity_source_id=ctx.activity_source_id
         or f"{'spell' if spell else 'item'}:{source_id}:{activity.id}",
         source_parent_id=ctx.source_parent_id,
+        environment_expires_round=live.round_number + rounds
+        if spec.environment is not None and spell and not spell.concentration and rounds is not None
+        else None,
     )
     state.next_sequence += 1
     state.areas.append(area)
@@ -272,9 +300,14 @@ def register_area(
             slot_level=area.slot_level,
             save_dc=area.save_dc,
             triggers=spec.triggers,
+            environment=spec.environment,
         ),
     )
     _clamp_covered(live)
+    if spec.environment is not None:
+        from dnd5e_engine.environment import refresh_environment
+
+        refresh_environment(live)
 
 
 def _duration_rounds(spell: Spell | None) -> int | None:
@@ -445,6 +478,8 @@ def run_area_boundary(live: _LiveCombat, actor_id: str | None, trigger: AreaTrig
         _trigger(live, area, actor_id, trigger)
     if trigger == "turn-end-inside":
         for area in tuple(live.persistent_areas.areas):
+            if area.environment_expires_round is not None:
+                continue
             if area.source_entity_id != actor_id or area.concentration_identity is not None:
                 continue
             if area.rounds_remaining is not None:
@@ -454,6 +489,11 @@ def run_area_boundary(live: _LiveCombat, actor_id: str | None, trigger: AreaTrig
 
 
 def register_area_hooks(live: _LiveCombat) -> None:
+    from dnd5e_engine.environment import expire_environment_round
+
+    live.lifecycle.register(
+        "round_start", expire_environment_round, key="engine:environment-duration"
+    )
     live.lifecycle.register(
         "turn_start",
         lambda combat, actor: run_area_boundary(combat, actor, "turn-start-inside"),

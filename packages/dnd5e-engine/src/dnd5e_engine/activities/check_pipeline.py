@@ -69,6 +69,16 @@ def _sources(
         dis.append("armor")
     if state.in_sunlight and MonsterTraitMechanic.SUNLIGHT_SENSITIVITY in actor.trait_mechanics:
         dis.append("trait")
+    if (
+        request.required_sense == "sight"
+        and request.skill == "perception"
+        and (
+            request.target_id in state.sight_dim_targets
+            if request.target_id
+            else state.surroundings_dim
+        )
+    ):
+        dis.append("unseen")
     if any(
         g.beneficiary_id == actor.entity_id and g.skill == request.skill for g in state.help_grants
     ):
@@ -180,6 +190,12 @@ def resolve_check_request(
         [c.condition for c in actor.conditions], request.required_sense
     ):
         failure = request.required_sense
+    if request.required_sense == "sight" and (
+        request.target_id in state.sight_blocked_targets
+        if request.target_id
+        else state.surroundings_blocked
+    ):
+        failure = "sight"
     event = CheckRolled(
         actor_id=actor.entity_id,
         ability=request.ability,

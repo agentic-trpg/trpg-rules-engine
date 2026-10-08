@@ -227,7 +227,8 @@ def test_darkness_and_obscurement_match_equivalent_explicit_senses(
         assert live.topology.can_see("0,0", target_cell, viewer.senses) is expected
         target_unseen, attacker_unseen = orch._target_visibility_maps(live, viewer, [target])
         assert target_unseen == {HERO: not expected}
-        assert attacker_unseen == {HERO: False}
+        # Physical Heavy Obscurement intercepts the ray in both directions.
+        assert attacker_unseen == {HERO: obscurement}
         outcomes.append((target_unseen, attacker_unseen, live.rng.getstate()))
     assert outcomes[0] == outcomes[1]
 
@@ -276,7 +277,7 @@ def test_blindsight_truesight_and_tremorsense_preserve_composite_sight_semantics
             assert not orch._blindsight_reaches_zone(live, viewer, target_cell)
 
 
-def test_template_truesight_keeps_existing_heavy_obscurement_limitation():
+def test_template_truesight_does_not_pierce_physical_heavy_obscurement():
     _handle, live = _start(
         _foe("avatar-of-death"),
         grid=GridScene(
@@ -285,8 +286,8 @@ def test_template_truesight_keeps_existing_heavy_obscurement_limitation():
             obscurement_cells={"0,0": "heavy"},
         ),
     )
-    # This branch preserves GridTopology's recorded Truesight/fog limitation.
-    assert orch._combatant_can_see(
+    # SRD Truesight pierces Darkness, not opaque physical fog or foliage.
+    assert not orch._combatant_can_see(
         live, orch._find_combatant(live, FOE), orch._find_combatant(live, HERO)
     )
 

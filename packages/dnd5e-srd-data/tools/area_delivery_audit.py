@@ -82,6 +82,8 @@ def _area_row(
         status, reason = "unsupported_units", "area_units_not_feet"
     elif predicate is not None and predicate.deferred_reason:
         status, reason = "creature_filter_deferred", predicate.deferred_reason
+    elif activity.persistent_area is not None and activity.persistent_area.environment is not None:
+        status = "persistent_environment"
     elif activity.kind not in _RESOLVED_KINDS:
         status = "non_resolving_template"
     elif activity.persistent_area is not None:

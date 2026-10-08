@@ -405,12 +405,24 @@ def test_a_new_concentration_spell_dismisses_the_summon() -> None:
 
 
 def test_an_unsupported_formula_area_preserves_the_summon_and_concentration() -> None:
-    # Fog Cloud's formula geometry has no typed spatial implementation yet.
+    # Confusion's formula geometry still has no typed spatial implementation.
     # Refusal must happen before replacing the existing concentration anchor.
-    handle, live = _summoned()
+    handle, live = start(
+        [summoner(spells_known=["summon-dragon", "confusion"], spell_slots={4: 1, 5: 1})],
+        seed=1,
+        active_effects=[anchor_effect(OWNER)],
+    )
+    seat_summon(live, OWNER, zone_id=cell_id(0, 1))
     rng = live.rng.getstate()
     slots = dict(live.spell_slots_by_entity[OWNER])
-    act(handle, OWNER, intent_type="cast_spell", spell_id="fog-cloud", target_zone_id=cell_id(5, 5))
+    act(
+        handle,
+        OWNER,
+        intent_type="cast_spell",
+        spell_id="confusion",
+        slot_level=4,
+        target_zone_id=cell_id(5, 5),
+    )
     assert [event.reason for event in events(live, CastFailed)] == ["unsupported_area"]
     assert not events(live, CombatantLeft)
     assert live.concentration_chain[OWNER] == [ANCHOR]

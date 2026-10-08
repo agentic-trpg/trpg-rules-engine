@@ -330,8 +330,15 @@ def test_action_wrappers_use_explicit_dc_and_semantics(context, ability, skill):
 
 
 def test_live_monster_uses_real_stat_block_magnitudes_and_sunlight():
-    _, live = start(
-        [pc()],
+    handle, live = start(
+        [
+            pc(
+                class_slug="sorcerer",
+                character_level=3,
+                spells_known=["darkness"],
+                spell_slots={2: 1},
+            )
+        ],
         seed=7,
         encounter=[foe(monster_template_slug="drider")],
         grid_scene=GridScene(width=10, height=10, sunlight=True),
@@ -343,7 +350,16 @@ def test_live_monster_uses_real_stat_block_magnitudes_and_sunlight():
     assert event.modifier == asset.skills.perception
     assert "trait" in event.disadvantage_sources
     assert len(live.rng.draws) == 2
-    live.scene_sunlight = False
+    # The consumer reads the shared projection. Suppress static Sunlight via
+    # a real point cast rather than mutating the obsolete whole-scene sidecar.
+    act(
+        handle,
+        "char:hero",
+        intent_type="cast_spell",
+        spell_id="darkness",
+        slot_level=2,
+        target_zone_id=live.actor_zone["mon:foe"],
+    )
     assert (
         resolve_live_check(live, request(actor_id="mon:foe", skill="perception")).advantage
         == "normal"

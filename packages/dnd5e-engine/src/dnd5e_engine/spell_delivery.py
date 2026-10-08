@@ -234,11 +234,28 @@ def plan_delivery(
     default_target_ids: tuple[str, ...] = (),
     execution: bool = False,
     expand_areas: bool = True,
+    cast_level: int | None = None,
+    base_level: int | None = None,
 ) -> DeliveryPlan:
     """Plan each activity independently in stable roster order, without I/O."""
     plans = []
     live_ids = {c.entity_id for c in creatures}
     for activity in activities:
+        environment = activity.persistent_area.environment if activity.persistent_area else None
+        if environment is not None and (
+            spec.origin_cell is None
+            or spec.primary_target_id is not None
+            or spec.selected_target_ids is not None
+            or spec.excluded_target_ids is not None
+            or spec.direction is not None
+            or (
+                activity.persistent_area is not None
+                and activity.persistent_area.placement != "stationary"
+            )
+        ):
+            raise DeliveryPlanningError(
+                "environment requires a stationary point without creature/object selection"
+            )
         if activity.kind == "save":
             try:
                 validate_on_save(activity.damage.on_save)
@@ -255,24 +272,35 @@ def plan_delivery(
         if is_area:
             if (
                 not isinstance(topology, GridTopology)
-                or (template := area_template(activity)) is None
+                or (
+                    template := area_template(
+                        activity, cast_level=cast_level, base_level=base_level
+                    )
+                )
+                is None
             ):
                 raise DeliveryPlanningError(
                     "activity area geometry is unsupported", "unsupported_area"
                 )
             origin = _origin(topology, positions, actor_id, spec, template, range_ft)
+            if environment is not None and not topology.is_valid_cell(origin):
+                raise DeliveryPlanningError("environment origin is blocked")
             direction = _direction(positions, actor_id, spec, template)
             cells = area_cells(topology, template, origin, direction)
             inside = [c for c in creatures if positions.get(c.entity_id) in cells]
-            targets, spared = _area_selection(
-                activity,
-                spec,
-                inside,
-                enemy_ids=enemy_ids,
-                ally_ids=ally_ids,
-                execution=execution,
-                live_ids=live_ids,
-                actor_id=actor_id,
+            targets, spared = (
+                ((), ())
+                if environment is not None
+                else _area_selection(
+                    activity,
+                    spec,
+                    inside,
+                    enemy_ids=enemy_ids,
+                    ally_ids=ally_ids,
+                    execution=execution,
+                    live_ids=live_ids,
+                    actor_id=actor_id,
+                )
             )
             plans.append(
                 ActivityDeliveryPlan(

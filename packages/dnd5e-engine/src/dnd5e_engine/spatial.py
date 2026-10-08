@@ -11,10 +11,13 @@ from __future__ import annotations
 import heapq
 from collections import deque
 from collections.abc import Callable, Collection
-from typing import Literal, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Literal, Protocol, runtime_checkable
 
 from dnd5e_engine.activities.passive_stats import CombatantSenses
 from dnd5e_engine.specs import GridScene, LightLevel, Obscurement, WallSegment
+
+if TYPE_CHECKING:
+    from dnd5e_engine.environment import EnvironmentalSource
 
 CoverDegree = Literal["none", "half", "three_quarters", "total"]
 StepCostOracle = Callable[[str, str], int | None]
@@ -206,6 +209,9 @@ class GridTopology:
         self._lighting: dict[str, LightLevel] = dict(scene.lighting)
         self._default_lighting: LightLevel = scene.default_lighting
         self._obscurement: dict[str, Obscurement] = dict(scene.obscurement_cells)
+        self._sunlight = scene.sunlight
+        # Derived from PersistentAreaState, never host-authored scene mutations.
+        self.environment_sources: tuple[EnvironmentalSource, ...] = ()
 
     @property
     def cell_size_ft(self) -> int:
@@ -395,7 +401,28 @@ class GridTopology:
         """
         if not self._in_bounds(cell):
             return "none"
-        return self._obscurement.get(cell, "none")
+        physical = self._physical_obscurement(cell)
+        light = self.light_on_cell(cell)
+        if physical == "heavy" or light == "dark":
+            return "heavy"
+        return "light" if physical == "light" or light == "dim" else "none"
+
+    def _physical_obscurement(self, cell: str) -> Literal["none", "light", "heavy"]:
+        if any(s.spec.obscurement == "heavy" and cell in s.cells for s in self.environment_sources):
+            return "heavy"
+        return self._obscurement.get(cell) or "none"
+
+    def magical_darkness_on_cell(self, cell: str) -> bool:
+        return self.light_on_cell(cell) == "dark" and any(
+            s.spec.kind == "magical_darkness" and cell in s.cells for s in self.environment_sources
+        )
+
+    def sunlight_on_cell(self, cell: str) -> bool:
+        if self.magical_darkness_on_cell(cell):
+            return False
+        return self._sunlight or any(
+            s.spec.sunlight and cell in s.cells for s in self.environment_sources
+        )
 
     def light_on_cell(self, cell: str) -> LightLevel:
         """SRD 5.2 §Vision and Light — the light level tagged on ``cell``.
@@ -406,7 +433,19 @@ class GridTopology:
         """
         if not self._in_bounds(cell):
             return self._default_lighting
-        return self._lighting.get(cell, self._default_lighting)
+        magical: list[LightLevel] = []
+        dark = False
+        for source in self.environment_sources:
+            if cell in source.cells:
+                if source.spec.kind == "magical_darkness":
+                    dark = True
+                elif source.spec.light is not None:
+                    magical.append(source.spec.light)
+            elif cell in source.dim_cells:
+                magical.append("dim")
+        # Darkness excludes nonmagical illumination, not surviving magical light.
+        levels = magical + ([] if dark else [self._lighting.get(cell, self._default_lighting)])
+        return max(levels, key={"dark": 0, "dim": 1, "bright": 2}.__getitem__) if levels else "dark"
 
     def can_see(self, a: str, b: str, senses: CombatantSenses | None = None) -> bool:
         """SRD 5.2 §Vision and Light — can a viewer in ``a`` with ``senses`` see
@@ -414,8 +453,8 @@ class GridTopology:
 
         1. Line of sight (walls / blocked cells) is required for every sense —
            Blindsight: "you can see anything that isn't behind Total Cover".
-        2. Blindsight or Truesight whose range reaches ``b`` sees through
-           Darkness and heavy obscurement.
+        2. Blindsight sees through fog and Darkness. Truesight sees through
+           Darkness (including magical Darkness), but does not pierce fog.
         3. A Heavily Obscured cell (``obscurement_cells == "heavy"``) is
            opaque to sight; Darkvision does not help (it only re-grades light).
         4. Bright or Dim Light in ``b`` is visible ("in a Lightly Obscured area
@@ -428,7 +467,7 @@ class GridTopology:
         form of sight" (SRD 5.2 glossary, Tremorsense). Conditions (Blinded)
         are the caller's concern (``rules/conditions.py``).
         """
-        if not self.has_line_of_sight(a, b):
+        if not self.has_line_of_sight(a, b) or self.cover_between(a, b) == "total":
             return False
         distance = self._chebyshev(a, b)
         if distance is None:
@@ -438,11 +477,18 @@ class GridTopology:
         def reaches(range_ft: int | None) -> bool:
             return range_ft is not None and range_ft >= distance_ft
 
-        if senses is not None and (reaches(senses.blindsight) or reaches(senses.truesight)):
+        if senses is not None and reaches(senses.blindsight):
             return True
-        if self._obscurement.get(b) == "heavy":
+        ray = _bresenham_cells(*parse_cell(a), *parse_cell(b))
+        # Opaque physical fog/foliage intercepts the rasterized sight ray.
+        # Geometric LoS / line of effect above remains purely Total Cover.
+        if any(self._physical_obscurement(cell) == "heavy" for cell in ray):
             return False
-        if self._lighting.get(b, self._default_lighting) != "dark":
+        if senses is not None and reaches(senses.truesight):
+            return True
+        if any(self.magical_darkness_on_cell(cell) for cell in ray):
+            return False
+        if self.light_on_cell(b) != "dark":
             return True
         return senses is not None and reaches(senses.darkvision)
 

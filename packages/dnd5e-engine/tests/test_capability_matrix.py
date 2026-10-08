@@ -597,6 +597,46 @@ def _typed_spell_effect_choices_resolve() -> bool:
     return True
 
 
+def _dynamic_environment_points_resolve() -> bool:
+    """Each bounded point operation must create a projected public source."""
+    from dnd5e_engine.events import AreaCreated, CastFailed
+    from dnd5e_engine.lib_loader import scoped_lib_loader
+    from tests.c21_support import act, events, pc, start
+
+    loader = BundledAssetLoader()
+    for slug, level in (("fog-cloud", 1), ("darkness", 2), ("daylight", 3)):
+        with scoped_lib_loader(loader):
+            handle, live = start(
+                [
+                    pc(
+                        class_slug="sorcerer",
+                        character_level=7,
+                        spells_known=[slug],
+                        spell_slots={level: 1},
+                    )
+                ],
+                seed=7,
+            )
+        act(
+            handle,
+            "char:hero",
+            intent_type="cast_spell",
+            spell_id=slug,
+            slot_level=level,
+            target_zone_id="4,0",
+        )
+        if events(live, CastFailed) or len(events(live, AreaCreated)) != 1:
+            return False
+        if len(live.topology.environment_sources) != 1:
+            return False
+        if slug == "daylight":
+            if not live.topology.sunlight_on_cell("4,0"):
+                return False
+        elif live.topology.obscurement_on_cell("4,0") != "heavy":
+            return False
+    return True
+
+
 def _typed_lifecycle_contract_resolves() -> bool:
     from dnd5e_srd_data.schema.lifecycle import EffectLifecycleSpec, RepeatSaveSpec
 
@@ -1256,6 +1296,7 @@ _PROBES: dict[str, tuple[Any, str]] = {
         "⚠️ Partial",
     ),
     "| Typed per-target spell Effect Selection |": (_typed_spell_effect_choices_resolve, "✅"),
+    "| Dynamic environmental point operations |": (_dynamic_environment_points_resolve, "✅"),
     # C20: Rage ends unless extended (and on Incapacitated).
     "| Rage |": (
         lambda: (

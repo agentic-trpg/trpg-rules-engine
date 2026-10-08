@@ -315,7 +315,7 @@ def test_hooks_registered_by_the_engine_are_present_and_ordered():
         return {phase: [key for key, _ in hooks] for phase, hooks in live.lifecycle._hooks.items()}
 
     assert asyncio.run(_run()) == {
-        "round_start": [],
+        "round_start": ["engine:environment-duration"],
         "turn_start": [
             "engine:reaction-effect-expiry",
             "engine:persistent-area-start",

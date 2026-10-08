@@ -5,9 +5,10 @@
     "effect_geometry_only": 1,
     "executable_target_area": 219,
     "manual_activity": 2,
-    "non_resolving_template": 74,
+    "non_resolving_template": 72,
     "persistent_area": 4,
-    "unsupported_formula_size": 12,
+    "persistent_environment": 3,
+    "unsupported_formula_size": 11,
     "unsupported_wall": 17
   },
   "source_counts": {
@@ -524,7 +525,7 @@
       "counted_target": null,
       "creature_filter": null,
       "forced_movement": null,
-      "runtime_status": "non_resolving_template",
+      "runtime_status": "persistent_environment",
       "deferred_reason": null
     },
     {
@@ -543,7 +544,7 @@
       "counted_target": null,
       "creature_filter": null,
       "forced_movement": null,
-      "runtime_status": "non_resolving_template",
+      "runtime_status": "persistent_environment",
       "deferred_reason": null
     },
     {
@@ -919,7 +920,7 @@
       "activity_id": "dnd5eactivity000",
       "activity_kind": "utility",
       "shape": "sphere",
-      "size_ft": "20 * @item.level",
+      "size_ft": "20",
       "width_ft": "",
       "role": "target_area",
       "origin_policy": "point_within_range",
@@ -928,8 +929,8 @@
       "counted_target": null,
       "creature_filter": null,
       "forced_movement": null,
-      "runtime_status": "unsupported_formula_size",
-      "deferred_reason": "nonconstant_positive_area_size"
+      "runtime_status": "persistent_environment",
+      "deferred_reason": null
     },
     {
       "source_kind": "spell",

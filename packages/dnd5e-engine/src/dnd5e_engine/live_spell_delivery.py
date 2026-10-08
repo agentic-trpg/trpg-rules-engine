@@ -11,7 +11,7 @@ from dataclasses import fields, replace
 from typing import TYPE_CHECKING, Any
 
 from dnd5e_engine.activities.arithmetic import parse_expression
-from dnd5e_engine.activities.build_context import build_activity_context
+from dnd5e_engine.activities.build_context import _caster_mod, _save_dc, build_activity_context
 from dnd5e_engine.activities.resolver import resolve_activity
 from dnd5e_engine.events import AreaTargeted
 from dnd5e_engine.lib_loader import get_lib_loader
@@ -22,6 +22,7 @@ from dnd5e_engine.spell_delivery import (
     SpellDeliverySpec,
     plan_delivery,
 )
+from dnd5e_engine.spell_execution import ExecutionFailure, admission_failure, spell_review
 
 if TYPE_CHECKING:
     from dnd5e_srd_data.schema.common import Activity
@@ -30,6 +31,80 @@ if TYPE_CHECKING:
     from dnd5e_engine.activities.context import ActivityResolutionContext
     from dnd5e_engine.orchestrator import PlayerIntent, _LiveCombat
     from dnd5e_engine.types.combat import Combatant
+
+
+class SpellAdmissionError(DeliveryPlanningError):
+    def __init__(self, failure: ExecutionFailure) -> None:
+        super().__init__(failure.code, "unsupported_activity")
+        self.failure = failure
+
+
+def _validate_spell_inputs(
+    actor: Combatant,
+    spell: Spell,
+    activities: Sequence[Activity],
+    *,
+    cast_level: int | None,
+    ability: str | None,
+    fixed_dc: int | None,
+    fixed_attack: int | None,
+) -> None:
+    """Reuse formula validation on a disposable, draw-prohibited context."""
+    from dnd5e_engine.activities.context import ActivityResolutionContext
+    from dnd5e_engine.feature_runtime import DrawFreeRandom, validate_feature_formulas
+
+    review = spell_review(spell)
+    if review is not None and review.classification == "host_narrative":
+        return
+    ctx = ActivityResolutionContext(
+        caster=actor,
+        targets=[],
+        rng=DrawFreeRandom(0),
+        event_emitter=lambda _: None,
+        caster_abilities={
+            "str": actor.strength,
+            "dex": actor.dexterity,
+            "con": actor.constitution,
+            "int": actor.intelligence,
+            "wis": actor.wisdom,
+            "cha": actor.charisma,
+        },
+        caster_level=actor.character_level,
+        slot_level=cast_level if cast_level is not None else spell.level,
+        base_spell_level=spell.level,
+        spellcasting_ability=ability,
+        concentration=spell.concentration,
+        source_passive_effects=list(spell.passive_effects),
+        spell_book={},
+        save_dc_override=fixed_dc,
+    )
+    if ability is None and fixed_dc is None:
+        # Preserve the existing draw-free DC fallback for classless actors.
+        # This does not fabricate a governing ability for @mod expressions.
+        ctx = replace(
+            ctx,
+            save_dc_override=_save_dc(
+                actor,
+                _caster_mod(actor),
+                caster_abilities=ctx.caster_abilities,
+                caster_proficiency_bonus=ctx.caster_proficiency_bonus,
+                spellcasting_ability=None,
+            ),
+        )
+    if fixed_attack is not None:
+        ctx = replace(ctx, attack_bonus_override=fixed_attack)
+    for activity in activities:
+        try:
+            validate_feature_formulas(spell, activity, ctx)
+        except ValueError as exc:
+            raise SpellAdmissionError(
+                ExecutionFailure(
+                    code="invalid_formula",
+                    spell_id=spell.slug,
+                    activity_id=activity.id,
+                    mechanisms=("formula_inputs",),
+                )
+            ) from exc
 
 
 def spec_from_intent(intent: PlayerIntent) -> SpellDeliverySpec:
@@ -145,6 +220,17 @@ def delivery_activities(spell: Spell, spec: SpellDeliverySpec) -> list[Activity]
     Their conditions are never interpreted as permission to execute a sibling.
     """
     chosen = next((a for a in spell.activities if a.id == spec.source_activity_id), None)
+    review = spell_review(spell)
+    if review is not None:
+        roles = {a.activity_id: a.role for a in review.activities}
+        return [
+            a
+            for a in spell.activities
+            if a is chosen
+            or roles.get(a.id) in ("delayed", "persistent")
+            or (chosen is None and roles.get(a.id) == "cast")
+            or a.id not in roles
+        ]
     if chosen is not None:
         if chosen.timing.trigger == "manual":
             raise DeliveryPlanningError("manual activity delivery is deferred", "unsupported_area")
@@ -178,8 +264,20 @@ def preflight_delivery(
     expand_areas: bool = True,
     cast_level: int | None = None,
     delegated_level_override: int | None = None,
+    spellcasting_ability: str | None = None,
+    fixed_dc: int | None = None,
+    fixed_attack: int | None = None,
 ) -> DeliveryPlan:
     """Resolve delegated geometry recursively before the outer caller pays."""
+    from dnd5e_engine import orchestrator as orch
+
+    spellcasting_ability = spellcasting_ability or (
+        actor.spellcasting_ability
+        if spec.source_kind == "monster_cast"
+        else orch._resolve_caster_spellcasting_ability(actor)
+        if spec.source_kind == "direct_spell"
+        else None
+    )
     if spell is not None:
         activities = delivery_activities(spell, spec)
         _validate_cast_count(
@@ -193,6 +291,21 @@ def preflight_delivery(
         range_spec=spell.range if spell else None,
         expand_areas=expand_areas,
     )
+    if spell is not None:
+        failure = admission_failure(
+            spell, activities, direct_carrier=spec.source_kind == "direct_spell" and not chain
+        )
+        if failure is not None:
+            raise SpellAdmissionError(failure)
+        _validate_spell_inputs(
+            actor,
+            spell,
+            activities,
+            cast_level=cast_level,
+            ability=spellcasting_ability,
+            fixed_dc=fixed_dc,
+            fixed_attack=fixed_attack,
+        )
     for activity in activities:
         if activity.kind != "cast":
             continue
@@ -204,18 +317,31 @@ def preflight_delivery(
             )
         if activity.spell.level is not None and not child.level <= activity.spell.level <= 9:
             raise DeliveryPlanningError("delegated spell level is invalid", "unsupported_area")
-        # Item concentration remains an explicit unsupported capability until
-        # the outer item's concentration ownership and cancellation are modeled.
-        if spec.source_kind == "item_cast" and child.concentration:
-            raise DeliveryPlanningError("item concentration is deferred", "unsupported_area")
         level = (
             delegated_level_override
             if delegated_level_override is not None
             else activity.spell.level
         )
         preflight_delivery(
-            live, actor, child.activities, spec, spell=child, chain=(*chain, uuid), cast_level=level
+            live,
+            actor,
+            child.activities,
+            spec,
+            spell=child,
+            chain=(*chain, uuid),
+            cast_level=level,
+            spellcasting_ability=activity.spell.ability or spellcasting_ability,
+            fixed_dc=activity.spell.challenge.save
+            if activity.spell.challenge.override
+            else (fixed_dc if not chain else None),
+            fixed_attack=activity.spell.challenge.attack
+            if activity.spell.challenge.override
+            else (fixed_attack if not chain else None),
         )
+        # Support is shared even for concentration children; outer item
+        # ownership is a separate, still-deferred delivery capability.
+        if spec.source_kind == "item_cast" and child.concentration:
+            raise DeliveryPlanningError("item concentration is deferred", "unsupported_area")
     return plan
 
 
@@ -394,7 +520,11 @@ def execute_spell_delivery(
         or ctx.spell_delivery
         or SpellDeliverySpec(selected_target_ids=tuple(t.entity_id for t in ctx.targets))
     )
-    spell = spell.model_copy(update={"activities": delivery_activities(spell, spec)})
+    selected = delivery_activities(spell, spec)
+    failure = admission_failure(spell, selected, direct_carrier=ctx.conjuration is not None)
+    if failure is not None:
+        raise SpellAdmissionError(failure)
+    spell = spell.model_copy(update={"activities": selected})
     plan = plan_spell_delivery(live, ctx.caster, spell, spec, execution=True)
     by_id = {c.entity_id: c for c in live.initiative}
     ctx = replace(ctx, targets=[by_id[i] for i in plan.target_ids if i in by_id])

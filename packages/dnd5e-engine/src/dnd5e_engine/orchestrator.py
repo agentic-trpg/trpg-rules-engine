@@ -2509,7 +2509,7 @@ def _monster_cast_delivery_spec(
     chosen_target: Combatant | None = None,
 ) -> SpellDeliverySpec | None:
     """Resolve a legal AI declaration before any action or stat-block payment."""
-    from dnd5e_engine.live_spell_delivery import plan_spell_delivery
+    from dnd5e_engine.live_spell_delivery import preflight_delivery
     from dnd5e_engine.spell_delivery import DeliveryPlanningError
 
     if area_activity(spell.activities) is not None:
@@ -2530,13 +2530,39 @@ def _monster_cast_delivery_spec(
                 source_activity_id=activity.id,
             )
             try:
-                plan_spell_delivery(live, actor, spell, spec)
+                preflight_delivery(
+                    live,
+                    actor,
+                    spell.activities,
+                    spec,
+                    spell=spell,
+                    cast_level=activity.spell.level,
+                    spellcasting_ability=activity.spell.ability or actor.spellcasting_ability,
+                    fixed_dc=activity.spell.challenge.save
+                    if activity.spell.challenge.override
+                    else None,
+                    fixed_attack=activity.spell.challenge.attack
+                    if activity.spell.challenge.override
+                    else None,
+                )
             except DeliveryPlanningError:
                 continue
             return spec
         return None
     try:
-        plan_spell_delivery(live, actor, spell, spec)
+        preflight_delivery(
+            live,
+            actor,
+            spell.activities,
+            spec,
+            spell=spell,
+            cast_level=activity.spell.level,
+            spellcasting_ability=activity.spell.ability or actor.spellcasting_ability,
+            fixed_dc=activity.spell.challenge.save if activity.spell.challenge.override else None,
+            fixed_attack=activity.spell.challenge.attack
+            if activity.spell.challenge.override
+            else None,
+        )
     except DeliveryPlanningError:
         return None
     return spec
@@ -6248,6 +6274,7 @@ def _area_target_failure(
             actor_id=actor_id,
             spell_id=intent.spell_id or "",
             reason=cast(CastFailedReason, exc.reason),
+            execution_failure=getattr(exc, "failure", None),
         )
     return None
 
@@ -10925,6 +10952,9 @@ def _emit_spell_cast(
     shares this single normalisation point rather than each re-deriving it.
     """
     normalized_slot_level = None if spell.level == 0 else slot_level
+    from dnd5e_engine.spell_execution import spell_review
+
+    review = spell_review(spell)
     comps, material, consumed, cost = spell_component_metadata(spell)
     _emit(
         live,
@@ -10937,6 +10967,7 @@ def _emit_spell_cast(
             material=material,
             material_consumed=consumed,
             material_cost_gp=cost,
+            execution_class=review.classification if review is not None else None,
         ),
     )
 
@@ -11686,11 +11717,11 @@ async def _submit_player_intent(
         ),
         lambda: _charmed_target_failure(live, actor_id, current, intent),
         lambda: _cast_target_invalid_failure(live, current, actor_id, intent),
+        lambda: _conjuration_gate_failure(live, current, intent),
         lambda: _area_target_failure(live, current, actor_id, intent, feature_invocation),
         lambda: _action_surge_failure(current, intent),
         lambda: _bardic_inspiration_target_failure(live, actor_id, intent),
         lambda: _granted_die_failure(live, current, intent),
-        lambda: _conjuration_gate_failure(live, current, intent),
         lambda: prearm_failure(live, current, intent),
     )
     for build_pre_resolution_failure in pre_resolution_gates:

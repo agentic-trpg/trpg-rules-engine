@@ -229,6 +229,9 @@ def test_c26_s09_a_spent_recharge_action_sits_out_the_multiattack() -> None:
 
 
 def test_c26_s05_sleep_spares_its_caster() -> None:
+    from dnd5e_engine.live_spell_delivery import plan_spell_delivery
+    from dnd5e_engine.spell_delivery import SpellDeliverySpec
+
     def cast(session: str, **intent: Any):
         handle, live = _start(
             [_wizard(cell(5, 6), ["sleep"], {1: 1})],
@@ -238,6 +241,13 @@ def test_c26_s05_sleep_spares_its_caster() -> None:
             ],
             session=session,
         )
+        plan = plan_spell_delivery(
+            live,
+            _combatant(live, "char:wiz"),
+            BundledAssetLoader().get_spell("sleep"),
+            SpellDeliverySpec(primary_target_id="mon:g1", **intent),
+        )
+        rng = live.rng.getstate()
         _act(
             handle,
             "char:wiz",
@@ -247,24 +257,26 @@ def test_c26_s05_sleep_spares_its_caster() -> None:
             slot_level=1,
             **intent,
         )
-        return live
+        assert [e.reason for e in events_of(live, CastFailed)] == ["unsupported_activity"]
+        assert live.spell_slots_by_entity["char:wiz"][1] == 1
+        assert live.rng.getstate() == rng
+        assert not _saved(live)
+        return plan
 
-    live = cast("e2e-c26-s05")
-    assert _saved(live) == ["mon:g1", "mon:g2"]
-    [area] = _areas(live)
-    assert (area.actor_id, area.source_id, area.shape, area.size_ft) == (
-        "char:wiz",
-        "sleep",
+    plan = cast("e2e-c26-s05")
+    assert plan.target_ids == ("mon:g1", "mon:g2")
+    [area] = plan.activities
+    assert (area.template.shape, area.template.size_ft) == (
         "sphere",
         5,
     )
     assert (area.origin, area.direction) == (cell(5, 5), None)
-    assert (area.affected_ids, area.excluded_ids) == (["mon:g1", "mon:g2"], ["char:wiz"])
+    assert (area.target_ids, area.spared_ids) == (("mon:g1", "mon:g2"), ("char:wiz",))
 
     opted_in = cast("e2e-c26-s05-opt-in", excluded_target_ids=())
-    assert _saved(opted_in) == ["char:wiz", "mon:g1", "mon:g2"]
-    [area] = _areas(opted_in)
-    assert (area.affected_ids, area.excluded_ids) == (["char:wiz", "mon:g1", "mon:g2"], [])
+    assert opted_in.target_ids == ("char:wiz", "mon:g1", "mon:g2")
+    [area] = opted_in.activities
+    assert (area.target_ids, area.spared_ids) == (("char:wiz", "mon:g1", "mon:g2"), ())
 
 
 def test_c26_s06_an_explicit_exclusion_replaces_the_default() -> None:
@@ -434,6 +446,9 @@ def test_c26_s13_of_your_choice_and_up_to_six_are_in_the_data() -> None:
 
 
 def test_c26_s14_slow_affects_six_enemies_in_its_cube() -> None:
+    from dnd5e_engine.live_spell_delivery import plan_spell_delivery
+    from dnd5e_engine.spell_delivery import SpellDeliverySpec
+
     goblins = [
         _foe(f"mon:g{i}", cell(col, row), initiative=10 - i)
         for i, (col, row) in enumerate(
@@ -445,6 +460,23 @@ def test_c26_s14_slow_affects_six_enemies_in_its_cube() -> None:
         goblins,
         session="e2e-c26-s14",
     )
+    # Target planning remains implemented independently of paid spell admission.
+    plan = plan_spell_delivery(
+        live,
+        _combatant(live, "char:wiz"),
+        BundledAssetLoader().get_spell("slow"),
+        SpellDeliverySpec(origin_cell=cell(1, 0)),
+    )
+    [area] = plan.activities
+    assert area.target_ids == ("mon:g1", "mon:g2", "mon:g3", "mon:g4", "mon:g5", "mon:g6")
+    assert (area.template.shape, area.template.size_ft, area.origin, area.direction) == (
+        "cube",
+        40,
+        cell(1, 0),
+        None,
+    )
+    assert area.spared_ids == ("char:ally", "mon:g7")
+    rng = live.rng.getstate()
     _act(
         handle,
         "char:wiz",
@@ -453,15 +485,10 @@ def test_c26_s14_slow_affects_six_enemies_in_its_cube() -> None:
         slot_level=3,
         target_zone_id=cell(1, 0),
     )
-    assert _saved(live) == ["mon:g1", "mon:g2", "mon:g3", "mon:g4", "mon:g5", "mon:g6"]
-    [area] = _areas(live)
-    assert (area.shape, area.size_ft, area.origin, area.direction) == (
-        "cube",
-        40,
-        cell(1, 0),
-        None,
-    )
-    assert area.excluded_ids == ["char:ally", "mon:g7"]
+    assert [e.reason for e in events_of(live, CastFailed)] == ["unsupported_activity"]
+    assert live.spell_slots_by_entity["char:wiz"][3] == 1
+    assert live.rng.getstate() == rng
+    assert not _saved(live)
 
 
 def test_c26_s15_breath_weapon_defers_until_attack_replacement_is_modeled() -> None:

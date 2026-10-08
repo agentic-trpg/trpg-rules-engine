@@ -75,10 +75,25 @@ without failing CI.
 
 ## Spells
 
-The engine resolves a spell by walking its typed activities. Spells whose only
-activities are `summon`, `transform`, `enchant`, or a rider-less `utility` load
-correctly and **emit no events** — unless the conjuration allowlist resolves
-them (C21: Spiritual Weapon, Summon Dragon and Magic Weapon).
+Combat spell execution now requires a shared, pure admission preflight before
+payment, concentration replacement or a Counterspell opportunity. PC, monster
+and delegated item casts use the same reviewed capability records. A resolver
+event or an Activity kind is not evidence that an entire spell is supported.
+
+| Admission classification | Spells | Contract |
+|---|---|---|
+| Executable | **25** | Reviewed combat creature payload within the engine's existing spatial/host boundary. |
+| Bounded | **44** | Explicit selected Activity contract; limitations and independent deferred alternatives remain recorded. |
+| Host narrative | **26** | Host adjudicates the narrative/world result; `SpellCast.execution_class` explicitly identifies this boundary. |
+| Deferred | **244** | Required mechanics are missing; refuse before Action, slot, charge, concentration or RNG. |
+
+The [generated inventory](audits/spell-execution.json) covers all **339 spells /
+464 Activities**, including default selection, alternative/delayed/persistent
+roles, missing mechanisms and entrypoint restrictions. It is static evidence,
+not a claim of whole-corpus runtime testing. [Admission contract and regeneration](dev/spell-execution-admission.md).
+
+The previous structural probe remains below for comparison. These are historical
+kind/effect counts, **not executable-spell counts or current paid-cast admission**:
 
 | | Count |
 |---|---|
@@ -87,13 +102,13 @@ them (C21: Spiritual Weapon, Summon Dragon and Magic Weapon).
 | Load but resolve to nothing | **105** (31%) |
 | …of which are concentration spells | **30** |
 
-Inert concentration spells include staples a combat host will reach for:
+Historically inert concentration spells include:
 *Blur, Darkness, Fog Cloud, Wall of Force, Silent Image, Globe of
-Invulnerability, Expeditious Retreat.* With supported geometry, these still concentrate when cast (C21), ending the
-caster's earlier concentration and retaining the ordinary damage saves.
-Unsupported wall geometry such as Wall of Force now refuses before payment
-rather than creating an inert successful cast. Others in the inert set (*Alarm, Augury, Clairvoyance,
-Create Food and Water*) are out of scope for a combat engine by nature.
+Invulnerability, Expeditious Retreat.* These now refuse before payment and
+preserve existing concentration. Slow and Haste also refuse: target delivery or
+AC/speed changes alone do not implement their required action restrictions.
+Augury and Create Food and Water have an explicit host narrative contract;
+Alarm and Clairvoyance require missing persistent/world or sensor mechanics.
 
 | Spell mechanic | Status | Notes |
 |---|---|---|
@@ -105,8 +120,8 @@ Create Food and Water*) are out of scope for a combat engine by nature.
 | Counterspell, Shield, Hellish Rebuke, Magic Missile interactions | ✅ Resolved | Canonical typed reaction conditions and response/target metadata drive a shared queue. Shield uses the same rolled attack to adjudicate updated AC across every shared attack path. Counterspell observes legal PC and monster casts after casting-time payment, before the triggering slot is spent. Hellish Rebuke fires after a positive damage instance and targets its actual source. The reaction audit records unsupported producers and sources. |
 | Ritual casting | ⚠️ Partial | Out-of-combat via `resolve_ritual_cast`; in-combat rejected |
 | Material components / component pouches | ⚠️ Partial | Metadata on `SpellCast`, not enforced |
-| Dispel Magic | ❌ Not modelled | Inert (no mechanical activity) |
-| Summoning / polymorph / enchant-a-weapon | ⚠️ Partial | An allowlist resolves five SRD 5.2 sources (C21). Spiritual Weapon: a caster-owned force placed at `target_zone_id` (else in the target's space) makes its melee spell attack at once; on later turns an `attack` naming `spell_id` moves it up to 20 feet and repeats the attack as a Bonus Action; it ends with its concentration (`LiveCombatView.constructs`). Magic Weapon: +1, +2 or +3 to hit and damage on the weapon `PlayerIntent.weapon_id` names, on top of a pinned `attack_bonus`, and the weapon counts as magical. Wild Shape (Characters, below) and Polymorph: the Beast stat block `PlayerIntent.form_id` names replaces the creature's statistics, with ordinary Temporary Hit Points (`LiveCombatView.transformations`); Polymorph's form must be a Beast of Challenge Rating up to the target's (a character's level), a target with neither (a summon, "CR None", included) is refused, and it ends early when its Temporary Hit Points are gone. Summon Dragon: a Draconic Spirit joins the initiative order right after its caster, at the caster's count (`CombatantJoined`), in an unoccupied space the caster can see within 60 feet (a Blinded caster sees none beyond its Blindsight) — `target_zone_id` (one of the grid's own `col,row` ids), else the nearest free cell; with no such space the cast is refused before anything is spent (`out_of_range` / `target_invalid`). It has AC 14 + the slot level and HP 50 + 10 per slot level above 5, uses the caster's Proficiency Bonus, and makes half the slot level (round down) of Rends per Attack action, each at the caster's spell attack bonus for 1d6 + 4 + the slot level. Uncommanded, `advance_monster_turn` has it take the `dodge` action; a host commands each Rend through `stat_block_action_id`, and any other attack, Grapple, Shove or spell is refused before anything is spent. It never joins `party_ids`, and `CombatOutcome` holds no Hit Points, XP or death of its own, though `DeathRecord.killer_id` can name it (`CombatantJoined.origin_caster_id` names its caster); it leaves at 0 Hit Points or when the caster's concentration ends (`CombatantLeft`; `LiveCombatView.summons`). Every other summon, transform and enchant — Sacred Weapon, Shillelagh, True Strike, the monster and item summons, Giant Insect, Animate Objects, True Polymorph, Shapechange — stays narrative (BACKLOG.md) |
+| Dispel Magic | ❌ Not modelled | Missing effect selection/removal; admission rejects before payment. |
+| Summoning / polymorph / enchant-a-weapon | ⚠️ Partial | An allowlist resolves five SRD 5.2 sources (C21). Spiritual Weapon: a caster-owned force placed at `target_zone_id` (else in the target's space) makes its melee spell attack at once; on later turns an `attack` naming `spell_id` moves it up to 20 feet and repeats the attack as a Bonus Action; it ends with its concentration (`LiveCombatView.constructs`). Magic Weapon: +1, +2 or +3 to hit and damage on the weapon `PlayerIntent.weapon_id` names, on top of a pinned `attack_bonus`, and the weapon counts as magical. Wild Shape (Characters, below) and Polymorph: the Beast stat block `PlayerIntent.form_id` names replaces the creature's statistics, with ordinary Temporary Hit Points (`LiveCombatView.transformations`); Polymorph's form must be a Beast of Challenge Rating up to the target's (a character's level), a target with neither (a summon, "CR None", included) is refused, and it ends early when its Temporary Hit Points are gone. Summon Dragon: a Draconic Spirit joins the initiative order right after its caster, at the caster's count (`CombatantJoined`), in an unoccupied space the caster can see within 60 feet (a Blinded caster sees none beyond its Blindsight) — `target_zone_id` (one of the grid's own `col,row` ids), else the nearest free cell; with no such space the cast is refused before anything is spent (`out_of_range` / `target_invalid`). It has AC 14 + the slot level and HP 50 + 10 per slot level above 5, uses the caster's Proficiency Bonus, and makes half the slot level (round down) of Rends per Attack action, each at the caster's spell attack bonus for 1d6 + 4 + the slot level. Uncommanded, `advance_monster_turn` has it take the `dodge` action; a host commands each Rend through `stat_block_action_id`, and any other attack, Grapple, Shove or spell is refused before anything is spent. It never joins `party_ids`, and `CombatOutcome` holds no Hit Points, XP or death of its own, though `DeathRecord.killer_id` can name it (`CombatantJoined.origin_caster_id` names its caster); it leaves at 0 Hit Points or when the caster's concentration ends (`CombatantLeft`; `LiveCombatView.summons`). Every other summon, transform and enchant — Sacred Weapon, Shillelagh, True Strike, the monster and item summons, Giant Insect, Animate Objects, True Polymorph, Shapechange — remains deferred for paid spell execution; unchecked Activity primitives do not establish spell support (BACKLOG.md) |
 
 ## Monsters
 

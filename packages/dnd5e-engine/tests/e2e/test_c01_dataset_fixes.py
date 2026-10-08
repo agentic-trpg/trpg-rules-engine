@@ -6,8 +6,8 @@ Transcribed from specs/e2e-scenario-catalog.md, Cluster 1.
 from __future__ import annotations
 
 from dnd5e_engine import PlayerIntent
-from dnd5e_engine.events import DamageApplied
-from dnd5e_engine.orchestrator import _get_live, start_combat, submit_player_intent
+from dnd5e_engine.events import CastFailed, DamageApplied
+from dnd5e_engine.orchestrator import _emit, _get_live, start_combat, submit_player_intent
 from dnd5e_engine.specs import EncounterMemberSpec, PartyMemberSpec
 from tests.e2e.harness import cell, events_of, grid_scene, run_async
 
@@ -68,6 +68,34 @@ def test_c01_s01_call_lightning_repeat_bolt_applies_lightning_damage(caplog):
         return live
 
     live = run_async(_run())
+    # A complete paid storm is deferred; retain the original typed damage
+    # regression at the resource-free Activity primitive boundary.
+    assert [e.reason for e in events_of(live, CastFailed)] == ["unsupported_activity"]
+    assert live.spell_slots_by_entity["char:druid"][3] == 1
+    from dnd5e_srd_data import BundledAssetLoader
+
+    from dnd5e_engine.activities.build_context import build_activity_context
+    from dnd5e_engine.activities.resolver import resolve_activity
+
+    spell = BundledAssetLoader().get_spell("call-lightning")
+    caster = next(c for c in live.initiative if c.entity_id == "char:druid")
+    target = next(c for c in live.initiative if c.entity_id == "mon:foe")
+    ctx = build_activity_context(
+        caster,
+        [target],
+        rng=live.rng,
+        event_emitter=lambda e: _emit(live, e),
+        slot_level=3,
+        base_spell_level=3,
+        spellcasting_ability="wis",
+        concentration=True,
+        source_passive_effects=list(spell.passive_effects),
+        spell_book={},
+        passive_damage_modifiers={},
+        save_modifiers={},
+    )
+    for activity in spell.activities:
+        resolve_activity(activity, ctx)
     assert not any("damage_part_untyped" in r.message for r in caplog.records)
     lightning_hits = [
         e

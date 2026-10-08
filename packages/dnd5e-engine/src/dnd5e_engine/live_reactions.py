@@ -39,6 +39,7 @@ from dnd5e_engine.reactions import (
 )
 from dnd5e_engine.rules.conditions import conditions_block_actions
 from dnd5e_engine.spell_delivery import SpellDeliverySpec
+from dnd5e_engine.spell_execution import admission_failure
 
 if TYPE_CHECKING:
     from dnd5e_srd_data.schema.common import Activity
@@ -149,6 +150,9 @@ def _context(
 
 
 def _validate_payload(spell: Spell, activity: Activity, ctx: ActivityResolutionContext) -> None:
+    failure = admission_failure(spell, [activity])
+    if failure is not None:
+        raise ValueError(failure.code)
     if isinstance(activity, SaveActivity):
         if len(activity.save.ability) != 1:
             raise ValueError("reaction save requires one ability")

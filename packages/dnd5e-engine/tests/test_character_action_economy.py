@@ -364,6 +364,8 @@ def test_refused_intents_preserve_all_character_budgets_and_rng(intent, after_su
 
 
 def _counterspell_combat(**caster_kwargs):
+    # A real ability carrier is required when Healing Word evaluates @mod.
+    caster_kwargs.setdefault("class_slug", "wizard")
     handle, live = start(
         [
             pc(**caster_kwargs),
@@ -485,7 +487,7 @@ def test_countered_magic_spends_only_base_action_in_surge_orders(order):
     ("intent", "reason"),
     [
         ({"spell_id": "magic-missile", "target_id": FOE, "slot_level": 2}, "no_slot"),
-        ({"spell_id": "healing-word", "target_id": HERO, "slot_level": 2}, "no_slot"),
+        ({"spell_id": "shield-of-faith", "target_id": HERO, "slot_level": 2}, "no_slot"),
         ({"spell_id": "shield", "slot_level": 2}, "no_slot"),
         ({"spell_id": "fire-bolt", "target_id": FOE, "slot_level": 1}, "no_slot"),
         ({"spell_id": "detect-magic", "as_ritual": True}, "ritual_in_combat"),

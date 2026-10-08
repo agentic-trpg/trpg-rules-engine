@@ -22,6 +22,25 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
 
 # dnd5e-engine
 
+## Spell execution admission (2026-10-08)
+
+Paid combat spell no-ops are now gated by shared typed admission before payment,
+RNG, concentration replacement and reaction opportunities. This closes the
+acceptance/payment safety gap, **not** the missing mechanics below. The stable
+inventory in `docs/audits/spell-execution.json` records 25 executable combat
+contracts, 44 bounded contracts, 26 explicit host narrative contracts and 244
+deferred spells, with all 464 canonical Activities. Unknown identities,
+unreviewed Activities, missing effects and mandatory unsupported mechanisms
+fail closed. PC, monster and delegated item paths share the check.
+
+Slow/Haste action rules, teleportation, general summons/enchantments/transforms,
+restoration/resurrection, object/world transactions, conditional sequences and
+wall geometry remain deferred. A supported target filter, save, heal or damage
+Activity does not close those gaps. Finger of Death remains deferred because
+Humanoid death requires next-turn Zombie creation; this is not optional.
+The low-level Activity Resolver is still an unchecked building block for hosts,
+not a resource-paying complete-spell API. See `docs/dev/spell-execution-admission.md`.
+
 ## Unimplemented activity kinds (2026-08-22)
 
 - **Most `summon`, `transform` and `enchant` activities are narrative no-ops
@@ -32,11 +51,12 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   source: Spiritual Weapon, Magic Weapon, Wild Shape and Polymorph resolve
   (C21a), and Summon Dragon seats its Draconic Spirit (C21b; the other
   summons are under "Roster summons"). The measured consequence: **105 of 339
-  SRD spells (31%) load correctly and emit no events**, 30 of them
+  SRD spells (31%) historically loaded correctly and emitted no events**, 30 of them
   concentration spells — *Blur, Darkness, Fog Cloud,
   Wall of Force, Silent Image, Globe of Invulnerability, Expeditious
-  Retreat* — which at least concentrate now. Several are combat staples a host
-  will reach for immediately.
+  Retreat*. These historical counts are structural, not support classifications;
+  the combat admission gate now rejects unsupported spells before costs and
+  preserves the caster's existing concentration. Their rules remain unimplemented.
   (`packages/dnd5e-engine/src/dnd5e_engine/activities/resolver.py`)
 - **Enchantments other than Magic Weapon, and shape-shifts other than Wild
   Shape and Polymorph, stay narrative (2026-09-25, C21a).** `enchant_weapon`

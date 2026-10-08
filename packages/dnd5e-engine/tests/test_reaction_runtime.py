@@ -213,20 +213,52 @@ def test_monster_save_activity_never_fires_hit_reaction():
     assert len(live.pending_reactions) == 1
 
 
-def test_monster_spell_attack_reaches_the_same_shield_hook():
+def _bronze_dragon_with_admitted_attack(monkeypatch):
+    """Keep Shield's attack/DC/RNG fixture, with a complete attack spell.
+
+    Guiding Bolt's unimplemented next-attack rider now defers its paid cast.
+    """
+    from dnd5e_engine import lib_loader
+
+    monster = LOADER.get_monster("adult-bronze-dragon")
+    spell = LOADER.get_spell("fire-bolt")
+    updates = {}
+    for field in ("actions", "legendary_actions"):
+        actions = []
+        for action in getattr(monster, field):
+            activities = [
+                a.model_copy(
+                    update={"spell": a.spell.model_copy(update={"uuid": spell.foundry_uuid})}
+                )
+                if isinstance(a, CastActivity) and a.spell.uuid.endswith("phbsplGuidingBol")
+                else a
+                for a in action.activities
+            ]
+            actions.append(action.model_copy(update={"activities": activities}))
+        updates[field] = actions
+    monster = monster.model_copy(update=updates)
+
+    class Overlay(BundledAssetLoader):
+        def get_monster(self, slug):
+            return monster if slug == monster.slug else super().get_monster(slug)
+
+    monkeypatch.setattr(lib_loader, "_LIB_LOADER", Overlay())
+    return monster, spell
+
+
+def test_monster_spell_attack_reaches_the_same_shield_hook(monkeypatch):
+    monster, spell = _bronze_dragon_with_admitted_attack(monkeypatch)
     slug = "adult-bronze-dragon"
     handle, live = start(
         [reactor(ac=18)], seed=7, encounter=[foe(monster_template_slug=slug, zone_id="2,0")]
     )
     arm(handle, REACTOR, "shield")
-    monster = LOADER.get_monster(slug)
     action = next(a for a in monster.actions if a.slug == "spellcasting")
     activity = next(
         a
         for a in action.activities
-        if isinstance(a, CastActivity) and a.spell.uuid.endswith("phbsplGuidingBol")
+        if isinstance(a, CastActivity) and a.spell.uuid == spell.foundry_uuid
     )
-    spell = LOADER.get_spell("guiding-bolt")
     _resolve_monster_cast(
         live, combatant(live, "mon:foe"), combatant(live, REACTOR), action, activity, spell
     )
@@ -267,7 +299,8 @@ def test_spiritual_weapon_construct_attack_uses_one_shield_adjudication():
     assert live.rng.getstate() == expected.getstate()
 
 
-def test_legendary_spell_attack_uses_one_shield_adjudication():
+def test_legendary_spell_attack_uses_one_shield_adjudication(monkeypatch):
+    _bronze_dragon_with_admitted_attack(monkeypatch)
     handle, live = start(
         [reactor(ac=18)],
         seed=7,

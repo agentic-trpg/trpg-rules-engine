@@ -6,6 +6,13 @@ activity target planner. Callers own Action, Bonus Action, Reaction, slot,
 charge and feature-resource payment; delivery owns target planning and activity
 execution.
 
+Delivery eligibility is separate from execution admission. The shared
+[spell capability preflight](spell-execution-admission.md) rejects missing
+mandatory mechanics before payment even when target geometry is supported.
+For example, Slow's counted Cube planner remains supported, but its paid spell
+cast is deferred until the required action restrictions are implemented.
+The structural delivery audits below do not certify whole-spell execution.
+
 ```text
 Intent / monster plan / delegated cast
     -> immutable SpellDeliverySpec

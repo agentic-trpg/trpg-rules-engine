@@ -304,20 +304,30 @@ def test_repeated_area_child_keeps_source_identity_and_rechecks_recharge(loader)
 
 
 def test_monster_spell_area_emits_cast_then_area_then_individual_effects(loader):
-    spell = loader.get_spell("sleep")
+    from dnd5e_engine import orchestrator as orch
+
+    spell = loader.get_spell("weird")
     mage = loader.get_monster("mage")
     action = next(a for a in mage.actions if a.slug == "spellcasting")
     wrapper = action.activities[0].model_copy(update={"uses": UsesBlock(max="2")}, deep=True)
+    wrapper = wrapper.model_copy(
+        update={"spell": wrapper.spell.model_copy(update={"uuid": spell.foundry_uuid, "level": 9})}
+    )
     action = action.model_copy(update={"activities": [wrapper], "uses_per_day": 2}, deep=True)
     live, actor, target, _ = setup(loader, action, [(8, 5), (9, 5)], at=(0, 5))
     actor.spellcasting_ability = "int"
     actor.intelligence = 30
+    # Weird interleaves damage draws between saves; force both failed-save
+    # branches so this test keeps asserting per-target effect delivery.
+    for member in live.initiative:
+        if member.entity_type == "Character":
+            orch._update_combatant(live, member.entity_id, wisdom=-30)
     pre = len(live.event_log)
     _resolve_monster_cast(live, actor, target, action, wrapper, spell)
     later = live.event_log[pre:]
     assert isinstance(later[0], SpellCast)
     assert isinstance(later[1], AreaTargeted)
-    assert later[1].source_id == "sleep"
+    assert later[1].source_id == "weird"
     assert later[1].affected_ids == ["char:0", "char:1"]
     assert [e.target_id for e in events_of(live, SaveRolled)] == ["char:0", "char:1"]
     assert [e.effect.target_id for e in events_of(live, EffectApplied)] == ["char:0", "char:1"]

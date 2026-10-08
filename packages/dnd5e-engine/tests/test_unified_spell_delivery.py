@@ -23,7 +23,7 @@ from dnd5e_engine.lib_loader import set_lib_loader_for_tests
 from dnd5e_engine.live_spell_delivery import execute_spell_delivery, plan_spell_delivery
 from dnd5e_engine.spatial import cell_id
 from dnd5e_engine.specs import GridScene
-from dnd5e_engine.spell_delivery import SpellDeliverySpec
+from dnd5e_engine.spell_delivery import DeliveryPlanningError, SpellDeliverySpec
 from tests.c20_support import act, combatant, events, foe, start, wizard
 
 CASTER = "char:caster"
@@ -258,23 +258,23 @@ def _slow_setup(*, seed=19):
     )
 
 
-def test_slow_selects_six_creatures_inside_point_cube_away_from_caster(loader):
-    handle, live = _slow_setup()
-    act(
-        handle,
-        CASTER,
-        intent_type="cast_spell",
-        spell_id="slow",
-        slot_level=3,
-        target_zone_id="10,10",
-        target_ids=tuple(f"mon:{i}" for i in reversed(range(6))),
+def test_slow_delivery_selects_six_creatures_inside_point_cube_away_from_caster(loader):
+    _, live = _slow_setup()
+    before = (live.rng.getstate(), list(live.event_log), copy.deepcopy(live.actor_zone))
+    plan = plan_spell_delivery(
+        live,
+        combatant(live, CASTER),
+        loader.get_spell("slow"),
+        SpellDeliverySpec(
+            origin_cell="10,10", selected_target_ids=tuple(f"mon:{i}" for i in reversed(range(6)))
+        ),
     )
-    [area] = events(live, AreaTargeted)
-    assert (area.shape, area.size_ft, area.origin) == ("cube", 40, "10,10")
-    assert area.affected_ids == [f"mon:{i}" for i in range(6)]
-    assert area.excluded_ids == ["mon:6"]
-    assert [e.target_id for e in events(live, SaveRolled)] == area.affected_ids
-    assert live.spell_slots_by_entity[CASTER][3] == 0
+    [area] = plan.activities
+    assert (area.template.shape, area.template.size_ft, area.origin) == ("cube", 40, "10,10")
+    assert area.target_ids == tuple(f"mon:{i}" for i in range(6))
+    assert area.spared_ids == ("mon:6",)
+    assert (live.rng.getstate(), live.event_log, live.actor_zone) == before
+    assert live.spell_slots_by_entity[CASTER][3] == 1
 
 
 @pytest.mark.parametrize(
@@ -282,18 +282,17 @@ def test_slow_selects_six_creatures_inside_point_cube_away_from_caster(loader):
     [tuple(f"mon:{i}" for i in range(7)), ("mon:0", "mon:0"), ("mon:0", "mon:outside")],
 )
 def test_invalid_slow_selected_targets_preserve_payment_and_rng(loader, selection):
-    handle, live = _slow_setup()
+    _, live = _slow_setup()
     rng = live.rng.getstate()
-    act(
-        handle,
-        CASTER,
-        intent_type="cast_spell",
-        spell_id="slow",
-        slot_level=3,
-        target_zone_id="10,10",
-        target_ids=selection,
-    )
-    assert [e.reason for e in events(live, CastFailed)] == ["target_invalid"]
+    before = list(live.event_log)
+    with pytest.raises(DeliveryPlanningError):
+        plan_spell_delivery(
+            live,
+            combatant(live, CASTER),
+            loader.get_spell("slow"),
+            SpellDeliverySpec(origin_cell="10,10", selected_target_ids=selection),
+        )
+    assert live.event_log == before
     assert not events(live, SaveRolled)
     assert live.spell_slots_by_entity[CASTER][3] == 1
     assert combatant(live, CASTER).action_available
@@ -301,37 +300,39 @@ def test_invalid_slow_selected_targets_preserve_payment_and_rng(loader, selectio
 
 
 def test_slow_exclusions_only_remove_from_authoritative_counted_selection(loader):
-    handle, live = _slow_setup()
-    act(
-        handle,
-        CASTER,
-        intent_type="cast_spell",
-        spell_id="slow",
-        slot_level=3,
-        target_zone_id="10,10",
-        target_ids=("mon:2", "mon:0"),
-        excluded_target_ids=("mon:0",),
+    _, live = _slow_setup()
+    plan = plan_spell_delivery(
+        live,
+        combatant(live, CASTER),
+        loader.get_spell("slow"),
+        SpellDeliverySpec(
+            origin_cell="10,10",
+            selected_target_ids=("mon:2", "mon:0"),
+            excluded_target_ids=("mon:0",),
+        ),
     )
-    [area] = events(live, AreaTargeted)
-    assert area.affected_ids == ["mon:2"]
-    assert [e.target_id for e in events(live, SaveRolled)] == ["mon:2"]
+    [area] = plan.activities
+    assert area.target_ids == ("mon:2",)
+    assert "mon:0" in area.spared_ids
 
 
 @pytest.mark.parametrize("exclusion", ["mon:outside", "mon:unknown"])
 def test_slow_rejects_exclusions_outside_actual_geometry(loader, exclusion):
-    handle, live = _slow_setup()
+    _, live = _slow_setup()
     rng = live.rng.getstate()
-    act(
-        handle,
-        CASTER,
-        intent_type="cast_spell",
-        spell_id="slow",
-        slot_level=3,
-        target_zone_id="10,10",
-        target_ids=("mon:0",),
-        excluded_target_ids=(exclusion,),
-    )
-    assert [e.reason for e in events(live, CastFailed)] == ["target_invalid"]
+    before = list(live.event_log)
+    with pytest.raises(DeliveryPlanningError):
+        plan_spell_delivery(
+            live,
+            combatant(live, CASTER),
+            loader.get_spell("slow"),
+            SpellDeliverySpec(
+                origin_cell="10,10",
+                selected_target_ids=("mon:0",),
+                excluded_target_ids=(exclusion,),
+            ),
+        )
+    assert live.event_log == before
     assert live.spell_slots_by_entity[CASTER][3] == 1
     assert live.rng.getstate() == rng
 

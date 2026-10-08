@@ -323,8 +323,10 @@ def test_illegal_point_origin_spends_no_slot_action_or_rng(origin, reason):
 
 
 def test_stinking_cloud_uses_empty_point_and_keeps_origin_when_caster_moves():
+    from tests.test_spell_timed_activities import _resolve_payload
+
     handle, live = _combat(enemy_cell="8,2")
-    _cast(handle, "stinking-cloud", target_zone_id="8,3")
+    _resolve_payload(live, HERO, FOE, "stinking-cloud", origin="8,3")
     (area,) = live.persistent_areas.areas
     assert area.cast_origin == "8,3"
     _step(live, HERO, "1,1")

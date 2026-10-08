@@ -53,7 +53,40 @@ def _combat(seed=7, **kwargs):
 
 
 def _cast(handle, spell, **kwargs):
+    if spell in ("ensnaring-strike", "searing-smite", "stinking-cloud"):
+        # Exercise implemented lifecycle primitives, not complete paid spells.
+        _resolve_payload(orch._get_live(handle), HERO, FOE, spell, kwargs.get("slot_level"))
+        return
     act(handle, HERO, intent_type="cast_spell", spell_id=spell, target_id=FOE, **kwargs)
+
+
+def _resolve_payload(live, caster_id, target_id, slug, slot_level=None, *, origin=None):
+    from dnd5e_engine.activities.build_context import build_activity_context
+    from dnd5e_engine.timed_activities import resolve_spell_activities
+
+    spell = BundledAssetLoader().get_spell(slug)
+    caster = combatant(live, caster_id)
+    ctx = build_activity_context(
+        caster,
+        [combatant(live, target_id)],
+        rng=live.rng,
+        event_emitter=lambda e: orch._emit(live, e),
+        slot_level=slot_level or spell.level,
+        base_spell_level=spell.level,
+        spellcasting_ability=orch._resolve_caster_spellcasting_ability(caster) or "int",
+        concentration=spell.concentration,
+        source_passive_effects=list(spell.passive_effects),
+        spell_book={},
+        passive_damage_modifiers={},
+        save_modifiers={},
+    )
+    before = len(live.event_log)
+    ctx = resolve_spell_activities(
+        live, spell, ctx, area_origin=origin or live.actor_zone[target_id]
+    )
+    orch._fold_resolution_outcome(
+        live, caster, spell=spell, actx=ctx, pre_event_count=before, concentration_max_rounds=10
+    )
 
 
 def _end(live):
@@ -282,14 +315,7 @@ def test_new_concentration_ends_old_before_new_resolution_but_refusals_preserve_
 def test_self_applied_sleep_does_not_repeat_save_on_current_turn_end():
     """Self-inflicted Incapacitated ends Sleep's concentration immediately."""
     handle, live = _combat(wisdom=-30)
-    act(
-        handle,
-        HERO,
-        intent_type="cast_spell",
-        spell_id="sleep",
-        target_id=HERO,
-        excluded_target_ids=(),
-    )
+    _resolve_payload(live, HERO, HERO, "sleep")
     saves = len(events(live, SaveRolled))
     assert events(live, ConcentrationDropped)[-1].target_id == HERO
     assert not live.timed_activities.pending
@@ -478,7 +504,7 @@ def test_timed_start_damage_removes_summon_and_hands_off_to_next_actor():
     act(handle, "char:summoner", intent_type="cast_spell", spell_id="summon-dragon")
     spirit = next(iter(live.summons))
     act(handle, spirit, intent_type="pass")
-    act(handle, HERO, intent_type="cast_spell", spell_id="searing-smite", target_id=spirit)
+    _resolve_payload(live, HERO, spirit, "searing-smite")
     live.tracked_hp[spirit] = 1
     orch._update_combatant(live, spirit, hp_current=1)
     act(handle, HERO, intent_type="pass")

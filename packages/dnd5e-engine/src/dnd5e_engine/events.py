@@ -17,6 +17,7 @@ from dnd5e_srd_data.schema.common import ReactionTriggerKind
 from pydantic import BaseModel, Field
 
 from dnd5e_engine.movement import MovementMode
+from dnd5e_engine.spell_execution import ExecutionClass, ExecutionFailure
 from dnd5e_engine.types.effects import ActiveEffect
 
 # ── canonical closed-set aliases ────────────────────────────────────────────
@@ -753,6 +754,7 @@ class CastFailed(BaseModel):
     actor_id: str
     spell_id: str
     reason: CastFailedReason
+    execution_failure: ExecutionFailure | None = Field(default=None, exclude_if=lambda v: v is None)
 
 
 class SpellCast(BaseModel):
@@ -774,6 +776,7 @@ class SpellCast(BaseModel):
     material: str | None  # Spell.materials.value or None when empty
     material_consumed: bool
     material_cost_gp: int
+    execution_class: ExecutionClass | None = Field(default=None, exclude_if=lambda v: v is None)
 
 
 class ReactionTriggered(BaseModel):

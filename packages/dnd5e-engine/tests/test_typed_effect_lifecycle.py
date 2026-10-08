@@ -92,7 +92,7 @@ def test_failed_save_concentration_and_condition_without_metadata_never_register
 
 
 def test_dominate_person_has_no_fabricated_end_turn_save():
-    handle, live = start(
+    _, live = start(
         [
             wizard(
                 HERO,
@@ -106,13 +106,31 @@ def test_dominate_person_has_no_fabricated_end_turn_save():
         seed=4,
     )
     orch._update_combatant(live, TARGET, wisdom=-20)
-    act(
-        handle,
-        HERO,
-        intent_type="cast_spell",
-        spell_id="dominate-person",
-        target_id=TARGET,
+    # Test the typed lifecycle primitive, not a paid claim that domination
+    # control is implemented. Its public admission refusal is tested separately.
+    from dnd5e_engine.activities.build_context import build_activity_context
+    from dnd5e_engine.activities.resolver import resolve_activity
+
+    spell = BundledAssetLoader().get_spell("dominate-person")
+    caster = combatant(live, HERO)
+    before = len(live.event_log)
+    ctx = build_activity_context(
+        caster,
+        [combatant(live, TARGET)],
+        rng=live.rng,
+        event_emitter=lambda e: orch._emit(live, e),
         slot_level=5,
+        base_spell_level=5,
+        spellcasting_ability="int",
+        concentration=True,
+        source_passive_effects=list(spell.passive_effects),
+        spell_book={},
+        passive_damage_modifiers={},
+        save_modifiers={},
+    )
+    resolve_activity(spell.activities[0], ctx)
+    orch._fold_resolution_outcome(
+        live, caster, spell=spell, actx=ctx, pre_event_count=before, concentration_max_rounds=10
     )
     assert events(live, SaveRolled)[0].succeeded is False
     assert live.concentration_chain[HERO]

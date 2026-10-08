@@ -151,11 +151,13 @@ def test_concentration_finalize_cannot_create_anchor_for_disabled_caster(incapac
         set_lib_loader_for_tests(None)
 
 
-def test_nested_delegation_refreshes_child_spell_book_and_parent_identity():
+def test_nested_delegation_refreshes_child_spell_book_and_parent_identity(monkeypatch):
     from dnd5e_srd_data.schema.common import CastActivity, CastSpellBlock
 
+    from dnd5e_engine import spell_execution
     from dnd5e_engine.events import DamageApplied
     from dnd5e_engine.lib_loader import set_lib_loader_for_tests
+    from dnd5e_engine.spell_execution import ActivityReview
     from tests.c20_support import act, events, pc, start
 
     bundled = BundledAssetLoader()
@@ -170,6 +172,15 @@ def test_nested_delegation_refreshes_child_spell_book_and_parent_identity():
             ]
         }
     )
+    # This synthetic wrapper has an explicit reviewed contract; production
+    # unknown activities still fail closed (covered by admission regressions).
+    reviews = dict(spell_execution.spell_reviews())
+    reviews[fireball.foundry_uuid] = reviews[fireball.foundry_uuid].model_copy(
+        update={
+            "activities": (ActivityReview(activity_id="nested-cast", kind="cast", role="cast"),)
+        }
+    )
+    monkeypatch.setattr(spell_execution, "spell_reviews", lambda: reviews)
 
     class Overlay(BundledAssetLoader):
         def get_spell_by_uuid(self, uuid):

@@ -20,6 +20,7 @@ from dnd5e_engine import (
 )
 from dnd5e_engine.lib_loader import get_lib_loader
 from dnd5e_engine.orchestrator import get_live
+from dnd5e_engine.spell_execution import admission_failure, spell_reviews
 
 # A genuine bundled monster slug — canonical/monsters/ ships goblin-warrior.json
 # (there is no bare "goblin.json"). The smoke asserts the corpus resolves a slug
@@ -31,6 +32,11 @@ def _check_corpus() -> None:
     loader = get_lib_loader()  # BundledAssetLoader → reads bundled canonical/
     monster = loader.get_monster(_BUNDLED_MONSTER_SLUG)
     assert monster is not None, f"bundled corpus did not resolve monster {_BUNDLED_MONSTER_SLUG!r}"
+    # Admission is package data, so editable installs alone cannot prove it ships.
+    assert len(spell_reviews()) == 339
+    spell = loader.get_spell("fireball")
+    assert spell is not None
+    assert admission_failure(spell, spell.activities) is None
 
 
 async def _run_grid_combat() -> None:

@@ -657,7 +657,7 @@ def test_charmed_actor_may_target_the_charmer_with_a_beneficial_spell() -> None:
     # charmer is exactly the carve-out the ruling preserves.
     start = _start(
         "c12-charm-beneficial",
-        [_hero(spells_known=["guidance"])],
+        [_hero(spells_known=["message"])],
         [_foe()],
         [_charm("char:hero", "mon:foe")],
     )
@@ -665,7 +665,7 @@ def test_charmed_actor_may_target_the_charmer_with_a_beneficial_spell() -> None:
         submit_player_intent(
             start.handle,
             actor_id="char:hero",
-            intent=PlayerIntent(intent_type="cast_spell", spell_id="guidance", target_id="mon:foe"),
+            intent=PlayerIntent(intent_type="cast_spell", spell_id="message", target_id="mon:foe"),
         )
     )
     live = _get_live(start.handle)

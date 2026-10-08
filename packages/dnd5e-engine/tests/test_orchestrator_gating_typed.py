@@ -21,6 +21,7 @@ from datetime import date
 
 import pytest
 from dnd5e_srd_data import (
+    BundledAssetLoader,
     MemoryAssetLoader,
     Provenance,
     ReviewState,
@@ -33,7 +34,6 @@ from dnd5e_srd_data.schema.spell import (
     Spell,
     SpellRange,
     SpellRangeUnits,
-    SpellSchool,
 )
 
 from dnd5e_engine import PlayerIntent
@@ -102,17 +102,15 @@ def _spell(
     range_value: int | None = 120,
     range_units: SpellRangeUnits = SpellRangeUnits.FEET,
 ) -> Spell:
-    return Spell(
-        slug=slug,
-        name=slug.replace("-", " ").title(),
-        description="A spell.",
-        level=level,
-        school=SpellSchool.EVOCATION,
-        casting_time=CastingTime(unit=casting_unit),
-        range=SpellRange(units=range_units, value=range_value),
-        duration={"units": "inst"},  # type: ignore[arg-type]
-        provenance=_provenance(),
-        review=ReviewState(),
+    # Budget tests need a real admitted payload, not an empty paid spell.
+    spell = BundledAssetLoader().get_spell(slug)
+    assert spell is not None
+    return spell.model_copy(
+        update={
+            "level": level,
+            "casting_time": CastingTime(unit=casting_unit),
+            "range": SpellRange(units=range_units, value=range_value),
+        }
     )
 
 
@@ -376,14 +374,15 @@ def test_bonus_action_spell_keeps_turn_live():
     """
     set_lib_loader_for_tests(
         MemoryAssetLoader(
-            spells=[_spell("healing-word", level=1, casting_unit=CastingTimeUnit.BONUS)]
+            spells=[_spell("healing-word", level=1, casting_unit=CastingTimeUnit.BONUS)],
+            classes=[BundledAssetLoader().get_class("cleric")],
         )
     )
 
     async def _run():
         start = await start_combat(
             session_id="sess-bonus",
-            party=_party(spell_slots={1: 2}),
+            party=_party(spell_slots={1: 2}, class_slug="cleric", wisdom=16),
             encounter=_encounter(),
             grid_scene=_topology(),
             rng_seed=1,

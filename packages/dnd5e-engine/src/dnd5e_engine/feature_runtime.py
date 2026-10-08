@@ -16,6 +16,7 @@ from typing import Literal, get_args
 from dnd5e_srd_data.loader import AssetLoader
 from dnd5e_srd_data.schema.common import (
     Activity,
+    AttackActivity,
     CheckActivity,
     DamageActivity,
     HealActivity,
@@ -24,6 +25,7 @@ from dnd5e_srd_data.schema.common import (
     UtilityActivity,
 )
 from dnd5e_srd_data.schema.feature import Feature, FeatureRuntimeOperation, FeatureTargetRule
+from dnd5e_srd_data.schema.spell import Spell
 
 from dnd5e_engine.activities.arithmetic import parse_expression, scalar
 from dnd5e_engine.activities.check import check_dc, check_skill_ability
@@ -266,12 +268,19 @@ def resource_payments(
 
 
 def validate_feature_formulas(
-    feature: Feature, activity: Activity, ctx: ActivityResolutionContext
+    feature: Feature | Spell, activity: Activity, ctx: ActivityResolutionContext
 ) -> None:
     """Validate every executable branch before any draws, including riders."""
     ability = ctx.spellcasting_ability
     parts = []
-    if isinstance(activity, SaveActivity):
+    if isinstance(activity, AttackActivity):
+        from dnd5e_engine.activities.attack import _governing_ability as attack_ability
+
+        ability = attack_ability(activity, ctx, None)
+        if activity.attack.bonus and ctx.attack_bonus_override is None:
+            validate_expression(resolve_roll_data(activity.attack.bonus, ctx, ability=ability))
+        parts = activity.damage.parts
+    elif isinstance(activity, SaveActivity):
         if len(activity.save.ability) != 1:
             raise FeaturePreflightError("feature save requires exactly one ability")
         _resolve_save_ability(activity)

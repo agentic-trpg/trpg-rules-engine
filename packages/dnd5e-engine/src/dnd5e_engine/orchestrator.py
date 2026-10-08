@@ -178,6 +178,7 @@ from dnd5e_engine.events import (
     IntentType,
     LegendaryActionUsed,
     LegendaryResistanceUsed,
+    MoveFailed,
     ReactionTriggered,
     RechargeRolled,
     RoundStarted,
@@ -515,6 +516,7 @@ class IntentRejectedError(CombatSeamError):
     """
 
     RejectionReason = Literal[
+        "spell_required",
         "action_restricted",
         "invalid_spell_activation",
         "actor_not_in_initiative",
@@ -3124,6 +3126,8 @@ class _LiveCombat:
     # A host may replace the default loader for future combats. This combat
     # keeps the exact asset source it hydrated from throughout its lifetime.
     ruleset_loader: AssetLoader = field(default_factory=get_lib_loader, repr=False)
+    execution_serial: int = 0
+    transaction_active: bool = field(default=False, repr=False)
     # C18 §Monster action economy — SRD 5.2 stat-block trait "Sunlight
     # Sensitivity": whole-scene sunlight flag, projected from
     # ``GridScene.sunlight`` at ``start_combat``. Read by ``_monster_context_
@@ -9061,6 +9065,11 @@ def _validate_intent_preconditions(
     return current
 
 
+def _reject_missing_spell_identity(intent: PlayerIntent) -> None:
+    if intent.intent_type == "cast_spell" and not intent.spell_id:
+        raise IntentRejectedError("spell_required", "cast_spell requires a spell identity")
+
+
 def _handle_move(live: _LiveCombat, current: Combatant, intent: PlayerIntent) -> None:
     """Typed movement intent into the deterministic physical movement layer."""
     live_movement.handle_move(live, current, intent)
@@ -11744,6 +11753,9 @@ def _execution_transaction(live: _LiveCombat) -> Iterator[None]:
     events and legal costs. Unexpected failures (including cancellation) escape
     unchanged after rollback. Host listeners observe only committed events.
     """
+    if live.transaction_active:
+        yield
+        return
     queue = live.event_queue
     listeners = live.event_listeners
     original_rng = live.rng
@@ -11760,6 +11772,7 @@ def _execution_transaction(live: _LiveCombat) -> Iterator[None]:
     buffered: asyncio.Queue[CombatEvent | None] = asyncio.Queue()
     live.event_queue = buffered
     live.event_listeners = []
+    live.transaction_active = True
     try:
         with scoped_lib_loader(live.ruleset_loader):
             yield
@@ -11771,11 +11784,20 @@ def _execution_transaction(live: _LiveCombat) -> Iterator[None]:
     finally:
         live.event_queue = queue
         live.event_listeners = listeners
+        live.transaction_active = False
     committed = []
     while not buffered.empty():
         event = buffered.get_nowait()
         committed.append(event)
         queue.put_nowait(event)
+    # A pure typed refusal publishes its event without changing authoritative
+    # gameplay state. The event_count receipt still identifies that publication.
+    if not committed or any(
+        not isinstance(event, (CastFailed, AttackFailed, MoveFailed)) for event in committed
+    ):
+        live.execution_serial += 1
+    if live.final_outcome is not None and snapshot.final_outcome is None:
+        _keep_ended(live)
     # Publication is complete before notifying host observers. Their external
     # side effects cannot be rolled back; an observer error is post-commit.
     for event in committed:
@@ -11810,10 +11832,13 @@ async def submit_player_intent(
     except FeaturePreflightError:
         if not rider_refused:
             raise
-        _emit(
-            live,
-            AttackFailed(actor_id=actor_id, target_id=intent.target_id, reason="unsupported_rider"),
-        )
+        with _execution_transaction(live):
+            _emit(
+                live,
+                AttackFailed(
+                    actor_id=actor_id, target_id=intent.target_id, reason="unsupported_rider"
+                ),
+            )
 
 
 async def _submit_player_intent(
@@ -11838,6 +11863,7 @@ async def _submit_player_intent(
     from dnd5e_engine.action_policy import validate_grant
 
     validate_grant(live, current, intent)
+    _reject_missing_spell_identity(intent)
     if intent.intent_type in ("dash", "disengage", "hide", "activate_spell", "move_mark"):
         from dnd5e_engine.action_policy import enforce
 
@@ -13076,7 +13102,10 @@ def _project_outcome(live: _LiveCombat) -> CombatOutcome:
 
 async def end_combat(handle: CombatHandle) -> EndCombatResult:
     """Close a combat using its original ruleset; repeated closes are idempotent."""
-    with scoped_lib_loader(_get_live(handle).ruleset_loader):
+    live = _get_live(handle)
+    if live.ended and live.final_outcome is not None:
+        return await _end_combat(handle)
+    with _execution_transaction(live):
         return await _end_combat(handle)
 
 
@@ -13101,18 +13130,14 @@ async def _end_combat(handle: CombatHandle) -> EndCombatResult:
         )
 
     outcome = _project_outcome(live)
-    end_events: list[CombatEvent] = []
-    live.event_listeners.append(end_events.append)
-    try:
-        _emit(live, CombatEnded(reason=outcome.ended_reason))
-    finally:
-        live.event_listeners.remove(end_events.append)
+    start_index = len(live.event_log)
+    _emit(live, CombatEnded(reason=outcome.ended_reason))
+    end_events = live.event_log[start_index:]
     # Sentinel to terminate any active ``narration_events`` consumers.
     live.event_queue.put_nowait(None)
 
     live.ended = True
     live.final_outcome = outcome
-    _keep_ended(live)
     # Re-snapshot after CombatEnded emission in case any listener mutated
     # the active_effects registry (e.g. expire handler).
     surviving = tuple(eff for target_list in live.active_effects.values() for eff in target_list)

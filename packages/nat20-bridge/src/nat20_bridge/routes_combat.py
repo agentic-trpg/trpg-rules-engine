@@ -10,29 +10,18 @@ internal ``asyncio.Queue``, drainable only through the public
 ``narration_events(handle)`` async iterator (it terminates only at
 ``end_combat``, when the engine pushes a ``None`` sentinel).
 
-So each combat gets one persistent background collector task, spawned right
-after ``start_combat`` (see ``_start_collector``), that does:
+Each combat gets one persistent background collector task after ``start_combat``:
 
     async for event in narration_events(handle):
         state.events_log[cid].append(event)
 
-and runs for the combat's whole lifetime. Because the collector only wakes
-up when the event loop schedules it, a route handler that just awaited an
-engine call (which synchronously queued events via ``_emit`` during that
-await) must yield control back to the loop before the collector's appended
-rows are visible. ``_pump_until_stable`` does exactly that: it awaits
-``asyncio.sleep(0)`` in a bounded loop (100 iterations) until
-``events_log[cid]``'s length stops growing for two consecutive checks.
-
-Each route captures ``len(events_log[cid])`` before its engine call and
-slices the delta after pumping, so a response only reports events produced
-by that one request — not the whole combat's history.
-
-This is the "DECISION" path from the design brief; it was verified to work
-under ``TestClient`` because httpx's ``TestClient`` runs the whole ASGI app
-(including any tasks it spawns) on a single event loop for the lifetime of
-the client, so a collector task created during one request is still alive
-and pumping during the next.
+It runs for the combat's lifetime. The adapter holds one combat lock across
+execution, draining and receipt publication. The public authoritative
+``event_count`` defines both the request's starting index and completion target;
+the collector must reach it before a response can contain that request's delta.
+This remains correct after an earlier response/drain failure. Bounded pumping
+fails explicitly rather than reporting an incomplete delta. End awaits the
+collector's sentinel shutdown. Cancellation cannot interrupt the lock-owned task.
 """
 
 from __future__ import annotations
@@ -40,6 +29,7 @@ from __future__ import annotations
 import asyncio
 import random
 import re
+import secrets
 from typing import Any
 
 from dnd5e_engine import (
@@ -49,21 +39,33 @@ from dnd5e_engine import (
     GridScene,
     PlayerIntent,
     advance_monster_turn,
+    apply_strong_wind,
     cell_id,
+    drain_pending_events,
     end_combat,
     get_live,
     make_build_spec,
+    mutate_combat_object,
     narration_events,
+    register_combat_objects,
     start_combat,
     submit_player_intent,
 )
 from dnd5e_engine.lib_loader import scoped_lib_loader
-from dnd5e_engine.movement import MovementMode
-from dnd5e_engine.orchestrator import IntentRejectedError, UnknownHandleError
-from dnd5e_engine.spatial import canonical_cell_id
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, field_validator
+from dnd5e_engine.orchestrator import UnknownHandleError
+from fastapi import APIRouter, Header, HTTPException
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ConfigDict, Field
 
+from nat20_bridge.combat_execution import execute
+from nat20_bridge.combat_requests import (
+    IntentRequest,
+    MutateObjectRequest,
+    MutationRequest,
+    RegisterObjectsRequest,
+    WindRequest,
+)
 from nat20_bridge.models import PartyValidateRequest, resolve_seed, slugify
 from nat20_bridge.narrate import narrate
 from nat20_bridge.sheet import derive_sheet
@@ -96,32 +98,22 @@ def _ability_mod(score: int) -> int:
 
 
 class _CombatStartRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     party: list[PartyValidateRequest]
     monsters: list[str]
     seed: int | None = None
+    request_id: str | None = Field(default=None, strict=True, min_length=1, max_length=128)
 
 
-class _IntentRequest(BaseModel):
-    actor_id: str
-    intent_type: str
-    spell_id: str | None = None
-    target_id: str | None = None
-    item_id: str | None = None
-    weapon_id: str | None = None
-    feature_id: str | None = None
-    target_zone_id: str | None = None
-    movement_mode: MovementMode = "walk"
-
-    @field_validator("target_zone_id")
-    @classmethod
-    def _canonical_target_zone(cls, value: str | None) -> str | None:
-        return None if value is None else canonical_cell_id(value)
+_IntentRequest = IntentRequest
 
 
 def _get_handle(state: BridgeState, cid: str) -> CombatHandle:
     handle = state.combats.get(cid)
     if handle is None:
-        raise HTTPException(status_code=404, detail=f"unknown combat: {cid!r}")
+        raise HTTPException(
+            status_code=404, detail={"reason": "unknown_combat", "status": "not_executed"}
+        )
     return handle
 
 
@@ -144,13 +136,24 @@ async def _pump_until_stable(state: BridgeState, cid: str) -> None:
     for _ in range(_PUMP_MAX_ITERATIONS):
         await asyncio.sleep(0)
         cur_len = len(state.events_log.get(cid, []))
+        handle = state.combats.get(cid)
+        collector = state.collectors.get(cid)
+        if handle is not None and collector is not None and collector.done():
+            # A short-lived ASGI host can close its event loop between requests.
+            # Only after that collector has stopped, use the Engine's public
+            # synchronous drain under the same combat lock; never two consumers.
+            state.events_log[cid].extend(drain_pending_events(handle))
+            cur_len = len(state.events_log[cid])
+        if handle is not None and cur_len == get_live(handle).event_count:
+            return
         if cur_len == prev_len:
             stable += 1
-            if stable >= _PUMP_STABLE_CHECKS:
+            if stable >= _PUMP_STABLE_CHECKS and handle is None:
                 return
         else:
             stable = 0
         prev_len = cur_len
+    raise RuntimeError("combat event collector did not reach the authoritative event count")
 
 
 def _envelope(
@@ -243,19 +246,6 @@ def _build_encounter_specs(
 
 async def _start_route(state: BridgeState, req: _CombatStartRequest) -> dict[str, Any]:
     seed = resolve_seed(req.seed)
-    # Legacy dice paths (roll_dice_str et al.) read the stdlib global
-    # `random` module rather than an injectable RNG — see app.py's
-    # `_do_roll` for the same rationale. Seeding it here (in addition to
-    # the engine's own `rng_seed`-threaded RNG) is what makes the
-    # same-seed-same-narration test reproducible end to end.
-    # KNOWN LIMITATION (accepted, tracked in BACKLOG under Task 15): this
-    # mutates process-global state, so two `/v1/combat` requests racing
-    # concurrently (different seeds) can have one request's global reseed
-    # clobber the other's before its dice resolve — not safe under
-    # concurrent load. Fine for the current single-connection ST-bridge
-    # usage; a real fix needs the legacy dice paths to accept an injectable
-    # RNG instead of reading the global module.
-    random.seed(seed)
     rng = random.Random(seed)
 
     party_specs, party_names = _build_party_specs(state, req.party, rng)
@@ -269,7 +259,7 @@ async def _start_route(state: BridgeState, req: _CombatStartRequest) -> dict[str
     state.next_combat_id += 1
     grid_scene = GridScene(width=12, height=12)
     result = await start_combat(
-        session_id=cid,
+        session_id=f"bridge:{state.instance_id}:{cid}",
         party=party_specs,
         encounter=encounter_specs,
         grid_scene=grid_scene,
@@ -289,26 +279,16 @@ async def _start_route(state: BridgeState, req: _CombatStartRequest) -> dict[str
 
 
 def _player_intent_from_request(req: _IntentRequest) -> PlayerIntent:
-    payload = {
-        k: v
-        for k, v in req.model_dump().items()
-        if k not in ("actor_id", "intent_type") and v is not None
-    }
-    return PlayerIntent(intent_type=req.intent_type, **payload)  # type: ignore[arg-type]
+    return req.intent()
 
 
 async def _intent_route(state: BridgeState, cid: str, req: _IntentRequest) -> dict[str, Any]:
     handle = _get_handle(state, cid)
     names = state.names.get(cid, {})
-    start_idx = len(state.events_log.get(cid, []))
+    start_idx = get_live(handle).event_count
     player_intent = _player_intent_from_request(req)
 
-    try:
-        await submit_player_intent(handle, req.actor_id, player_intent)
-    except IntentRejectedError as exc:
-        raise HTTPException(status_code=409, detail=exc.reason) from exc
-    except UnknownHandleError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    await submit_player_intent(handle, req.actor_id, player_intent)
 
     await _pump_until_stable(state, cid)
     events = state.events_log.get(cid, [])[start_idx:]
@@ -319,14 +299,9 @@ async def _intent_route(state: BridgeState, cid: str, req: _IntentRequest) -> di
 async def _advance_monster_route(state: BridgeState, cid: str) -> dict[str, Any]:
     handle = _get_handle(state, cid)
     names = state.names.get(cid, {})
-    start_idx = len(state.events_log.get(cid, []))
+    start_idx = get_live(handle).event_count
 
-    try:
-        await advance_monster_turn(handle)
-    except IntentRejectedError as exc:
-        raise HTTPException(status_code=409, detail=exc.reason) from exc
-    except UnknownHandleError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    await advance_monster_turn(handle)
 
     await _pump_until_stable(state, cid)
     events = state.events_log.get(cid, [])[start_idx:]
@@ -369,6 +344,7 @@ async def _view_route(state: BridgeState, cid: str) -> dict[str, Any]:
         "order": order,
         "ended": live_view.ended,
         "grid": grid.model_dump() if grid is not None else None,
+        "state": jsonable_encoder(live_view, custom_encoder={set: sorted, frozenset: sorted}),
     }
 
 
@@ -387,15 +363,14 @@ async def _end_route(state: BridgeState, cid: str) -> dict[str, Any]:
     names = state.names.get(cid, {})
     try:
         result = await end_combat(handle)
-    except UnknownHandleError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-
-    await _pump_until_stable(state, cid)
-    await _stop_collector(state, cid)
-    state.combats.pop(cid, None)
-    # Unlike names/events_log/seeds (kept for post-mortem reads), nothing can
-    # reach a grid once the combat is popped — the view route 404s first.
-    state.grids.pop(cid, None)
+    finally:
+        if get_live(handle).final_outcome is not None:
+            try:
+                await _pump_until_stable(state, cid)
+            finally:
+                await _stop_collector(state, cid)
+                state.combats.pop(cid, None)
+                state.grids.pop(cid, None)
 
     return {
         "outcome": result.outcome.model_dump(),
@@ -403,33 +378,154 @@ async def _end_route(state: BridgeState, cid: str) -> dict[str, Any]:
     }
 
 
+def _host_owner(state: BridgeState, authorization: str | None) -> str:
+    supplied = (authorization or "").removeprefix("Bearer ")
+    for token, owner in state.host_tokens.items():
+        if (
+            token
+            and owner
+            and authorization
+            and authorization.startswith("Bearer ")
+            and secrets.compare_digest(token.encode(), supplied.encode())
+        ):
+            return owner
+    raise HTTPException(
+        status_code=403, detail={"reason": "host_forbidden", "status": "not_executed"}
+    )
+
+
 def build_combat_router(state: BridgeState) -> APIRouter:
     router = APIRouter()
 
     @router.post("/v1/combat")
-    async def start(req: _CombatStartRequest) -> dict[str, Any]:
-        async with state.ruleset_lock:
-            assert state.loader is not None
-            with scoped_lib_loader(state.loader):
-                return await _start_route(state, req)
+    async def start(req: _CombatStartRequest) -> JSONResponse:
+        async def opening() -> dict[str, Any]:
+            async with state.ruleset_lock:
+                assert state.loader is not None
+                with scoped_lib_loader(state.loader):
+                    return await _start_route(state, req)
+
+        return await execute(
+            state,
+            "__start__",
+            "start",
+            req.model_dump(mode="json"),
+            req.request_id,
+            opening,
+            lambda: asyncio.sleep(0),
+        )
 
     @router.post("/v1/combat/{cid}/intent")
-    async def intent(cid: str, req: _IntentRequest) -> dict[str, Any]:
-        return await _intent_route(state, cid, req)
+    async def intent(cid: str, req: _IntentRequest) -> JSONResponse:
+        return await execute(
+            state,
+            cid,
+            "intent",
+            req.model_dump(mode="json"),
+            req.request_id,
+            lambda: _intent_route(state, cid, req),
+            lambda: _pump_until_stable(state, cid),
+        )
 
     @router.post("/v1/combat/{cid}/advance-monster")
-    async def advance_monster(cid: str) -> dict[str, Any]:
-        return await _advance_monster_route(state, cid)
+    async def advance_monster(cid: str, req: MutationRequest | None = None) -> JSONResponse:
+        req = req or MutationRequest()
+        return await execute(
+            state,
+            cid,
+            "advance",
+            req.model_dump(mode="json"),
+            req.request_id,
+            lambda: _advance_monster_route(state, cid),
+            lambda: _pump_until_stable(state, cid),
+        )
 
     @router.get("/v1/combat/{cid}")
     async def view(cid: str) -> dict[str, Any]:
-        return await _view_route(state, cid)
+        async with state.combat_locks.setdefault(cid, asyncio.Lock()):
+            return await _view_route(state, cid)
 
     @router.post("/v1/combat/{cid}/end")
-    async def end(cid: str) -> dict[str, Any]:
-        return await _end_route(state, cid)
+    async def end(cid: str, req: MutationRequest | None = None) -> JSONResponse:
+        req = req or MutationRequest()
+        return await execute(
+            state,
+            cid,
+            "end",
+            req.model_dump(mode="json"),
+            req.request_id,
+            lambda: _end_route(state, cid),
+            lambda: _pump_until_stable(state, cid),
+        )
 
+    _add_host_routes(state, router)
     return router
+
+
+def _add_host_routes(state: BridgeState, router: APIRouter) -> None:
+    @router.post("/v1/combat/{cid}/host/objects")
+    async def objects(
+        cid: str, req: RegisterObjectsRequest, authorization: str | None = Header(default=None)
+    ) -> JSONResponse:
+        owner = _host_owner(state, authorization)
+
+        async def register() -> dict[str, Any]:
+            await register_combat_objects(
+                _get_handle(state, cid), owner_id=owner, objects=tuple(req.objects)
+            )
+            return {}
+
+        return await execute(
+            state,
+            cid,
+            "register_objects",
+            req.model_dump(mode="json") | {"owner": owner},
+            req.request_id,
+            register,
+            lambda: _pump_until_stable(state, cid),
+        )
+
+    @router.post("/v1/combat/{cid}/host/object")
+    async def object_mutation(
+        cid: str, req: MutateObjectRequest, authorization: str | None = Header(default=None)
+    ) -> JSONResponse:
+        owner = _host_owner(state, authorization)
+
+        async def mutate() -> dict[str, Any]:
+            await mutate_combat_object(
+                _get_handle(state, cid), owner_id=owner, mutation=req.mutation
+            )
+            return {}
+
+        return await execute(
+            state,
+            cid,
+            "mutate_object",
+            req.model_dump(mode="json") | {"owner": owner},
+            req.request_id,
+            mutate,
+            lambda: _pump_until_stable(state, cid),
+        )
+
+    @router.post("/v1/combat/{cid}/host/strong-wind")
+    async def wind(
+        cid: str, req: WindRequest, authorization: str | None = Header(default=None)
+    ) -> JSONResponse:
+        owner = _host_owner(state, authorization)
+
+        async def apply() -> dict[str, Any]:
+            await apply_strong_wind(_get_handle(state, cid), req.wind)
+            return {}
+
+        return await execute(
+            state,
+            cid,
+            "strong_wind",
+            req.model_dump(mode="json") | {"owner": owner},
+            req.request_id,
+            apply,
+            lambda: _pump_until_stable(state, cid),
+        )
 
 
 __all__ = ["build_combat_router"]

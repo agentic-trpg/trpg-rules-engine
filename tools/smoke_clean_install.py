@@ -20,7 +20,7 @@ def main() -> None:
         def run(*command: str) -> None:
             subprocess.run(command, cwd=work, env=env, check=True)
 
-        for package in ("dnd5e-srd-data", "dnd5e-engine"):
+        for package in ("dnd5e-srd-data", "dnd5e-engine", "nat20-bridge"):
             run(
                 "uv",
                 "build",
@@ -40,8 +40,10 @@ def main() -> None:
             "--project",
             str(ROOT),
             "--package",
-            "dnd5e-engine",
+            "nat20-bridge",
             "--no-dev",
+            "--extra",
+            "dev",
             "--no-emit-workspace",
             "--format",
             "requirements-txt",
@@ -51,8 +53,8 @@ def main() -> None:
         run("uv", "venv", str(work / "venv"))
         python = work / "venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
         wheels = sorted((work / "dist").glob("*.whl"))
-        if len(wheels) != 2:
-            raise RuntimeError(f"Expected exactly two wheels, got {wheels}")
+        if len(wheels) != 3:
+            raise RuntimeError(f"Expected exactly three wheels, got {wheels}")
         run(
             "uv",
             "pip",
@@ -67,13 +69,17 @@ def main() -> None:
             str(python),
             "-I",
             "-c",
-            "import dnd5e_engine, dnd5e_srd_data; from pathlib import Path; "
+            "import dnd5e_engine, dnd5e_srd_data, nat20_bridge; from pathlib import Path; "
             "assert all('site-packages' in Path(m.__file__).parts "
-            "for m in (dnd5e_engine, dnd5e_srd_data)); "
-            "print('Both packages imported from installed wheels')",
+            "for m in (dnd5e_engine, dnd5e_srd_data, nat20_bridge)); "
+            "print('All three packages imported from installed wheels')",
         )
         run(str(python), "-I", str(ROOT / "packages/dnd5e-engine/scripts/_smoke_grid_combat.py"))
-        print("SMOKE PASSED: isolated wheels, locked dependencies, public grid combat", flush=True)
+        run(str(python), "-I", str(ROOT / "tools/smoke_bridge_http.py"))
+        print(
+            "SMOKE PASSED: isolated wheels, locked dependencies, public grid + Bridge HTTP",
+            flush=True,
+        )
 
 
 if __name__ == "__main__":

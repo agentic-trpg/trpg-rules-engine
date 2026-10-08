@@ -69,6 +69,9 @@ All routes are under `/v1`. Requests and responses are JSON.
 | `POST /v1/combat/{cid}/advance-monster` | Let a monster take its turn. |
 | `GET /v1/combat/{cid}` | Current combat view: round, initiative order, HP, conditions, whose turn it is, and the combat's `grid` (its `GridScene`). |
 | `POST /v1/combat/{cid}/end` | Close the combat and return its final `CombatOutcome`. |
+| `POST /v1/combat/{cid}/host/objects` | Authorized Host registers typed combat object carriers. |
+| `POST /v1/combat/{cid}/host/object` | Authorized Host attests a completed object operation. |
+| `POST /v1/combat/{cid}/host/strong-wind` | Authorized Host attests strong wind cells. |
 | `GET /v1/srd/{category}` | List slugs in a content category (`items`, `monsters`, `spells`, `species`, `classes`, `subclasses`, `backgrounds`, `feats`, `features`), optionally filtered by a substring query (`?q=`). |
 | `GET /v1/srd/{category}/{slug}` | Fetch one canonical (or homebrew) entry by slug. |
 | `POST /v1/homebrew/{category}` | Import a raw homebrew JSON entry into that category (see below). |
@@ -80,6 +83,16 @@ Combat and content routes read through the same overlay loader, so any
 homebrew entry you've imported is visible everywhere a canonical slug would
 be (`/v1/combat` monster/party lookups, `/v1/srd/...` reads, etc.) without
 restarting the process.
+
+The [Engine/Bridge parity matrix](dev/bridge-intent-parity.md) specifies all 33
+intent fields and 21 intent types, full public live-state discovery under `state`,
+strict JSON errors, Host credential configuration and request-ID semantics. Supply
+a stable `request_id` when retrying any mutation. Calls without one retain legacy
+best-effort behavior; Host operations require an ID. Receipts survive HTTP
+cancellation and post-commit observer/response failures for the life of this
+process, including an ended combat. Different app instances use distinct Engine
+handle namespaces; each combat has a serialized mutation/read boundary and its
+own RNG. No process-global dice reseeding is used.
 
 Import, replacement, deletion and item forging return `409` while this bridge
 has an open combat. End every combat with `/v1/combat/{cid}/end` before updating

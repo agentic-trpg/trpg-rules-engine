@@ -39,15 +39,8 @@ from nat20_bridge.state import BridgeState
 
 def _do_roll(req: _RollRequest) -> dict[str, Any]:
     seed = resolve_seed(req.seed)
-    # `roll_dice_str` is the engine's standalone narrator-time dice seam
-    # (rules/effects.py) — it draws from the stdlib global `random` module
-    # by design ("Public test seam: callers monkeypatch this symbol (or
-    # random.randint) for determinism"), not an injectable `random.Random`.
-    # Seeding the global module is the sanctioned way to make this call
-    # reproducible.
-    random.seed(seed)
     try:
-        total = roll_dice_str(req.dice)
+        total = roll_dice_str(req.dice, rng=random.Random(seed))
     except ValueError as exc:
         raise HTTPException(
             status_code=422, detail=f"invalid dice expression {req.dice!r}: {exc}"
@@ -78,8 +71,8 @@ def _do_check(req: _CheckRequest) -> dict[str, Any]:
         dc=req.dc,
         advantage=req.advantage,
         disadvantage=req.disadvantage,
+        rng=random.Random(seed),
     )
-    random.seed(seed)
     try:
         result = resolve_check(spec)
     except ValueError as exc:

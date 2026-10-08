@@ -78,6 +78,9 @@ and dispatch on main with `deploy=true`. Automatic documentation validation uses
 strict build and never calls Pages. `make docs` builds locally; `make smoke` exercises
 fresh data/engine wheels against locked third-party dependencies without editable
 installs, PYTHONPATH, or the Unix-only venv activation assumed by the older package script.
+The B9 smoke also builds/installs the Bridge wheel, exports its locked validation
+extra (HTTP TestClient dependencies), and executes actual HTTP object spell casts,
+retries, cover and movement. The original B6/B7 grid-combat probes remain intact.
 
 ## Audit and measurements
 

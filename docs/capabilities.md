@@ -78,6 +78,15 @@ without failing CI.
 
 ## Spells
 
+B9 exposes the current PlayerIntent contract through strict JSON HTTP, including
+effect choices, area placement, ongoing source activation, Haste grants and object
+carriers. Public discovery, serialized mutations and process-local request receipts
+let an Agent retry a committed command safely. Host object/wind operations require
+an explicitly configured credential/owner binding. Opening build options, direct
+legendary commands and durable/distributed receipts remain partial or unexposed.
+The [tested parity matrix](dev/bridge-intent-parity.md) lists every field/intent and
+the error, authorization and persistence boundaries. Admission counts are unchanged.
+
 Combat spell execution now requires a shared, pure admission preflight before
 payment, concentration replacement or a Counterspell opportunity. PC, monster
 and delegated item casts use the same reviewed capability records. A resolver

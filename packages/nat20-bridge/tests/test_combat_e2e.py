@@ -66,6 +66,18 @@ def test_full_combat_flow(client: TestClient) -> None:
             )
         else:
             r = client.post(f"/v1/combat/{cid}/advance-monster", json={})
+        if r.status_code == 409:
+            # The typed HTTP contract now reports this Engine refusal explicitly.
+            # Keep driving combat by ending this exhausted actor's turn.
+            assert r.json()["detail"]["reason"] == "no_action_economy", r.text
+            assert any(
+                event["type"] == "attack_failed" and event["reason"] == "no_action_economy"
+                for event in r.json()["events"]
+            )
+            r = client.post(
+                f"/v1/combat/{cid}/intent",
+                json={"actor_id": "char:brom", "intent_type": "pass"},
+            )
         assert r.status_code == 200, r.text
 
     end = client.post(f"/v1/combat/{cid}/end", json={})

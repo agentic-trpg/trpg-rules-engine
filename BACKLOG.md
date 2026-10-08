@@ -1354,17 +1354,18 @@ layer over the engine — see `docs/bridge.md`. Gaps found while shipping it:
   or `ability_score_method` over `/v1/party/validate` or `/v1/combat`, even
   though `sheet.py` now derives from all of them.
   (`packages/nat20-bridge/src/nat20_bridge/models.py::BuildRequest`)
-- **Global-`random` seeding is not safe under concurrent requests**
-  (2026-08-21). `_start_route` (and `app.py`'s `_do_roll`/`_do_check`) seed the
-  stdlib global `random` module to make the engine's legacy dice seam
-  (`roll_dice_str`, `rules/effects.py`) reproducible per request, since that
-  seam reads the global module rather than an injectable RNG. Two `/v1/roll`,
-  `/v1/check`, or `/v1/combat` requests racing concurrently (different seeds)
-  can have one request's reseed clobber the other's before its dice resolve —
-  fine for the bridge's current single-connection, same-machine ST usage, not
-  safe for concurrent multi-client load. Real fix: thread an injectable
-  `random.Random` through the legacy dice paths instead of reading the global
-  module (`packages/nat20-bridge/src/nat20_bridge/routes_combat.py`).
+- **B9 closes typed-intent transport and RNG gaps (2026-10-09).** All 33
+  PlayerIntent fields and 21 intent types have JSON representation, with strict
+  wire validation and shared Engine preflight. Public pinned views expose ongoing
+  sources, restricted grants, environment/object carriers and existing turn/form/
+  summon state. Host object/wind APIs are default-denied and owner-bound. Per-combat
+  locks, cancellation shielding and process-local request receipts prevent paid
+  retries from reexecuting; opening/advance/end are covered too. End observers run
+  after authoritative bookkeeping; a missing cast spell identity refuses before
+  payment. Standalone roll/check and combat use isolated RNGs. Exact transport and
+  remaining Engine boundaries: [parity matrix](docs/dev/bridge-intent-parity.md).
+  No spell admission count changes. Durable receipts, multiworker coordination,
+  direct legendary APIs and comprehensive combat-opening specs remain unexposed.
 - **Collector tasks + event logs leak for combats never `/end`ed**
   (2026-08-21). `BridgeState.combats`/`events_log`/`names`/`seeds`/`collectors`
   are only cleaned up by `_end_route` (`state.combats.pop`, `_stop_collector`)
@@ -1372,35 +1373,10 @@ layer over the engine — see `docs/bridge.md`. Gaps found while shipping it:
   keeps its background collector task running and its event log growing for
   the life of the bridge process. Needs either a TTL/idle-reap sweep or an
   explicit cap on live combats (`packages/nat20-bridge/src/nat20_bridge/state.py`).
-- **`attack_bonus` derivation ignores Dexterity / finesse weapons**
-  (2026-08-21). `derive_sheet`'s `attack_bonus = proficiency + str_mod`
-  (`sheet.py`) always uses the Strength modifier, regardless of whether the
-  character's weapon is finesse (SRD 5.2: finesse lets the wielder use either
-  Strength or Dexterity, typically Dexterity for a Rogue/ranged-leaning build)
-  or a ranged weapon (which SRD-legally uses Dexterity, not Strength, absent a
-  feat). A Dex-based Rogue or ranged character gets an under- or over-stated
-  attack bonus in `/v1/party/validate` and `/v1/combat` party derivation.
-  Needs the weapon's `properties`/`weapon_kind` consulted to pick
-  `max(str_mod, dex_mod)` for finesse or `dex_mod` for ranged
-  (`packages/nat20-bridge/src/nat20_bridge/sheet.py`).
-- **The combat intent carries no class-feature or form field (2026-09-24, C20
-  scope cut; amended 2026-09-25, C21a, 2026-09-26, C21b, and 2026-10-04,
-  C26a).** `_IntentRequest` forwards only
-  `intent_type`, `spell_id`, `target_id`, `item_id`, `weapon_id`,
-  `feature_id` and `target_zone_id`, so a bridge client can't aim or shape an
-  area (`direction`, `target_ids`, `excluded_target_ids`), pick an
-  `activity_id` (Flurry of Blows, Lay on Hands, Channel Divinity), set
-  `use_bonus_action` (Cunning Action, the Bonus Unarmed Strike) or
-  `two_handed`, draw `pool_points`, redeem a Bardic die
-  (`redeem_granted_die`), name a Wild Shape or Polymorph form (`form_id`:
-  both are refused with `invalid_form`) or command a stat-block attack
-  (`stat_block_action_id`) — so a summoned Draconic Spirit, whose only
-  commandable attack is its Rend, can't be made to attack at all.
-  `_view_route` doesn't expose `LiveCombatView.turn`, `constructs`,
-  `transformations` or `summons` either, so `extra_actions_remaining`, a
-  Spiritual Weapon force, a creature's form and a summon's caster aren't
-  visible over HTTP.
-  (`packages/nat20-bridge/src/nat20_bridge/routes_combat.py::_IntentRequest`)
+- **Historical attack-bonus derivation gap is closed.** Current Bridge sheet
+  derivation delegates to `build_party_member`, leaves `attack_bonus` unset unless
+  the Host explicitly overrides it, and lets Engine weapon resolution choose the
+  governing ability. `test_attack_bonus_is_left_to_the_engine` pins this boundary.
 - **The narration names a summon by its id (2026-09-26, C21b).** The bridge
   builds its name map when `/v1/combat` starts, so a creature that joins later
   narrates as `summon:<caster>:<stat block>:<n>` ("…'s turn begins"), and its

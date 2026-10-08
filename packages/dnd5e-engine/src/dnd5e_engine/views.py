@@ -19,11 +19,22 @@ from dnd5e_srd_data.schema.common import OngoingActivationSpec
 from dnd5e_engine.activities.conjuration import TransformSource
 from dnd5e_engine.environment import EnvironmentalSource
 from dnd5e_engine.outcome import CombatOutcome
+from dnd5e_engine.rules.effects import effective_effects
 from dnd5e_engine.types.combat import Combatant
 from dnd5e_engine.types.objects import CombatObjectView
 
 if TYPE_CHECKING:
+    from dnd5e_srd_data.schema.action_policy import ActionType
+
     from dnd5e_engine.orchestrator import _LiveCombat
+
+
+@dataclass(frozen=True)
+class RestrictedActionGrantView:
+    owner_id: str
+    action_grant: tuple[str, str]
+    actions: tuple[ActionType, ...]
+    available: bool
 
 
 @dataclass(frozen=True)
@@ -146,6 +157,11 @@ class LiveCombatView:
     environment_sources: tuple[EnvironmentalSource, ...] = ()
     combat_objects: tuple[CombatObjectView, ...] = ()
     ongoing_spells: tuple[OngoingSpellView, ...] = ()
+    execution_serial: int = 0
+    # Publication metadata is exposed in JSON, but event history has never been
+    # part of gameplay-view equality (pure refusals may publish failure events).
+    event_count: int = field(default=0, compare=False)
+    restricted_action_grants: tuple[RestrictedActionGrantView, ...] = ()
 
     @classmethod
     def from_live(cls, live: _LiveCombat) -> LiveCombatView:
@@ -157,6 +173,26 @@ class LiveCombatView:
                 extra_actions_remaining=actor.extra_actions_remaining,
             )
         return cls(
+            execution_serial=live.execution_serial,
+            event_count=len(live.event_log),
+            restricted_action_grants=tuple(
+                RestrictedActionGrantView(
+                    actor.entity_id,
+                    (effect.id, effect.origin),
+                    effect.action_policy.extra_action.actions,
+                    (effect.id, effect.origin) not in actor.action_grants_spent
+                    and (
+                        effect.lifecycle is None
+                        or effect.lifecycle.spec.stacking_group
+                        not in actor.action_grant_groups_spent
+                    ),
+                )
+                for actor in live.initiative
+                for effect in effective_effects(live.active_effects.get(actor.entity_id, ()))
+                if not effect.disabled
+                and effect.action_policy
+                and effect.action_policy.extra_action
+            ),
             ongoing_spells=tuple(
                 OngoingSpellView(
                     a.id,

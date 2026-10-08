@@ -9,6 +9,12 @@ changing with it.
 For what the engine actually resolves behind these signatures, see the
 [capability matrix](capabilities.md).
 
+For HTTP/JSON, see the [complete Engine/Bridge parity matrix](dev/bridge-intent-parity.md):
+all 33 PlayerIntent fields, 21 intents, authoritative source/grant/object discovery,
+controlled Host mutations and the request-ID retry/error contract. The Bridge uses
+the same Engine schema and ruleset-pinned execution; transport parity does not
+expand spell admission.
+
 ## Combat loop
 
 ::: dnd5e_engine.orchestrator

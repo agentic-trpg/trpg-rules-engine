@@ -4,7 +4,8 @@ import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
 if TYPE_CHECKING:
     from dnd5e_engine import CombatEvent, CombatHandle, GridScene
@@ -16,6 +17,7 @@ if TYPE_CHECKING:
 @dataclass
 class BridgeState:
     homebrew_path: Path
+    instance_id: str = field(default_factory=lambda: uuid4().hex)
     # Monotonically increasing counter for combat_id allocation — never
     # reused, even after a combat ends and is popped from `combats`. Using
     # `len(combats) + 1` for the id (as an earlier draft did) collides once
@@ -54,3 +56,8 @@ class BridgeState:
     # Serialize combat opening with content updates before the active handle
     # is registered, so a concurrent update cannot slip past the conflict check.
     ruleset_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
+    combat_locks: dict[str, asyncio.Lock] = field(default_factory=dict, repr=False)
+    receipts: dict[tuple[str, str], tuple[str, int, dict[str, Any]]] = field(default_factory=dict)
+    mutation_tasks: set[asyncio.Task[Any]] = field(default_factory=set, repr=False)
+    # Explicit Host-only bearer-token -> mutation owner binding. Empty denies all.
+    host_tokens: dict[str, str] = field(default_factory=dict, repr=False)

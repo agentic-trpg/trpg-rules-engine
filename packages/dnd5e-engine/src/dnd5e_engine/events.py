@@ -116,6 +116,7 @@ CastFailedReason = Literal[
     "unsupported_feature",
     "unsupported_reaction",
     "unsupported_area",
+    "unsupported_activity",
     "out_of_range",
     "no_slot",
     "target_invalid",

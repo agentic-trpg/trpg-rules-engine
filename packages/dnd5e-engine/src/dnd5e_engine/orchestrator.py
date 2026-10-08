@@ -2245,8 +2245,20 @@ def _monster_activity_available(
     live: _LiveCombat, current: Combatant, action: MonsterAction, activity: Activity
 ) -> bool:
     entry = live.monster_action_uses_by_entity.get(current.entity_id, {}).get(action.slug)
-    return activity_resources_available(action, activity, entry) and not (
-        area_activity([activity]) is not None and area_template(activity) is None
+    if not activity_resources_available(action, activity, entry):
+        return False
+    if area_activity([activity]) is not None:
+        return area_template(activity) is not None
+    if isinstance(activity, CastActivity):
+        return True  # Cast-only actions validate the child in their shared preflight.
+    from dnd5e_engine.live_monster_delivery import named_activity_delivery
+
+    target = _lowest_hp_target(_select_monster_targets(live, current))
+    return (
+        named_activity_delivery(
+            live, current, activity, [target] if target else [], check_range=False
+        )
+        is not None
     )
 
 
@@ -2726,8 +2738,12 @@ def _resolve_monster_attack_activities(
     (``is_opportunity_attack``). Extracted (C18 Task 6 fix round 1) so a
     future hook added to one caller can't silently miss the other.
     """
-    if activities and all(
-        area_activity([a]) is not None and _monster_area_placement(live, actor, [a]) is None
+    from dnd5e_engine.live_monster_delivery import named_activity_delivery
+
+    if not any(
+        _monster_area_placement(live, actor, [a]) is not None
+        if area_activity([a]) is not None
+        else named_activity_delivery(live, actor, a, target_list) is not None
         for a in activities
     ):
         return
@@ -2845,8 +2861,8 @@ def _resolve_monster_execution(
     source_id: str,
 ) -> tuple[Activity, ...]:
     """Resolve each area child with its own targets, retaining shared outcome state."""
+    from dnd5e_engine.live_monster_delivery import named_activity_delivery
     from dnd5e_engine.live_spell_delivery import execute_activity_delivery
-    from dnd5e_engine.spell_delivery import ActivityDeliveryPlan
 
     resolved: list[Activity] = []
     for activity in activities:
@@ -2859,12 +2875,10 @@ def _resolve_monster_execution(
             activity_plan = placement.activity_plan
             spec = placement.spec
         else:
-            if not _monster_execution_in_range(live, actor, actx.targets, [activity]):
+            delivery = named_activity_delivery(live, actor, activity, actx.targets)
+            if delivery is None:
                 continue
-            activity_plan = ActivityDeliveryPlan(
-                activity.id, tuple(target.entity_id for target in actx.targets)
-            )
-            spec = SpellDeliverySpec(source_kind="monster_cast", source_activity_id=activity.id)
+            activity_plan, spec = delivery
         execute_activity_delivery(live, actx, activity, activity_plan, spec, source_id)
         resolved.append(activity)
     return tuple(resolved)
@@ -2948,8 +2962,12 @@ def _take_legendary_action(live: _LiveCombat, monster: Combatant) -> None:
         )
         if not is_offensive:
             continue
-        if all(
-            area_activity([a]) is not None and _monster_area_placement(live, monster, [a]) is None
+        from dnd5e_engine.live_monster_delivery import named_activity_delivery
+
+        if not any(
+            _monster_area_placement(live, monster, [a]) is not None
+            if area_activity([a]) is not None
+            else named_activity_delivery(live, monster, a, [target]) is not None
             for a in activities
         ):
             continue

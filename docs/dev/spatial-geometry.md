@@ -74,6 +74,21 @@ the spell's description.
 
 ## AoE templates
 
+Delivery applies a separate endpoint Total Cover check through
+`areas.has_line_of_effect`. Unlike the sight ray's deliberate endpoint
+exclusion, a blocked destination cell (terrain filling the cell) or an
+explicit Total Cover tag cannot receive an area effect or serve as a chosen
+point origin reached from another cell. The existing `origin == cell` source
+exception remains: the origin belongs to its own area, and a caster can choose
+its own covered cell. Public combat cannot seed a source in blocked terrain.
+Half/Three-Quarters Cover and occupied cells remain legal points. Public
+combat initialization already refuses creatures starting inside blocked
+terrain; pure area geometry excludes blocked locations reached from elsewhere. This
+does not change movement rasterization or the sight ray's source convention.
+The pinned source is SRD Point of Origin / A Clear Path to the Target,
+mirrored under `raw_sources/foundry/packs/_source/content24/appendices/` and
+`raw_sources/foundry/packs/_source/rules/appendix-e-rules.yml`.
+
 `GridTopology.cells_in_template(origin, shape, size_ft, *, direction=None, width_ft=None) ->
 list[str]` — the BACKLOG's named seam. All three shapes share the settled
 **Chebyshev** metric (maintainer decision, catalog a pinned scenario — not

@@ -46,6 +46,12 @@ from dnd5e_srd_data.schema.common import (
 _ACTIVITY = TypeAdapter(Activity)
 
 
+@pytest.mark.parametrize("policy", ["", "unknown", "HALF", None])
+def test_save_damage_policy_is_closed(policy):
+    with pytest.raises(ValidationError):
+        SaveDamageBlock(on_save=policy)
+
+
 def _roundtrip(activity) -> None:
     """Serialize → re-validate via the discriminated-union TypeAdapter and
     assert equality. Catches: (a) discriminator wiring, (b) sub-block default

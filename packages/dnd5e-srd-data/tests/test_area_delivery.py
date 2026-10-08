@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -27,6 +28,24 @@ from tools.translators.foundry import (
 
 PACKAGE = Path(__file__).resolve().parents[1]
 DOCS = PACKAGE.parents[1] / "docs/dev"
+
+
+def test_canonical_save_policy_inventory_has_no_unknown_policy():
+    policies = Counter()
+
+    def visit(value):
+        if isinstance(value, dict):
+            if value.get("kind") == "save":
+                policies[value["damage"]["on_save"]] += 1
+            for child in value.values():
+                visit(child)
+        elif isinstance(value, list):
+            for child in value:
+                visit(child)
+
+    for path in sorted((PACKAGE / "src/dnd5e_srd_data/canonical").rglob("*.json")):
+        visit(json.loads(path.read_text(encoding="utf8")))
+    assert policies == {"half": 323, "none": 162, "full": 7}
 
 
 def test_delivery_values_are_frozen_closed_and_old_documents_do_not_churn():

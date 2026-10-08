@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, ConfigDict
 
+from dnd5e_engine.activities.save import validate_on_save
 from dnd5e_engine.areas import (
     AreaTemplate,
     area_activity,
@@ -82,7 +83,11 @@ def _origin(
         raise DeliveryPlanningError("source has no position")
     if template.anchor == "actor":
         return actor_cell
-    origin = spec.origin_cell or positions.get(spec.primary_target_id or "") or actor_cell
+    origin = (
+        spec.origin_cell
+        if spec.origin_cell is not None
+        else positions.get(spec.primary_target_id or "") or actor_cell
+    )
     try:
         valid = (
             cell_id(*parse_cell(origin)) == origin
@@ -221,6 +226,11 @@ def plan_delivery(
     plans = []
     live_ids = {c.entity_id for c in creatures}
     for activity in activities:
+        if activity.kind == "save":
+            try:
+                validate_on_save(activity.damage.on_save)
+            except ValueError as exc:
+                raise DeliveryPlanningError(str(exc), "unsupported_activity") from exc
         semantics = activity.target.area_semantics
         if (
             activity.target.template.type

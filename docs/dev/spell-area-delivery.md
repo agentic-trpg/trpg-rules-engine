@@ -85,6 +85,17 @@ correction does not implement all illusion interaction or Study mechanics.
 
 Point origins may be empty or occupied. Preflight checks canonical cell
 identity, bounds, range and line of effect before resource payment or RNG.
+An explicitly supplied empty or noncanonical internal origin is refused;
+only an omitted origin retains the existing target/caster default.
+On this grid, `blocked_cells` represent terrain filling its cell and providing
+Total Cover. Reaching a chosen point inside such terrain, or a `cover_cells`
+Total Cover location, from another cell fails the clear-path gate. The existing
+source-cell convention remains: an origin belongs to its own area, and a caster
+can choose its own covered cell. Public combat already forbids a source from
+starting inside blocked terrain. Half/Three-Quarters Cover and creature
+occupancy do not forbid a point. No automatic relocation to the near side
+of an obstruction is inferred: the existing public contract refuses the
+declaration and lets the caller choose a legal point.
 Area cells are rasterized by `GridTopology`, then filtered by line of effect
 from the origin. Half and Three-Quarters Cover affect applicable saves; Total
 Cover and walls exclude blocked cells. Grid topology contains geometry, not
@@ -137,6 +148,14 @@ Execution replans against current live positions and defenses after reactions.
 A target that dies or departs between preflight and resolution is omitted;
 successful Counterspell prevents spell delivery entirely. The planner itself
 emits no events, mutates no state and draws no RNG.
+
+Save damage policy is closed to `half`, `none` and `full`. The canonical
+inventory contains 492 SaveActivities: 323 half, 162 none and seven full.
+Schema ingestion rejects unknown values. Shared preflight also guards
+unchecked/custom carriers with `CastFailed(reason="unsupported_activity")`
+before Action/slot/charge payment. The save resolver independently validates
+before DC, damage or save draws; an unknown policy never becomes full damage,
+including when the save fails or there are no targets.
 
 ## Creature filters and automatic saves
 
@@ -225,6 +244,21 @@ existing target priority, caster-to-origin distance and numeric cell order.
 It is deterministic and draws no RNG. An unsupported or unusable area mode
 spends no Recharge or daily uses and does not prevent trying another legal
 action.
+
+Non-area monster activities validate the AI's existing chosen target through
+the same pure `plan_delivery` eligibility rules, including typed filters and
+live/departed state. Candidate ranking checks eligibility without range so
+the existing approach gambit can still move toward a legal target. Execution
+rechecks each child's established reach/LoS before context construction or
+RNG, and again before resolution. An empty target plan does not count as an
+invocation or spend Recharge/daily/activity uses; legendary targeting is
+validated before spending its separate pool. Target priority is unchanged;
+an ineligible mode may fall through to another legal action.
+
+`tests/test_delivery_hardening.py` adds rejection, resource and purity
+regressions and compares event bytes, final RNG state and public final combat
+state plus timed/persistent owners across seeded reruns. It covers the six
+primary acceptances without promoting their deferred rule clauses.
 
 ## Audit and unsupported boundaries
 

@@ -15,6 +15,7 @@ from dnd5e_engine.spell_delivery import (
     ActivityDeliveryPlan,
     DeliveryPlanningError,
     SpellDeliverySpec,
+    plan_delivery,
 )
 
 if TYPE_CHECKING:
@@ -46,6 +47,56 @@ MONSTER_AREA_DIRECTIONS: Final = (
     (-1, 1),
     (-1, -1),
 )
+
+
+def named_activity_delivery(
+    live: _LiveCombat,
+    actor: Combatant,
+    activity: Activity,
+    targets: Sequence[Combatant],
+    *,
+    check_range: bool = True,
+) -> tuple[ActivityDeliveryPlan, SpellDeliverySpec] | None:
+    """Validate the AI's chosen targets without changing its targeting policy.
+
+    Ranking omits range so the existing movement gambit can approach a legal
+    target. Execution retains that gambit's per-child reach/LoS contract.
+    All other named-target eligibility comes from the shared pure planner.
+    """
+    from dnd5e_engine import orchestrator as orch
+
+    ids = (
+        (actor.entity_id,)
+        if activity.target.affects.type == "self"
+        else tuple(target.entity_id for target in targets)
+    )
+    spec = SpellDeliverySpec(
+        selected_target_ids=ids,
+        source_kind="monster_cast",
+        source_activity_id=activity.id,
+    )
+    creatures = [c for c in live.initiative if c.is_alive and c.entity_id not in live.dead_ids]
+    if check_range and activity.target.affects.type != "self":
+        creatures = [
+            c for c in creatures if orch._monster_execution_in_range(live, actor, [c], [activity])
+        ]
+    try:
+        plan = plan_delivery(
+            [activity],
+            spec,
+            actor_id=actor.entity_id,
+            topology=live.topology,
+            positions=live.actor_zone,
+            creatures=creatures,
+            enemy_ids=frozenset(
+                c.entity_id for c in creatures if orch._is_enemy(live, actor.entity_id, c.entity_id)
+            ),
+            ally_ids=frozenset(orch._allied_ids(live, actor.entity_id)),
+            execution=True,
+        ).activities[0]
+    except DeliveryPlanningError:
+        return None
+    return (plan, spec) if plan.target_ids else None
 
 
 def area_range_ft(activity: Activity, spell: Spell | None = None) -> int | None:

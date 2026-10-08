@@ -158,7 +158,15 @@ def has_line_of_effect(topology: SpatialTopology, origin: str, cell: str) -> boo
     ... To block a line, an obstruction must provide Total Cover." Walls and
     blocked cells block; creatures (Half Cover at most) never do, so no
     occupied cells are passed."""
-    return origin == cell or (
+    # Preserve the established source-cell convention: an origin belongs to
+    # its own area. Public combat cannot start a source inside blocked terrain.
+    if origin == cell:
+        return True
+    # Sight ignores destination terrain; delivery from another cell must still
+    # respect that destination's Total Cover. Partial cover/occupants stay legal.
+    if isinstance(topology, GridTopology) and topology.cover_on_cell(cell) == "total":
+        return False
+    return (
         topology.has_line_of_sight(origin, cell) and topology.cover_between(origin, cell) != "total"
     )
 

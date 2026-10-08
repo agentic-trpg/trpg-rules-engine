@@ -49,6 +49,8 @@ import logging
 from collections import defaultdict
 from typing import TYPE_CHECKING, Final, get_args
 
+from dnd5e_srd_data.schema.common import SaveDamagePolicy
+
 from dnd5e_engine.activities.apply import apply_damage
 from dnd5e_engine.activities.dice import roll_damage_part, roll_expr
 from dnd5e_engine.activities.effects import apply_activity_effects
@@ -71,6 +73,12 @@ _LOGGER = logging.getLogger(__name__)
 _ABILITIES: Final[frozenset[str]] = frozenset(get_args(Ability))
 
 
+def validate_on_save(on_save: str) -> None:
+    """Reject malformed carriers, including unchecked model_copy updates."""
+    if on_save not in get_args(SaveDamagePolicy):
+        raise ValueError(f"damage.on_save {on_save!r} is not a supported save damage policy")
+
+
 def resolve_save(activity: SaveActivity, ctx: ActivityResolutionContext) -> None:
     """Roll a saving throw per target, then apply on-save-scaled damage.
 
@@ -84,6 +92,7 @@ def resolve_save(activity: SaveActivity, ctx: ActivityResolutionContext) -> None
     target's effect riders fire AFTER its damage, gated on that target's own save
     outcome (``EffectApplied`` then ``ConditionApplied``).
     """
+    validate_on_save(activity.damage.on_save)
     dc = _resolve_dc(activity, ctx)
     ability = _resolve_save_ability(activity)
     cast_level = ctx.slot_level or ctx.base_spell_level or 0
@@ -287,18 +296,17 @@ def _scale_on_save(raw_part: int, on_save: str, *, succeeded: bool) -> int:
     """Per-part on-save scaling. Failure → full; success → on_save policy.
 
     "half" → ``raw // 2`` (SRD half-damage rounds down). "none" → 0. "full" →
-    ``raw`` (a few SRD spells deal full damage even on a save). An unknown
-    ``on_save`` is logged loudly and treated as "full" (no silent zeroing).
+    ``raw`` (a few SRD spells deal full damage even on a save). Unknown
+    policies are refused even on failed saves.
     """
+    validate_on_save(on_save)
     if not succeeded:
         return raw_part
     if on_save == "half":
         return raw_part // 2
     if on_save == "none":
         return 0
-    if on_save == "full":
-        return raw_part
-    _LOGGER.warning("save_on_save_unknown on_save=%s; treating as full", on_save)
+    # Validation above leaves only the canonical "full" policy.
     return raw_part
 
 

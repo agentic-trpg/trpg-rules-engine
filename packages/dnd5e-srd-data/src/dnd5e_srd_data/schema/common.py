@@ -558,10 +558,13 @@ class SaveDamageCriticalBlock(BaseModel, frozen=True):
     bonus: str = ""
 
 
+SaveDamagePolicy = Literal["half", "none", "full"]
+
+
 class SaveDamageBlock(BaseModel, frozen=True):
     """SaveActivity ``damage`` — note ``onSave`` is save-specific."""
 
-    on_save: str = "half"
+    on_save: SaveDamagePolicy = "half"
     parts: list[DamagePartBlock] = Field(default_factory=list)
 
 

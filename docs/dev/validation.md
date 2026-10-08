@@ -134,6 +134,27 @@ Local logs for this audit are `lean-ci-fast.log`, `lean-ci-focused.log`,
 directory. GitHub Actions evidence is reported separately after push; local success
 does not establish remote success.
 
+### Clean-checkout finding from real CI
+
+The first branch push (`35846bb`) exercised the actual Linux/Python 3.12 workflow.
+Scope selection, environment preparation and actionlint succeeded. Data pytest then
+reported **10 failed / 468 passed / 41 existing optional skips**: ten lifecycle
+translator regressions unconditionally opened ignored `raw_sources/foundry` files.
+The populated developer checkout had hidden this existing environment dependency.
+
+Those ten inputs are now a **47,811-byte pinned Git snapshot** under
+`packages/dnd5e-srd-data/tests/fixtures/foundry`, with original URLs, SHA-256 hashes,
+source attribution, upstream license and enforced LF checkout. The existing tests
+use these exact inputs and additionally validate hashes and the existing PINS commit;
+their full canonical-output equality assertion is retained. No failing test is
+skipped or deselected, and no heavyweight upstream fetch is added to routine CI.
+The other optional maintainer-source tests keep their pre-existing conditions.
+
+Only the affected lifecycle test module and its static checks are rerun locally for
+this follow-up; unchanged Engine/Bridge/Demo suites and Full are not repeated.
+The module passed **34 tests in 5.11s**; Ruff check/format and LF attributes also
+passed. The next real CI run verifies the fix from another clean checkout.
+
 ## Changed files in this batch
 
 - `AGENTS.md`, `Makefile`, `README.md`, `pyproject.toml`, `mkdocs.yml`
@@ -142,6 +163,10 @@ does not establish remote success.
 - `tools/tests/test_validation_scope.py`, `tools/tests/test_validate.py`
 - `packages/dnd5e-engine/Makefile`, `packages/dnd5e-engine/scripts/smoke_clean_install.sh`
 - `docs/dev/validation.md`
+- Follow-up: `packages/dnd5e-srd-data/tests/test_effect_lifecycle.py` and
+  `packages/dnd5e-srd-data/tests/fixtures/foundry/` (ten YAML inputs, manifest,
+  attribution README, upstream license and LF attributes)
 
-Runtime source, canonical data, existing test files, lockfile, coverage floors,
-provenance and release workflows are unchanged.
+Runtime source, canonical data, existing test assertions, lockfile, coverage floors,
+provenance and release workflows are unchanged. The lifecycle test's input location
+is the sole change to an existing test file; its validation is strengthened.

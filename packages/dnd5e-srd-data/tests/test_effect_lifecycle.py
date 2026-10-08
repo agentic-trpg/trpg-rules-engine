@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -173,7 +174,15 @@ def test_reviewed_canonical_documents_reproduce_the_pinned_translator(slug):
     loader = BundledAssetLoader()
     entry = loader.get_spell(slug) if slug.startswith("hold-") else loader.get_feature(slug)
     provenance = entry.provenance
-    raw = PACKAGE / "raw_sources/foundry/packs" / provenance.source_url.split("/packs/", 1)[1]
+    # Exact pinned inputs are checked in: this regression must run on a clean checkout.
+    snapshot = PACKAGE / "tests/fixtures/foundry"
+    manifest = json.loads((snapshot / "snapshot.json").read_text(encoding="utf-8"))
+    pins = json.loads((PACKAGE / "raw_sources/PINS.json").read_text(encoding="utf-8"))
+    assert manifest["commit"] == pins["foundry"]["commit"]
+    relative = provenance.source_url.split("/packs/", 1)[1]
+    raw = snapshot / "packs" / relative
+    assert manifest["files"][relative]["source_url"] == provenance.source_url
+    assert hashlib.sha256(raw.read_bytes()).hexdigest() == manifest["files"][relative]["sha256"]
     translator = translate_spell_yaml if slug.startswith("hold-") else translate_feature_yaml
     translated = translator(
         raw, ingest_date=provenance.ingest_date, ingest_version=provenance.ingest_version

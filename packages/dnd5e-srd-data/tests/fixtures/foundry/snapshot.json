@@ -1,0 +1,56 @@
+{
+  "upstream": "https://github.com/foundryvtt/dnd5e",
+  "commit": "965ad2d0cf5d063dac675ba078b5bd3c3c0dd449",
+  "files": {
+    "_source/spells24/2nd-level/hold-person.yml": {
+      "slug": "hold-person",
+      "source_url": "https://github.com/foundryvtt/dnd5e/blob/965ad2d0cf5d063dac675ba078b5bd3c3c0dd449/packs/_source/spells24/2nd-level/hold-person.yml",
+      "sha256": "0ec81bb8f3535e98d5b06358426d6fe59b2eb1232b2829bbc0f481b589cddc1a"
+    },
+    "_source/spells24/5th-level/hold-monster.yml": {
+      "slug": "hold-monster",
+      "source_url": "https://github.com/foundryvtt/dnd5e/blob/965ad2d0cf5d063dac675ba078b5bd3c3c0dd449/packs/_source/spells24/5th-level/hold-monster.yml",
+      "sha256": "752ab26bf31ddb026c649ad9dc577e19898a90427eb36ff902451964808857ba"
+    },
+    "_source/classes24/rogue/class-features/cunning-strike.yml": {
+      "slug": "cunning-strike",
+      "source_url": "https://github.com/foundryvtt/dnd5e/blob/965ad2d0cf5d063dac675ba078b5bd3c3c0dd449/packs/_source/classes24/rogue/class-features/cunning-strike.yml",
+      "sha256": "6e698263572092bca89444f80969ddca19d08ba6ac8e0a8b5ac03a70295bf5d5"
+    },
+    "_source/classes24/rogue/class-features/devious-strikes.yml": {
+      "slug": "devious-strikes",
+      "source_url": "https://github.com/foundryvtt/dnd5e/blob/965ad2d0cf5d063dac675ba078b5bd3c3c0dd449/packs/_source/classes24/rogue/class-features/devious-strikes.yml",
+      "sha256": "ba8a4acdecd7c6b4fbc47a1ae88c9e2a1f2475e27dc47cd0c1d8699140769856"
+    },
+    "_source/classes24/barbarian/subclass-features/path-of-the-berserker/intimidating-presence.yml": {
+      "slug": "intimidating-presence",
+      "source_url": "https://github.com/foundryvtt/dnd5e/blob/965ad2d0cf5d063dac675ba078b5bd3c3c0dd449/packs/_source/classes24/barbarian/subclass-features/path-of-the-berserker/intimidating-presence.yml",
+      "sha256": "fb0571d20976d9ccbd783deff20cab4b77cd5010c946bd6df001014ed2384db5"
+    },
+    "_source/classes24/barbarian/class-features/reckless-attack.yml": {
+      "slug": "reckless-attack",
+      "source_url": "https://github.com/foundryvtt/dnd5e/blob/965ad2d0cf5d063dac675ba078b5bd3c3c0dd449/packs/_source/classes24/barbarian/class-features/reckless-attack.yml",
+      "sha256": "ea5f435c109ab7d748bf62130679d4dbc2ccc0f6aa0322800fb5680880e9626e"
+    },
+    "_source/classes24/barbarian/class-features/brutal-strike.yml": {
+      "slug": "brutal-strike",
+      "source_url": "https://github.com/foundryvtt/dnd5e/blob/965ad2d0cf5d063dac675ba078b5bd3c3c0dd449/packs/_source/classes24/barbarian/class-features/brutal-strike.yml",
+      "sha256": "357c36f6a7044b14731a1fb0c2e28ef9342773389a24c64bb785ba616bfc2fdb"
+    },
+    "_source/classes24/barbarian/class-features/improved-brutal-strike.yml": {
+      "slug": "improved-brutal-strike",
+      "source_url": "https://github.com/foundryvtt/dnd5e/blob/965ad2d0cf5d063dac675ba078b5bd3c3c0dd449/packs/_source/classes24/barbarian/class-features/improved-brutal-strike.yml",
+      "sha256": "f646ad9319b285b0a9f29197f5f01cbc05754334634e23a264457d1938262477"
+    },
+    "_source/classes24/barbarian/class-features/improved-brutal-strike-2.yml": {
+      "slug": "improved-brutal-strike-2",
+      "source_url": "https://github.com/foundryvtt/dnd5e/blob/965ad2d0cf5d063dac675ba078b5bd3c3c0dd449/packs/_source/classes24/barbarian/class-features/improved-brutal-strike-2.yml",
+      "sha256": "b6f7a1a2c4992353e2c239e7ba969ef5335169998dc4d2c12b661eb831496c9c"
+    },
+    "_source/classes24/barbarian/subclass-features/path-of-the-berserker/frenzy.yml": {
+      "slug": "frenzy",
+      "source_url": "https://github.com/foundryvtt/dnd5e/blob/965ad2d0cf5d063dac675ba078b5bd3c3c0dd449/packs/_source/classes24/barbarian/subclass-features/path-of-the-berserker/frenzy.yml",
+      "sha256": "e8dc1b9ab4b3f86c9d1b1e15ce467ffc08b5e63861267bb1b5b69a625ee1296a"
+    }
+  }
+}

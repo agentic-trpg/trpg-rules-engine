@@ -33,7 +33,7 @@
             "scaling": {
               "formula": "",
               "mode": "",
-              "number": 1
+              "number": 0
             },
             "types": [
               "radiant"
@@ -58,6 +58,13 @@
             "max": null,
             "min": null
           },
+          "lifecycle": {
+            "expire_on_positive_damage": false,
+            "expiry_boundary": "source_next_turn_start",
+            "maximum_rounds": null,
+            "one_use_modifiers": [],
+            "repeat_save": null
+          },
           "on_save": null,
           "riders": null
         }
@@ -67,6 +74,32 @@
       "img": "",
       "kind": "save",
       "name": "Initial Cast",
+      "persistent_area": {
+        "effects_until_target_turn_start": false,
+        "environment": {
+          "dim_extension_ft": 30,
+          "dispels_darkness_through_level": null,
+          "dispels_light_through_level": null,
+          "kind": "light",
+          "light": "bright",
+          "obscurement": "none",
+          "radius_increase_per_slot_ft": 0,
+          "strong_wind_dispersal": false,
+          "sunlight": true,
+          "sunlight_in_dim": true
+        },
+        "once_per_turn": true,
+        "ongoing_activation": {
+          "activity_ids": [
+            "Y0cJvZuD7EfwGqkf"
+          ],
+          "cost": "magic_action"
+        },
+        "placement": "follow-source",
+        "source_radius_ft": 30,
+        "speed_multiplier": null,
+        "triggers": []
+      },
       "range": {
         "override": false,
         "special": "",
@@ -103,6 +136,17 @@
           "units": "ft",
           "width": "5"
         }
+      },
+      "timing": {
+        "effect_id": null,
+        "effects_concentration": false,
+        "ends_effect_on_success": false,
+        "next_turn": true,
+        "recurring": false,
+        "requires_condition": null,
+        "scale_with_slot": true,
+        "subject": "target",
+        "trigger": "immediate"
       },
       "uses": {
         "max": "",
@@ -153,7 +197,7 @@
             "scaling": {
               "formula": "",
               "mode": "",
-              "number": 1
+              "number": 0
             },
             "types": [
               "radiant"
@@ -177,6 +221,13 @@
           "level": {
             "max": null,
             "min": null
+          },
+          "lifecycle": {
+            "expire_on_positive_damage": false,
+            "expiry_boundary": "source_next_turn_start",
+            "maximum_rounds": null,
+            "one_use_modifiers": [],
+            "repeat_save": null
           },
           "on_save": null,
           "riders": null
@@ -223,6 +274,17 @@
           "units": "ft",
           "width": "5"
         }
+      },
+      "timing": {
+        "effect_id": null,
+        "effects_concentration": false,
+        "ends_effect_on_success": false,
+        "next_turn": true,
+        "recurring": false,
+        "requires_condition": null,
+        "scale_with_slot": true,
+        "subject": "target",
+        "trigger": "immediate"
       },
       "uses": {
         "max": "",

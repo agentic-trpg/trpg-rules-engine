@@ -300,6 +300,14 @@ def test_delivery_audits_are_byte_stable_checked_in_inventories():
         assert (DOCS / name).read_text(encoding="utf8") == actual
     area = area_audit_document(loader)
     assert area["line_width_counts"]["10"] >= 4
+    source = next(
+        row
+        for row in area["rows"]
+        if row["slug"] == "sunbeam" and row["activity_id"] == "o3kffaumfNGjVvg9"
+    )
+    assert source["runtime_status"] == "ongoing_source_with_immediate_payload"
+    assert source["shape"] == "line" and source["size_ft"] == "60"
+    assert source["ongoing_source"]["source_radius_ft"] == 30
     assert any(
         row["slug"] == "confusion" and row["runtime_status"] == "unsupported_formula_size"
         for row in area["rows"]

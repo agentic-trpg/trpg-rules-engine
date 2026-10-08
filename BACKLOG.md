@@ -72,6 +72,26 @@ Humanoid death requires next-turn Zombie creation; this is not optional.
 The low-level Activity Resolver is still an unchecked building block for hosts,
 not a resource-paying complete-spell API. See `docs/dev/spell-execution-admission.md`.
 
+## B4 ongoing activation and moving sources (2026-10-08)
+
+- Sunbeam now executes its initial and later beams through public intents. An
+  area-owned canonical source captures slot/DC; later Magic actions pay only the
+  base Action, retain duration/concentration, skip Counterspell cast windows and
+  retain damage reactions. Failure-only Blinded expires at the caster's next
+  turn start independently of concentration.
+- Shared following environmental projection supplies 30-ft Bright +30-ft Dim
+  Sunlight and refreshes on voluntary/forced movement. Existing area lifecycle
+  removes sources on concentration expiry/replacement/drop, death, departure and
+  Combat End. Static scene data stays unchanged.
+- Exact canonical regeneration, semantic Admission, public prepayment refusals,
+  owner isolation, Action Surge/Rage, rollback and replay regressions protect the
+  contract. Sunbeam stays Bounded; counts remain 28/47/26/238.
+- Moonbeam remains Deferred: active stationary-area relocation with appearance/
+  movement triggers and general forced shape reversion/area-bound shape-change
+  suppression are missing. Item concentration, autonomous Monster AI activation
+  and out-of-combat duration clocks remain outside this batch. See
+  `docs/dev/ongoing-spell-activation.md`.
+
 ## Unimplemented activity kinds (2026-08-22)
 
 - **Most `summon`, `transform` and `enchant` activities are narrative no-ops

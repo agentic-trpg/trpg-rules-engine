@@ -159,6 +159,14 @@ def resolve_spell_activities(
         )
         contexts[activity.id] = activity_ctx
         if activity.persistent_area is not None:
+            if activity.persistent_area.ongoing_activation is not None:
+                resolve_activity(
+                    activity,
+                    replace(
+                        activity_ctx,
+                        concentration=ctx.concentration and activity.timing.effects_concentration,
+                    ),
+                )
             register_area(
                 live,
                 activity,

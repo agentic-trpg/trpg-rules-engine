@@ -7767,13 +7767,13 @@
   {
     "slug": "sunbeam",
     "uuid": "Compendium.dnd5e.spells24.Item.phbsplSunbeam000",
-    "canonical_sha256": "86e8e1991070e467889cfdc14ab4baddc30fe709936743eb70b52d46fe387f45",
+    "canonical_sha256": "a4c63f94d9625337e6f21bedea097bdf0762d5f5f30f795e1f6470744c597ea7",
     "source_url": "https://github.com/foundryvtt/dnd5e/blob/965ad2d0cf5d063dac675ba078b5bd3c3c0dd449/packs/_source/spells24/6th-level/sunbeam.yml",
     "classification": "bounded",
     "required_mechanisms": [],
     "missing_details": [],
     "limitations": [
-      "Initial beam only; repeated beams require an ongoing spell activation carrier that spends Action without spending another spell slot. Ongoing daylight and environment interactions are host-owned."
+      "Grid combat creature delivery only; the Host attests spell components. Ongoing Magic actions use the existing source and captured DC/slot; item concentration and autonomous monster activation are not admitted."
     ],
     "requires_direct_carrier": false,
     "activities": [

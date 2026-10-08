@@ -156,7 +156,8 @@ uv run python -m tools.effect_lifecycle_audit --output ../../docs/dev/effect-lif
 
 The [deterministic inventory](effect-lifecycle-audit.json) has 188 rows:
 133 spell, 17 feature and 38 item rows. Seven bindings have executable typed
-lifecycles; 35 typed duration/overlap bindings are supported. The other 146 rows
+lifecycles; 37 typed duration/overlap bindings are supported, including B4's two
+Sunbeam source-next-turn-start bindings. The other 144 rows
 are explicit deferred or candidate records: 39 repeat-save candidates,
 23 damage-break candidates and 84 other deferred rows. Candidate discovery during ingestion does not
 authorize runtime execution. Dominate variants' damage-triggered escape saves

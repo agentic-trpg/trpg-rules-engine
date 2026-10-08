@@ -12,6 +12,7 @@ class EnvironmentalSpec(BaseModel):
     light: Literal["bright", "dim", "dark"] | None = None
     obscurement: Literal["none", "light", "heavy"] = "none"
     sunlight: bool = False
+    sunlight_in_dim: bool = Field(default=False, exclude_if=lambda value: not value)
     dim_extension_ft: int = Field(default=0, strict=True, ge=0)
     radius_increase_per_slot_ft: int = Field(default=0, strict=True, ge=0)
     dispels_light_through_level: int | None = Field(default=None, strict=True, ge=0, le=9)
@@ -47,6 +48,8 @@ class EnvironmentalSpec(BaseModel):
                 and (not self.sunlight or self.light == "bright")
                 and (not self.dim_extension_ft or self.light == "bright")
             )
+        if self.sunlight_in_dim and not (self.sunlight and self.dim_extension_ft):
+            valid = False
         if not valid:
             raise ValueError("inconsistent environmental mechanics")
         return self

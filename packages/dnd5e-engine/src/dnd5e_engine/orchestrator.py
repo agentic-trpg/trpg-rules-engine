@@ -344,6 +344,7 @@ class PlayerIntent(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     intent_type: IntentType
+    source_id: str | None = None
     check: CheckRequest | None = None
     help_check: HelpCheckSpec | None = None
     spell_id: str | None = None
@@ -509,6 +510,7 @@ class IntentRejectedError(CombatSeamError):
     """
 
     RejectionReason = Literal[
+        "invalid_spell_activation",
         "actor_not_in_initiative",
         "not_actor_turn",
         "combat_ended",
@@ -10380,7 +10382,7 @@ def _attack_input_failure(
 # a Magic action to be activated." The corpus does not mark which features or
 # items need it, so every Action-costed cast, item use and feature use counts.
 _MAGIC_ACTION_INTENTS: Final[frozenset[IntentType]] = frozenset(
-    {"cast_spell", "use_item", "use_feature"}
+    {"cast_spell", "use_item", "use_feature", "activate_spell"}
 )
 
 
@@ -11667,6 +11669,11 @@ async def _submit_player_intent(
     """
     live = _get_live(handle)
     current = _validate_intent_preconditions(live, handle, actor_id, intent=intent)
+    if intent.intent_type == "activate_spell":
+        from dnd5e_engine.ongoing_spell_activation import activate_spell
+
+        activate_spell(live, current, intent)
+        return
     validate_check_surface(live, current, intent)
 
     # Movement and utility intents dispatch through dedicated handlers;
@@ -12183,6 +12190,13 @@ async def _submit_player_intent(
             or action_cost.is_free_action
             or funding != "action"
             or (intent.intent_type == "attack" and _attacks_per_action(live, current) > 1)
+            or (
+                cast_spell is not None
+                and any(
+                    a.persistent_area and a.persistent_area.ongoing_activation
+                    for a in cast_spell.activities
+                )
+            )
         ),
     )
 

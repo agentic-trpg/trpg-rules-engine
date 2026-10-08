@@ -200,11 +200,17 @@ def test_lifecycle_audit_is_deterministic_matches_golden_and_keeps_deferrals_exp
         "typed_expire_on_positive_damage": 1,
         "finite_reviewed_duration": 31,
         "typed_one_use_modifier": 2,
-        "supported_lifecycle": 42,
-        "deferred": 146,
+        "supported_lifecycle": 44,
+        "deferred": 144,
     }
     assert {row["source_kind"] for row in first["rows"]} == {"spell", "feature", "item"}
     assert first["inventory_rows"] == 188
+    beams = [row for row in first["rows"] if row["source_slug"] == "sunbeam"]
+    assert len(beams) == 2
+    assert all(
+        row["lifecycle"]["expiry_boundary"] == "source_next_turn_start" and row["fully_executable"]
+        for row in beams
+    )
     for slug in ("guidance", "enhance-ability", "protection-from-energy"):
         spell = BundledAssetLoader().get_spell(slug)
         rows = [row for row in first["rows"] if row["source_slug"] == slug]

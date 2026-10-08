@@ -421,7 +421,9 @@ class GridTopology:
         if self.magical_darkness_on_cell(cell):
             return False
         return self._sunlight or any(
-            s.spec.sunlight and cell in s.cells for s in self.environment_sources
+            s.spec.sunlight
+            and (cell in s.cells or (s.spec.sunlight_in_dim and cell in s.dim_cells))
+            for s in self.environment_sources
         )
 
     def light_on_cell(self, cell: str) -> LightLevel:

@@ -14,6 +14,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from dnd5e_srd_data.schema.common import OngoingActivationSpec
+
 from dnd5e_engine.activities.conjuration import TransformSource
 from dnd5e_engine.environment import EnvironmentalSource
 from dnd5e_engine.outcome import CombatOutcome
@@ -21,6 +23,16 @@ from dnd5e_engine.types.combat import Combatant
 
 if TYPE_CHECKING:
     from dnd5e_engine.orchestrator import _LiveCombat
+
+
+@dataclass(frozen=True)
+class OngoingSpellView:
+    source_id: str
+    spell_id: str
+    owner_id: str
+    activation: OngoingActivationSpec
+    slot_level: int | None
+    save_dc: int | None
 
 
 @dataclass(frozen=True)
@@ -128,6 +140,7 @@ class LiveCombatView:
     # C21 — summoned creatures keyed by entity id; empty when none is seated.
     summons: dict[str, SummonView] = field(default_factory=dict)
     environment_sources: tuple[EnvironmentalSource, ...] = ()
+    ongoing_spells: tuple[OngoingSpellView, ...] = ()
 
     @classmethod
     def from_live(cls, live: _LiveCombat) -> LiveCombatView:
@@ -139,6 +152,18 @@ class LiveCombatView:
                 extra_actions_remaining=actor.extra_actions_remaining,
             )
         return cls(
+            ongoing_spells=tuple(
+                OngoingSpellView(
+                    a.id,
+                    a.source_id,
+                    a.source_entity_id,
+                    a.spec.ongoing_activation,
+                    a.slot_level,
+                    a.save_dc,
+                )
+                for a in live.persistent_areas.areas
+                if a.spec.ongoing_activation is not None
+            ),
             environment_sources=live.topology.environment_sources,
             initiative=list(live.initiative),
             party_ids=set(live.party_ids),

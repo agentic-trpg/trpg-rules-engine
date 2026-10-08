@@ -241,8 +241,14 @@ def plan_delivery(
     plans = []
     live_ids = {c.entity_id for c in creatures}
     for activity in activities:
-        environment = activity.persistent_area.environment if activity.persistent_area else None
-        if environment is not None and (
+        persistent = activity.persistent_area
+        environment = persistent.environment if persistent else None
+        environment_only = (
+            environment is not None
+            and persistent is not None
+            and persistent.ongoing_activation is None
+        )
+        if environment_only and (
             spec.origin_cell is None
             or spec.primary_target_id is not None
             or spec.selected_target_ids is not None
@@ -290,7 +296,7 @@ def plan_delivery(
             inside = [c for c in creatures if positions.get(c.entity_id) in cells]
             targets, spared = (
                 ((), ())
-                if environment is not None
+                if environment_only
                 else _area_selection(
                     activity,
                     spec,

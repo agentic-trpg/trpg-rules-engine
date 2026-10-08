@@ -25,6 +25,12 @@ source/area/caster identity, actual spell level, origin/radius, footprint, durat
 and concentration identity. Static scene lighting/obscurement is never rewritten.
 Removing one source recomputes the remaining projection.
 
+B4 adds following sources through the same area ownership and projection:
+Sunbeam's 30-ft Bright +30-ft Dim light follows its caster and marks both regions
+as Sunlight. `sunlight_in_dim` is explicit; the Daylight contract below is unchanged.
+Voluntary and forced movement refresh source origin and both footprints after each
+committed step. See [ongoing activation](ongoing-spell-activation.md).
+
 ## Supported operations and preflight
 
 - Fog Cloud: stationary 20-ft Sphere, +20-ft radius for each slot above 1,

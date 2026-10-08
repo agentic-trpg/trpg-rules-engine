@@ -34,6 +34,7 @@ from pydantic import (
     SerializerFunctionWrapHandler,
     field_serializer,
     model_serializer,
+    model_validator,
 )
 
 from dnd5e_srd_data.schema.environment import EnvironmentalSpec
@@ -722,6 +723,22 @@ class RollBlock(BaseModel, frozen=True):
 AreaTrigger = Literal["enter", "area-enters-creature", "turn-start-inside", "turn-end-inside"]
 
 
+class OngoingActivationSpec(BaseModel, frozen=True):
+    """Activity allowlist on an existing area source; never a new spell cast."""
+
+    model_config = {"extra": "forbid"}
+    activity_ids: tuple[str, ...] = Field(min_length=1)
+    cost: Literal["magic_action"] = "magic_action"
+
+    @model_validator(mode="after")
+    def _unique_ids(self) -> OngoingActivationSpec:
+        if any(not value for value in self.activity_ids) or len(set(self.activity_ids)) != len(
+            self.activity_ids
+        ):
+            raise ValueError("ongoing activities require distinct nonempty canonical IDs")
+        return self
+
+
 class PersistentAreaSpec(BaseModel, frozen=True):
     """Audited area behavior; geometry comes from the activity's template.
 
@@ -737,6 +754,19 @@ class PersistentAreaSpec(BaseModel, frozen=True):
     environment: EnvironmentalSpec | None = Field(
         default=None, exclude_if=lambda value: value is None
     )
+    ongoing_activation: OngoingActivationSpec | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    # A source's light footprint can differ from its immediate payload geometry.
+    source_radius_ft: int | None = Field(default=None, gt=0, exclude_if=lambda value: value is None)
+
+    @model_validator(mode="after")
+    def _source_geometry(self) -> PersistentAreaSpec:
+        if self.source_radius_ft is not None and (
+            self.placement != "follow-source" or self.environment is None
+        ):
+            raise ValueError("source radius requires a following environmental source")
+        return self
 
 
 class ActivityTiming(BaseModel, frozen=True):

@@ -3,9 +3,10 @@
   "counts": {
     "creature_filter_deferred": 19,
     "effect_geometry_only": 1,
-    "executable_target_area": 219,
+    "executable_target_area": 218,
     "manual_activity": 2,
     "non_resolving_template": 72,
+    "ongoing_source_with_immediate_payload": 1,
     "persistent_area": 4,
     "persistent_environment": 3,
     "unsupported_formula_size": 11,
@@ -1946,8 +1947,34 @@
       "counted_target": null,
       "creature_filter": null,
       "forced_movement": null,
-      "runtime_status": "executable_target_area",
-      "deferred_reason": null
+      "runtime_status": "ongoing_source_with_immediate_payload",
+      "deferred_reason": null,
+      "ongoing_source": {
+        "placement": "follow-source",
+        "triggers": [],
+        "once_per_turn": true,
+        "speed_multiplier": null,
+        "effects_until_target_turn_start": false,
+        "environment": {
+          "kind": "light",
+          "light": "bright",
+          "obscurement": "none",
+          "sunlight": true,
+          "sunlight_in_dim": true,
+          "dim_extension_ft": 30,
+          "radius_increase_per_slot_ft": 0,
+          "dispels_light_through_level": null,
+          "dispels_darkness_through_level": null,
+          "strong_wind_dispersal": false
+        },
+        "ongoing_activation": {
+          "activity_ids": [
+            "Y0cJvZuD7EfwGqkf"
+          ],
+          "cost": "magic_action"
+        },
+        "source_radius_ft": 30
+      }
     },
     {
       "source_kind": "spell",

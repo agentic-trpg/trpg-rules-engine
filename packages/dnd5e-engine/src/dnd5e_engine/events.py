@@ -161,6 +161,7 @@ CastFailedReason = Literal[
 ]
 
 IntentType = Literal[
+    "activate_spell",
     "check",
     "attack",
     "cast_spell",
@@ -249,6 +250,8 @@ class IntentSubmitted(BaseModel):
     spell_id: str | None = None
     target_id: str | None = None
     item_id: str | None = None
+    source_id: str | None = Field(default=None, exclude_if=lambda value: value is None)
+    activity_id: str | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 # ── roll resolution ─────────────────────────────────────────────────────────

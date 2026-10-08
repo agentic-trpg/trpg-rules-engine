@@ -41,6 +41,9 @@ def refresh_environment(live: "_LiveCombat") -> None:
         spec = area.spec.environment
         if spec is None:
             continue
+        origin = area.origin(live.actor_zone)
+        if origin is None:
+            continue
         cells = area.cells(live.topology, live.actor_zone)
         dim: frozenset[str] = frozenset()
         if spec.dim_extension_ft:
@@ -48,7 +51,7 @@ def refresh_environment(live: "_LiveCombat") -> None:
                 area_cells(
                     live.topology,
                     replace(area.template, size_ft=area.template.size_ft + spec.dim_extension_ft),
-                    area.cast_origin,
+                    origin,
                     None,
                 )
                 - cells
@@ -61,7 +64,7 @@ def refresh_environment(live: "_LiveCombat") -> None:
                 area.slot_level or area.base_spell_level or 0,
                 spec,
                 cells,
-                area.cast_origin,
+                origin,
                 area.template.size_ft,
                 area.duration.rounds,
                 area.concentration_identity,

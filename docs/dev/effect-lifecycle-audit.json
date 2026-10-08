@@ -1,10 +1,10 @@
 {
   "counts": {
     "damage_break_candidate": 23,
-    "deferred": 84,
+    "deferred": 82,
     "executable_typed_lifecycle": 7,
     "repeated_save_candidate": 39,
-    "typed_duration_only": 35
+    "typed_duration_only": 37
   },
   "inventory_rows": 188,
   "source_counts": {
@@ -17,8 +17,8 @@
     "typed_expire_on_positive_damage": 1,
     "finite_reviewed_duration": 31,
     "typed_one_use_modifier": 2,
-    "supported_lifecycle": 42,
-    "deferred": 146
+    "supported_lifecycle": 44,
+    "deferred": 144
   },
   "inventory_notes": {
     "authority": "only reviewed typed metadata grants lifecycle execution; concentration and failed saves do not imply repetition",
@@ -2546,18 +2546,22 @@
       "activity_id": "o3kffaumfNGjVvg9",
       "effect_id": "RZmnRyi6pyjIRN1i",
       "path": "/activities/0/effects/0",
-      "lifecycle": null,
-      "consumer": null,
+      "lifecycle": {
+        "repeat_save": null,
+        "maximum_rounds": null,
+        "expiry_boundary": "source_next_turn_start",
+        "expire_on_positive_damage": false,
+        "one_use_modifiers": []
+      },
+      "consumer": "typed_effect_lifecycle",
       "repeat_save_candidate": false,
       "damage_break_candidate": false,
       "one_use_modifier_candidate": false,
       "finite_reviewed_duration": false,
-      "display_duration": {
-        "rounds": 1
-      },
-      "fully_executable": false,
-      "classification": "deferred",
-      "deferred_reason": "no reviewed typed lifecycle binding; display duration or prose alone does not authorize execution"
+      "display_duration": null,
+      "fully_executable": true,
+      "classification": "typed_duration_only",
+      "deferred_reason": null
     },
     {
       "source_kind": "spell",
@@ -2565,18 +2569,22 @@
       "activity_id": "Y0cJvZuD7EfwGqkf",
       "effect_id": "RZmnRyi6pyjIRN1i",
       "path": "/activities/1/effects/0",
-      "lifecycle": null,
-      "consumer": null,
+      "lifecycle": {
+        "repeat_save": null,
+        "maximum_rounds": null,
+        "expiry_boundary": "source_next_turn_start",
+        "expire_on_positive_damage": false,
+        "one_use_modifiers": []
+      },
+      "consumer": "typed_effect_lifecycle",
       "repeat_save_candidate": false,
       "damage_break_candidate": false,
       "one_use_modifier_candidate": false,
       "finite_reviewed_duration": false,
-      "display_duration": {
-        "rounds": 1
-      },
-      "fully_executable": false,
-      "classification": "deferred",
-      "deferred_reason": "no reviewed typed lifecycle binding; display duration or prose alone does not authorize execution"
+      "display_duration": null,
+      "fully_executable": true,
+      "classification": "typed_duration_only",
+      "deferred_reason": null
     },
     {
       "source_kind": "spell",

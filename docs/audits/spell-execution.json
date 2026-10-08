@@ -17258,16 +17258,16 @@
       "slug": "sunbeam",
       "uuid": "Compendium.dnd5e.spells24.Item.phbsplSunbeam000",
       "classification": "bounded",
-      "canonical_sha256": "86e8e1991070e467889cfdc14ab4baddc30fe709936743eb70b52d46fe387f45",
+      "canonical_sha256": "a4c63f94d9625337e6f21bedea097bdf0762d5f5f30f795e1f6470744c597ea7",
       "source_url": "https://github.com/foundryvtt/dnd5e/blob/965ad2d0cf5d063dac675ba078b5bd3c3c0dd449/packs/_source/spells24/6th-level/sunbeam.yml",
       "missing_mechanisms": [],
       "missing_details": [],
       "limitations": [
-        "Initial beam only; repeated beams require an ongoing spell activation carrier that spends Action without spending another spell slot. Ongoing daylight and environment interactions are host-owned."
+        "Grid combat creature delivery only; the Host attests spell components. Ongoing Magic actions use the existing source and captured DC/slot; item concentration and autonomous monster activation are not admitted."
       ],
       "entrypoints": {
         "pc_direct": null,
-        "monster_cast": null,
+        "monster_cast": "Monster AI ongoing activation declaration unavailable",
         "item_delegated": "item concentration ownership deferred"
       },
       "activities": [
@@ -17279,8 +17279,26 @@
           "host_operation": false,
           "selected_by_default": true,
           "timing": "immediate",
-          "persistent": false,
-          "admission_failure": null
+          "persistent": true,
+          "admission_failure": null,
+          "ongoing_activation": {
+            "activity_ids": [
+              "Y0cJvZuD7EfwGqkf"
+            ],
+            "cost": "magic_action"
+          },
+          "environment": {
+            "kind": "light",
+            "light": "bright",
+            "obscurement": "none",
+            "sunlight": true,
+            "sunlight_in_dim": true,
+            "dim_extension_ft": 30,
+            "radius_increase_per_slot_ft": 0,
+            "dispels_light_through_level": null,
+            "dispels_darkness_through_level": null,
+            "strong_wind_dispersal": false
+          }
         },
         {
           "activity_id": "Y0cJvZuD7EfwGqkf",
@@ -17300,7 +17318,8 @@
             "mechanisms": [
               "ongoing_spell_activation"
             ]
-          }
+          },
+          "ongoing_admission_failure": null
         }
       ]
     },

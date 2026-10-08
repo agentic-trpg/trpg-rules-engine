@@ -152,6 +152,7 @@ def admission_failure(
     activities: Sequence[Activity],
     *,
     direct_carrier: bool = False,
+    ongoing_carrier: bool = False,
 ) -> ExecutionFailure | None:
     """Inspect the selected payload only; no actor, event sink, state or RNG.
 
@@ -190,10 +191,15 @@ def admission_failure(
         identity: _ActivityIdentity = {"spell_id": spell.slug, "activity_id": activity.id}
         if activity.id not in by_id or activity.kind != by_id[activity.id].kind:
             return ExecutionFailure(code="unreviewed_activity", **identity)
-        if by_id[activity.id].required_mechanisms:
+        missing = tuple(
+            mechanism
+            for mechanism in by_id[activity.id].required_mechanisms
+            if not (ongoing_carrier and mechanism == "ongoing_spell_activation")
+        )
+        if missing:
             return ExecutionFailure(
                 code="missing_mechanism",
-                mechanisms=by_id[activity.id].required_mechanisms,
+                mechanisms=missing,
                 **identity,
             )
         if activity.timing.trigger == "manual":

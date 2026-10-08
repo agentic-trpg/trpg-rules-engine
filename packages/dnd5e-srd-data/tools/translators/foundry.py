@@ -110,6 +110,7 @@ from tools.translators.feature_runtime import (
     feature_runtime_operations,
     feature_target_rules,
 )
+from tools.translators.ongoing_activation import apply_ongoing_activation
 from tools.translators.persistent_areas import apply_persistent_areas
 from tools.translators.prose_cleanup import cleanup_prose
 from tools.translators.reactions import apply_reaction_semantics
@@ -2428,7 +2429,7 @@ def translate_spell_yaml(
         review=ReviewState(),
         foundry_uuid=_spell_foundry_uuid(yaml_path, doc),
     )
-    return apply_environment(apply_effect_selection(spell))
+    return apply_ongoing_activation(apply_environment(apply_effect_selection(spell)))
 
 
 # --- advancement (shared by class/subclass/race) ---

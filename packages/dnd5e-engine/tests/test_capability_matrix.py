@@ -637,6 +637,28 @@ def _dynamic_environment_points_resolve() -> bool:
     return True
 
 
+def _ongoing_spell_activation_resolves() -> bool:
+    from dnd5e_engine.events import DamageApplied, SpellCast
+    from dnd5e_engine.lib_loader import scoped_lib_loader
+    from tests.c21_support import act, events
+    from tests.test_ongoing_spell_activation import HERO, activate, cast, table
+    from tests.test_spell_effect_selection import take_turn
+
+    with scoped_lib_loader(BundledAssetLoader()):
+        handle, live = table()
+    cast(handle)
+    act(handle, HERO, intent_type="move", target_zone_id="1,0")
+    take_turn(live)
+    activate(handle)
+    return (
+        len(events(live, DamageApplied)) == 2
+        and len(events(live, SpellCast)) == 1
+        and live.spell_slots_by_entity[HERO][6] == 1
+        and live.topology.environment_sources[0].origin == "1,0"
+        and live.topology.sunlight_on_cell("13,0")
+    )
+
+
 def _typed_lifecycle_contract_resolves() -> bool:
     from dnd5e_srd_data.schema.lifecycle import EffectLifecycleSpec, RepeatSaveSpec
 
@@ -1297,6 +1319,7 @@ _PROBES: dict[str, tuple[Any, str]] = {
     ),
     "| Typed per-target spell Effect Selection |": (_typed_spell_effect_choices_resolve, "✅"),
     "| Dynamic environmental point operations |": (_dynamic_environment_points_resolve, "✅"),
+    "| Ongoing spell Magic actions and moving light |": (_ongoing_spell_activation_resolves, "✅"),
     # C20: Rage ends unless extended (and on Incapacitated).
     "| Rage |": (
         lambda: (

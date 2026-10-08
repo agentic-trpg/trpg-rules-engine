@@ -201,6 +201,8 @@ def register_area(
 
     spec = activity.persistent_area
     template = area_template(activity, cast_level=ctx.slot_level, base_level=ctx.base_spell_level)
+    if spec is not None and spec.source_radius_ft is not None:
+        template = AreaTemplate("sphere", "sphere", spec.source_radius_ft, "actor", True)
     if spec is None or template is None or template.directional:
         return
     if origin is None and ctx.spell_delivery is not None:
@@ -304,6 +306,7 @@ def register_area(
         ),
     )
     _clamp_covered(live)
+
     if spec.environment is not None:
         from dnd5e_engine.environment import refresh_environment
 
@@ -339,6 +342,10 @@ def _clamp_covered(live: _LiveCombat) -> None:
 
 def after_movement_step(live: _LiveCombat, mover_id: str, from_cell: str) -> None:
     """Called after position/budget writeback, for voluntary AND forced steps."""
+    if any(a.spec.environment is not None for a in live.persistent_areas.areas):
+        from dnd5e_engine.environment import reconcile_environment
+
+        reconcile_environment(live)
     old_positions = dict(live.actor_zone)
     old_positions[mover_id] = from_cell
     for area in tuple(live.persistent_areas.areas):

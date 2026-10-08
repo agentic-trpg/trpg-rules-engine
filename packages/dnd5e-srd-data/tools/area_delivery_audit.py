@@ -82,6 +82,11 @@ def _area_row(
         status, reason = "unsupported_units", "area_units_not_feet"
     elif predicate is not None and predicate.deferred_reason:
         status, reason = "creature_filter_deferred", predicate.deferred_reason
+    elif (
+        activity.persistent_area is not None
+        and activity.persistent_area.ongoing_activation is not None
+    ):
+        status = "ongoing_source_with_immediate_payload"
     elif activity.persistent_area is not None and activity.persistent_area.environment is not None:
         status = "persistent_environment"
     elif activity.kind not in _RESOLVED_KINDS:
@@ -115,6 +120,11 @@ def _area_row(
         else None,
         "runtime_status": status,
         "deferred_reason": reason,
+        **(
+            {"ongoing_source": activity.persistent_area.model_dump(mode="json")}
+            if activity.persistent_area and activity.persistent_area.ongoing_activation
+            else {}
+        ),
     }
 
 

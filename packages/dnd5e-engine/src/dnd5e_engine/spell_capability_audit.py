@@ -52,6 +52,9 @@ def audit_document(loader: AssetLoader) -> dict[str, object]:
         for activity in spell.activities:
             activity_review = by_id[activity.id]
             failure = admission_failure(spell, [activity], direct_carrier=True)
+            ongoing = (
+                activity.persistent_area.ongoing_activation if activity.persistent_area else None
+            )
             activities.append(
                 {
                     **activity_review.model_dump(mode="json"),
@@ -59,6 +62,27 @@ def audit_document(loader: AssetLoader) -> dict[str, object]:
                     "timing": activity.timing.trigger,
                     "persistent": activity.persistent_area is not None,
                     "admission_failure": failure.model_dump(mode="json") if failure else None,
+                    **({"ongoing_activation": ongoing.model_dump(mode="json")} if ongoing else {}),
+                    **(
+                        {
+                            "ongoing_admission_failure": (
+                                ongoing_failure.model_dump(mode="json")
+                                if (
+                                    ongoing_failure := admission_failure(
+                                        spell, [activity], ongoing_carrier=True
+                                    )
+                                )
+                                else None
+                            )
+                        }
+                        if any(
+                            a.persistent_area
+                            and a.persistent_area.ongoing_activation
+                            and activity.id in a.persistent_area.ongoing_activation.activity_ids
+                            for a in spell.activities
+                        )
+                        else {}
+                    ),
                     **(
                         {
                             "effect_selection": {
@@ -99,7 +123,16 @@ def audit_document(loader: AssetLoader) -> dict[str, object]:
                     else "Monster AI effect selection declaration unavailable"
                     if any(getattr(a, "effect_selection", None) for a in selected)
                     else "Monster AI point-origin declaration unavailable"
-                    if any(a.persistent_area and a.persistent_area.environment for a in selected)
+                    if any(
+                        a.persistent_area
+                        and a.persistent_area.environment
+                        and a.persistent_area.placement == "stationary"
+                        for a in selected
+                    )
+                    else "Monster AI ongoing activation declaration unavailable"
+                    if any(
+                        a.persistent_area and a.persistent_area.ongoing_activation for a in selected
+                    )
                     else None,
                     "item_delegated": (
                         no_carrier_failure.model_dump(mode="json")

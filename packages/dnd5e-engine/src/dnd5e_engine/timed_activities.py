@@ -159,7 +159,10 @@ def resolve_spell_activities(
         )
         contexts[activity.id] = activity_ctx
         if activity.persistent_area is not None:
-            if activity.persistent_area.ongoing_activation is not None:
+            if (
+                activity.persistent_area.ongoing_activation is not None
+                and activity.persistent_area.ongoing_activation.relocation is None
+            ):
                 resolve_activity(
                     activity,
                     replace(

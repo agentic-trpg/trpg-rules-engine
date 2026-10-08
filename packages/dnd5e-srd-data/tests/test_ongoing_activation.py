@@ -32,6 +32,68 @@ def test_pinned_sunbeam_regeneration_is_exact():
     assert all(a.damage.parts[0].scaling.number == 0 for a in canonical.activities)
 
 
+def test_pinned_moonbeam_regeneration_is_exact():
+    canonical = BundledAssetLoader().get_spell("moonbeam")
+    translated = translate_spell_yaml(
+        Path(__file__).parent / "fixtures/ongoing/_source/spells24/2nd-level/moonbeam.yml",
+        ingest_date=canonical.provenance.ingest_date,
+        ingest_version=canonical.provenance.ingest_version,
+    )
+    assert translated == canonical
+    activity = canonical.activities[0]
+    assert activity.target.template.height == "40"
+    assert activity.persistent_area.ongoing_activation.relocation.max_distance_ft == 60
+    assert activity.persistent_area.triggers == (
+        "appearance",
+        "area-enters-creature",
+        "enter",
+        "turn-end-inside",
+    )
+    assert activity.persistent_area.revert_shape_on_failed_save
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "level",
+        "height",
+        "damage",
+        "save",
+        "description",
+        "payment",
+        "shape",
+        "target",
+        "conditional",
+    ],
+)
+def test_moonbeam_source_drift_fails_closed(field):
+    raw = BundledAssetLoader().get_spell("moonbeam").model_dump(mode="json")
+    activity = raw["activities"][0]
+    activity["target"]["template"]["height"] = ""
+    if field == "level":
+        raw["level"] = 3
+    elif field == "height":
+        activity["target"]["template"]["height"] = "50"
+    elif field == "damage":
+        activity["damage"]["parts"][0]["number"] = 3
+    elif field == "save":
+        activity["save"]["ability"] = ["wis"]
+    elif field == "description":
+        raw["description"] = "2014 turn start"
+    elif field == "conditional":
+        raw["description"] = raw["description"].replace(
+            "if the creature is shape-shifted", "even if the creature is not shape-shifted"
+        )
+    elif field == "payment":
+        activity["consumption"]["spell_slot"] = False
+    elif field == "shape":
+        activity["target"]["template"]["type"] = "sphere"
+    else:
+        activity["target"]["affects"]["choice"] = True
+    with pytest.raises(ValueError, match="ongoing source drift"):
+        apply_ongoing_activation(Spell.model_validate(raw))
+
+
 @pytest.mark.parametrize(
     "mutation",
     [

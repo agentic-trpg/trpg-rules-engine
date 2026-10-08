@@ -3,8 +3,8 @@
   "evidence": "Static reviewed contracts and typed admission; not whole-corpus runtime proof.",
   "scope": "Combat creature payloads; material inventory, narrative and world objects remain host-owned.",
   "counts": {
-    "bounded": 47,
-    "deferred": 236,
+    "bounded": 48,
+    "deferred": 235,
     "executable": 30,
     "host_narrative": 26
   },
@@ -12542,41 +12542,19 @@
     {
       "slug": "moonbeam",
       "uuid": "Compendium.dnd5e.spells24.Item.phbsplMoonbeam00",
-      "classification": "deferred",
-      "canonical_sha256": "3666541e7d1e99e63f5b500d3cd71cb539774462c55dc8e6675b4c75a9f409cf",
+      "classification": "bounded",
+      "canonical_sha256": "1e5366349a6bfc2a4e0ef50a60feb776d150863792fd33e8f3913b443ada7149",
       "source_url": "https://github.com/foundryvtt/dnd5e/blob/965ad2d0cf5d063dac675ba078b5bd3c3c0dd449/packs/_source/spells24/2nd-level/moonbeam.yml",
-      "missing_mechanisms": [
-        "area_lifecycle"
+      "missing_mechanisms": [],
+      "missing_details": [],
+      "limitations": [
+        "2D horizontal Cylinder projection; Host attests creatures lie within the 40-ft vertical span",
+        "Owner-controlled point relocation; Monster AI and delegated concentration remain deferred"
       ],
-      "missing_details": [
-        "typed persistent area triggers, placement and terrain/target consequences"
-      ],
-      "limitations": [],
       "entrypoints": {
-        "pc_direct": {
-          "code": "missing_mechanism",
-          "spell_id": "moonbeam",
-          "activity_id": null,
-          "mechanisms": [
-            "area_lifecycle"
-          ]
-        },
-        "monster_cast": {
-          "code": "missing_mechanism",
-          "spell_id": "moonbeam",
-          "activity_id": null,
-          "mechanisms": [
-            "area_lifecycle"
-          ]
-        },
-        "item_delegated": {
-          "code": "missing_mechanism",
-          "spell_id": "moonbeam",
-          "activity_id": null,
-          "mechanisms": [
-            "area_lifecycle"
-          ]
-        }
+        "pc_direct": null,
+        "monster_cast": "Monster AI point-origin declaration unavailable",
+        "item_delegated": "item concentration ownership deferred"
       },
       "activities": [
         {
@@ -12587,14 +12565,33 @@
           "host_operation": false,
           "selected_by_default": true,
           "timing": "immediate",
-          "persistent": false,
-          "admission_failure": {
-            "code": "missing_mechanism",
-            "spell_id": "moonbeam",
-            "activity_id": null,
-            "mechanisms": [
-              "area_lifecycle"
-            ]
+          "persistent": true,
+          "admission_failure": null,
+          "ongoing_activation": {
+            "activity_ids": [
+              "dnd5eactivity000"
+            ],
+            "cost": "magic_action",
+            "relocation": {
+              "max_distance_ft": 60,
+              "later_turns_only": true,
+              "targeting": "destination"
+            }
+          },
+          "height_ft": "40",
+          "shape_reversion_on_failed_save": true,
+          "nonstacking_same_spell": true,
+          "ongoing_admission_failure": null,
+          "environment": {
+            "kind": "light",
+            "light": "dim",
+            "obscurement": "none",
+            "sunlight": false,
+            "dim_extension_ft": 0,
+            "radius_increase_per_slot_ft": 0,
+            "dispels_light_through_level": null,
+            "dispels_darkness_through_level": null,
+            "strong_wind_dispersal": false
           }
         }
       ]

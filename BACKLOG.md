@@ -28,7 +28,7 @@ Paid combat spell no-ops are now gated by shared typed admission before payment,
 RNG, concentration replacement and reaction opportunities. This closes the
 acceptance/payment safety gap, **not** the missing mechanics below. The stable
 inventory in `docs/audits/spell-execution.json` records 30 executable combat
-contracts, 47 bounded contracts, 26 explicit host narrative contracts and 236
+contracts, 48 bounded contracts, 26 explicit host narrative contracts and 235
 deferred spells, with all 464 canonical Activities. Unknown identities,
 unreviewed Activities, missing effects and mandatory unsupported mechanisms
 fail closed. PC, monster and delegated item paths share the check.
@@ -86,9 +86,8 @@ not a resource-paying complete-spell API. See `docs/dev/spell-execution-admissio
 - Exact canonical regeneration, semantic Admission, public prepayment refusals,
   owner isolation, Action Surge/Rage, rollback and replay regressions protect the
   contract. Sunbeam stays Bounded; counts remain 28/47/26/238.
-- Moonbeam remains Deferred: active stationary-area relocation with appearance/
-  movement triggers and general forced shape reversion/area-bound shape-change
-  suppression are missing. Item concentration, autonomous Monster AI activation
+- Moonbeam's active stationary-area relocation and forced shape reversion are
+  completed by B7 below. Item concentration, autonomous Monster AI activation
   and out-of-combat duration clocks remain outside this batch. See
   `docs/dev/ongoing-spell-activation.md`.
 
@@ -128,6 +127,28 @@ not a resource-paying complete-spell API. See `docs/dev/spell-execution-admissio
   Deferred: delegated concentration Haste has no reviewed item override for
   one-minute non-concentration/no-Lethargy ownership. Preflight refuses before
   consumption; the item must receive its own contract before admission.
+
+## B7 moving persistent areas and Moonbeam (2026-10-09)
+
+- A typed destination relocation contract reuses area-owned ongoing activation,
+  original geometry/slot/DC, owner and Magic Action budget. Later turns move the
+  existing Cylinder up to 60 ft without recasting, resetting duration or opening
+  another Counterspell window. Transit cells do not become arrivals.
+- Moonbeam executes 2024 appearance/area arrival/creature entry/turn-end saves,
+  one per creature per combat turn, shared simultaneous damage, Radiant/half and
+  upcast scaling. Its source projects magical Dim Light and retains radius 5 ft /
+  height 40 ft metadata; the Host attests vertical membership on the 2D plane.
+- Failed transformed targets revert through authoritative effect expiry, including
+  Polymorph temp-HP depletion before the rider; area-owned restrictions block form
+  re-entry until leaving. Ordinary failures gain no restriction. Source isolation,
+  strongest/latest same-spell projection, duration/concentration/death/departure/
+  Combat End cleanup and Darkness overlap dispels share existing owners.
+- Public natural-turn, forced movement, real Wild Shape, canonical regeneration,
+  fault rollback and full authoritative replay regressions support Deferred ->
+  Bounded admission (30/48/26/235). Full 3D, other active-cloud producers, autonomous
+  Monster activation, item concentration and world clocks remain deferred.
+  See `docs/dev/ongoing-spell-activation.md` and
+  `packages/dnd5e-engine/src/dnd5e_engine/ongoing_spell_activation.py`.
 
 ## Unimplemented activity kinds (2026-08-22)
 
@@ -974,7 +995,7 @@ zone + apply logic:
   damage. PersistentAreaState now owns Spirit Guardians, Stinking Cloud,
   Ball Bearings and Caltrops, including step entry, source-follow coverage,
   boundary triggers, exclusions, per-turn gates and lifetime cleanup. Other
-  unmapped effects, actively moved clouds and numbered rounds remain deferred. Monster
+  unmapped effects, active clouds other than Moonbeam and numbered rounds remain deferred. Monster
   regeneration/recharge remain on the driven-monster path (C18).
   See `docs/dev/spell-timed-activities.md` for the canonical audit and scope.
   (`packages/dnd5e-engine/src/dnd5e_engine/timed_activities.py`)

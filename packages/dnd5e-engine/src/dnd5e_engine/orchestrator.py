@@ -6687,6 +6687,10 @@ def _fold_resolution_outcome(
 
         reconcile_environment(live)
 
+    from dnd5e_engine.persistent_areas import resolve_area_appearances
+
+    resolve_area_appearances(live, caster.entity_id)
+
 
 def _hook_run_end_of_turn_saves(live: _LiveCombat, actor_id: str | None) -> None:
     """``turn_end`` hook — adapt ``_run_end_of_turn_saves`` to ``TurnHook``."""
@@ -9385,6 +9389,10 @@ def _wild_shape_failure(
         return None
     form = _validated_beast_form(intent.form_id)
     tier = wild_shape_tier(_class_levels(current).get("druid", 0))
+    from dnd5e_engine.persistent_areas import shapechange_blocked
+
+    if shapechange_blocked(live, current.entity_id):
+        return CastFailed(actor_id=current.entity_id, spell_id="", reason="invalid_form")
     transform = _transform_of(live, current.entity_id)
     if (
         form is None
@@ -9414,6 +9422,10 @@ def _polymorph_form_failure(
         return None
     form = _validated_beast_form(intent.form_id)
     ceiling = _challenge_rating_of(live, intent.target_id) if intent.target_id else None
+    from dnd5e_engine.persistent_areas import shapechange_blocked
+
+    if intent.target_id and shapechange_blocked(live, intent.target_id):
+        return CastFailed(actor_id=current.entity_id, spell_id=spell_id, reason="invalid_form")
     if form is None or ceiling is None or form.cr > ceiling:
         return CastFailed(actor_id=current.entity_id, spell_id=spell_id, reason="invalid_form")
     return None

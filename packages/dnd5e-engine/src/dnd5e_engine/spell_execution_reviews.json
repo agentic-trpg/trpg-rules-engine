@@ -5661,16 +5661,15 @@
   {
     "slug": "moonbeam",
     "uuid": "Compendium.dnd5e.spells24.Item.phbsplMoonbeam00",
-    "canonical_sha256": "3666541e7d1e99e63f5b500d3cd71cb539774462c55dc8e6675b4c75a9f409cf",
+    "canonical_sha256": "1e5366349a6bfc2a4e0ef50a60feb776d150863792fd33e8f3913b443ada7149",
     "source_url": "https://github.com/foundryvtt/dnd5e/blob/965ad2d0cf5d063dac675ba078b5bd3c3c0dd449/packs/_source/spells24/2nd-level/moonbeam.yml",
-    "classification": "deferred",
-    "required_mechanisms": [
-      "area_lifecycle"
+    "classification": "bounded",
+    "required_mechanisms": [],
+    "missing_details": [],
+    "limitations": [
+      "2D horizontal Cylinder projection; Host attests creatures lie within the 40-ft vertical span",
+      "Owner-controlled point relocation; Monster AI and delegated concentration remain deferred"
     ],
-    "missing_details": [
-      "typed persistent area triggers, placement and terrain/target consequences"
-    ],
-    "limitations": [],
     "requires_direct_carrier": false,
     "activities": [
       {

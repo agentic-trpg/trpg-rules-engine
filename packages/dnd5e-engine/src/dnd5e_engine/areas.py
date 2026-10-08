@@ -64,6 +64,8 @@ class AreaTemplate:
     anchor: OriginAnchor
     includes_origin: bool
     width_ft: int = 5
+    # Metadata only: this engine projects a single horizontal Host plane.
+    height_ft: int | None = None
 
     @property
     def directional(self) -> bool:
@@ -136,7 +138,13 @@ def area_template(
         return None
     if grid_shape == "line" and width_ft <= 0:
         return None
-    return AreaTemplate(shape, grid_shape, size_ft, anchor, includes_origin, width_ft)
+    try:
+        height_ft = int(float(template.height)) if template.height else None
+    except (TypeError, ValueError):
+        return None
+    if height_ft is not None and height_ft <= 0:
+        return None
+    return AreaTemplate(shape, grid_shape, size_ft, anchor, includes_origin, width_ft, height_ft)
 
 
 def creature_count(activity: Any) -> int | None:

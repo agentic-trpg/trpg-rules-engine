@@ -723,7 +723,22 @@ class RollBlock(BaseModel, frozen=True):
 # ---------------------------------------------------------------------------
 
 
-AreaTrigger = Literal["enter", "area-enters-creature", "turn-start-inside", "turn-end-inside"]
+AreaTrigger = Literal[
+    "appearance", "enter", "area-enters-creature", "turn-start-inside", "turn-end-inside"
+]
+
+
+class AreaRelocationSpec(BaseModel, frozen=True):
+    """Move the existing source to one legal destination, without transit hits.
+
+    Owner/source identity and geometry are captured by PersistentAreaState.
+    Range is measured from its current origin; Total Cover blocks relocation.
+    """
+
+    model_config = {"extra": "forbid"}
+    max_distance_ft: int = Field(gt=0, strict=True)
+    later_turns_only: Literal[True] = True
+    targeting: Literal["destination"] = "destination"
 
 
 class OngoingActivationSpec(BaseModel, frozen=True):
@@ -732,6 +747,7 @@ class OngoingActivationSpec(BaseModel, frozen=True):
     model_config = {"extra": "forbid"}
     activity_ids: tuple[str, ...] = Field(min_length=1)
     cost: Literal["magic_action"] = "magic_action"
+    relocation: AreaRelocationSpec | None = Field(default=None, exclude_if=lambda v: v is None)
 
     @model_validator(mode="after")
     def _unique_ids(self) -> OngoingActivationSpec:
@@ -745,7 +761,7 @@ class OngoingActivationSpec(BaseModel, frozen=True):
 class PersistentAreaSpec(BaseModel, frozen=True):
     """Audited area behavior; geometry comes from the activity's template.
 
-    Placement never executes the payload. Entry means a completed movement
+    Only explicit appearance triggers execute on placement. Entry means a completed movement
     step crossing the boundary. One gate is shared by all triggers of an area.
     """
 
@@ -754,6 +770,8 @@ class PersistentAreaSpec(BaseModel, frozen=True):
     once_per_turn: bool = True
     speed_multiplier: float | None = Field(default=None, gt=0, le=1)
     effects_until_target_turn_start: bool = False
+    revert_shape_on_failed_save: bool = Field(default=False, exclude_if=lambda v: not v)
+    nonstacking_same_spell: bool = Field(default=False, exclude_if=lambda v: not v)
     environment: EnvironmentalSpec | None = Field(
         default=None, exclude_if=lambda value: value is None
     )
@@ -765,6 +783,12 @@ class PersistentAreaSpec(BaseModel, frozen=True):
 
     @model_validator(mode="after")
     def _source_geometry(self) -> PersistentAreaSpec:
+        if (
+            self.ongoing_activation is not None
+            and self.ongoing_activation.relocation is not None
+            and self.placement != "stationary"
+        ):
+            raise ValueError("relocation requires an existing stationary geometry")
         if self.source_radius_ft is not None and (
             self.placement != "follow-source" or self.environment is None
         ):

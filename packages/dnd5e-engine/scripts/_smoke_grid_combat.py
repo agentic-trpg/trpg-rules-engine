@@ -123,9 +123,111 @@ async def _run_grid_combat() -> None:
     print("SMOKE OK: installed corpus, grid movement, Haste, consuming Utilize and Lethargy")
 
 
+async def _run_moonbeam() -> None:
+    hero = "char:druid"
+    start = await start_combat(
+        session_id="smoke-moonbeam",
+        party=[
+            PartyMemberSpec(
+                entity_id=hero,
+                name="Druid",
+                initiative=20,
+                hp_current=1000,
+                hp_max=1000,
+                constitution=210,
+                wisdom=18,
+                zone_id="0,0",
+                class_slug="druid",
+                character_level=9,
+                spells_known=["moonbeam"],
+                spell_slots={3: 2},
+            )
+        ],
+        encounter=[
+            EncounterMemberSpec(
+                entity_id="mon:observer",
+                entity_type="Monster",
+                name="Observer",
+                initiative=1,
+                hp_current=1000,
+                hp_max=1000,
+                zone_id="29,29",
+            )
+        ],
+        grid_scene=GridScene(width=30, height=30),
+        rng_seed=1,
+    )
+
+    async def next_owner_turn() -> None:
+        await submit_player_intent(
+            start.handle, actor_id=hero, intent=PlayerIntent(intent_type="pass")
+        )
+        for _ in range(4):
+            view = get_live(start.handle)
+            if view.initiative[view.current_turn_index].entity_id == hero:
+                return
+            await advance_monster_turn(start.handle)
+        raise AssertionError("Moonbeam smoke did not return to the owner's turn")
+
+    await submit_player_intent(
+        start.handle,
+        actor_id=hero,
+        intent=PlayerIntent(
+            intent_type="cast_spell", spell_id="moonbeam", slot_level=3, target_zone_id="4,0"
+        ),
+    )
+    cast_view = get_live(start.handle)
+    source = cast_view.ongoing_spells[0]
+    assert (source.spell_id, source.slot_level, source.save_dc, source.height_ft) == (
+        "moonbeam",
+        3,
+        16,
+        40,
+    )
+    assert cast_view.spell_slots_by_entity[hero][3] == 1
+    assert sum(event.type == "spell_cast" for event in drain_pending_events(start.handle)) == 1
+    await next_owner_turn()
+    before = get_live(start.handle)
+    await submit_player_intent(
+        start.handle,
+        actor_id=hero,
+        intent=PlayerIntent(
+            intent_type="activate_spell",
+            source_id=source.source_id,
+            activity_id=source.activation.activity_ids[0],
+            target_zone_id="8,0",
+        ),
+    )
+    moved = get_live(start.handle)
+    relocated = moved.ongoing_spells[0]
+    assert (relocated.source_id, relocated.slot_level, relocated.save_dc) == (
+        source.source_id,
+        source.slot_level,
+        source.save_dc,
+    )
+    assert relocated.origin == "8,0"
+    assert moved.spell_slots_by_entity == before.spell_slots_by_entity
+    assert moved.concentration_chain == before.concentration_chain
+    relocation_events = drain_pending_events(start.handle)
+    assert sum(event.type == "area_relocated" for event in relocation_events) == 1
+    assert not any(event.type == "spell_cast" for event in relocation_events)
+    # Relocation on the second owner turn preserves the original ten-turn clock.
+    for _ in range(8):
+        await next_owner_turn()
+        assert get_live(start.handle).ongoing_spells[0].source_id == source.source_id
+    await next_owner_turn()
+    expired = get_live(start.handle)
+    assert not expired.ongoing_spells
+    assert hero not in expired.concentration_chain
+    assert any(event.type == "area_expired" for event in drain_pending_events(start.handle))
+    await end_combat(start.handle)
+    print("SMOKE OK: Moonbeam admission, relocation, captured DC/slot and original duration")
+
+
 def main() -> None:
     _check_corpus()
     asyncio.run(_run_grid_combat())
+    asyncio.run(_run_moonbeam())
 
 
 if __name__ == "__main__":

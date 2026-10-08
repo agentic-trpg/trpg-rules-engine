@@ -106,6 +106,19 @@ def audit_document(loader: AssetLoader) -> dict[str, object]:
                     **({"ongoing_activation": ongoing.model_dump(mode="json")} if ongoing else {}),
                     **(
                         {
+                            "height_ft": activity.target.template.height,
+                            "shape_reversion_on_failed_save": (
+                                activity.persistent_area.revert_shape_on_failed_save
+                            ),
+                            "nonstacking_same_spell": (
+                                activity.persistent_area.nonstacking_same_spell
+                            ),
+                        }
+                        if ongoing and ongoing.relocation and activity.persistent_area
+                        else {}
+                    ),
+                    **(
+                        {
                             "ongoing_admission_failure": (
                                 ongoing_failure.model_dump(mode="json")
                                 if (

@@ -329,9 +329,8 @@ def test_duration_ends_source_without_refresh_from_repeated_magic_actions():
         activate(handle)
 
 
-def test_moonbeam_remains_deferred_before_payment_and_rng():
+def test_moonbeam_now_registers_its_reviewed_relocatable_source():
     handle, live = table()
-    before = snapshot(live)
     act(
         handle,
         HERO,
@@ -340,12 +339,11 @@ def test_moonbeam_remains_deferred_before_payment_and_rng():
         slot_level=2,
         target_zone_id="3,0",
     )
-    assert events(live, CastFailed)[-1].execution_failure.code == "missing_mechanism"
-    after = snapshot(live)
-    for state in (before, after):
-        state[0].pop("event_log")
-    assert before[:2] == after[:2]
-    assert not live.persistent_areas.areas
+    assert not events(live, CastFailed)
+    assert len(live.persistent_areas.areas) == 1
+    assert orch.get_live(handle).ongoing_spells[0].activation.relocation.max_distance_ft == 60
+    assert live.spell_slots_by_entity[HERO][2] == 1
+    assert not combatant(live).action_available
 
 
 def test_public_cast_move_activate_cleanup_replay_is_exact():

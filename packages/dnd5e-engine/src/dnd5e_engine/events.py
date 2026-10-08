@@ -713,11 +713,26 @@ class AreaCreated(BaseModel):
     slot_level: int | None
     save_dc: int | None
     triggers: tuple[
-        Literal["enter", "area-enters-creature", "turn-start-inside", "turn-end-inside"], ...
+        Literal[
+            "appearance", "enter", "area-enters-creature", "turn-start-inside", "turn-end-inside"
+        ],
+        ...,
     ]
+    height_ft: int | None = Field(default=None, exclude_if=lambda v: v is None)
     environment: EnvironmentalSpec | None = Field(
         default=None, exclude_if=lambda value: value is None
     )
+
+
+class AreaRelocated(BaseModel):
+    """One committed destination; transit cells never imply area arrivals."""
+
+    type: Literal["area_relocated"] = "area_relocated"
+    area_id: str
+    actor_id: str
+    source_id: str
+    from_origin: str
+    origin: str
 
 
 class AreaExpired(BaseModel):
@@ -933,6 +948,7 @@ CombatEvent = Annotated[
     | AttackFailed
     | AreaTargeted
     | AreaCreated
+    | AreaRelocated
     | AreaExpired
     | CastFailed
     | SomaticSpellRolled
@@ -985,6 +1001,7 @@ ALL_COMBAT_EVENT_TYPES: tuple[type[BaseModel], ...] = (
     AttackFailed,
     AreaTargeted,
     AreaCreated,
+    AreaRelocated,
     AreaExpired,
     CastFailed,
     SomaticSpellRolled,
@@ -1005,6 +1022,7 @@ __all__ = [
     "AdvantageSource",
     "AreaCreated",
     "AreaExpired",
+    "AreaRelocated",
     "AreaShape",
     "AreaTargeted",
     "AttackFailed",

@@ -55,6 +55,42 @@
       "img": "",
       "kind": "save",
       "name": "",
+      "persistent_area": {
+        "effects_until_target_turn_start": false,
+        "environment": {
+          "dim_extension_ft": 0,
+          "dispels_darkness_through_level": null,
+          "dispels_light_through_level": null,
+          "kind": "light",
+          "light": "dim",
+          "obscurement": "none",
+          "radius_increase_per_slot_ft": 0,
+          "strong_wind_dispersal": false,
+          "sunlight": false
+        },
+        "nonstacking_same_spell": true,
+        "once_per_turn": true,
+        "ongoing_activation": {
+          "activity_ids": [
+            "dnd5eactivity000"
+          ],
+          "cost": "magic_action",
+          "relocation": {
+            "later_turns_only": true,
+            "max_distance_ft": 60,
+            "targeting": "destination"
+          }
+        },
+        "placement": "stationary",
+        "revert_shape_on_failed_save": true,
+        "speed_multiplier": null,
+        "triggers": [
+          "appearance",
+          "area-enters-creature",
+          "enter",
+          "turn-end-inside"
+        ]
+      },
       "range": {
         "override": false,
         "special": "",
@@ -84,13 +120,24 @@
         "template": {
           "contiguous": false,
           "count": "",
-          "height": "",
+          "height": "40",
           "size": "5",
-          "stationary": false,
+          "stationary": true,
           "type": "cylinder",
           "units": "ft",
           "width": ""
         }
+      },
+      "timing": {
+        "effect_id": null,
+        "effects_concentration": false,
+        "ends_effect_on_success": false,
+        "next_turn": true,
+        "recurring": false,
+        "requires_condition": null,
+        "scale_with_slot": true,
+        "subject": "target",
+        "trigger": "immediate"
       },
       "uses": {
         "max": "",

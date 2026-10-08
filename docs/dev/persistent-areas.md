@@ -30,8 +30,9 @@ tuple spares nobody except the source cell excluded by Emanation geometry.
 
 ## Triggers and deterministic ordering
 
-The trigger vocabulary is `enter`, `area-enters-creature`, `turn-start-inside`
-and `turn-end-inside`. Placement establishes coverage without synthesizing a
+The trigger vocabulary is `appearance`, `enter`, `area-enters-creature`, `turn-start-inside`
+and `turn-end-inside`. Only a declared appearance trigger executes on placement,
+after the shared concentration/result fold. Placement creates no synthetic
 movement entry. Every completed voluntary or forced movement step first writes
 position and movement state, then checks creature entry and newly covered
 creatures for source-following Emanations. Active areas run in creation order;
@@ -58,8 +59,9 @@ Save, damage, status, immunity and Legendary Resistance resolution are shared.
 | Stinking Cloud | stationary 20-ft Sphere | turn-start-inside | CON save; transient Poisoned expires at target turn end; concentration anchor owns area duration |
 | Ball Bearings | stationary 10-ft Square within 10 ft | enter | DC 10 DEX; failed save applies Prone |
 | Caltrops | stationary 5-ft Square within 5 ft | enter | DC 15 DEX; failure deals 1 Piercing and reduces Speed to 0 until target next turn start |
+| Moonbeam | relocatable 5-ft-radius, 40-ft-high Cylinder (2D projection) | appearance, area-enters-creature, enter, turn-end-inside | CON save; 2d10 Radiant, +1d10/slot above 2, half on success; failed transformed target reverts and cannot shape-shift until leaving; magical Dim Light |
 
-All four have a once-per-turn gate. Item use places the hazard and spends its
+All five have a once-per-turn gate. Item use places the hazard and spends its
 existing action/charge once; no creature saves merely because it occupies the
 square at placement. Spirit Guardians' continuous Speed reduction depends on
 current geometry and exclusions, independently of a save. Entering/leaving
@@ -68,12 +70,22 @@ spent and paid Dash movement. Identical overlapping halvings do not stack.
 Caltrops riders expire before the next `TurnStarted` movement-budget refresh;
 leaving the square earlier does not remove that rider.
 
+Moonbeam reuses the B4 ongoing source for a later Magic Action relocating up to
+60 ft to one legal destination; no transit-cell hits or duration reset. Its height
+is retained as metadata; the Host attests vertical membership on the engine's
+horizontal plane. Simultaneous arrivals share damage; overlapping copies project
+the strongest/latest source while preserving independent owners. Shape locks use
+real `live.transforms` reversion and remain owned by the producing area. See the
+[complete relocation contract](ongoing-spell-activation.md#moonbeam-and-relocation-b7).
+
 ## Lifetime and events
 
-`AreaCreated` reports the typed area ID, source, placement, geometry, exclusions,
+`AreaCreated` reports the typed area ID, source, placement, geometry/height, exclusions,
 duration, concentration, slot/DC and triggers. `AreaExpired` identifies the area
 and distinguishes duration, concentration loss and source removal. No host
 needs to infer lifecycle state from narration.
+`AreaRelocated` reports the existing source's old and new origins without implying
+another cast or creation. Dim Light shares the same area lifetime and overlap dispels.
 
 Concentration anchors use the existing chain and duration cap. Dropping or
 expiring that anchor removes its area synchronously. Non-concentration finite

@@ -28,6 +28,7 @@ from dnd5e_engine.events import (
     Death,
     EffectApplied,
     EffectExpired,
+    SaveRolled,
 )
 from dnd5e_engine.types.combat import Combatant
 from dnd5e_engine.types.effects import ActiveEffectDuration
@@ -35,7 +36,7 @@ from dnd5e_engine.types.effects import ActiveEffectDuration
 if TYPE_CHECKING:
     from dnd5e_srd_data.schema.spell import Spell
 
-    from dnd5e_engine.activities.context import ActivityResolutionContext
+    from dnd5e_engine.activities.context import ActivityResolutionContext, DamageInstanceContext
     from dnd5e_engine.orchestrator import PlayerIntent, _LiveCombat
     from dnd5e_engine.spatial import GridTopology
 
@@ -78,6 +79,8 @@ class PersistentArea:
     source_parent_id: str | None = None
     environment_expires_round: int | None = None
     last_trigger_turn: dict[str, int] = field(default_factory=dict)
+    shape_locked_ids: set[str] = field(default_factory=set)
+    appearance_pending: bool = False
 
     @property
     def source_entity_id(self) -> str:
@@ -150,6 +153,10 @@ class PersistentAreaState:
 
     def observe(self, live: _LiveCombat, event: CombatEvent) -> None:
         for area in tuple(self.areas):
+            if isinstance(event, (Death, CombatantLeft)):
+                target_id = event.target_id if isinstance(event, Death) else event.entity_id
+                area.shape_locked_ids.discard(target_id)
+                area.last_trigger_turn.pop(target_id, None)
             if isinstance(event, CombatEnded) and area.spec.environment is not None:
                 self.expire(live, area, "combat_end")
                 continue
@@ -280,6 +287,7 @@ def register_area(
         environment_expires_round=live.round_number + rounds
         if spec.environment is not None and spell and not spell.concentration and rounds is not None
         else None,
+        appearance_pending="appearance" in spec.triggers,
     )
     state.next_sequence += 1
     state.areas.append(area)
@@ -295,6 +303,7 @@ def register_area(
             shape=template.shape,
             grid_shape=template.grid_shape,
             size_ft=template.size_ft,
+            height_ft=template.height_ft,
             origin=origin,
             excluded_ids=excluded,
             duration_rounds=rounds,
@@ -311,6 +320,18 @@ def register_area(
         from dnd5e_engine.environment import refresh_environment
 
         refresh_environment(live)
+
+
+def resolve_area_appearances(live: _LiveCombat, caster_id: str) -> None:
+    """After the common concentration fold, initial damage can break its source.
+
+    Mark before resolution: a nested reaction fold cannot execute it twice or
+    reinstall concentration after self-inflicted damage has ended the spell.
+    """
+    for area in tuple(live.persistent_areas.areas):
+        if area.source_entity_id == caster_id and area.appearance_pending:
+            area.appearance_pending = False
+            trigger_targets(live, area, [c.entity_id for c in live.initiative], "appearance")
 
 
 def _duration_rounds(spell: Spell | None) -> int | None:
@@ -349,6 +370,7 @@ def after_movement_step(live: _LiveCombat, mover_id: str, from_cell: str) -> Non
     old_positions = dict(live.actor_zone)
     old_positions[mover_id] = from_cell
     for area in tuple(live.persistent_areas.areas):
+        release_shape_locks(live, area)
         old_cells = area.cells(live.topology, old_positions)
         new_cells = area.cells(live.topology, live.actor_zone)
         if from_cell not in old_cells and live.actor_zone.get(mover_id) in new_cells:
@@ -361,11 +383,53 @@ def after_movement_step(live: _LiveCombat, mover_id: str, from_cell: str) -> Non
 
 
 def _trigger(live: _LiveCombat, area: PersistentArea, target_id: str, trigger: AreaTrigger) -> None:
+    trigger_targets(live, area, [target_id], trigger)
+
+
+def release_shape_locks(live: _LiveCombat, area: PersistentArea) -> None:
+    area.shape_locked_ids.intersection_update(
+        entity_id for entity_id in tuple(area.shape_locked_ids) if area.contains(live, entity_id)
+    )
+
+
+def shapechange_blocked(live: _LiveCombat, entity_id: str) -> bool:
+    return any(entity_id in area.shape_locked_ids for area in live.persistent_areas.areas)
+
+
+def trigger_targets(
+    live: _LiveCombat, area: PersistentArea, target_ids: Sequence[str], trigger: AreaTrigger
+) -> None:
+    """Batch simultaneous arrivals for the resolver's single shared damage roll."""
+    targets = []
+    for target_id in target_ids:
+        if _eligible_trigger(live, area, target_id, trigger):
+            from dnd5e_engine import orchestrator as orch
+
+            target = orch._find_combatant(live, target_id)
+            if target is not None:
+                area.last_trigger_turn[target_id] = live.turn_serial
+                targets.append(target)
+    if targets:
+        _execute(live, area, targets)
+
+
+def _eligible_trigger(
+    live: _LiveCombat, area: PersistentArea, target_id: str, trigger: AreaTrigger
+) -> bool:
     from dnd5e_engine import orchestrator as orch
 
     target = orch._find_combatant(live, target_id)
     creature_filter = area.activity.target.creature_filter
-    if (
+    if area.spec.nonstacking_same_spell and any(
+        other.source_kind == "spell"
+        and other.source_id == area.source_id
+        and other.contains(live, target_id)
+        and (other.slot_level or other.base_spell_level or 0, other.sequence)
+        > (area.slot_level or area.base_spell_level or 0, area.sequence)
+        for other in live.persistent_areas.areas
+    ):
+        return False
+    return not (
         area not in live.persistent_areas.areas
         or trigger not in area.spec.triggers
         or not area.contains(live, target_id)
@@ -385,25 +449,26 @@ def _trigger(live: _LiveCombat, area: PersistentArea, target_id: str, trigger: A
         )
         or area.not_before_turn > live.turn_serial
         or (area.spec.once_per_turn and area.last_trigger_turn.get(target_id) == live.turn_serial)
-    ):
-        return
-    area.last_trigger_turn[target_id] = live.turn_serial
-    _execute(live, area, target)
+    )
 
 
-def _execute(live: _LiveCombat, area: PersistentArea, target: Combatant) -> None:
+def _execute(live: _LiveCombat, area: PersistentArea, targets: Sequence[Combatant]) -> None:
     from dnd5e_engine import orchestrator as orch
     from dnd5e_engine.live_reactions import attach_reaction_hooks
     from dnd5e_engine.live_spell_delivery import fold_forced_movement_requests
 
     caster = orch._find_combatant(live, area.source_entity_id) or area.caster
     payload = orch._build_hydration_payload(live, caster=caster)
-    geometry = orch._monster_context_kwargs(live, caster, [target], payload)
+    geometry = orch._monster_context_kwargs(live, caster, list(targets), payload)
     geometry["target_cover"] = orch._target_cover_map(
-        live, caster.entity_id, [target], origin_cell=area.origin(live.actor_zone)
+        live, caster.entity_id, list(targets), origin_cell=area.origin(live.actor_zone)
     )
+    transformed = {t.entity_id for t in targets if t.entity_id in live.transforms}
+    saves: dict[str, bool] = {}
 
     def emit(event: CombatEvent) -> None:
+        if isinstance(event, SaveRolled):
+            saves.setdefault(event.target_id, event.succeeded)
         if isinstance(event, EffectApplied):
             effect = event.effect.model_copy(
                 update={"origin": f"area:{area.id}:{area.source_entity_id}"}
@@ -418,7 +483,7 @@ def _execute(live: _LiveCombat, area: PersistentArea, target: Combatant) -> None
 
     ctx = build_activity_context(
         area.caster,
-        [target],
+        list(targets),
         rng=live.rng,
         event_emitter=emit,
         slot_level=area.slot_level
@@ -439,17 +504,37 @@ def _execute(live: _LiveCombat, area: PersistentArea, target: Combatant) -> None
         replace(
             ctx,
             activity_source_id=area.activity_source_id,
-            source_parent_id=area.source_parent_id,
+            source_parent_id=area.id if area.spec.ongoing_activation else area.source_parent_id,
             lifecycle_source_kind=area.source_kind,
             lifecycle_source_slug=area.source_id,
             target_auto_success_ids=frozenset(
-                [target.entity_id]
+                target.entity_id
+                for target in targets
                 if creature_filter
                 and target.creature_type in creature_filter.auto_success_creature_types
-                else []
             ),
         ),
     )
+    damage_reaction = ctx.damage_instance_resolved
+
+    def after_damage(damage: DamageInstanceContext) -> None:
+        target_id = damage.target_id
+        if (
+            area.spec.revert_shape_on_failed_save
+            and target_id in transformed
+            and saves.get(target_id) is False
+        ):
+            orch._end_transform(live, target_id, "remove_ieffect")
+            if (
+                area in live.persistent_areas.areas
+                and target_id not in live.dead_ids
+                and area.contains(live, target_id)
+            ):
+                area.shape_locked_ids.add(target_id)
+        if damage_reaction is not None:
+            damage_reaction(damage)
+
+    ctx = replace(ctx, damage_instance_resolved=after_damage)
     resolve_activity(area.activity, ctx)
     fold_forced_movement_requests(live, ctx)
     orch._sync_legendary_resistance(live, before)

@@ -17,6 +17,7 @@ from dnd5e_engine.spell_execution import admission_failure
 
 if TYPE_CHECKING:
     from dnd5e_engine.orchestrator import PlayerIntent, _LiveCombat
+    from dnd5e_engine.persistent_areas import PersistentArea
     from dnd5e_engine.types.combat import Combatant
 
 
@@ -73,10 +74,14 @@ def activate_spell(live: "_LiveCombat", actor: "Combatant", intent: "PlayerInten
         or admission_failure(spell, [activity], ongoing_carrier=True)
     ):
         refuse("ongoing activity lacks an admitted execution contract")
-    if activity.persistent_area is not None or activity.kind not in ("save", "damage", "heal"):
-        refuse("ongoing activity requires an unsupported carrier")
+    relocation = activation.relocation
     if actor.entity_id not in live.actor_zone:
         refuse("source has no position")
+    if relocation is not None:
+        _relocate_area(live, actor, intent, area)
+        return
+    if activity.persistent_area is not None or activity.kind not in ("save", "damage", "heal"):
+        refuse("ongoing activity requires an unsupported carrier")
     spec = spec_from_intent(intent)
     template = area_template(activity, cast_level=area.slot_level, base_level=area.base_spell_level)
     if template and template.anchor == "actor" and intent.target_zone_id is not None:
@@ -140,4 +145,89 @@ def activate_spell(live: "_LiveCombat", actor: "Combatant", intent: "PlayerInten
     ctx = execute_activity_delivery(live, ctx, activity, plan.activities[0], spec, spell.slug)
     orch._fold_resolution_outcome(live, current, spell=None, actx=ctx, pre_event_count=before)
     orch._sync_legendary_resistance(live, before)
+    orch._end_action(live, actor.entity_id, intent, allow_movement=True)
+
+
+def _relocate_area(
+    live: _LiveCombat, actor: Combatant, intent: PlayerIntent, area: PersistentArea
+) -> None:
+    from dnd5e_engine import orchestrator as orch
+    from dnd5e_engine.areas import has_line_of_effect
+    from dnd5e_engine.environment import reconcile_environment
+    from dnd5e_engine.events import AreaRelocated
+    from dnd5e_engine.persistent_areas import StationaryArea, release_shape_locks, trigger_targets
+    from dnd5e_engine.spatial import canonical_cell_id
+
+    def refuse(detail: str) -> NoReturn:
+        raise orch.IntentRejectedError("invalid_spell_activation", detail)
+
+    destination = intent.target_zone_id
+    origin = area.origin(live.actor_zone)
+    activation = area.spec.ongoing_activation
+    assert activation is not None
+    relocation = activation.relocation
+    assert relocation is not None
+    if (
+        intent.target_id is not None
+        or intent.target_ids
+        or intent.direction is not None
+        or intent.excluded_target_ids is not None
+        or not isinstance(area.geometry, StationaryArea)
+        or destination is None
+        or origin is None
+        or live.turn_serial <= area.not_before_turn
+    ):
+        refuse("relocation requires a point destination on a later owner turn")
+    try:
+        distance = live.topology.distance_ft(origin, destination)
+        legal = (
+            canonical_cell_id(destination) == destination
+            and live.topology.is_valid_cell(destination)
+            and distance is not None
+            and distance <= relocation.max_distance_ft
+            and has_line_of_effect(live.topology, origin, destination)
+            and has_line_of_effect(live.topology, live.actor_zone[actor.entity_id], destination)
+        )
+    except ValueError:
+        legal = False
+    if not legal:
+        refuse("destination is invalid, beyond the relocation distance or behind Total Cover")
+    old_cells = area.cells(live.topology, live.actor_zone)
+    new_area = replace(area, geometry=StationaryArea(destination))
+    arrived = new_area.cells(live.topology, live.actor_zone) - old_cells
+    charmer = orch._condition_source_entity(live, actor, "charmed")
+    if charmer and live.actor_zone.get(charmer) in arrived:
+        refuse("a harmful activation cannot target its owner's charmer")
+    orch._action_economy_gate_failure(actor, intent, is_bonus_action=False, is_reaction_cast=False)
+    orch._emit(
+        live,
+        IntentSubmitted(
+            actor_id=actor.entity_id,
+            intent_type=intent.intent_type,
+            source_id=area.id,
+            activity_id=intent.activity_id,
+        ),
+    )
+    orch._consume_action_budget(
+        live, actor.entity_id, orch._ActionCost(False, False, None), intent.intent_type
+    )
+    area.geometry = StationaryArea(destination)
+    release_shape_locks(live, area)
+    orch._emit(
+        live,
+        AreaRelocated(
+            area_id=area.id,
+            actor_id=actor.entity_id,
+            source_id=area.source_id,
+            from_origin=origin,
+            origin=destination,
+        ),
+    )
+    reconcile_environment(live)
+    trigger_targets(
+        live,
+        area,
+        [c.entity_id for c in live.initiative if live.actor_zone.get(c.entity_id) in arrived],
+        "area-enters-creature",
+    )
     orch._end_action(live, actor.entity_id, intent, allow_movement=True)

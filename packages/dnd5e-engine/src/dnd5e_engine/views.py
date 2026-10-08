@@ -33,6 +33,9 @@ class OngoingSpellView:
     activation: OngoingActivationSpec
     slot_level: int | None
     save_dc: int | None
+    origin: str | None = None
+    height_ft: int | None = None
+    shape_locked_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -160,6 +163,9 @@ class LiveCombatView:
                     a.spec.ongoing_activation,
                     a.slot_level,
                     a.save_dc,
+                    a.origin(live.actor_zone),
+                    a.template.height_ft,
+                    tuple(sorted(a.shape_locked_ids)),
                 )
                 for a in live.persistent_areas.areas
                 if a.spec.ongoing_activation is not None

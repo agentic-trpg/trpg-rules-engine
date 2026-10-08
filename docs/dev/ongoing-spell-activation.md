@@ -2,7 +2,7 @@
 
 Batch B4 implements Sunbeam's initial beam, later beams and following light in
 grid combat. The reviewed source is [SRD 5.2.1](https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf),
-printed p. 166; Moonbeam is on printed p. 150. Host-owned components and the
+printed p. 166; B7 adds Moonbeam from printed pp. 150–151. Host-owned components and the
 existing two-dimensional grid boundary remain unchanged.
 
 ## Ownership and public contract
@@ -79,16 +79,74 @@ The capability audit records both contracts.
 
 Sunbeam remains **Bounded**: grid combat direct casting/activation is covered;
 autonomous Monster AI source activation, item concentration ownership and persistent
-out-of-combat clocks are not implemented. The 339-spell classification totals remain
-28 Executable, 47 Bounded, 26 Host Narrative and 238 Deferred.
+out-of-combat clocks are not implemented.
 
-Moonbeam remains **Deferred**. Existing areas support entry/end-turn triggers and
-once-per-turn gates, but placement deliberately does not execute a payload. There
-is no shared paid operation relocating an existing stationary area up to 60 ft
-with the required swept/arrival triggers. The transformation subsystem supports
-reviewed Polymorph/Wild Shape carriers, not Moonbeam's general forced reversion and
-location-bound prohibition on shape-shifting. Cylinder height also remains a Host
-boundary. Admitting only initial damage would leave mandatory rules unimplemented.
+## Moonbeam and relocation (B7)
+
+Moonbeam is **Bounded** within the same 2D combat and Host component boundary.
+The classification totals are 30 Executable, 48 Bounded, 26 Host Narrative and
+235 Deferred. The pinned YAML lacks Cylinder height; the source-reviewed mapping
+supplies the SRD's 40-ft height alongside its 5-ft radius. The grid projects a
+single horizontal plane: the Host must ensure participants lie within that vertical
+span. Altitude, vertical motion and multi-cell bodies remain unimplemented.
+
+`OngoingActivationSpec.relocation` declares a positive maximum distance, destination
+targeting, later-owner-turn restriction and existing Magic Action cost. Owner/source
+identity and geometry come from the same `PersistentArea`. Public relocation uses
+the existing `activate_spell` intent with `source_id`, its allowed `activity_id`
+and `target_zone_id`. Creature selections, exclusions, direction and cast/slot
+options are rejected. The destination may be occupied. Distance is measured from
+the current area origin, with no renewed 120-ft casting range restriction.
+
+```python
+source = get_live(handle).ongoing_spells[0]
+await submit_player_intent(
+    handle, actor_id=source.owner_id,
+    intent=PlayerIntent(
+        intent_type="activate_spell", source_id=source.source_id,
+        activity_id=source.activation.activity_ids[0], target_zone_id="14,5",
+    ),
+)
+```
+
+The Host positioning convention requires a legal canonical destination and line
+of effect from both current origin and owner to destination; Total Cover blocks
+either line. This is the engine's bounded relocation contract, not a separate SRD
+visibility requirement. A relocation commits one destination and emits
+`AreaRelocated`; transit cells are not area arrivals. Only creatures newly covered
+by the destination make the area-entry save. Existing overlap does not create an
+extra save, and every trigger shares the area's per-creature combat-turn gate.
+Slot, DC, source ID, concentration and duration remain captured from the original cast.
+
+Appearance, area arrival, creature entry (voluntary or forced), and creature turn
+end force CON saves, once per combat turn; turn start does not. Damage is 2d10
+Radiant at level 2 plus 1d10 per higher slot, half on success. Simultaneous
+appearance/relocation targets share one damage roll (SRD p.16); separate entries
+are separate resolutions. Overlapping copies retain their sources/clocks but
+project the highest slot, then latest equal-slot source, for a covered creature
+(Combining Spell Effects, SRD p.106). A separated cylinder still owns its own gate.
+
+On a failed save, a target shape-shifted before damage reverts through the existing
+authoritative transform expiry path. This also works when damage already depleted
+Polymorph Temporary HP and ended the form. The producing area then prevents further
+Wild Shape or existing reviewed transformation requests until the creature or
+cylinder leaves that membership. A failed ordinary target gains no lock; a success
+does not force reversion. Locks belong to each area, expire with it, and never
+become surrogate transformation Conditions. This adds no new Polymorph admission.
+
+The same area projects magical Dim Light through shared environment state.
+Darkness can dispel a level-2 Moonbeam on overlap in either cast order or after
+relocation; level-3+ Moonbeam survives and illuminates the overlap. Shared cleanup
+removes damage triggers, shape locks, light and concentration together. Initial
+appearance runs after the common concentration/result fold and overlap reconciliation,
+so initial self-damage can break the actual new concentration without a later
+anchor resurrecting it. Counterspell only has the original cast window.
+
+Public regressions use natural initiative, real Wild Shape, public casts/movement,
+forced Thunderwave movement and the existing authoritative Polymorph carrier seam.
+Fault injection and same-seed replay compare all live authority, pending appearances,
+trigger records, resources, event log/queue, topology and RNG. Monster AI declaration,
+delegated item concentration and out-of-combat clocks remain deferred.
 
 Public regressions cover first cast, repeat payment/DC/slot provenance, failed and
 successful saves, exact blindness expiry, duration, movement, owner isolation,

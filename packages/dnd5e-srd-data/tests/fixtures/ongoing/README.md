@@ -8,3 +8,9 @@ Rules text is SRD 5.2.1 content, Wizards of the Coast LLC, licensed under
 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 
 The fixture makes exact canonical regeneration independent of ignored raw sources.
+
+`_source/spells24/2nd-level/moonbeam.yml` is also an unchanged snapshot from
+the same pinned Foundry commit, with SHA-256
+`9085b1b6d4a090f32b0bbccb4cd2e5e1d5886bef05a03e021b438eebc1e13949`.
+Its missing structured Cylinder height is explicitly corrected to 40 ft by the
+source-reviewed SRD 5.2.1 pp.150–151 translation; runtime never reads that prose.

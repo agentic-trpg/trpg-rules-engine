@@ -86,7 +86,11 @@ def _area_row(
         activity.persistent_area is not None
         and activity.persistent_area.ongoing_activation is not None
     ):
-        status = "ongoing_source_with_immediate_payload"
+        status = (
+            "relocatable_persistent_area"
+            if activity.persistent_area.ongoing_activation.relocation is not None
+            else "ongoing_source_with_immediate_payload"
+        )
     elif activity.persistent_area is not None and activity.persistent_area.environment is not None:
         status = "persistent_environment"
     elif activity.kind not in _RESOLVED_KINDS:
@@ -109,6 +113,7 @@ def _area_row(
         "shape": template.type,
         "size_ft": template.size,
         "width_ft": template.width,
+        **({"height_ft": template.height} if template.height else {}),
         "role": role,
         "origin_policy": origin,
         "includes_origin": includes,

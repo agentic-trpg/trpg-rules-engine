@@ -1,5 +1,7 @@
 """Magic actions against existing area-owned sources, without spell-cast gates."""
 
+from __future__ import annotations
+
 from dataclasses import replace
 from typing import TYPE_CHECKING, NoReturn
 
@@ -21,7 +23,7 @@ if TYPE_CHECKING:
     from dnd5e_engine.types.combat import Combatant
 
 
-def activate_spell(live: "_LiveCombat", actor: "Combatant", intent: "PlayerIntent") -> None:
+def activate_spell(live: _LiveCombat, actor: Combatant, intent: PlayerIntent) -> None:
     from dnd5e_engine import orchestrator as orch
 
     def refuse(detail: str) -> NoReturn:

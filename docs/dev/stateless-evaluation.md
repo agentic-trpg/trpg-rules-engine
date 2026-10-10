@@ -88,11 +88,12 @@ for no-consumption commits or promise replay across evaluator/data revisions.
 
 ## Supported operation matrix
 
-| Capability | Batch 2 |
+| Capability | Current support through Batch 3 |
 | --- | --- |
 | Typed request/result, Combat/NonCombat snapshot, closed attack Delta | Implemented and serialized |
 | Explicit RNG capture/restore/transition and effective corpus binding | Implemented |
-| Stateless evaluate / PC or NPC attack | Not implemented until subsequent batches |
+| Stateless evaluate / PC attack | Executable bounded basic weapon attack |
+| NPC explicit attack | Not implemented until Batch 4 |
 | Availability | Not implemented until Batch 4 |
 | Noncombat checks execution, Spell/Effect/Reaction migration | Not migrated |
 | SQLite commit, receipt, Outbox, LLM/controller authorization | SM/Host responsibility; outside this repository batch |
@@ -108,3 +109,46 @@ The 41 skips require absent maintainer-only raw Foundry/oracle inputs. GNU make
 is unavailable on this Windows host; the temporary adapter executed the exact
 checked-in package Makefile dependency recipes through tools/validate.py,
 preserving thresholds. These are local results, not a claim of native CI Full.
+
+## Executable attack boundary (Batch 3)
+
+`await dnd5e_engine.evaluation.evaluate(request, loader=immutable_loader)` returns
+the validated proposal. Omitted loader uses a fresh bundled corpus; overlays must
+be passed explicitly and match the request pin. The entry never calls start_combat,
+reads/registers `_REGISTRY`, invokes a Bridge or commits/publishes external state.
+It creates one disposable `_LiveCombat`, a local queue and canonical turn hooks.
+Legacy keeps its registry and transaction wrapper and calls the same supplied-context
+executor. Gate ordering, Action Policy, Activity Resolver, damage folding and turn
+continuation are shared. No attack/damage rule algorithm was copied.
+
+Admission currently allows one PC weapon Attack on one opposing living target on a
+plain bright grid, with a known carried weapon, explicit range, ordinary typed attack
+activity and known damage types/formulas. Properties, mastery, active effects,
+conditions, classes/features, extended budgets, reactions, timing, areas, objects,
+transforms, summons and template-driven NPC mechanics return unsupported before
+restoring execution RNG or paying. Standard static R/I/V and numeric magical bonus
+use the existing resolver. Missing weapon identity can request a preflight choice;
+invalid identity/target, turn, range or action economy returns rejected. Legal misses
+and immune zero damage remain accepted with actual action payment and RNG.
+
+The adapter captures every resulting mechanical field, projects the closed typed
+operations and rejects unexpected unrepresented changes with EvaluationInvariantError.
+This guard is an internal failure, not a late unsupported partial result. The ordered
+history suffix is returned only as ProposedEvents. An exhaustive differential test
+consumer applies the Delta with expected-value checks and compares the complete final
+snapshot, events and PRNG state against Legacy. Faults after damage and cancellation
+cannot publish to registered listeners or change the input. Independent thread tests
+exercise different PRNG states and effective loaders.
+
+read_set currently contains a conservative whole-session world-version fence. It
+does not invent per-entity versions; SM must check this fence plus the pinned rules
+and RNG stream/version/input state atomically. Engine does not advance world/RNG
+versions, authenticate actors, retain results, or supply persistent idempotency.
+
+Batch 3 validation from `f726d554690ea36ac067dbf02c101bd814039ea4`: 105 targeted
+contract/baseline/attack tests passed. The requested local Full gate passed in
+472.73 seconds: tooling 24, data 631 passed / 41 unavailable-input skips, Engine
+6,976 (95.61% coverage), Bridge 139, Demo 53; all static/security/example/docs and
+isolated installation/HTTP checks passed using the verified Windows adapter.
+XP outcome hydration remains outside this attack slice; the NPC batch must retain
+Host-supplied XP values rather than assume all values are derivable from a template.

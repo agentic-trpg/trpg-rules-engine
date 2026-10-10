@@ -16,6 +16,7 @@ from dnd5e_engine.evaluation_state import (
     PersistentAreasState,
     SceneState,
     SummonState,
+    TimedActivitiesState,
     TransformState,
 )
 from dnd5e_engine.orchestrator import _LiveCombat
@@ -63,6 +64,8 @@ def capture_combat_snapshot(
         "constructs",
         "transforms",
         "summons",
+        "timed_activities",
+        "movement_ledgers",
     }
     value: dict[str, Any] = {
         name: copy.deepcopy(getattr(live, name))
@@ -85,6 +88,13 @@ def capture_combat_snapshot(
     value.update(
         combat_id=combat_id,
         initiative_ids=tuple(actor.entity_id for actor in actors),
+        timed_activities=TimedActivitiesState(
+            pending=copy.deepcopy(live.timed_activities.pending),
+            next_sequence=live.timed_activities.next_sequence,
+        ),
+        movement_ledgers={
+            key: ledger.model_dump() for key, ledger in live.movement_ledgers.items()
+        },
         persistent_areas=PersistentAreasState(
             areas=copy.deepcopy(live.persistent_areas.areas),
             next_sequence=live.persistent_areas.next_sequence,

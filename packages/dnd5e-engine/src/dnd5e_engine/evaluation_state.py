@@ -21,7 +21,7 @@ from dnd5e_engine.outcome import DeathRecord
 from dnd5e_engine.persistent_areas import PersistentArea
 from dnd5e_engine.reactions import ActiveReactionResponse, PendingReaction
 from dnd5e_engine.specs import LightLevel, Obscurement, WallSegment
-from dnd5e_engine.timed_activities import TimedActivityState
+from dnd5e_engine.timed_activities import PendingTimedActivity
 from dnd5e_engine.types.checks import HelpCheckGrant
 from dnd5e_engine.types.combat import Combatant, FightingStyle, MonsterActionUses, WornArmor
 from dnd5e_engine.types.conditions import ConditionScope
@@ -58,6 +58,20 @@ class MovementModesState(EvaluationModel):
     swim: int | None
     fly: int | None
     burrow: int | None
+
+
+class MovementLedgerState(MovementLedger):
+    """Boundary fields cannot silently become a fresh turn's default ledger."""
+
+    spent_ft: Annotated[int, Field(ge=0)] = Field(...)
+    distance_ft: Annotated[int, Field(ge=0)] = Field(...)
+    active_mode: Literal["walk", "crawl", "climb", "swim"] = Field(...)
+    dash_count: Annotated[int, Field(ge=0)] = Field(...)
+
+
+class TimedActivitiesState(EvaluationModel):
+    pending: list[PendingTimedActivity]
+    next_sequence: Annotated[int, Field(ge=0)]
 
 
 class MechanicalGrid(EvaluationModel):
@@ -263,12 +277,12 @@ class CombatState(EvaluationModel):
     current_turn_index: int
     round_number: int
     turn_serial: int
-    timed_activities: TimedActivityState
+    timed_activities: TimedActivitiesState
     persistent_areas: PersistentAreasState
     combat_objects: ObjectState
     ended: bool
     actor_zone: dict[str, str]
-    movement_ledgers: dict[str, MovementLedger]
+    movement_ledgers: dict[str, MovementLedgerState]
     opportunity_attack_weapons: dict[str, str]
     monster_slug_by_entity: dict[str, str]
     event_log: tuple[CombatEvent, ...]
@@ -369,5 +383,11 @@ _SNAPSHOT_TYPES = {
     "Combatant": Combatant,
     "ActiveEffectDuration": ActiveEffectDuration,
 }
-for _snapshot_model in (PersistentAreasState, CombatState, CombatSnapshot, NonCombatSnapshot):
+for _snapshot_model in (
+    TimedActivitiesState,
+    PersistentAreasState,
+    CombatState,
+    CombatSnapshot,
+    NonCombatSnapshot,
+):
     _snapshot_model.model_rebuild(_types_namespace=_SNAPSHOT_TYPES)

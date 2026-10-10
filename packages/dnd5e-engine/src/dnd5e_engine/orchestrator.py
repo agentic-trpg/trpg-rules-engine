@@ -11858,7 +11858,54 @@ async def _submit_player_intent(
     resolvers under ``activities``, emitting the resulting
     ``CombatEvent`` stream.
     """
-    live = _get_live(handle)
+    await _submit_live_intent(_get_live(handle), handle, actor_id, intent)
+
+
+def _intent_pre_resolution_failure(
+    live: _LiveCombat,
+    current: Combatant,
+    intent: PlayerIntent,
+    feature_invocation: _FeatureInvocation | None,
+    attack_weapon: Weapon | None,
+    funding: AttackFunding,
+    action_cost: _ActionCost,
+) -> CombatEvent | None:
+    """Shared draw-free gate builders, before events or resource payment."""
+    actor_id = current.entity_id
+    cast_spell_for_timing = action_cost.cast_spell_for_timing
+    pre_resolution_gates: tuple[Callable[[], CombatEvent | None], ...] = (
+        lambda: feature_state_failure(live, current, intent),
+        lambda: _attack_input_failure(live, current, intent, attack_weapon, funding),
+        lambda: _spell_out_of_range_failure(live, actor_id, intent, cast_spell_for_timing),
+        lambda: _attack_out_of_range_failure(live, actor_id, intent),
+        lambda: _loading_weapon_already_fired_failure(
+            current, actor_id, intent, attack_weapon, funding
+        ),
+        lambda: _charmed_target_failure(live, actor_id, current, intent),
+        lambda: _cast_target_invalid_failure(live, current, actor_id, intent),
+        lambda: _conjuration_gate_failure(live, current, intent),
+        lambda: _area_target_failure(live, current, actor_id, intent, feature_invocation),
+        lambda: _action_surge_failure(current, intent),
+        lambda: _bardic_inspiration_target_failure(live, actor_id, intent),
+        lambda: _granted_die_failure(live, current, intent),
+        lambda: prearm_failure(live, current, intent),
+    )
+    for build_pre_resolution_failure in pre_resolution_gates:
+        failure = build_pre_resolution_failure()
+        if failure is not None:
+            return failure
+
+    action_economy_failure = _intent_economy_failure(current, intent, action_cost, funding)
+    if action_economy_failure is not None:
+        return action_economy_failure
+
+    return None
+
+
+async def _submit_live_intent(
+    live: _LiveCombat, handle: CombatHandle, actor_id: str, intent: PlayerIntent
+) -> None:
+    """Shared execution over a supplied context; never looks up or registers it."""
     current = _validate_intent_preconditions(live, handle, actor_id, intent=intent)
     from dnd5e_engine.action_policy import validate_grant
 
@@ -11973,32 +12020,11 @@ async def _submit_player_intent(
     # (``_conjuration_gate_failure``). The first gate whose failure-builder
     # returns a non-``None`` event wins; that event is emitted and the intent
     # is rejected.
-    pre_resolution_gates: tuple[Callable[[], CombatEvent | None], ...] = (
-        lambda: feature_state_failure(live, current, intent),
-        lambda: _attack_input_failure(live, current, intent, attack_weapon, funding),
-        lambda: _spell_out_of_range_failure(live, actor_id, intent, cast_spell_for_timing),
-        lambda: _attack_out_of_range_failure(live, actor_id, intent),
-        lambda: _loading_weapon_already_fired_failure(
-            current, actor_id, intent, attack_weapon, funding
-        ),
-        lambda: _charmed_target_failure(live, actor_id, current, intent),
-        lambda: _cast_target_invalid_failure(live, current, actor_id, intent),
-        lambda: _conjuration_gate_failure(live, current, intent),
-        lambda: _area_target_failure(live, current, actor_id, intent, feature_invocation),
-        lambda: _action_surge_failure(current, intent),
-        lambda: _bardic_inspiration_target_failure(live, actor_id, intent),
-        lambda: _granted_die_failure(live, current, intent),
-        lambda: prearm_failure(live, current, intent),
+    failure = _intent_pre_resolution_failure(
+        live, current, intent, feature_invocation, attack_weapon, funding, action_cost
     )
-    for build_pre_resolution_failure in pre_resolution_gates:
-        failure = build_pre_resolution_failure()
-        if failure is not None:
-            _emit(live, failure)
-            return
-
-    action_economy_failure = _intent_economy_failure(current, intent, action_cost, funding)
-    if action_economy_failure is not None:
-        _emit(live, action_economy_failure)
+    if failure is not None:
+        _emit(live, failure)
         return
 
     # SRD 5.2 §Actions in Combat — Help, Assist an Attack Roll: "an enemy

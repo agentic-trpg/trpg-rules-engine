@@ -5,8 +5,7 @@ from typing import Annotated, Literal, Self
 from pydantic import Field, model_validator
 
 from dnd5e_engine.evaluation_base import EvaluationModel
-from dnd5e_engine.evaluation_state import ConditionRecord, DeathSaveRecord
-from dnd5e_engine.movement import MovementLedger
+from dnd5e_engine.evaluation_state import ConditionRecord, DeathSaveRecord, MovementLedgerState
 from dnd5e_engine.outcome import DeathRecord
 
 
@@ -124,8 +123,8 @@ class TurnUpdate(EvaluationModel):
 class MovementLedgerUpdate(EvaluationModel):
     kind: Literal["combat.movement_ledger_update"]
     actor_id: Annotated[str, Field(min_length=1)]
-    expected: MovementLedger
-    value: MovementLedger
+    expected: MovementLedgerState
+    value: MovementLedgerState
 
 
 class DamageSequenceUpdate(EvaluationModel):

@@ -4,7 +4,7 @@ from typing import Literal, TypedDict, get_args
 
 from dnd5e_srd_data.loader import AssetLoader
 
-from dnd5e_engine.activities.actor_stats import _SCORE_ATTR
+from dnd5e_engine.activities.actor_stats import _SCORE_ATTR, skill_ability
 from dnd5e_engine.activities.check_pipeline import resolve_check_request
 from dnd5e_engine.activities.context import ActivityResolutionContext
 from dnd5e_engine.evaluation_contracts import (
@@ -55,6 +55,16 @@ def evaluate_check(request: RuleEvaluationRequest, loader: AssetLoader) -> Check
         return _refuse("rejected", "actor_invalid", "check actor is absent, dead or dying")
     if payload.target_id is not None and payload.target_id not in actors:
         return _refuse("rejected", "target_invalid", "check target is absent")
+    if (
+        payload.skill is not None
+        and skill_ability(payload.skill) != payload.ability
+        and actor.skill_check_bonuses.get(payload.skill, 0)
+    ):
+        return _refuse(
+            "unsupported",
+            "check.skill_bonus",
+            "alternate governing ability with a projected skill bonus requires review",
+        )
     if (
         payload.tool is not None
         or payload.redeem_granted_die is not None

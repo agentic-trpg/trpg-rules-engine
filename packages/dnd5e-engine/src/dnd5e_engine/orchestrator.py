@@ -10395,6 +10395,18 @@ def _classify_action_cost(
     # resolved (gate + single-activity validation) above; read its cost here.
     if feature_invocation is not None and feature_invocation.is_bonus_action:
         is_bonus_action = True
+    if intent.intent_type == "use_item" and intent.item_id:
+        item = get_lib_loader().get_item(intent.item_id)
+        activity = _item_charge_activity(item, intent.activity_id) if item is not None else None
+        if (
+            activity is None
+            and item is not None
+            and not intent.activity_id
+            and len(item.activities) == 1
+        ):
+            activity = item.activities[0]
+        if activity is not None and activity.activation.type == "bonus":
+            is_bonus_action = True
     is_reaction_cast = casting_unit == CastingTimeUnit.REACTION
     return _ActionCost(
         is_bonus_action=is_bonus_action,

@@ -8,12 +8,12 @@ from dnd5e_srd_data import BundledAssetLoader
 from dnd5e_srd_data.loader import AssetLoader
 from pydantic import Field, model_validator
 
-from dnd5e_engine.evaluation import _capture
 from dnd5e_engine.evaluation_base import EvaluationModel
 from dnd5e_engine.evaluation_contracts import CombatIntentPayload, RuleError
 from dnd5e_engine.evaluation_preflight import prepare_attack
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError
 from dnd5e_engine.evaluation_ruleset import RulesetBinding, verify_ruleset
+from dnd5e_engine.evaluation_snapshot import capture_evaluation_snapshot as _capture
 from dnd5e_engine.evaluation_state import CombatSnapshot
 from dnd5e_engine.lib_loader import scoped_lib_loader
 from dnd5e_engine.specs import GridScene

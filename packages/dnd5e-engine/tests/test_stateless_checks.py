@@ -135,7 +135,6 @@ def test_legal_failure_and_explicit_variant_ability_and_flat_bonus():
         actor_updates={
             "charisma": 18,
             "skill_proficiencies": ["athletics"],
-            "skill_check_bonuses": {"athletics": 7},
         },
     )
     result = execute(request)
@@ -289,3 +288,20 @@ def test_actor_target_effect_binding_and_fault_boundaries(monkeypatch):
     with pytest.raises(RuntimeError, match="after check draw"):
         execute(request)
     assert request == before
+
+
+def test_variant_ability_cannot_silently_drop_a_supplied_skill_bonus(monkeypatch):
+    request = check_case(
+        ability="cha",
+        actor_updates={
+            "charisma": 18,
+            "skill_proficiencies": ["athletics"],
+            "skill_check_bonuses": {"athletics": 7},
+        },
+    )
+    monkeypatch.setattr(RNGState, "restore", lambda self: pytest.fail("RNG before unsupported"))
+    result = execute(request)
+    assert result.status == "unsupported"
+    assert result.error.code == "check.skill_bonus"
+    assert result.state_delta is result.rng_transition is None
+    assert result.proposed_events == ()

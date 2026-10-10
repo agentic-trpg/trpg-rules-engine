@@ -19,11 +19,12 @@ from dnd5e_engine.evaluation_contracts import (
     RuleEvaluationRequest,
     RuleEvaluationResult,
 )
+from dnd5e_engine.evaluation_items import evaluate_item
 from dnd5e_engine.evaluation_preflight import prepare_attack
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError, attack_delta
 from dnd5e_engine.evaluation_rng import RNGState, RNGTransition
 from dnd5e_engine.evaluation_ruleset import RulesetBinding, verify_ruleset
-from dnd5e_engine.evaluation_snapshot import capture_combat_snapshot
+from dnd5e_engine.evaluation_snapshot import capture_evaluation_snapshot as _capture
 from dnd5e_engine.evaluation_state import CombatSnapshot
 from dnd5e_engine.lib_loader import scoped_lib_loader
 from dnd5e_engine.specs import GridScene
@@ -36,22 +37,6 @@ class _ResultIdentity(TypedDict):
     input_world_version: int
     input_ruleset_binding: RulesetBinding
     read_set: tuple[ReadVersion, ...]
-
-
-def _capture(live: orch._LiveCombat, snapshot: CombatSnapshot, grid: GridScene) -> CombatSnapshot:
-    captured = capture_combat_snapshot(
-        live,
-        grid=grid,
-        world_version=snapshot.world_version,
-        combat_id=snapshot.combat_state.combat_id,
-        snapshot_schema_version=snapshot.snapshot_schema_version,
-    )
-    by_id = {actor.entity_id: actor for actor in captured.character_states}
-    return captured.model_copy(
-        update={
-            "character_states": tuple(by_id[actor.entity_id] for actor in snapshot.character_states)
-        }
-    )
 
 
 async def evaluate(
@@ -78,7 +63,14 @@ async def evaluate(
             ),
         ),
     )
-    if request.operation_kind == "rules.check" and request.schema_version == "engine-evaluation/4":
+    if request.operation_kind == "combat.item":
+        result = RuleEvaluationResult(**common, **await evaluate_item(request, assets))
+        result.verify_request(request)
+        return result
+    if request.operation_kind == "rules.check" and request.schema_version in (
+        "engine-evaluation/4",
+        "engine-evaluation/5",
+    ):
         result = RuleEvaluationResult(**common, **evaluate_check(request, assets))
         result.verify_request(request)
         return result
@@ -110,7 +102,8 @@ async def evaluate(
             request.actor_id,
             request.payload,
             assets,
-            common_weapons=request.schema_version in ("engine-evaluation/3", "engine-evaluation/4")
+            common_weapons=request.schema_version
+            in ("engine-evaluation/3", "engine-evaluation/4", "engine-evaluation/5")
             and snapshot.snapshot_schema_version == "engine-snapshot/2",
         )
         if admission.status != "accepted":

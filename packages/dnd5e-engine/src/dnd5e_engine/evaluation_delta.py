@@ -9,6 +9,7 @@ from dnd5e_engine.evaluation_state import (
     ClosureDeath,
     ConditionRecord,
     DeathSaveRecord,
+    InventoryEntry,
     MovementLedgerState,
 )
 from dnd5e_engine.outcome import DeathRecord
@@ -176,6 +177,25 @@ class CombatClose(EvaluationModel):
     loot_drops: tuple[()]  # No loot operation is admitted by this version.
 
 
+class InventoryConsume(EvaluationModel):
+    kind: Literal["inventory.consume"]
+    expected: InventoryEntry
+    value: InventoryEntry
+    amount: Annotated[int, Field(ge=1, le=1)]
+
+    @model_validator(mode="after")
+    def consume_one_unit(self) -> Self:
+        if self.expected.quantity < 1 or self.expected.charges_remaining_per_unit != 1:
+            raise ValueError("consume requires an available single-use unit")
+        if not self.expected.accessible or self.value != self.expected.model_copy(
+            update={"quantity": self.expected.quantity - self.amount}
+        ):
+            raise ValueError(
+                "consume must preserve owner, identity, access and remaining-unit charges"
+            )
+        return self
+
+
 StateDeltaOperation = Annotated[
     HPDelta
     | TempHPSet
@@ -188,7 +208,8 @@ StateDeltaOperation = Annotated[
     | DamageSequenceUpdate
     | ProcessedDamageUpdate
     | DeathLedgerUpdate
-    | CombatClose,
+    | CombatClose
+    | InventoryConsume,
     Field(discriminator="kind"),
 ]
 

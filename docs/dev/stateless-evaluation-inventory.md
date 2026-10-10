@@ -667,3 +667,22 @@ Only generic, no-sense, no-tool, no-redemption adjudications with GM `flag` sour
 The shared check pipeline mutates no admitted state: StateDelta operations are empty, while
 the CheckRolled proposal and RNGTransition form the complete submission unit. A local typed
 check.adjudication choice is versioned in evaluation /4; no new mechanical delta kind is added.
+
+
+## Batch 8 inventory and healing boundary
+
+InventoryCombatSnapshot /3 adds a required inventory_state tuple over the complete /2
+combat dependencies. Its complete combat_view reuses existing dependency-closure validation;
+inventory stays in the outer input and is projected explicitly, never discarded as defaults.
+Snapshot /3 cannot be downgraded into an old operation envelope. Inventory entries require
+instance, owner, canonical asset, quantity, per-unit charge balance and accessible flag.
+Duplicate instances and absent owners are schema errors. Empty or inaccessible units reject.
+
+InventoryConsume is the only added mechanical operation, versioned by evaluation /5.
+It includes complete expected and resulting entries plus a strict one-unit amount. The
+projection reuses existing HP/budget/turn delta kinds and exhaustive state-change checks.
+HealingApplied reports the rolled amount; HPDelta reports capped authoritative recovery.
+A full-HP use has inventory/budget deltas and real dice, despite zero HP change. No new
+formal WorldEvent identity is allocated by Engine. The independent scratch consumer tests
+all-operation rollback, stale world/entry/RNG guards and replay rejection. These are local
+consumer proofs, not claims that the current SM branch already admits inventory or healing.

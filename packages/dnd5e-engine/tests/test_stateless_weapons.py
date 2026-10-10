@@ -272,3 +272,21 @@ def test_shared_mastery_training_gate_preserves_legacy_default(training, damage)
     assert bool(hits) is damage
     if damage:
         assert hits[0].amount == 3  # Graze: STR modifier, independent of damage dice.
+
+
+def test_equipped_shield_cannot_be_hidden_by_the_new_hand_flag(monkeypatch):
+    request, _, _, loader = weapon_case("greatsword", two_handed=True)
+    actors = list(request.state_snapshot.character_states)
+    actors[0] = actors[0].model_copy(update={"shield_equipped": True})
+    request = request.model_copy(
+        update={
+            "state_snapshot": request.state_snapshot.model_copy(
+                update={"character_states": tuple(actors)}
+            )
+        }
+    )
+    monkeypatch.setattr(
+        RNGState, "restore", lambda self: pytest.fail("RNG before schema rejection")
+    )
+    with pytest.raises(ValidationError, match="two-handed grip"):
+        execute(request, loader)

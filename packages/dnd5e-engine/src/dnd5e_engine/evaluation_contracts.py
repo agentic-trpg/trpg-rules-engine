@@ -6,10 +6,10 @@ from pydantic import ConfigDict, Field, ValidationInfo, field_validator, model_v
 from pydantic_core import to_json
 
 from dnd5e_engine.evaluation_base import EvaluationModel
-from dnd5e_engine.evaluation_delta import CombatClose, StateDelta
+from dnd5e_engine.evaluation_delta import CombatClose, InventoryConsume, StateDelta
 from dnd5e_engine.evaluation_rng import RNGContext, RNGTransition
 from dnd5e_engine.evaluation_ruleset import RulesetBinding
-from dnd5e_engine.evaluation_state import CombatSnapshot, StateSnapshot
+from dnd5e_engine.evaluation_state import CombatSnapshot, InventoryCombatSnapshot, StateSnapshot
 from dnd5e_engine.events import (
     ALL_COMBAT_EVENT_TYPES,
     AdvantageSource,
@@ -23,8 +23,19 @@ from dnd5e_engine.types.checks import CheckRequest, GrantedDie
 
 SCHEMA_VERSION = "engine-evaluation/1"
 EvaluationVersion = Literal[
-    "engine-evaluation/1", "engine-evaluation/2", "engine-evaluation/3", "engine-evaluation/4"
+    "engine-evaluation/1",
+    "engine-evaluation/2",
+    "engine-evaluation/3",
+    "engine-evaluation/4",
+    "engine-evaluation/5",
 ]
+
+
+class ItemUsePayload(EvaluationModel):
+    kind: Literal["combat.item"]
+    instance_id: Annotated[str, Field(min_length=1)]
+    activity_id: Annotated[str, Field(min_length=1)]
+    target_id: Annotated[str, Field(min_length=1)]
 
 
 class CheckPayload(CheckRequest):
@@ -64,9 +75,9 @@ class RuleEvaluationRequest(EvaluationModel):
     schema_version: EvaluationVersion
     session_id: Annotated[str, Field(min_length=1)]
     command_id: Annotated[str, Field(min_length=1)]
-    operation_kind: Literal["combat.intent", "rules.check", "combat.close"]
+    operation_kind: Literal["combat.intent", "rules.check", "combat.close", "combat.item"]
     actor_id: Annotated[str, Field(min_length=1)]
-    payload: CombatIntentPayload | CheckPayload | CheckRequest | CombatClosePayload
+    payload: CombatIntentPayload | CheckPayload | CheckRequest | CombatClosePayload | ItemUsePayload
     state_snapshot: StateSnapshot
     ruleset_binding: RulesetBinding
     rng_context: RNGContext
@@ -77,7 +88,7 @@ class RuleEvaluationRequest(EvaluationModel):
         if info.mode == "json" and info.data.get("operation_kind") == "combat.intent":
             return CombatIntentPayload.model_validate_json(to_json(value))
         if (
-            info.data.get("schema_version") == "engine-evaluation/4"
+            info.data.get("schema_version") in ("engine-evaluation/4", "engine-evaluation/5")
             and info.data.get("operation_kind") == "rules.check"
         ):
             # Do not let the compatibility union fall back to coercive CheckRequest.
@@ -92,9 +103,22 @@ class RuleEvaluationRequest(EvaluationModel):
             raise ValueError("request and snapshot session identities differ")
         if (
             self.state_snapshot.snapshot_schema_version == "engine-snapshot/2"
-            and self.schema_version not in ("engine-evaluation/3", "engine-evaluation/4")
+            and self.schema_version
+            not in ("engine-evaluation/3", "engine-evaluation/4", "engine-evaluation/5")
         ):
             raise ValueError("snapshot /2 requires engine-evaluation/3")
+        if self.state_snapshot.snapshot_schema_version == "engine-snapshot/3" and (
+            self.schema_version != "engine-evaluation/5" or self.operation_kind != "combat.item"
+        ):
+            raise ValueError("snapshot /3 requires combat.item on engine-evaluation/5")
+        if self.operation_kind == "combat.item":
+            if (
+                self.schema_version != "engine-evaluation/5"
+                or not isinstance(self.payload, ItemUsePayload)
+                or not isinstance(self.state_snapshot, InventoryCombatSnapshot)
+            ):
+                raise ValueError("combat.item requires evaluation /5 and inventory snapshot /3")
+            return self
         if self.operation_kind == "combat.intent":
             if not isinstance(self.payload, CombatIntentPayload):
                 raise ValueError("combat.intent requires a typed combat payload")
@@ -111,9 +135,10 @@ class RuleEvaluationRequest(EvaluationModel):
                 raise ValueError("combat.close requires a closure payload and combat snapshot")
         elif not isinstance(self.payload, CheckRequest) or self.payload.actor_id != self.actor_id:
             raise ValueError("rules.check requires a matching actor and typed check payload")
-        elif self.schema_version == "engine-evaluation/4" and not isinstance(
-            self.payload, CheckPayload
-        ):
+        elif self.schema_version in (
+            "engine-evaluation/4",
+            "engine-evaluation/5",
+        ) and not isinstance(self.payload, CheckPayload):
             raise ValueError("rules.check /4 requires every adjudication field explicitly")
         return self
 
@@ -182,9 +207,9 @@ class RuleEvaluationResult(EvaluationModel):
 
     @model_validator(mode="after")
     def status_fields(self) -> Self:
-        if (
-            isinstance(self.choice, CheckAdjudicationChoice)
-            and self.schema_version != "engine-evaluation/4"
+        if isinstance(self.choice, CheckAdjudicationChoice) and self.schema_version not in (
+            "engine-evaluation/4",
+            "engine-evaluation/5",
         ):
             raise ValueError("check adjudication choice requires engine-evaluation/4")
         if self.status == "accepted":
@@ -194,6 +219,10 @@ class RuleEvaluationResult(EvaluationModel):
                 raise ValueError("accepted forbids choice/error")
             if self.state_delta.expected_world_version != self.input_world_version:
                 raise ValueError("delta and result world versions differ")
+            if self.schema_version != "engine-evaluation/5" and any(
+                isinstance(op, InventoryConsume) for op in self.state_delta.operations
+            ):
+                raise ValueError("inventory consume requires engine-evaluation/5")
             if self.schema_version == "engine-evaluation/1" and any(
                 isinstance(op, CombatClose) for op in self.state_delta.operations
             ):

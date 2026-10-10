@@ -170,3 +170,21 @@ def capture_combat_snapshot(
         ),
         combat_state=CombatState.model_validate(value),
     )
+
+
+def capture_evaluation_snapshot(
+    live: _LiveCombat, snapshot: CombatSnapshot, grid: GridScene
+) -> CombatSnapshot:
+    captured = capture_combat_snapshot(
+        live,
+        grid=grid,
+        world_version=snapshot.world_version,
+        combat_id=snapshot.combat_state.combat_id,
+        snapshot_schema_version=snapshot.snapshot_schema_version,
+    )
+    by_id = {actor.entity_id: actor for actor in captured.character_states}
+    return captured.model_copy(
+        update={
+            "character_states": tuple(by_id[actor.entity_id] for actor in snapshot.character_states)
+        }
+    )

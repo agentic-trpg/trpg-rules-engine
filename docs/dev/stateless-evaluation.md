@@ -372,3 +372,76 @@ RNG advancement with the request fingerprint/OCC guards, and decide its own even
 world_version and RNG stream-version policy. Neither OPEN policy is frozen here. It must
 supply the explicit adjudication payload and matching evaluator/data binding, route noncombat
 requests separately from combat intents, and handle `check.adjudication` before committing.
+
+
+## Batch 8: owned consumable healing
+
+`engine-evaluation/5`, evaluator `dnd5e-evaluation/9`, introduces `combat.item` with
+strict ItemUsePayload: kind, authoritative inventory instance ID, selected activity ID,
+and explicit target ID. It requires `InventoryCombatSnapshot`, kind `combat_inventory`,
+schema `engine-snapshot/3`. Every actor supplies CharacterStateV2. Previous combat and
+noncombat snapshots /1 and /2 retain their exact shape and old operation boundaries;
+checks execute on wire /4 or /5, common weapons on /3 or later, closure on /2 or later.
+The new inventory snapshot is deliberately accepted only for combat.item. Availability
+continues to cover attacks; it does not claim item-query support.
+
+Each required InventoryEntry contains instance_id, owner_id, item_slug, quantity,
+charges_remaining_per_unit and accessible. IDs are unique, owners must be present actors,
+and numeric/boolean fields are strict. An entry represents a homogeneous owned stack,
+not an arbitrary mixed-charge container. The first reviewed item is the real SRD Potion
+of Healing with exactly one ordinary self-target HealActivity, one itemUses charge,
+1-charge auto-destroy units, fixed dice and no effects/timing/scaling or attunement.
+Canonical data supplies 2d4+2 and Bonus Action activation; formulas are executed solely by
+the shared Healing Resolver. Item identity is an explicit reviewed allowlist; its name
+and description never determine behavior. Altered mechanical sidecars fail closed.
+
+Only living self-drinkers with a declared free hand and accessible owned stock are
+admitted (PC and NPC share the path). This first admission conservatively refuses any
+equipped shield, including a shield user with no held weapon. Accessible means Host-declared
+ready stock requiring no additional retrieval operation in this bounded invocation. Feeding others, revival, two occupied hands,
+complex items, persistent slug charge pools and non-single-use units remain outside this
+slice. Missing/foreign/inaccessible/empty inventory, invalid targets/activities, exhausted
+Bonus Actions and wrong turns reject before RNG. Unmigrated mechanics return unsupported.
+All support/ownership/payment checks precede RNG restoration. Schema and binding failures
+remain outside the four rule statuses.
+
+`InventoryConsume(kind="inventory.consume", expected, value, amount=1)` guards the entire
+entry, preserves instance/owner/slug/access/remaining-unit charges, and decrements exactly
+one unit. Zero quantity remains an explicit tombstone. The existing HPDelta carries the
+actual capped recovery; ActionBudgetUpdate and any shared turn/lifecycle deltas carry the
+actual costs. The ordered proposal includes IntentSubmitted and HealingApplied, with the
+real RNGTransition. At full HP the inventory, Bonus Action and dice are still consumed;
+no HPDelta is invented. SM must commit all these components atomically and retain command
+idempotency/OCC authorization; events never substitute for mechanical deltas.
+
+The disposable Legacy context derives a fresh single-unit charge pool from the explicit
+inventory balance, verifies an exact one-charge spend, and removes that private counter
+before exhaustive state projection. No per-slug authoritative charge pool is persisted,
+and the next fresh inventory unit remains usable. Other actor counters are preserved.
+The shared action-cost classifier now respects the selected typed item's Bonus Action
+activation (also the sole uncharged activity); a regression first demonstrated the old
+Action mischarge. Legacy public signatures remain unchanged. This mechanical correction
+is shared by Stateful and Stateless paths, with canonical and renamed synthetic tests.
+
+SM migration: add authoritative inventory stacks/instances and access/charge facts; route
+combat.item with snapshot /3; admit inventory.consume with full expected-value guards;
+permit positive HPDelta for this operation; apply all budget/turn updates; bind real event
+actor/target and item-instance provenance through the typed result; commit RNG/events/receipt
+in the same transaction. Do not infer quantity/ownership from carried_item_slugs, or apply
+the removed private Legacy charge counter as an additional payment. Engine implements no
+SQL transaction, persistent inventory or durable receipt.
+
+
+Batch 8 self-review also closes a check-admission combination: alternate governing
+ability plus a nonzero projected skill_check_bonuses entry is unsupported before RNG.
+The shared check modifier applies that scalar only for the skill's canonical ability;
+the stateless boundary must not accept and silently drop a supplied mechanical bonus.
+Canonical skill bonuses and GM ability variants without such a bonus remain supported.
+No shared check formula or Legacy API was changed for this restriction.
+
+
+The final equipment self-review also rejects a two-handed grip with shield_equipped=True,
+even when other_hand_occupied was incorrectly supplied as False. Existing shield facts
+cannot be hidden by the added hand flag. This is an invariant correction on the unchanged
+/2 field shape (also inherited by inventory /3), covered before RNG by a real Greatsword
+regression; Legacy public actor fields remain backward compatible.

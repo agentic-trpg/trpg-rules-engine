@@ -229,7 +229,7 @@ class CharacterStateV2(CharacterState):
             raise ValueError("weapon identity and declared grip disagree")
         if self.weapon_in_hands is not None and self.weapon_in_hands not in self.carried_item_slugs:
             raise ValueError("held weapon is absent from supplied equipment")
-        if self.weapon_grip == "two_handed" and self.other_hand_occupied:
+        if self.weapon_grip == "two_handed" and (self.other_hand_occupied or self.shield_equipped):
             raise ValueError("two-handed grip conflicts with an occupied other hand")
         if len(set(self.weapon_mastery_slugs)) != len(self.weapon_mastery_slugs):
             raise ValueError("duplicate weapon mastery identity")
@@ -381,7 +381,7 @@ class CombatState(EvaluationModel):
 
 
 class SnapshotBase(EvaluationModel):
-    snapshot_schema_version: Literal["engine-snapshot/1", "engine-snapshot/2"]
+    snapshot_schema_version: Literal["engine-snapshot/1", "engine-snapshot/2", "engine-snapshot/3"]
     session_id: Annotated[str, Field(min_length=1)]
     world_version: Annotated[int, Field(ge=0)]
     character_states: tuple[CharacterStateV2 | CharacterState, ...]
@@ -392,7 +392,7 @@ class SnapshotBase(EvaluationModel):
     def identities(self) -> Self:
         if any(
             isinstance(actor, CharacterStateV2)
-            != (self.snapshot_schema_version == "engine-snapshot/2")
+            != (self.snapshot_schema_version != "engine-snapshot/1")
             for actor in self.character_states
         ):
             raise ValueError("actor fields do not match the snapshot schema version")
@@ -406,6 +406,7 @@ class SnapshotBase(EvaluationModel):
 
 
 class CombatSnapshot(SnapshotBase):
+    snapshot_schema_version: Literal["engine-snapshot/1", "engine-snapshot/2"]
     snapshot_kind: Literal["combat"]
     combat_state: CombatState
 
@@ -430,10 +431,55 @@ class CombatSnapshot(SnapshotBase):
 
 
 class NonCombatSnapshot(SnapshotBase):
+    snapshot_schema_version: Literal["engine-snapshot/1", "engine-snapshot/2"]
     snapshot_kind: Literal["non_combat"]
 
 
-StateSnapshot = Annotated[CombatSnapshot | NonCombatSnapshot, Field(discriminator="snapshot_kind")]
+class InventoryEntry(EvaluationModel):
+    """One owned homogeneous stack; charge balance is per remaining unit."""
+
+    instance_id: Annotated[str, Field(min_length=1)]
+    owner_id: Annotated[str, Field(min_length=1)]
+    item_slug: Annotated[str, Field(min_length=1)]
+    quantity: Annotated[int, Field(ge=0)]
+    charges_remaining_per_unit: Annotated[int, Field(ge=0)]
+    accessible: bool
+
+
+class InventoryCombatSnapshot(SnapshotBase):
+    snapshot_schema_version: Literal["engine-snapshot/3"]
+    snapshot_kind: Literal["combat_inventory"]
+    combat_state: CombatState
+    inventory_state: tuple[InventoryEntry, ...]
+
+    def combat_view(self) -> CombatSnapshot:
+        """Complete mechanical view; inventory stays owned by the outer DTO."""
+        return CombatSnapshot(
+            snapshot_schema_version="engine-snapshot/2",
+            snapshot_kind="combat",
+            session_id=self.session_id,
+            world_version=self.world_version,
+            character_states=self.character_states,
+            effect_states=self.effect_states,
+            scene_state=self.scene_state,
+            combat_state=self.combat_state,
+        )
+
+    @model_validator(mode="after")
+    def inventory_closure(self) -> Self:
+        self.combat_view()
+        ids = {actor.entity_id for actor in self.character_states}
+        if len({entry.instance_id for entry in self.inventory_state}) != len(self.inventory_state):
+            raise ValueError("duplicate inventory instance identity")
+        if any(entry.owner_id not in ids for entry in self.inventory_state):
+            raise ValueError("inventory owner is absent from snapshot")
+        return self
+
+
+StateSnapshot = Annotated[
+    CombatSnapshot | NonCombatSnapshot | InventoryCombatSnapshot,
+    Field(discriminator="snapshot_kind"),
+]
 
 # Legacy retained dataclasses use TYPE_CHECKING-only forward references. Resolve
 # them explicitly for the portable schema; importing a runtime combat is unnecessary.
@@ -448,5 +494,6 @@ for _snapshot_model in (
     CombatState,
     CombatSnapshot,
     NonCombatSnapshot,
+    InventoryCombatSnapshot,
 ):
     _snapshot_model.model_rebuild(_types_namespace=_SNAPSHOT_TYPES)

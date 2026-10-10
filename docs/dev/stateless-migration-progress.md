@@ -2,8 +2,10 @@
 
 R9 baseline: `fix/re-eval-contract-stabilization@33cb12fb657b8fa511f297ece62e57cdb8c9a46d`.
 The goal is to replace the existing Stateful Rule Engine with one stateless evaluator.
-**Full conversion is incomplete.** R9 removes the Legacy execution runtime from the
-already admitted ordinary single-target Attack path; it adds no D&D content support.
+**Full conversion is incomplete.** R10 starts at R9 main
+`f4726ef873bcc470ca30daebb4c7d1aa08126890` and removes the remaining Item/Closure
+runtime dependencies. Attack, Check, admitted Item and terminal Closure now execute
+independently. This extracts existing rules rather than adding content support.
 
 ## Architecture decisions and progress dimensions
 
@@ -38,19 +40,19 @@ classification applies only to the stated bounded capability, not its whole fami
 | --- | --- | --- | --- |
 | Result/binding/RNG envelope | Fully migrated local candidate | Yes for envelope | `evaluation_contracts`, `evaluation_ruleset`, `evaluation_rng`; durable commit/receipt is SM work |
 | Combat initialization / Start | Legacy Stateful Only | No | `start_combat/_start_combat`, `build_party`; registration, initiative/hydration, first turn and hooks; no start/create operation |
-| Turn / Action Economy | Partially migrated through attack/item | Yes for admitted Attack; no for general turn/item | Shared `turn_rules`, `action_economy_rules`; ordinary payment/reset/dead skipping in Attack. Standalone pass, extra/restricted Actions, general expiry/death-save admission need work |
+| Turn / Action Economy | Partially migrated through attack/item | Yes for admitted Attack/Item; no for general turn | Shared `turn_rules`, `action_economy_rules`; ordinary payment/reset/dead skipping in Attack. Standalone pass, extra/restricted Actions, general expiry/death-save admission need work |
 | Movement / positioning | Legacy Stateful Only | No | `live_movement`, `movement`, `spatial`; pure geometry/costs exist, but position Delta and evaluation entry absent; terrain/cover/OA remain Legacy |
 | Ordinary PC/NPC weapon or explicit stat-block single Attack | Fully migrated bounded subset | **Yes, R9** | `evaluation_preflight` → `evaluation_attack.execute_attack` → Activity Resolver → `evaluation_projection.attack_delta`; no Legacy execution context |
 | Attack / Damage / Death overall | Partially migrated | Partially | Ordinary roll/hit/miss/crit/R-I-V/temp HP/death/payment/turn and attack-induced next-turn death save migrated; initial dying states, riders, trained Masteries, Multiattack/recharge/legendary/effects remain Legacy |
 | Adjudicated noncombat ability/skill check | Fully migrated bounded subset | Yes | `evaluation_checks` → `activities/check_pipeline`; explicit DC/GM flags/proficiency/expertise/Jack/Reliable Talent; no Legacy runtime |
 | Saves / skill checks overall | Partially migrated | Partially | `check`, `save_primitive`, `live_save_modifiers`; standalone Save envelope, tools/senses/modifier consumption and effect dependencies missing |
-| Owned single-use self-healing consumable | Fully migrated bounded external contract | **No** | `evaluation_items` → `execution_context` → `_submit_live_intent`; inventory/HP/budget/turn Delta exists, runtime extraction remains |
+| Owned single-use self-healing consumable | Fully migrated bounded external contract | **Yes, R10** | `evaluation_items` → shared CombatComputation / HealActivity / item_rules; inventory/HP/budget/turn/events/RNG remain complete |
 | Inventory / resource payment overall | Partially migrated | No for general execution | Mandatory typed InventoryState; complete consume guard. Equip/transfer/recharge/ammunition/general pool/restore operations absent; Legacy slot/counter/rest machinery remains |
 | Conditions / effects / concentration | Legacy Stateful Only for general inputs | No | Complete Snapshot records retained and refused; `effect_lifecycle`, `live_effect_lifecycle`, condition/concentration folds. Attack-produced unconscious/prone/death-save state is a bounded exception |
 | Spellcasting / Features | Legacy Stateful Only | No | `spell_execution`, `feature_runtime`, `live_features`, `live_spell_delivery`, `activities/cast`; existing repertoire/costs/timing/grants/riders remain, no evaluation entry |
 | Reaction / pending choice | Partially migrated choices only | Yes for draw-free choices; no for reactions | Weapon/missing-DC choices typed; `reactions`, `live_reactions`, `timed_activities` execution/windows/continuation remain Legacy; complex ABI OPEN |
 | Areas / environment / objects | Legacy Stateful Only | No | `persistent_areas`, `environment`, `combat_objects`, `ongoing_spell_activation`; state captured then refused; source/lifetime/geometry/history Delta missing |
-| Bounded victory / TPK closure | Fully migrated bounded external contract | **No** | `evaluation_closure` → `execution_context` → `_derive_ended_reason/_project_outcome`; no registry/end_combat call, but still `_LiveCombat` dependent |
+| Bounded victory / TPK closure | Fully migrated bounded external contract | **Yes, R10** | `evaluation_closure` → shared outcome_rules on explicit values; XP/history/events and unchanged RNG |
 | Closure / outcome overall | Partially migrated | No | Flight/forced end/effect handoff missing; loot generation and durable cross-combat effects were already Host/deferred gaps |
 | Rest / derivation | Legacy Stateful Only as evaluation operation | Pure algorithms already exist; no complete path | `rest`, `build_spec`, `build_party`; resource/HD/recovery envelope and Delta missing |
 | General 3D / arbitrary narrative / precise interrupted resume | Unsupported / Post-MVP | Not applicable | Preserve original Host/Deferred boundaries and Meta MVP scope |
@@ -134,9 +136,9 @@ changes still need closed DTO operations and independent consumer tests.
    is not Snapshot evaluation and still owns handles.
 4. Engine view/query/drain/narration/legendary-resistance APIs and combat-object/wind
    mutation resolve live handles. Ended-runtime retention and cleanup remain.
-5. **Item** still constructs `_LiveCombat` and temporary CombatHandle, then calls
-   `_submit_live_intent`; **Closure** constructs `_LiveCombat` for outcome rules.
-   Attack and availability no longer do either. Check uses no Legacy runtime.
+5. No currently admitted evaluation path constructs Legacy runtime. execution_context
+   and evaluation_snapshot remain isolated regression adapters. Bridge/Demo still
+   use the production Legacy chains above.
 
 No Bridge/Demo production route changed. A Session must not combine Legacy runtime
 ownership with SM authoritative evaluation commits. Public API compatibility here is
@@ -148,10 +150,10 @@ Read-only observation: SM `4e5cc5ac2765be89f0b4164bc6923083539374c4`, branch
 `feat/sm-b14-npc-persistent-state`; dependency pin remains Engine/Data
 `602dcb8d448e670049427bbb751d6ed226005298`. Request builder uses evaluation `/1`/`/4`,
 Snapshot `/1`/`/2`; manifest accepts evaluator `/4`/`/8`. It cannot consume this branch's
-evaluation `/6`, Snapshot `/4`, availability `/3` and evaluator **`/11`**.
+evaluation `/6`, Snapshot `/4`, availability `/3` and evaluator **`/12`**.
 No SM file was changed and no SM tests/integration result are claimed.
 
-R9 changes only evaluator implementation binding `/10` → `/11`; strict external shapes
+R10 changes only evaluator implementation binding `/11` → `/12`; strict external shapes
 remain unchanged from stabilization. Old evaluator bindings fail visibly. A coordinated
 SM batch must upgrade dependency/manifest/request/query versions, supply real equipment
 and inventory facts, handle complete allowed Delta operations and historical closure
@@ -165,10 +167,10 @@ These next batches are a finite foundation plan, not a promise of full conversio
 
 | Batch | Scope / workload | Verifiable exit |
 | --- | --- | --- |
-| R10: standalone turn and remaining bounded adapters | Medium/large: extract ordinary turn/death-save lifecycle and outcome projection; typed pass/end-turn; move existing consumable/closure onto small computations with shared rules | Attack/item/closure/turn successful isolation forbids all Legacy runtime; two-round/death/save/closure/payment differential tests; no new feature/effect support |
-| R11: combat initialization | Large: separate source validation, roster/slot/equipment hydration, initiative and first-turn computation from registration; local start/create DTO only after OPEN trusted-source review | Noncombat → combat → two rounds parity; complete first-state Delta, no registration/hooks; invalid-source and post-roll fault tests; source authority decision explicitly reviewed |
+| R10: Item and Closure | Completed bounded runtime extraction | Independent successful execution, event/RNG and complete-state parity, post-compute fault isolation |
+| R11: standalone Turn | Planned: explicit Pass/End Turn, bounded death saves, reset/round/dead skipping | Independent successful lifecycle and complete Delta, pre-draw hook refusal, rollback and parity |
 | R12: movement and positioning | Medium/large: typed position Delta; ordinary move/Dash/Disengage, existing grid/terrain/LoS/cover/ledger algorithms; refuse reaction-dependent movement pending interrupt migration | Independent path/collision/range/cost parity and expected-value consumer tests; rejected movement no payment/RNG; no Legacy movement runtime |
-| R13: common resource and equipment authority | Large: bounded typed spell/Pact/counter payment/restore and rest/HD recovery; coherent owned/equipped item identity, explicit inventory changes | Actual payer/pool/resource maxima and rest parity; last-unit conflicts, closure no second payment; complete rollback and strict schemas; separately coordinate SM consumer ABI |
+| R13: combat initialization | Planned: bounded NonCombatSnapshot mechanical initialization, local closed creation candidate | Initiative/equipment/first-turn parity without registration; source authority remains OPEN |
 
 Next, migrate general Effect/Condition/Concentration and captured expiry chains, then
 bounded predeclared Reaction/interrupts after resolving continuation ABI. Migrate existing
@@ -219,3 +221,16 @@ shared action gate now rejects that ordinary attack before payment or RNG. PC/NP
 regressions first failed, then passed for both entries, with no proposed changes,
 events or RNG transition. This checks supplied terminal death facts; it does not
 delegate death rules to SM or change attack-induced death-save admission.
+
+## R10 verification scope
+
+Real successful Item/Closure executions forbid Legacy constructors, handles, registry,
+dispatchers, context factory and outcome wrappers. Tests compare full item state,
+event ordering and RNG (including last-resource turn advancement), terminal XP and
+historical outcome, parallel repeatability, post-heal faults/cancellation and projection
+faults. No Legacy tests were removed and no coverage gates were reduced.
+
+R10 review also covers active walk/swim/climb ledger projection at an empty-area
+turn boundary and the remaining movement window after a Bonus Action. The projection
+reuses movement.project_speeds/speed_for_mode; it does not create another Speed formula.
+The massive-damage capability probe now follows its shared computation call site.

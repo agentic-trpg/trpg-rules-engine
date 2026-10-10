@@ -944,7 +944,7 @@ _PROBES: dict[str, tuple[Any, str]] = {
         lambda: (
             '"instant_kill"' in _src("damage_rules.py")
             and "zero_hp_damage(" in _src("orchestrator.py")
-            and "zero_hp_damage(" in _src("evaluation_attack.py")
+            and "zero_hp_damage(" in _src("evaluation_computation.py")
         ),
         "✅",
     ),

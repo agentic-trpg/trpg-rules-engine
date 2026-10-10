@@ -438,27 +438,29 @@ def test_execution_faults_after_real_payment_and_rng_do_not_leak(fault, monkeypa
     request, _, _, loader = item_case()
     before = deepcopy(request)
     if fault == "resolver":
-        from dnd5e_engine import live_spell_delivery
+        from dnd5e_engine import evaluation_items
 
-        original = live_spell_delivery.resolve_activity
+        original = evaluation_items.resolve_activity
 
         def fail(activity, ctx, **kwargs):
             original(activity, ctx, **kwargs)
             assert ctx.caster.bonus_action_available is False
             raise RuntimeError("injected item resolver fault")
 
-        monkeypatch.setattr(live_spell_delivery, "resolve_activity", fail)
+        monkeypatch.setattr(evaluation_items, "resolve_activity", fail)
         expected = RuntimeError
     else:
-        original = orch._record_item_charge_spend
+        from dnd5e_engine import evaluation_items
 
-        def fail(live, actor_id, intent):
-            original(live, actor_id, intent)
-            live.custom_counters_by_entity[actor_id][orch._item_use_counter_key(POTION)][
-                "spent"
-            ] = 2
+        original = evaluation_items.InventoryConsume
 
-        monkeypatch.setattr(orch, "_record_item_charge_spend", fail)
+        def fail(**kwargs):
+            operation = original(**kwargs)
+            assert operation.amount == 1
+            assert operation.value.quantity == operation.expected.quantity - 1
+            raise EvaluationInvariantError("injected inventory delta fault after healing")
+
+        monkeypatch.setattr(evaluation_items, "InventoryConsume", fail)
         expected = EvaluationInvariantError
     with pytest.raises(expected):
         execute(request, loader)

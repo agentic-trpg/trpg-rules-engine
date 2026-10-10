@@ -119,3 +119,8 @@ def with_event_condition(
             ]
         }
     )
+
+
+def healing_balance(current_hp: int, maximum_hp: int, amount: int) -> int:
+    """Original capped healing fold; revival/conditions belong to the calling lifecycle."""
+    return min(maximum_hp, current_hp + amount)

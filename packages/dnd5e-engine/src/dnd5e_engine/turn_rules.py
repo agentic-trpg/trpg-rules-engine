@@ -103,3 +103,8 @@ def record_budget_changes(before: Combatant, after: Combatant) -> Combatant:
     if before.bonus_action_available and not after.bonus_action_available:
         fields["bonus_action_taken_this_turn"] = True
     return after.model_copy(update=fields)
+
+
+def bonus_action_payment() -> dict[str, bool]:
+    """The ordinary Bonus Action payment shared with the Stateful compatibility entry."""
+    return {"bonus_action_available": False, "bonus_action_taken_this_turn": True}

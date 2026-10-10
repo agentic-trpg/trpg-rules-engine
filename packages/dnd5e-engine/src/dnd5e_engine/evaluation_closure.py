@@ -1,11 +1,10 @@
-"""Bounded, RNG-free closure using the Legacy outcome projector on private state."""
+"""Bounded, RNG-free closure using the shared value-only outcome rules."""
 
 from typing import Literal, TypedDict
 
 from dnd5e_srd_data.loader import AssetLoader
 
-from dnd5e_engine import orchestrator as orch
-from dnd5e_engine.evaluation_context import execution_context
+from dnd5e_engine.evaluation_actor import combatant
 from dnd5e_engine.evaluation_contracts import RuleError, RuleEvaluationRequest
 from dnd5e_engine.evaluation_death import death_consistency
 from dnd5e_engine.evaluation_delta import CombatClose, HistoricalCombatOutcome, StateDelta
@@ -14,7 +13,8 @@ from dnd5e_engine.evaluation_projection import EvaluationInvariantError
 from dnd5e_engine.evaluation_rng import RNGTransition
 from dnd5e_engine.evaluation_state import ClosureDeath, CombatSnapshot
 from dnd5e_engine.events import CombatEnded
-from dnd5e_engine.lib_loader import scoped_lib_loader
+from dnd5e_engine.outcome import DeathRecord
+from dnd5e_engine.outcome_rules import derive_ended_reason, project_outcome
 
 
 class ClosureEvaluation(TypedDict):
@@ -62,12 +62,23 @@ def evaluate_closure(request: RuleEvaluationRequest, loader: AssetLoader) -> Clo
         for resource, count in resources.items()
     ):
         return _refuse("unsupported", "closure.resources", "resource ledger is not representable")
-    with scoped_lib_loader(loader):
-        live = execution_context(snapshot, loader)
-        reason = orch._derive_ended_reason(live)
-        if reason not in ("victory", "defeat_tpk"):
-            return _refuse("rejected", "closure.nonterminal", "combat is not a victory or TPK")
-        outcome = orch._project_outcome(live)
+    actors = [combatant(a) for a in snapshot.character_states]
+    reason = derive_ended_reason(actors, state.party_ids, state.encounter_ids, state.dead_ids)
+    if reason not in ("victory", "defeat_tpk"):
+        return _refuse("rejected", "closure.nonterminal", "combat is not a victory or TPK")
+    outcome = project_outcome(
+        combat_id=state.combat_id,
+        actors=actors,
+        party_ids=state.party_ids,
+        encounter_ids=state.encounter_ids,
+        dead_ids=state.dead_ids,
+        hp={a.entity_id: a.hp_current for a in snapshot.character_states},
+        temp_hp={a.entity_id: a.temp_hp for a in snapshot.character_states},
+        vanishing_temp_hp=set(),
+        xp_values=state.xp_value_by_entity,
+        deaths=[DeathRecord.model_validate(d.model_dump()) for d in state.deaths_recorded],
+        expended_resources=state.expended_resources,
+    )
     # Fail closed if the shared projector later gains another consequence.
     if set(type(outcome).model_fields) != {
         "handle_id",

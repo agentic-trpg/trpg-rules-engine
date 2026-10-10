@@ -1,6 +1,5 @@
 """Single-use owned inventory units through shared item payment and healing."""
 
-import random
 import re
 from typing import Literal, TypedDict
 
@@ -18,9 +17,10 @@ from dnd5e_srd_data.schema.common import (
 )
 from dnd5e_srd_data.schema.item import Item, ItemUses
 
-from dnd5e_engine import action_policy
-from dnd5e_engine import orchestrator as orch
-from dnd5e_engine.evaluation_context import execution_context
+from dnd5e_engine.action_economy_rules import action_economy_gate_failure
+from dnd5e_engine.activities.build_context import build_activity_context
+from dnd5e_engine.activities.resolver import resolve_activity
+from dnd5e_engine.evaluation_computation import CombatComputation
 from dnd5e_engine.evaluation_contracts import (
     CombatIntentPayload,
     ItemUsePayload,
@@ -30,12 +30,18 @@ from dnd5e_engine.evaluation_contracts import (
 from dnd5e_engine.evaluation_delta import InventoryConsume, StateDelta
 from dnd5e_engine.evaluation_preflight import snapshot_support_failure, template_support_failure
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError, attack_delta
-from dnd5e_engine.evaluation_rng import RNGState, RNGTransition
-from dnd5e_engine.evaluation_snapshot import capture_evaluation_snapshot
+from dnd5e_engine.evaluation_rng import RNGTransition
 from dnd5e_engine.evaluation_state import CharacterStateV2, CombatSnapshot
-from dnd5e_engine.events import AttackFailed, CastFailed, CombatEvent, HealingApplied
+from dnd5e_engine.events import (
+    AttackFailed,
+    CastFailed,
+    CombatEvent,
+    HealingApplied,
+    IntentSubmitted,
+)
+from dnd5e_engine.item_rules import activity_item_use_cost, item_use_counter_key
 from dnd5e_engine.lib_loader import scoped_lib_loader
-from dnd5e_engine.specs import GridScene
+from dnd5e_engine.turn_rules import bonus_action_payment, record_budget_changes
 
 
 class ItemEvaluation(TypedDict):
@@ -113,7 +119,7 @@ def _equipment_failure(
                 return _refuse(
                     "unsupported", "item.equipment", "equipment passive effects require migration"
                 )
-    counter_key = orch._item_use_counter_key(item.slug)
+    counter_key = item_use_counter_key(item.slug)
     actor_state = next(a for a in snapshot.character_states if a.entity_id == actor_id)
     if not isinstance(actor_state, CharacterStateV2):
         raise EvaluationInvariantError("inventory actor lacks explicit equipment")
@@ -166,55 +172,73 @@ async def evaluate_item(request: RuleEvaluationRequest, loader: AssetLoader) -> 
     equipment_failure = _equipment_failure(snapshot, request.actor_id, item, loader)
     if equipment_failure is not None:
         return equipment_failure
-    counter_key = orch._item_use_counter_key(item.slug)
+    state = snapshot.combat_state
+    if state.ended:
+        return _refuse("rejected", "combat_ended", "combat has ended")
+    if request.actor_id != state.initiative_ids[state.current_turn_index]:
+        return _refuse("rejected", "not_actor_turn", "actor does not own the current turn")
+    actor_state = next(a for a in snapshot.character_states if a.entity_id == request.actor_id)
+    if (
+        not actor_state.is_alive
+        or actor_state.hp_current <= 0
+        or request.actor_id in state.dead_ids
+    ):
+        return _refuse("rejected", "actor_incapacitated", "drinker must be alive")
+    from dnd5e_engine.evaluation_actor import combatant
+
+    current = combatant(actor_state)
     intent = CombatIntentPayload(
         intent_type="use_item",
         item_id=item.slug,
         activity_id=payload.activity_id,
         target_id=payload.target_id,
     )
+    failure = action_economy_gate_failure(
+        current, intent, is_bonus_action=True, is_reaction_cast=False
+    )
+    if failure is not None:
+        if not isinstance(failure, (AttackFailed, CastFailed)):
+            raise EvaluationInvariantError("unexpected action gate event")
+        return _refuse("rejected", str(failure.reason), "shared item preflight refused payment")
+    charge = activity_item_use_cost(item.slug, item.activities[0])
+    if charge != entry.charges_remaining_per_unit:
+        raise EvaluationInvariantError("admitted item must pay exactly one inventory unit charge")
+    rng = request.rng_context.state.restore()
+    computation = CombatComputation(snapshot, rng)
+    computation.emit(
+        IntentSubmitted(
+            actor_id=current.entity_id,
+            intent_type="use_item",
+            target_id=current.entity_id,
+            item_id=item.slug,
+        )
+    )
+    computation.actors[current.entity_id] = current.model_copy(update=bonus_action_payment())
     with scoped_lib_loader(loader):
-        live = execution_context(view, loader)
-        try:
-            current = orch._validate_intent_preconditions(
-                live, orch.CombatHandle(live.handle_id), request.actor_id, intent=intent
-            )
-            action_policy.validate_grant(live, current, intent)
-            cost = orch._classify_action_cost(intent, None)
-            funding = orch._classify_attack_funding(current, intent, None, repeats_construct=False)
-            funding = action_policy.preflight_intent_policy(
-                live, current, intent, cost, funding, None
-            )
-        except orch.IntentRejectedError as error:
-            return _refuse("rejected", error.reason, str(error))
-        failure = orch._intent_pre_resolution_failure(
-            live, current, intent, None, None, funding, cost
+        context = build_activity_context(
+            computation.actors[current.entity_id],
+            [current],
+            rng=rng,
+            event_emitter=computation.emit,
+            slot_level=None,
+            base_spell_level=None,
+            spellcasting_ability=None,
+            concentration=False,
+            source_passive_effects=[],
+            spell_book={},
+            save_modifiers={},
+            passive_damage_modifiers={},
         )
-        if failure is not None:
-            if not isinstance(failure, (AttackFailed, CastFailed)):
-                raise EvaluationInvariantError("unexpected item refusal event")
-            return _refuse("rejected", str(failure.reason), "shared item preflight refused payment")
-        if orch._item_charge_gate(live, request.actor_id, intent):
-            return _refuse("rejected", "item_exhausted", "shared item charge gate refused payment")
-        grid = GridScene.model_validate(snapshot.scene_state.grid.model_dump())
-        captured = capture_evaluation_snapshot(live, view, grid)
-        if captured != view or RNGState.capture(live.rng) != RNGState.capture(random.Random(0)):
-            raise EvaluationInvariantError("item preflight changed state or RNG")
-        # A private fresh-unit pool is derived from the explicit inventory balance.
-        live.rng = request.rng_context.state.restore()
-        await orch._submit_live_intent(
-            live, orch.CombatHandle(live.handle_id), request.actor_id, intent
-        )
-        action_policy.record_budget_changes(live, current)
-        counters = live.custom_counters_by_entity[request.actor_id]
-        if counters.get(counter_key) != {"spent": 1}:
-            raise EvaluationInvariantError("item did not pay exactly one private unit charge")
-        del counters[counter_key]
-        after = capture_evaluation_snapshot(live, view, grid)
-        proposals = after.combat_state.event_log[len(view.combat_state.event_log) :]
-        if sum(isinstance(e, HealingApplied) for e in proposals) != 1:
-            raise EvaluationInvariantError("item did not produce exactly one healing result")
-        mechanical = attack_delta(view, after)
+        resolve_activity(item.activities[0], context)
+    computation.finish_turn(current.entity_id, allow_movement=True)
+    computation.actors[current.entity_id] = record_budget_changes(
+        current, computation.actors[current.entity_id]
+    )
+    after = computation.result()
+    proposals = tuple(computation.events)
+    if sum(isinstance(e, HealingApplied) for e in proposals) != 1:
+        raise EvaluationInvariantError("item did not produce exactly one healing result")
+    mechanical = attack_delta(view, after)
     consume = InventoryConsume(
         kind="inventory.consume",
         expected=entry,
@@ -228,7 +252,7 @@ async def evaluate_item(request: RuleEvaluationRequest, loader: AssetLoader) -> 
             operations=(consume, *mechanical.operations),
         ),
         proposed_events=proposals,
-        rng_transition=RNGTransition.between(request.rng_context, live.rng),
+        rng_transition=RNGTransition.between(request.rng_context, rng),
         choice=None,
         error=None,
     )

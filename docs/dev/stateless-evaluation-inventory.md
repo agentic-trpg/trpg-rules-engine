@@ -1,7 +1,7 @@
 # Stateless evaluation: state inventory and regression baseline
 
 Baseline: `64dd920507de29602908b4bea1635eedc4385370`. Architecture source:
-ADR-001 Accepted (2026-10-09), Module Contracts sections 2/4/5/6/8,
+Meta Module Contracts sections 2/4/5/6/8/14.1,
 State Machine Architecture sections 3/5/7, MVP Scope section 6, and Agent
 Architecture combat-intent constraints, in the adjacent `agentic-trpg/docs` repository.
 Accepted ownership semantics govern this migration. Candidate Python names, RNG
@@ -49,9 +49,19 @@ queue, listeners, locks, effect runtime or cross-request lifetime. Unchanged com
 are preserved and `attack_delta` rejects every unrepresented change.
 
 The original field index below still describes Legacy consumers. Attack no longer
-uses its `_LiveCombat` columns as execution dependencies. Item and closure still do;
+uses its `_LiveCombat` columns as execution dependencies. R10 removes these
+dependencies from the admitted Item and Closure paths too;
 [progress](stateless-migration-progress.md) records external protocol coverage separately
 from internal runtime removal. Full conversion has not completed.
+
+## R10 extraction
+
+At R9 main `f4726ef873bcc470ca30daebb4c7d1aa08126890`, Item and Closure still
+constructed execution_context. Item now shares CombatComputation and resolver/charge/
+budget kernels; Closure projects explicit values through outcome_rules. Legacy
+wrappers reuse those kernels. Snapshot fields and Delta shapes stay unchanged;
+evaluator binding becomes `/12`. Successful isolation, full event/RNG differential
+and post-resolution faults cover the admitted paths, not general items or outcomes.
 
 ## Ownership and lifetime
 

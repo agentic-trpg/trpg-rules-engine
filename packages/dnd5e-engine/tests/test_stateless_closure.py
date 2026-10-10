@@ -253,23 +253,25 @@ def test_closure_versions_and_binding():
 def test_closure_fault_and_nonempty_loot_do_not_leak(monkeypatch):
     request, _, _ = terminal_request()
     before = deepcopy(request)
-    project = orch._project_outcome
+    from dnd5e_engine import evaluation_closure
 
-    def faulty(live):
-        live.initiative.clear()
+    project = evaluation_closure.project_outcome
+
+    def faulty(**facts):
+        facts["actors"].clear()
         raise RuntimeError("projector fault")
 
-    monkeypatch.setattr(orch, "_project_outcome", faulty)
+    monkeypatch.setattr(evaluation_closure, "project_outcome", faulty)
     with pytest.raises(RuntimeError, match="projector fault"):
         execute(request)
     assert request == before
 
-    def loot(live):
-        outcome = project(live)
+    def loot(**facts):
+        outcome = project(**facts)
         outcome.loot_drops.append(LootDrop(source="transfer", item_id="item:test", to_id=HERO))
         return outcome
 
-    monkeypatch.setattr(orch, "_project_outcome", loot)
+    monkeypatch.setattr(evaluation_closure, "project_outcome", loot)
     result = execute(request)
     assert result.status == "unsupported"
     assert result.error.code == "closure.loot"

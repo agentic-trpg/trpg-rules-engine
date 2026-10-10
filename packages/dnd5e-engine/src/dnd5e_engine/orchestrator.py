@@ -210,6 +210,8 @@ from dnd5e_engine.feature_runtime import (
 from dnd5e_engine.intents import CombatSeamError as CombatSeamError
 from dnd5e_engine.intents import IntentRejectedError as IntentRejectedError
 from dnd5e_engine.intents import PlayerIntent as PlayerIntent
+from dnd5e_engine.item_rules import activity_item_use_cost as _activity_item_use_cost
+from dnd5e_engine.item_rules import item_use_counter_key as _item_use_counter_key
 from dnd5e_engine.lib_loader import get_lib_loader, scoped_lib_loader
 from dnd5e_engine.live_attack_riders import (
     attach_attack_riders,
@@ -262,7 +264,6 @@ from dnd5e_engine.movement import MovementLedger
 from dnd5e_engine.outcome import (
     CombatOutcome,
     DeathRecord,
-    LootDrop,
 )
 from dnd5e_engine.persistent_areas import (
     PersistentAreaState,
@@ -274,7 +275,7 @@ from dnd5e_engine.reactions import (
     ActiveReactionResponse,
     PendingReaction,
 )
-from dnd5e_engine.rest import FEATURE_USE_COUNTER_PREFIX, ITEM_USE_COUNTER_PREFIX
+from dnd5e_engine.rest import FEATURE_USE_COUNTER_PREFIX
 from dnd5e_engine.rules.character import (
     extra_attack_count,
     leveled_feature_slugs,
@@ -4811,7 +4812,9 @@ def _emit_apply_healing(live: _LiveCombat, event: HealingApplied) -> None:
     if tracked is None:
         return
     cap = _hp_max_for(live, event.target_id)
-    new_hp = min(cap, tracked + event.amount)
+    from dnd5e_engine.damage_rules import healing_balance
+
+    new_hp = healing_balance(tracked, cap, event.amount)
     live.tracked_hp[event.target_id] = new_hp
     # SRD §Death Saves — "If a creature with 0 hit points regains any
     # hit points, it becomes conscious again." When tracked HP
@@ -7657,32 +7660,6 @@ def _leave_wild_shape(
         _end_wild_shape(live, actor_id, "remove_ieffect")
 
 
-def _item_use_counter_key(item_id: str) -> str:
-    """The ``custom_counters`` sidecar key namespacing an item's charge tally."""
-    return f"{ITEM_USE_COUNTER_PREFIX}{item_id}"
-
-
-def _activity_item_use_cost(item_slug: str, activity: Any) -> int:
-    """Positive literal ``itemUses`` cost of ONE activity.
-
-    Symbolic or negative targets (``-3d4``, ``-@item.uses.spent``,
-    ``@item.uses.max``) are recharge/whole-pool semantics, not a spend
-    cost — skipped, never coerced.
-    """
-    cost = 0
-    for target in activity.consumption.targets:
-        if target.type != "itemUses":
-            continue
-        try:
-            value = int(str(target.value).strip())
-        except ValueError:
-            _LOGGER.info("item_charge_target_symbolic slug=%s value=%r", item_slug, target.value)
-            continue
-        if value > 0:
-            cost += value
-    return cost
-
-
 def _own_pool_targets(activity: Any) -> list[Any]:
     """The activity's ``itemUses`` consumption targets on its OWN feature's pool
     (an empty ``target``); a target naming another feature (Stunning Strike →
@@ -10035,10 +10012,9 @@ def _consume_action_budget(
     for idx, c in enumerate(live.initiative):
         if c.entity_id == actor_id:
             if cost.is_bonus_action:
-                update: dict[str, Any] = {
-                    "bonus_action_available": False,
-                    "bonus_action_taken_this_turn": True,
-                }
+                from dnd5e_engine.turn_rules import bonus_action_payment
+
+                update: dict[str, Any] = bonus_action_payment()
             elif cost.is_reaction_cast:
                 update = {"reaction_available": False}
             else:
@@ -12491,81 +12467,26 @@ async def narration_events(
 
 
 def _derive_ended_reason(live: _LiveCombat) -> Literal["victory", "defeat_tpk", "flee", "forced"]:
-    """SRD §Combat resolution — derive ``ended_reason`` from final tracked state.
+    from dnd5e_engine.outcome_rules import derive_ended_reason
 
-    - all encounter members dead → victory
-    - all party members dead → defeat_tpk
-    - every living foe has fled (``Combatant.has_fled``, C18 Task 9 / R9) → flee
-    - otherwise → forced (caller closed mid-combat)
-    """
-    all_foes_dead = all(eid in live.dead_ids for eid in live.encounter_ids)
-    all_pcs_dead = all(eid in live.dead_ids for eid in live.party_ids)
-    if all_foes_dead and live.encounter_ids:
-        return "victory"
-    if all_pcs_dead and live.party_ids:
-        return "defeat_tpk"
-    living_foes = [
-        c
-        for c in live.initiative
-        if c.entity_id in live.encounter_ids and c.entity_id not in live.dead_ids
-    ]
-    if living_foes and all(c.has_fled for c in living_foes):
-        return "flee"
-    return "forced"
+    return derive_ended_reason(live.initiative, live.party_ids, live.encounter_ids, live.dead_ids)
 
 
 def _project_outcome(live: _LiveCombat) -> CombatOutcome:
-    """Fold ``_LiveCombat`` event-derived running state into a ``CombatOutcome``.
+    from dnd5e_engine.outcome_rules import project_outcome
 
-    Residual HP / temp HP — from the tracked dicts updated by ``_emit``, less
-    a still-running Polymorph's own grant.
-    Carried conditions — every still-active ``ConditionApplied`` for a
-    surviving combatant. Carried-effect duration is taken from the most
-    recent ``EffectApplied`` (the duration the effect was registered with).
-    Deaths — the ordered ``DeathRecord`` list synthesized in ``_emit``.
-    XP — SRD §Encounter XP, summed across dead encounter members and divided
-    equally among surviving PCs (legacy ``handle_combat_end_victory`` solo
-    semantics extend naturally — for solo-PC the survivor takes the full
-    total).
-    Loot drops — dropped from this seam's projection (loot tables aren't
-    plumbed into ``EncounterMemberSpec`` yet); the cutover prompt wires
-    monster ``loot_table`` lookups before victory.
-    Expended resources — actual spell/Pact slot payments, attributed to their
-    payer and pool/level by ``_take_spell_slot``; informational history only.
-    """
-    residual_hp = {eid: hp for eid, hp in live.tracked_hp.items() if eid in live.party_ids}
-    # Effects end with the combat, and a live Polymorph's own Temporary Hit
-    # Points "vanish if any remain when the spell ends" (SRD 5.2), as
-    # ``_revert_transform_on_expiry`` empties them when it ends in combat.
-    vanishing = {eid for eid, t in live.transforms.items() if t.clears_temp_hp_on_end}
-    residual_temp_hp = {
-        eid: thp
-        for eid, thp in live.tracked_temp_hp.items()
-        if eid in live.party_ids and thp > 0 and eid not in vanishing
-    }
-
-    # SRD §Encounter XP: total XP from dead foes ÷ surviving PCs.
-    total_xp = sum(
-        live.xp_value_by_entity.get(eid, 0) for eid in live.dead_ids if eid in live.encounter_ids
-    )
-    surviving_pcs = [eid for eid in live.party_ids if eid not in live.dead_ids]
-    xp_awarded: dict[str, int] = {}
-    if total_xp > 0 and surviving_pcs:
-        per_pc = total_xp // len(surviving_pcs)
-        if per_pc > 0:
-            xp_awarded = {pc: per_pc for pc in surviving_pcs}
-
-    loot_drops: list[LootDrop] = []
-
-    return CombatOutcome(
-        handle_id=live.handle_id,
-        ended_reason=_derive_ended_reason(live),
-        deaths=list(live.deaths_recorded),
-        residual_hp=residual_hp,
-        residual_temp_hp=residual_temp_hp,
-        loot_drops=loot_drops,
-        xp_awarded=xp_awarded,
-        expended_resources={k: dict(v) for k, v in live.expended_resources.items()},
+    return project_outcome(
+        combat_id=live.handle_id,
+        actors=live.initiative,
+        party_ids=live.party_ids,
+        encounter_ids=live.encounter_ids,
+        dead_ids=live.dead_ids,
+        hp=live.tracked_hp,
+        temp_hp=live.tracked_temp_hp,
+        vanishing_temp_hp={eid for eid, t in live.transforms.items() if t.clears_temp_hp_on_end},
+        xp_values=live.xp_value_by_entity,
+        deaths=live.deaths_recorded,
+        expended_resources=live.expended_resources,
     )
 
 

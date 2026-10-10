@@ -14,7 +14,7 @@ The current local candidate versions are:
 | RuleEvaluationRequest / Result | `engine-evaluation/6` | `/1`–`/5` |
 | StateSnapshot | `engine-snapshot/4` | `/1`–`/3` |
 | Availability request/result | `engine-availability/3` | `/1`–`/2` |
-| RulesetBinding evaluator | `dnd5e-evaluation/11` | `/10` and earlier |
+| RulesetBinding evaluator | `dnd5e-evaluation/12` | `/11` and earlier |
 
 Old envelopes, snapshots and results are explicitly rejected. There are no compatibility
 aliases for `InventoryCombatSnapshot`, `combat_inventory`, missing equipment or missing
@@ -23,7 +23,7 @@ Legacy public coroutine signatures remain; their corrected death/turn/payment/Ma
 behavior is shared with the new execution path. A Legacy `CombatOutcome` is a separate
 host handoff API and must not be applied as a stateless StateDelta.
 
-ADR-001 Accepted and MODULE_CONTRACTS §4.2 DECIDED require exactly **CombatSnapshot /
+Meta MODULE_CONTRACTS §4.2 DECIDED require exactly **CombatSnapshot /
 NonCombatSnapshot** scene discriminators. Both now require typed `InventoryState(entries=...)`,
 complete `CharacterStateV2` records, explicit EffectState records and SceneState.
 CombatSnapshot additionally carries the complete CombatState dependency closure.
@@ -82,8 +82,8 @@ attunement/passives, persistent slug charge pools and non-single-use units are r
 InventoryConsume guards the complete old entry, changes exactly quantity minus one,
 preserves remaining-unit charges/access/ownership and retains a zero-quantity tombstone.
 HP, budget and any turn change accompany the same proposal. Full-HP drinking still
-consumes inventory, Bonus Action and dice without inventing an HPDelta. The private
-single-unit counter is removed before projection and cannot become a second payment.
+consumes inventory, Bonus Action and dice without inventing an HPDelta. No private slug charge counter is created; the shared typed charge-cost rule pays
+exactly one unit through InventoryConsume. It cannot become a second payment.
 
 | Result status | Mechanical material | Other required fields |
 | --- | --- | --- |
@@ -208,3 +208,13 @@ R9 review also confirmed and repaired a Speed-zero Dodge projection discrepancy.
 The existing loss predicate now lives in shared `attack_rules.dodge_benefit_active`,
 used by both entries. PC/NPC differential tests cover Dodge on/off, Speed zero/30
 and no unspent movement, preserving the distinction between Speed and movement budget.
+
+## R10 independent item and closure computation
+
+Attack, Check, the admitted Potion and terminal closure now execute without Legacy
+runtime. Item uses shared healing, item-use-cost and Bonus Action kernels with the
+small per-evaluation CombatComputation. It preserves remaining movement windows and
+complete turn-boundary ledger projection. Closure uses outcome_rules with explicit
+actors, sides, HP, temporary HP, XP, death records and historical expenditure. Legacy
+wrappers call the same kernels. execution_context remains a regression-only adapter;
+no supported evaluation operation calls it. Full-family migration remains incomplete.

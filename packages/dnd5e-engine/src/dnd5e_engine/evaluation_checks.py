@@ -47,6 +47,10 @@ def evaluate_check(request: RuleEvaluationRequest, loader: AssetLoader) -> Check
     snapshot, payload = request.state_snapshot, request.payload
     if not isinstance(snapshot, NonCombatSnapshot):
         return _refuse("unsupported", "check.snapshot", "checks require a noncombat snapshot")
+    if snapshot.combat_setup is not None:
+        return _refuse(
+            "unsupported", "check.setup", "pending combat setup requires its candidate evaluator"
+        )
     if not isinstance(payload, CheckPayload):
         raise EvaluationInvariantError("check payload lacks explicit adjudication")
     actors = {actor.entity_id: actor for actor in snapshot.character_states}

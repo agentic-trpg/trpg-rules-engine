@@ -115,7 +115,7 @@ from dnd5e_engine.activities.conjuration import (
     wild_shape_tier,
 )
 from dnd5e_engine.activities.context import ActivityResolutionContext
-from dnd5e_engine.activities.d20 import AdvantageSources, roll_d20_test
+from dnd5e_engine.activities.d20 import AdvantageSources
 from dnd5e_engine.activities.dice import roll_damage_part
 from dnd5e_engine.activities.effects import (
     applicable_condition_statuses,
@@ -207,6 +207,7 @@ from dnd5e_engine.feature_runtime import (
 from dnd5e_engine.feature_runtime import (
     FeatureInvocation as _FeatureInvocation,
 )
+from dnd5e_engine.initiative_rules import initiative_order_key, resolve_initiative_value
 from dnd5e_engine.intents import CombatSeamError as CombatSeamError
 from dnd5e_engine.intents import IntentRejectedError as IntentRejectedError
 from dnd5e_engine.intents import PlayerIntent as PlayerIntent
@@ -7160,15 +7161,13 @@ def _resolve_initiative(
     both sides; Surprise adds independent disadvantage. The existing D20 Test
     primitive owns cancellation and draw counts.
     """
-    if spec.initiative is not None:
-        return spec.initiative
-    conditions = seeded_sources.get(spec.entity_id, AdvantageSources())
-    sources = AdvantageSources(
-        advantage=conditions.advantage,
-        disadvantage=conditions.disadvantage
-        + (("condition:attacker",) if spec.is_surprised else ()),
+    return resolve_initiative_value(
+        spec.initiative,
+        (0 if spec.initiative is not None else _initiative_modifier(spec)),
+        seeded_sources.get(spec.entity_id, AdvantageSources()),
+        spec.is_surprised,
+        rng,
     )
-    return roll_d20_test(rng, _initiative_modifier(spec), sources).total
 
 
 def _initiative_modifier(spec: PartyMemberSpec | EncounterMemberSpec) -> int:
@@ -7295,7 +7294,7 @@ async def _start_combat(
     )
 
     combatants.sort(
-        key=lambda c: (-c.initiative, -c.dexterity, c.entity_id),
+        key=lambda c: initiative_order_key(c.initiative, c.dexterity, c.entity_id),
     )
 
     topology = _resolve_topology(party, encounter, grid_scene)

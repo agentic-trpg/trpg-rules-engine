@@ -116,7 +116,7 @@ def npc_case(*, seed=0, hero_hp=40, hero_max=40, flat=False):
         combat_id="combat:synthetic",
     )
     request = RuleEvaluationRequest(
-        schema_version="engine-evaluation/8",
+        schema_version="engine-evaluation/9",
         session_id=live.session_id,
         command_id="command:npc",
         operation_kind="combat.intent",
@@ -133,7 +133,7 @@ def npc_case(*, seed=0, hero_hp=40, hero_max=40, flat=False):
 
 def query_for(request):
     return ActionAvailabilityRequest(
-        schema_version="engine-availability/4",
+        schema_version="engine-availability/5",
         session_id=request.session_id,
         operation_kind="combat.intent",
         actor_id=request.actor_id,

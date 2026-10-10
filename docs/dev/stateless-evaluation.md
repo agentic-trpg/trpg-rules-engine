@@ -11,10 +11,10 @@ The current local candidate versions are:
 
 | Contract | Current version | Replaces |
 | --- | --- | --- |
-| RuleEvaluationRequest / Result | `engine-evaluation/8` | `/1`–`/7` |
-| StateSnapshot | `engine-snapshot/5` | `/1`–`/4` |
-| Availability request/result | `engine-availability/4` | `/1`–`/3` |
-| RulesetBinding evaluator | `dnd5e-evaluation/14` | `/13` and earlier |
+| RuleEvaluationRequest / Result | `engine-evaluation/9` | `/1`–`/8` |
+| StateSnapshot | `engine-snapshot/6` | `/1`–`/5` |
+| Availability request/result | `engine-availability/5` | `/1`–`/4` |
+| RulesetBinding evaluator | `dnd5e-evaluation/15` | `/14` and earlier |
 
 Old envelopes, snapshots and results are explicitly rejected. There are no compatibility
 aliases for `InventoryCombatSnapshot`, `combat_inventory`, missing equipment or missing
@@ -141,7 +141,7 @@ Snapshot never admits that sentinel.
 RNGContext remains separate from Snapshot. `stdlib-mt19937/1` carries all 624 words,
 index and finite/null Gaussian cache. Restoring uses Random(0) + setstate, never pickle
 or module-global draws. Attack preflight constructs no RNG; real request state is
-restored only after admission. Item compatibility preflight still uses its private sentinel. No-draw and event-only stream/world version policies
+restored only after admission. Item preflight also restores no execution RNG before admission. No-draw and event-only stream/world version policies
 remain SM/Meta OPEN decisions. Engine does not advance authoritative versions.
 
 R9 Attack executes `evaluate` → `prepare_attack` → `execute_attack` → shared
@@ -159,10 +159,9 @@ attack/apply/d20/dice primitives, condition projections and `death_saves`. The e
 formulas were extracted or reused, rather than implementing another attack algorithm.
 `intents.PlayerIntent` remains the identical class reexported by Legacy Orchestrator.
 
-Item still uses `_submit_live_intent` and a disposable `_LiveCombat`/CombatHandle;
-closure still constructs `_LiveCombat` for the shared outcome projector. Check already
-uses a pure pipeline. Those remaining adapters are migration debt, not the final
-architecture. Exceptions discard private computations; no database/publication or
+Historical R9 baseline (superseded by R10): Item used `_submit_live_intent` and a
+disposable `_LiveCombat`/CombatHandle; Closure constructed `_LiveCombat` for outcome
+projection. R10 removes both dependencies; the current admitted paths use pure kernels. Exceptions discard private computations; no database/publication or
 external state update occurs. All unsupported dependencies remain guarded out.
 R9 changes the evaluator implementation pin to `/11`; request/result `/6`, Snapshot
 `/4`, availability `/3` and closed Delta shapes are unchanged. Older evaluator pins
@@ -256,3 +255,38 @@ unsupported. This limited geometry admission does not expand Attack/Item admissi
 Envelope /8 adds the local closed PositionUpdate; binding /14 rejects old evaluators.
 
 Explicit Pass also admits this static wall/terrain geometry, so a bounded terrain Move can end its turn through the same lifecycle. Effects and reactive hooks stay excluded.
+
+## R13 local combat initialization candidate and public ABI block
+
+`evaluation_initialization.evaluate_combat_initialization_candidate` is an internal
+calculation seam, absent from the public evaluate operation union and Bridge routes.
+Its versioned local typed Payload/Request uses complete NonCombatSnapshot, pinned
+binding, explicit RNG and the normal four-state result vocabulary. It grants no
+source permission. Public combat.start/create is blocked pending Meta C-16 review.
+
+Snapshot /6 requires `combat_setup: CombatSetupState | None` on NonCombatSnapshot.
+Ordinary checks supply explicit null; a pending setup cannot silently become a check.
+The setup contains selected roster/sides, canonical opening positions, fixed-versus-
+rolled initiative, explicit nullable modifier overrides, surprise, draw order, Host XP
+and owned reaction weapons. Typed timed activities, persistent areas and objects
+are also required; only explicit empty fresh components are admitted. All actor,
+inventory/equipment, resource, effect and scene facts remain in the input.
+
+The bounded core validates living ordinary actors/equipment and opening occupancy,
+reuses shared Initiative d20/surprise/tie-break and turn-budget algorithms, preserves
+HP/Temp HP/equipment/inventory/resources and proposes the opening round/turn events.
+It refuses seeded effects, dying actors, passive features/attunement, precombat areas/
+objects/timing and other unmigrated hooks before restoring RNG. Canonical stat-block
+hydration is outside this local subset; full authoritative actor facts are supplied.
+
+CombatCreationCandidate is one closed operation: expected absence, expected setup,
+a complete fresh typed CombatState with empty event history, and guarded per-actor
+Initiative/budget updates. It cannot replace an Actor, World or whole Snapshot; no
+existing inventory/resources are replaced. Ordered proposals and RNG accompany it
+in one uncommitted unit. Only SM can check absence/versions/permission and atomically
+create the component with actor writes/events/RNG/receipt/outbox.
+
+Envelope /9, Snapshot /6, availability /5 and evaluator /15 are local candidates, not
+approved shared ABI. Existing Legacy start/registry/effect hydration remain Transitional
+for regression and old consumers. The independent initialization core constructs no
+LiveCombat/handle/runtime, stores no map/session and leaves no registry on faults.

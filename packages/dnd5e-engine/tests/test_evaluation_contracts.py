@@ -41,7 +41,7 @@ def input_request():
         combat_id="combat:synthetic",
     )
     return RuleEvaluationRequest(
-        schema_version="engine-evaluation/8",
+        schema_version="engine-evaluation/9",
         session_id=live.session_id,
         command_id="command:synthetic",
         operation_kind="combat.intent",
@@ -55,7 +55,7 @@ def input_request():
 
 def result_for(request, status="accepted"):
     return RuleEvaluationResult(
-        schema_version="engine-evaluation/8",
+        schema_version="engine-evaluation/9",
         session_id=request.session_id,
         command_id=request.command_id,
         input_world_version=request.state_snapshot.world_version,
@@ -94,6 +94,7 @@ def test_noncombat_has_shared_complete_actors_but_no_combat_component():
     value = input_request().state_snapshot.model_dump(mode="json")
     value["snapshot_kind"] = "non_combat"
     combat = value.pop("combat_state")
+    value["combat_setup"] = None
     snapshot = NonCombatSnapshot.model_validate_json(json.dumps(value))
     assert TypeAdapter(StateSnapshot).validate_json(snapshot.model_dump_json()) == snapshot
     value["combat_state"] = combat

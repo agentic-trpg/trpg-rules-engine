@@ -404,7 +404,7 @@ class InventoryState(EvaluationModel):
 
 
 class SnapshotBase(EvaluationModel):
-    snapshot_schema_version: Literal["engine-snapshot/5"]
+    snapshot_schema_version: Literal["engine-snapshot/6"]
     session_id: Annotated[str, Field(min_length=1)]
     world_version: Annotated[int, Field(ge=0)]
     character_states: tuple[CharacterStateV2, ...]
@@ -449,8 +449,57 @@ class CombatSnapshot(SnapshotBase):
         return self
 
 
+class CombatSetupState(EvaluationModel):
+    """Explicit selected encounter facts; local candidate, not creation permission."""
+
+    combat_id: Annotated[str, Field(min_length=1)]
+    party_ids: tuple[str, ...]
+    encounter_ids: tuple[str, ...]
+    roll_order: tuple[str, ...]
+    actor_zone: dict[str, str]
+    fixed_initiative: dict[str, int | None]
+    initiative_modifiers: dict[str, int | None]
+    surprised_ids: set[str]
+    xp_value_by_entity: dict[str, Annotated[int, Field(ge=0)]]
+    opportunity_attack_weapons: dict[str, str]
+    timed_activities: TimedActivitiesState
+    persistent_areas: PersistentAreasState
+    combat_objects: ObjectState
+
+    @model_validator(mode="after")
+    def closure(self) -> Self:
+        from dnd5e_engine.spatial import canonical_cell_id
+
+        ids = set(self.roll_order)
+        if (
+            not self.party_ids
+            or not self.encounter_ids
+            or self.roll_order != self.party_ids + self.encounter_ids
+            or len(ids) != len(self.roll_order)
+            or any(
+                set(facts) != ids
+                for facts in (self.actor_zone, self.fixed_initiative, self.initiative_modifiers)
+            )
+            or not self.surprised_ids <= ids
+            or set(self.xp_value_by_entity) != set(self.encounter_ids)
+            or not set(self.opportunity_attack_weapons) <= ids
+            or any(canonical_cell_id(c) != c for c in self.actor_zone.values())
+        ):
+            raise ValueError("incomplete/noncanonical combat setup closure")
+        return self
+
+
 class NonCombatSnapshot(SnapshotBase):
     snapshot_kind: Literal["non_combat"]
+    combat_setup: CombatSetupState | None
+
+    @model_validator(mode="after")
+    def setup_actors(self) -> Self:
+        if self.combat_setup is not None and set(self.combat_setup.roll_order) != {
+            a.entity_id for a in self.character_states
+        }:
+            raise ValueError("combat setup and complete snapshot actors disagree")
+        return self
 
 
 StateSnapshot = Annotated[

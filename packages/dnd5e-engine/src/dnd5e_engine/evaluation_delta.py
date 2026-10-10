@@ -7,6 +7,8 @@ from pydantic import Field, model_validator
 from dnd5e_engine.evaluation_base import EvaluationModel
 from dnd5e_engine.evaluation_state import (
     ClosureDeath,
+    CombatSetupState,
+    CombatState,
     ConditionRecord,
     DeathSaveRecord,
     InventoryEntry,
@@ -223,6 +225,43 @@ class InventoryConsume(EvaluationModel):
         return self
 
 
+class InitialActorState(EvaluationModel):
+    initiative: int
+    budget: AttackBudgetState
+
+
+class InitialActorUpdate(EvaluationModel):
+    actor_id: Annotated[str, Field(min_length=1)]
+    expected: InitialActorState
+    value: InitialActorState
+
+
+class CombatCreationCandidate(EvaluationModel):
+    """Local closed creation proposal, never a whole-world replacement."""
+
+    kind: Literal["combat.create_candidate"]
+    expected_absent: Literal[True]
+    expected_setup: CombatSetupState
+    value: CombatState
+    actor_updates: tuple[InitialActorUpdate, ...]
+
+    @model_validator(mode="after")
+    def initial_components(self) -> Self:
+        from dnd5e_engine.evaluation_initial_state import initial_combat_state
+
+        ids = self.expected_setup.roll_order
+        if (
+            self.expected_setup.timed_activities != self.value.timed_activities
+            or self.expected_setup.persistent_areas != self.value.persistent_areas
+            or self.expected_setup.combat_objects != self.value.combat_objects
+            or tuple(update.actor_id for update in self.actor_updates) != ids
+            or set(self.value.initiative_ids) != set(ids)
+            or self.value != initial_combat_state(self.expected_setup, self.value.initiative_ids)
+        ):
+            raise ValueError("creation candidate is not a complete fresh combat component")
+        return self
+
+
 StateDeltaOperation = Annotated[
     HPDelta
     | TempHPSet
@@ -237,7 +276,8 @@ StateDeltaOperation = Annotated[
     | ProcessedDamageUpdate
     | DeathLedgerUpdate
     | CombatClose
-    | InventoryConsume,
+    | InventoryConsume
+    | CombatCreationCandidate,
     Field(discriminator="kind"),
 ]
 

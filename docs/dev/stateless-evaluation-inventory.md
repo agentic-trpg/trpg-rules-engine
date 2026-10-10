@@ -22,7 +22,7 @@ version/migration details are in [stateless evaluation](stateless-evaluation.md)
 
 ## Current stabilization additions
 
-Current snapshots are version `/5` only, with precisely CombatSnapshot and
+Current snapshots are version `/6` only, with precisely CombatSnapshot and
 NonCombatSnapshot discriminators. Both require InventoryState(entries=...),
 strict owner/instance closure and complete CharacterStateV2 equipment. Older snapshot
 versions and the third combat_inventory context are rejected explicitly; no empty
@@ -43,7 +43,7 @@ R9 starts at `33cb12fb657b8fa511f297ece62e57cdb8c9a46d`. Snapshot `/4` retains
 all fields; no inventory, effect, resource or mechanical fact is synthesized.
 Attack now projects directly from actor facts and explicit RNG through the shared
 Activity Resolver; `evaluation_actor.py` converts only the supplied complete records.
-`evaluation_attack.py` owns only per-call actor updates, immutable combat-field updates,
+`evaluation_computation.py` owns only per-call actor updates, immutable combat-field updates,
 typed events and a single-hit damage accumulator. It has no registry, handle, hooks,
 queue, listeners, locks, effect runtime or cross-request lifetime. Unchanged components
 are preserved and `attack_delta` rejects every unrepresented change.
@@ -98,9 +98,10 @@ a legal miss or countered paid spell commits actual costs and RNG. Listener exce
 after publication are post-commit errors and cannot undo external observer effects.
 
 `event_log` contains rule evidence as well as narration; `event_queue` and
-`event_listeners` are delivery objects. Stateless execution must build private queues
-and never attach Bridge or Host subscribers. It must not call start/end registration
-or `_keep_ended` accidentally. `_emit` performs mechanical folds; reuse it locally.
+`event_listeners` are Legacy delivery objects. Current stateless execution uses only
+a per-evaluation typed event buffer; it constructs no Legacy queues/listeners and
+never registers a combat or calls `_keep_ended` / `_emit`. Shared pure rule folds
+replace those Legacy execution dependencies.
 Bridge combat locks, mutation tasks and `(combat_id, request_id)` fingerprint receipts
 are process-local HTTP coordination in `nat20_bridge/combat_execution.py` and `state.py`.
 They are not SM atomic commit, durable receipts, or authority for a new evaluation.
@@ -117,10 +118,10 @@ They are not SM atomic commit, durable receipts, or authority for a new evaluati
 | Binding | Ruleset ID, evaluator revision, digest of all effective typed assets including overrides | Independent pre-execution binding error; base SRD label alone insufficient |
 | RNG | Separate stream ID/version plus complete explicit PRNG state | Private restored RNG; no global random source |
 
-First attack should reuse `PlayerIntent`, action-policy funding/gates,
-`_resolve_intent_activities`, `build_activity_context`, `resolve_activity` and `_emit`
-folds. Extract a context-taking internal dispatch seam only when required; do not
-register a temporary combat and monkeypatch globals. Admission must reject unknown
+The historical first-slice adapter plan is superseded by R9–R13 extraction.
+Current attacks reuse `PlayerIntent`, pure action/attack/turn/damage kernels,
+`build_activity_context` and `resolve_activity`, with no Legacy dispatch or `_emit`.
+Never register a temporary combat or monkeypatch globals during evaluation. Admission must reject unknown
 weapon activities, riders, features, effect/reaction/environment paths before payment.
 A restricted profile may represent complex components as typed known-empty values;
 it must refuse nonempty input rather than discard it, and document that such snapshots
@@ -748,3 +749,15 @@ The existing Scene grid and complete Combat actor_zone/MovementLedgerState now f
 bounded ordinary movement. PositionUpdate adds expected cell, computed route and
 combat/scene/actor identity; existing ledger/budget operations remain complete.
 Envelope /8 and binding /14 version this local addition; Snapshot stays /5.
+
+## R13 precombat initialization dependencies
+
+NonCombatSnapshot /6 explicitly requires nullable CombatSetupState; this remains a
+mechanical component, not a third Snapshot context. The local setup records selected
+roster/sides/positions, fixed/rolled Initiative and nullable modifiers, surprise/draw
+order, Host XP, reaction weapon ownership and typed timing/area/object components.
+Only explicit empty scene mechanics and ordinary living actors are admitted.
+Creation proposes the complete fresh Combat component and guarded Initiative/budget
+updates; equipment/inventory/HP/resource facts stay authoritative unchanged input.
+No Legacy spec, runtime, handle, default hook or registry is an input dependency.
+Public source-authorized creation stays blocked under Meta C-16.

@@ -63,14 +63,14 @@ def item_case(*, hp=10, quantity=1, charges=1, **entry_updates):
                 "inventory_state",
             }
         ),
-        snapshot_schema_version="engine-snapshot/5",
+        snapshot_schema_version="engine-snapshot/6",
         snapshot_kind="combat",
         character_states=tuple(actors),
         inventory_state=InventoryState(entries=(InventoryEntry(**entry),)),
     )
     request = request.model_copy(
         update={
-            "schema_version": "engine-evaluation/8",
+            "schema_version": "engine-evaluation/9",
             "operation_kind": "combat.item",
             "state_snapshot": snapshot,
             "payload": ItemUsePayload(

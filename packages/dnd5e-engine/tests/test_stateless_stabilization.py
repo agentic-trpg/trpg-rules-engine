@@ -156,6 +156,7 @@ def test_exactly_two_contexts_require_complete_inventory(kind):
     value["snapshot_kind"] = kind
     if kind == "non_combat":
         del value["combat_state"]
+        value["combat_setup"] = None
     import json
 
     adapter = TypeAdapter(StateSnapshot)
@@ -178,7 +179,7 @@ def test_old_snapshot_versions_are_not_silently_upgraded(old_version):
     value["state_snapshot"]["snapshot_schema_version"] = old_version
     import json
 
-    with pytest.raises(ValidationError, match="engine-snapshot/5"):
+    with pytest.raises(ValidationError, match="engine-snapshot/6"):
         RuleEvaluationRequest.model_validate_json(json.dumps(value))
     value["state_snapshot"]["snapshot_kind"] = "combat_inventory"
     with pytest.raises(ValidationError, match="union_tag_invalid"):

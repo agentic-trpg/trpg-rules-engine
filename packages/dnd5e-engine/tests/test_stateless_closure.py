@@ -55,7 +55,7 @@ def terminal_request(*, defeat=False):
     return (
         request.model_copy(
             update={
-                "schema_version": "engine-evaluation/8",
+                "schema_version": "engine-evaluation/9",
                 "operation_kind": "combat.close",
                 "payload": CombatClosePayload(kind="combat.close"),
                 "state_snapshot": snapshot,
@@ -157,7 +157,7 @@ def test_nonterminal_and_alien_actor_rejected_without_rng(monkeypatch):
     request, _, _ = request_and_live()
     request = request.model_copy(
         update={
-            "schema_version": "engine-evaluation/8",
+            "schema_version": "engine-evaluation/9",
             "operation_kind": "combat.close",
             "payload": CombatClosePayload(kind="combat.close"),
         }

@@ -17,7 +17,7 @@ from dnd5e_engine.lib_loader import scoped_lib_loader
 
 
 class ActionAvailabilityRequest(EvaluationModel):
-    schema_version: Literal["engine-availability/4"]
+    schema_version: Literal["engine-availability/5"]
     session_id: Annotated[str, Field(min_length=1)]
     operation_kind: Literal["combat.intent"]
     actor_id: Annotated[str, Field(min_length=1)]
@@ -35,7 +35,7 @@ class ActionAvailabilityRequest(EvaluationModel):
 
 
 class ActionAvailabilityResult(EvaluationModel):
-    schema_version: Literal["engine-availability/4"]
+    schema_version: Literal["engine-availability/5"]
     session_id: str
     actor_id: str
     operation_kind: Literal["combat.intent"]

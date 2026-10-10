@@ -32,7 +32,7 @@ from dnd5e_engine.evaluation_preflight import snapshot_support_failure, template
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError, attack_delta
 from dnd5e_engine.evaluation_rng import RNGState, RNGTransition
 from dnd5e_engine.evaluation_snapshot import capture_evaluation_snapshot
-from dnd5e_engine.evaluation_state import CharacterStateV2, InventoryCombatSnapshot
+from dnd5e_engine.evaluation_state import CharacterStateV2, CombatSnapshot
 from dnd5e_engine.events import AttackFailed, CastFailed, CombatEvent, HealingApplied
 from dnd5e_engine.lib_loader import scoped_lib_loader
 from dnd5e_engine.specs import GridScene
@@ -104,7 +104,7 @@ def _item_support_failure(item: Item) -> str | None:
 
 
 def _equipment_failure(
-    snapshot: InventoryCombatSnapshot, actor_id: str, item: Item, loader: AssetLoader
+    snapshot: CombatSnapshot, actor_id: str, item: Item, loader: AssetLoader
 ) -> ItemEvaluation | None:
     for actor in snapshot.character_states:
         for slug in actor.carried_item_slugs:
@@ -136,11 +136,11 @@ def _equipment_failure(
 
 async def evaluate_item(request: RuleEvaluationRequest, loader: AssetLoader) -> ItemEvaluation:
     snapshot, payload = request.state_snapshot, request.payload
-    if not isinstance(snapshot, InventoryCombatSnapshot) or not isinstance(payload, ItemUsePayload):
+    if not isinstance(snapshot, CombatSnapshot) or not isinstance(payload, ItemUsePayload):
         raise EvaluationInvariantError("item evaluation requires the inventory contract")
-    view = snapshot.combat_view()
+    view = snapshot
     entry = next(
-        (e for e in snapshot.inventory_state if e.instance_id == payload.instance_id), None
+        (e for e in snapshot.inventory_state.entries if e.instance_id == payload.instance_id), None
     )
     if entry is None:
         return _refuse("rejected", "item_missing", "inventory instance is absent")

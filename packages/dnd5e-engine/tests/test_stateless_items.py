@@ -19,7 +19,7 @@ from dnd5e_engine.evaluation_projection import EvaluationInvariantError
 from dnd5e_engine.evaluation_rng import RNGContext, RNGState
 from dnd5e_engine.evaluation_ruleset import ruleset_binding
 from dnd5e_engine.evaluation_snapshot import capture_evaluation_snapshot
-from dnd5e_engine.evaluation_state import InventoryCombatSnapshot, InventoryEntry
+from dnd5e_engine.evaluation_state import CombatSnapshot, InventoryEntry, InventoryState
 from dnd5e_engine.events import HealingApplied
 from dnd5e_engine.lib_loader import scoped_lib_loader
 from tests.evaluation_support import FOE, HERO, WEAPON, synthetic_loader
@@ -54,18 +54,23 @@ def item_case(*, hp=10, quantity=1, charges=1, **entry_updates):
         accessible=True,
     )
     entry.update(entry_updates)
-    snapshot = InventoryCombatSnapshot(
+    snapshot = CombatSnapshot(
         **request.state_snapshot.model_dump(
-            exclude={"snapshot_schema_version", "snapshot_kind", "character_states"}
+            exclude={
+                "snapshot_schema_version",
+                "snapshot_kind",
+                "character_states",
+                "inventory_state",
+            }
         ),
-        snapshot_schema_version="engine-snapshot/3",
-        snapshot_kind="combat_inventory",
+        snapshot_schema_version="engine-snapshot/4",
+        snapshot_kind="combat",
         character_states=tuple(actors),
-        inventory_state=(InventoryEntry(**entry),),
+        inventory_state=InventoryState(entries=(InventoryEntry(**entry),)),
     )
     request = request.model_copy(
         update={
-            "schema_version": "engine-evaluation/5",
+            "schema_version": "engine-evaluation/6",
             "operation_kind": "combat.item",
             "state_snapshot": snapshot,
             "payload": ItemUsePayload(
@@ -105,7 +110,7 @@ def apply_atomic(store, result, *, fail_at=None):
     result.rng_transition.verify_input(scratch["rng"])
     value = snapshot.model_dump(mode="python")
     actors = {a["entity_id"]: a for a in value["character_states"]}
-    inventory = {e["instance_id"]: e for e in value["inventory_state"]}
+    inventory = {e["instance_id"]: e for e in value["inventory_state"]["entries"]}
     touched = set()
     for index, op in enumerate(result.state_delta.operations):
         if isinstance(op, InventoryConsume):
@@ -133,7 +138,7 @@ def apply_atomic(store, result, *, fail_at=None):
     value["world_version"] += 1  # Test host policy; not a frozen Engine ABI rule.
     from pydantic_core import to_json
 
-    scratch["snapshot"] = InventoryCombatSnapshot.model_validate_json(to_json(value))
+    scratch["snapshot"] = CombatSnapshot.model_validate_json(to_json(value))
     scratch["rng"] = RNGContext(
         stream_id=result.rng_transition.stream_id,
         version=scratch["rng"].version + 1,
@@ -163,7 +168,7 @@ def test_canonical_healing_inventory_budget_rng_events_and_legacy_parity(hp, qua
 
     expected = capture_evaluation_snapshot(
         live,
-        request.state_snapshot.combat_view(),
+        request.state_snapshot,
         GridScene.model_validate(request.state_snapshot.scene_state.grid.model_dump()),
     )
     store = {"snapshot": request.state_snapshot, "rng": request.rng_context}
@@ -173,9 +178,9 @@ def test_canonical_healing_inventory_budget_rng_events_and_legacy_parity(hp, qua
             apply_atomic(store, result, fail_at=index)
         assert store == original
     apply_atomic(store, result)
-    actual = store["snapshot"].combat_view().model_copy(update={"world_version": 7})
-    assert actual == expected
-    assert store["snapshot"].inventory_state[0].quantity == quantity - 1
+    actual = store["snapshot"].model_copy(update={"world_version": 7})
+    assert actual.model_copy(update={"inventory_state": expected.inventory_state}) == expected
+    assert store["snapshot"].inventory_state.entries[0].quantity == quantity - 1
     actor = next(a for a in actual.character_states if a.entity_id == HERO)
     assert actor.hp_current == min(40, hp + 5)  # seed 1: 2d4+2 = 2+1+2.
     assert actor.action_available is True
@@ -279,10 +284,10 @@ def test_actor_turn_charge_authority_schema_and_projection_faults(monkeypatch):
     assert execute(wrong_turn, loader).status == "rejected"
     for field in InventoryEntry.model_fields:
         value = request.model_dump(mode="python")
-        del value["state_snapshot"]["inventory_state"][0][field]
+        del value["state_snapshot"]["inventory_state"]["entries"][0][field]
         with pytest.raises(ValidationError):
             RuleEvaluationRequest.model_validate(value)
-    for update in [{"schema_version": "engine-evaluation/4"}, {"operation_kind": "combat.intent"}]:
+    for update in [{"schema_version": "engine-evaluation/5"}, {"operation_kind": "combat.intent"}]:
         with pytest.raises(ValidationError):
             execute(request.model_copy(update=update), loader)
     from dnd5e_engine import evaluation_items
@@ -356,10 +361,10 @@ def test_unmigrated_item_mechanics_fail_closed(mutation, monkeypatch):
 def test_npc_owner_and_reordered_actor_snapshot():
     request, handle, live, loader = item_case()
     state = request.state_snapshot
-    entry = state.inventory_state[0].model_copy(update={"owner_id": FOE})
+    entry = state.inventory_state.entries[0].model_copy(update={"owner_id": FOE})
     state = state.model_copy(
         update={
-            "inventory_state": (entry,),
+            "inventory_state": InventoryState(entries=(entry,)),
             "character_states": tuple(reversed(state.character_states)),
             "combat_state": state.combat_state.model_copy(update={"current_turn_index": 1}),
         }
@@ -394,7 +399,7 @@ def test_npc_owner_and_reordered_actor_snapshot():
 def test_inventory_boundary_is_strict(field, bad):
     request, _, _, loader = item_case()
     value = request.model_dump(mode="python")
-    value["state_snapshot"]["inventory_state"][0][field] = bad
+    value["state_snapshot"]["inventory_state"]["entries"][0][field] = bad
     with pytest.raises(ValidationError):
         RuleEvaluationRequest.model_validate(value)
     assert execute(request, loader).status == "accepted"
@@ -418,8 +423,10 @@ def test_consume_cannot_transfer_owner_change_identity_or_coerce_amount():
     with pytest.raises(ValidationError):
         InventoryConsume.model_validate(consume.model_copy(update={"amount": True}))
     store = {"snapshot": request.state_snapshot, "rng": request.rng_context}
-    bad_entry = request.state_snapshot.inventory_state[0].model_copy(update={"quantity": 3})
-    store["snapshot"] = store["snapshot"].model_copy(update={"inventory_state": (bad_entry,)})
+    bad_entry = request.state_snapshot.inventory_state.entries[0].model_copy(update={"quantity": 3})
+    store["snapshot"] = store["snapshot"].model_copy(
+        update={"inventory_state": InventoryState(entries=(bad_entry,))}
+    )
     before = deepcopy(store)
     with pytest.raises(AssertionError):
         apply_atomic(store, execute(request, loader))
@@ -500,7 +507,7 @@ def test_only_bonus_action_is_required_and_last_resource_can_advance_turn():
     del live.custom_counters_by_entity[HERO][orch._item_use_counter_key(POTION)]
     from dnd5e_engine.specs import GridScene
 
-    view = request.state_snapshot.combat_view()
+    view = request.state_snapshot
     expected = capture_evaluation_snapshot(
         live, view, GridScene.model_validate(view.scene_state.grid.model_dump())
     )
@@ -551,7 +558,7 @@ def test_result_version_and_rng_guard_are_atomic():
     result = execute(request, loader)
     with pytest.raises(ValidationError):
         RuleEvaluationResult.model_validate(
-            result.model_copy(update={"schema_version": "engine-evaluation/4"})
+            result.model_copy(update={"schema_version": "engine-evaluation/5"})
         )
     store = {
         "snapshot": request.state_snapshot,

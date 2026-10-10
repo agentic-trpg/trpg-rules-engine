@@ -74,8 +74,8 @@ def test_spiritual_weapon_anchors_its_concentration() -> None:
     """Spiritual Weapon's only activity is a ``summon``, so nothing it resolves
     concentrates; the anchor does. A Bonus Action: the cleric's turn stays
     open. The anchor's own effect has no changes, statuses or duration, and a
-    PC's anchored cast counts into ``expended_resources`` like any
-    concentration effect."""
+    PC's actual spell-slot payment counts into ``expended_resources`` once,
+    independently of the concentration effect."""
     handle, live = start([cleric()], seed=3)
     _spiritual_weapon(handle)
     [anchor] = _anchors(live)
@@ -87,7 +87,7 @@ def test_spiritual_weapon_anchors_its_concentration() -> None:
     assert live.concentration_chain[CLERIC] == [SW_ANCHOR]
     assert live.concentration_rounds_remaining[CLERIC] == 10  # 1 minute
     assert combatant(live, CLERIC).concentration_effect_id == "effect:spiritual-weapon"
-    assert live.expended_resources[CLERIC] == {"Spiritual Weapon": 1}
+    assert live.expended_resources[CLERIC] == {"spell_slot:2": 1}
     assert live.initiative[live.current_turn_index].entity_id == CLERIC
 
 

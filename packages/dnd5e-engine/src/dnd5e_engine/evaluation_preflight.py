@@ -14,6 +14,7 @@ from dnd5e_engine import orchestrator as orch
 from dnd5e_engine.activities.dice import validate_expression
 from dnd5e_engine.evaluation_context import execution_context
 from dnd5e_engine.evaluation_contracts import CombatIntentPayload, PreflightChoice, RuleError
+from dnd5e_engine.evaluation_death import death_consistency
 from dnd5e_engine.evaluation_state import CharacterStateV2, CombatSnapshot
 from dnd5e_engine.events import AttackFailed, CastFailed, DamageType
 from dnd5e_engine.spatial import parse_cell
@@ -32,8 +33,11 @@ def refused(status: Literal["rejected", "unsupported"], code: str, reason: str) 
     return AttackAdmission(status=status, error=RuleError(code=code, reason=reason))
 
 
-def snapshot_support_failure(snapshot: CombatSnapshot, *, terminal: bool = False) -> str | None:
+def snapshot_support_failure(snapshot: CombatSnapshot) -> str | None:
     state = snapshot.combat_state
+    failure = death_consistency(snapshot)
+    if failure:
+        return failure
     # Full dependencies remain in the DTO, even when this slice cannot execute them.
     unsupported = (
         snapshot.effect_states,
@@ -110,10 +114,6 @@ def snapshot_support_failure(snapshot: CombatSnapshot, *, terminal: bool = False
             or actor.action_grant_groups_spent
         ):
             return "actor effects, features or extended attack budgets are not migrated"
-        if not terminal and (
-            actor.hp_current <= 0 or not actor.is_alive or actor.entity_id in state.dead_ids
-        ):
-            return "pre-existing dying/dead actors require lifecycle migration"
     return None
 
 
@@ -374,7 +374,7 @@ def weapon_admission(
             return refused(
                 "unsupported",
                 "equipment.capability",
-                "common weapons require snapshot /2 equipment and mastery dependencies",
+                "common weapons require explicit equipment and mastery dependencies",
             )
         if current.weapon_in_hands != weapon.slug:
             return refused(
@@ -467,6 +467,9 @@ def prepare_attack(
     if (
         target is None
         or target.entity_id == actor_id
+        or target.entity_id in live.dead_ids
+        or not target.is_alive
+        or target.hp_current <= 0
         or not orch._is_enemy(live, actor_id, target.entity_id)
     ):
         return refused("rejected", "target_invalid", "target must be a present opposing actor")

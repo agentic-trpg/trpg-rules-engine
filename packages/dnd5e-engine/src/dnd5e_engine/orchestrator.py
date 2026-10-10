@@ -3203,8 +3203,8 @@ class _LiveCombat:
     # dead encounter members, in death order (drives loot + XP projection).
     deaths_recorded: list[DeathRecord] = field(default_factory=list)
     dead_ids: set[str] = field(default_factory=set)
-    # pc_id → {slot_or_feature_label: count_used} (from EffectApplied with
-    # concentration / known feature names — projected onto expended_resources).
+    # payer_id → {spell/pact slot identity: count_used}, recorded at payment.
+    # Never inferred from effect targets, names or concentration.
     expended_resources: dict[str, dict[str, int]] = field(default_factory=dict)
     # current actor (set at TurnStarted) — credited as killer when a non-PC
     # drops to ≤0 HP and the orchestrator synthesizes a Death event.
@@ -5452,13 +5452,6 @@ def _emit_apply_effect_applied(live: _LiveCombat, event: EffectApplied) -> None:
         for change in applied.changes
     ):
         _clamp_movement_budget(live, applied.target_id)
-    # SRD spell-slot consumption: spell effects with concentration imply
-    # a slot was spent. The slot level is not on the event today (follow-up
-    # in the cutover); we record under a coarse "slots" label keyed by name.
-    is_concentration = bool(applied.flags.get("concentration"))
-    if is_concentration and applied.target_id in live.party_ids:
-        bucket = live.expended_resources.setdefault(applied.target_id, {})
-        bucket[applied.name] = bucket.get(applied.name, 0) + 1
     # This fold, not the ``ConditionApplied`` that follows, first writes an
     # effect's status onto the combatant, so this is where an Incapacitated
     # status ends concentration, grapples and Rage. The effect is fully folded
@@ -5629,6 +5622,9 @@ def _record_death(live: _LiveCombat, event: Death, *, killer_id: str | None) -> 
     # Synthesized deaths also reach this entry point without passing _emit.
     live.timed_activities.observe(event)
     live.dead_ids.add(event.target_id)
+    # A terminal Death has one life-state representation on every execution
+    # path. Zero-HP Characters awaiting death saves have not reached this fold.
+    _update_combatant(live, event.target_id, is_alive=False)
     observe_reaction_lifecycle(live, event)
     live.persistent_areas.observe(live, event)
     live.combat_objects.observe(live, event)
@@ -8797,9 +8793,22 @@ def _open_turn_at_current_index(live: _LiveCombat) -> None:
     if not live.initiative:
         live.current_actor_id = None
         return
+    # Recorded dead creatures have no further turns. Keep their roster/history
+    # entries for outcome projection, but skip them without hooks or RNG draws.
+    # Bound the scan so a terminal all-dead encounter cannot loop forever.
+    next_index = live.current_turn_index
+    for _ in live.initiative:
+        if live.initiative[next_index % len(live.initiative)].entity_id not in live.dead_ids:
+            break
+        next_index += 1
+    else:
+        live.current_actor_id = None
+        live.current_turn_index %= len(live.initiative)
+        return
+    live.current_turn_index = next_index
     new_round = live.current_turn_index >= len(live.initiative)
     if new_round:
-        live.current_turn_index = 0
+        live.current_turn_index %= len(live.initiative)
         live.round_number += 1
     _begin_turn(live, new_round=new_round)
 
@@ -11068,12 +11077,15 @@ def _slot_available(live: _LiveCombat, entity_id: str, slot_level: int) -> bool:
 def _take_spell_slot(live: _LiveCombat, entity_id: str, slot_level: int) -> bool:
     """Expend one slot at ``slot_level`` — Spellcasting pool first, then Pact (R3).
     Returns ``False`` and mutates nothing when neither pool has one."""
-    for pool in (
-        live.spell_slots_by_entity.get(entity_id),
-        live.pact_slots_by_entity.get(entity_id),
+    for identity, pool in (
+        ("spell_slot", live.spell_slots_by_entity.get(entity_id)),
+        ("pact_slot", live.pact_slots_by_entity.get(entity_id)),
     ):
         if pool is not None and int(pool.get(slot_level, 0)) > 0:
             pool[slot_level] = int(pool[slot_level]) - 1
+            bucket = live.expended_resources.setdefault(entity_id, {})
+            resource = f"{identity}:{slot_level}"
+            bucket[resource] = bucket.get(resource, 0) + 1
             return True
     return False
 
@@ -12060,7 +12072,7 @@ async def _submit_live_intent(
     from dnd5e_engine.action_policy import preflight_intent_policy
 
     funding = preflight_intent_policy(live, current, intent, action_cost, funding, attack_weapon)
-    rider_origin = attack_origin(intent, attack_weapon, funding)
+    rider_origin = attack_origin(intent, attack_weapon, funding, current)
     rider_plans = prepare_intent_riders(live, current, intent, attack_weapon, rider_origin)
     if rider_plans is None:
         return
@@ -13151,8 +13163,8 @@ def _project_outcome(live: _LiveCombat) -> CombatOutcome:
     Loot drops — dropped from this seam's projection (loot tables aren't
     plumbed into ``EncounterMemberSpec`` yet); the cutover prompt wires
     monster ``loot_table`` lookups before victory.
-    Expended resources — accumulated from ``EffectApplied`` with
-    ``is_concentration=True`` during the combat.
+    Expended resources — actual spell/Pact slot payments, attributed to their
+    payer and pool/level by ``_take_spell_slot``; informational history only.
     """
     residual_hp = {eid: hp for eid, hp in live.tracked_hp.items() if eid in live.party_ids}
     # Effects end with the combat, and a live Polymorph's own Temporary Hit

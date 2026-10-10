@@ -23,6 +23,7 @@ from dnd5e_engine.activities.effects import (
     passive_effect_to_active_effect,
 )
 from dnd5e_engine.activities.formula import resolve_damage_block
+from dnd5e_engine.activities.mastery import mastery_available
 from dnd5e_engine.activities.resolver import resolve_activity
 from dnd5e_engine.attack_declarations import (
     apply_declaration,
@@ -203,7 +204,7 @@ def preflight_attack_riders(
 
 
 def attack_origin(
-    intent: PlayerIntent, weapon: Weapon | None, funding: AttackFunding
+    intent: PlayerIntent, weapon: Weapon | None, funding: AttackFunding, actor: Combatant
 ) -> AttackOrigin:
     if funding == "construct_bonus":
         return "construct"
@@ -213,7 +214,12 @@ def attack_origin(
         return "monster"
     if intent.intent_type == "cast_spell":
         return "spell"
-    if funding == "light_offhand" and weapon is not None and weapon.mastery == "nick":
+    if (
+        funding == "light_offhand"
+        and weapon is not None
+        and weapon.mastery == "nick"
+        and mastery_available(weapon, actor)
+    ):
         return "nick"
     return funding
 

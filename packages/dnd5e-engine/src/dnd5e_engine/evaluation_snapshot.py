@@ -5,13 +5,13 @@ from typing import Any, Literal
 
 from dnd5e_engine.evaluation_effects import effect_state
 from dnd5e_engine.evaluation_state import (
-    CharacterState,
     CharacterStateV2,
     CombatSnapshot,
     CombatState,
     ConditionLink,
     ConstructState,
     EffectTurnRecord,
+    InventoryState,
     LifecycleRecord,
     MechanicalGrid,
     ObjectState,
@@ -29,8 +29,8 @@ from dnd5e_engine.types.combat import Combatant
 def character_state(
     live: _LiveCombat,
     actor: Combatant,
-    version: Literal["engine-snapshot/1", "engine-snapshot/2"] = "engine-snapshot/1",
-) -> CharacterState:
+    version: Literal["engine-snapshot/4"] = "engine-snapshot/4",
+) -> CharacterStateV2:
     value = actor.model_dump(mode="python")
     value["death_saves"] = value["death_saves"] or None
     value.update(
@@ -39,18 +39,6 @@ def character_state(
         spells_known=list(live.spells_known_by_entity.get(actor.entity_id, [])),
         custom_counters=copy.deepcopy(live.custom_counters_by_entity.get(actor.entity_id, {})),
     )
-    if version == "engine-snapshot/1":
-        equipment = (
-            "weapon_in_hands",
-            "weapon_grip",
-            "other_hand_occupied",
-            "weapon_mastery_slugs",
-        )
-        if any(value[name] is not None for name in equipment):
-            raise ValueError("explicit equipment/mastery state requires snapshot /2")
-        for name in equipment:
-            del value[name]
-        return CharacterState.model_validate(value)
     return CharacterStateV2.model_validate(value)
 
 
@@ -60,9 +48,8 @@ def capture_combat_snapshot(
     grid: GridScene,
     world_version: int,
     combat_id: str,
-    snapshot_schema_version: Literal[
-        "engine-snapshot/1", "engine-snapshot/2"
-    ] = "engine-snapshot/1",
+    inventory_state: InventoryState,
+    snapshot_schema_version: Literal["engine-snapshot/4"] = "engine-snapshot/4",
 ) -> CombatSnapshot:
     """Capture a completed boundary; no registry lookup or RNG serialization.
 
@@ -161,6 +148,7 @@ def capture_combat_snapshot(
         session_id=live.session_id,
         world_version=world_version,
         character_states=actors,
+        inventory_state=inventory_state,
         effect_states=tuple(
             effect_state(effect) for effects in live.active_effects.values() for effect in effects
         ),
@@ -181,6 +169,7 @@ def capture_evaluation_snapshot(
         world_version=snapshot.world_version,
         combat_id=snapshot.combat_state.combat_id,
         snapshot_schema_version=snapshot.snapshot_schema_version,
+        inventory_state=snapshot.inventory_state,
     )
     by_id = {actor.entity_id: actor for actor in captured.character_states}
     return captured.model_copy(

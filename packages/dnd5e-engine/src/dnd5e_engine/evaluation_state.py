@@ -380,33 +380,52 @@ class CombatState(EvaluationModel):
         return self
 
 
+class InventoryEntry(EvaluationModel):
+    """One owned homogeneous stack; charge balance is per remaining unit."""
+
+    instance_id: Annotated[str, Field(min_length=1)]
+    owner_id: Annotated[str, Field(min_length=1)]
+    item_slug: Annotated[str, Field(min_length=1)]
+    quantity: Annotated[int, Field(ge=0)]
+    charges_remaining_per_unit: Annotated[int, Field(ge=0)]
+    accessible: bool
+
+
+class InventoryState(EvaluationModel):
+    """Explicit mechanical component shared by both scene contexts."""
+
+    entries: tuple[InventoryEntry, ...]
+
+    @model_validator(mode="after")
+    def unique_instances(self) -> Self:
+        if len({entry.instance_id for entry in self.entries}) != len(self.entries):
+            raise ValueError("duplicate inventory instance identity")
+        return self
+
+
 class SnapshotBase(EvaluationModel):
-    snapshot_schema_version: Literal["engine-snapshot/1", "engine-snapshot/2", "engine-snapshot/3"]
+    snapshot_schema_version: Literal["engine-snapshot/4"]
     session_id: Annotated[str, Field(min_length=1)]
     world_version: Annotated[int, Field(ge=0)]
-    character_states: tuple[CharacterStateV2 | CharacterState, ...]
+    character_states: tuple[CharacterStateV2, ...]
     effect_states: tuple[EffectState, ...]
+    inventory_state: InventoryState
     scene_state: SceneState
 
     @model_validator(mode="after")
     def identities(self) -> Self:
-        if any(
-            isinstance(actor, CharacterStateV2)
-            != (self.snapshot_schema_version != "engine-snapshot/1")
-            for actor in self.character_states
-        ):
-            raise ValueError("actor fields do not match the snapshot schema version")
         ids = [actor.entity_id for actor in self.character_states]
         if len(set(ids)) != len(ids):
             raise ValueError("duplicate snapshot actor identity")
         identities = [(effect.target_id, effect.id, effect.origin) for effect in self.effect_states]
         if len(set(identities)) != len(identities) or any(key[0] not in ids for key in identities):
             raise ValueError("duplicate effect identity or absent effect target")
+        if any(entry.owner_id not in ids for entry in self.inventory_state.entries):
+            raise ValueError("inventory owner is absent from snapshot")
         return self
 
 
 class CombatSnapshot(SnapshotBase):
-    snapshot_schema_version: Literal["engine-snapshot/1", "engine-snapshot/2"]
     snapshot_kind: Literal["combat"]
     combat_state: CombatState
 
@@ -431,53 +450,11 @@ class CombatSnapshot(SnapshotBase):
 
 
 class NonCombatSnapshot(SnapshotBase):
-    snapshot_schema_version: Literal["engine-snapshot/1", "engine-snapshot/2"]
     snapshot_kind: Literal["non_combat"]
 
 
-class InventoryEntry(EvaluationModel):
-    """One owned homogeneous stack; charge balance is per remaining unit."""
-
-    instance_id: Annotated[str, Field(min_length=1)]
-    owner_id: Annotated[str, Field(min_length=1)]
-    item_slug: Annotated[str, Field(min_length=1)]
-    quantity: Annotated[int, Field(ge=0)]
-    charges_remaining_per_unit: Annotated[int, Field(ge=0)]
-    accessible: bool
-
-
-class InventoryCombatSnapshot(SnapshotBase):
-    snapshot_schema_version: Literal["engine-snapshot/3"]
-    snapshot_kind: Literal["combat_inventory"]
-    combat_state: CombatState
-    inventory_state: tuple[InventoryEntry, ...]
-
-    def combat_view(self) -> CombatSnapshot:
-        """Complete mechanical view; inventory stays owned by the outer DTO."""
-        return CombatSnapshot(
-            snapshot_schema_version="engine-snapshot/2",
-            snapshot_kind="combat",
-            session_id=self.session_id,
-            world_version=self.world_version,
-            character_states=self.character_states,
-            effect_states=self.effect_states,
-            scene_state=self.scene_state,
-            combat_state=self.combat_state,
-        )
-
-    @model_validator(mode="after")
-    def inventory_closure(self) -> Self:
-        self.combat_view()
-        ids = {actor.entity_id for actor in self.character_states}
-        if len({entry.instance_id for entry in self.inventory_state}) != len(self.inventory_state):
-            raise ValueError("duplicate inventory instance identity")
-        if any(entry.owner_id not in ids for entry in self.inventory_state):
-            raise ValueError("inventory owner is absent from snapshot")
-        return self
-
-
 StateSnapshot = Annotated[
-    CombatSnapshot | NonCombatSnapshot | InventoryCombatSnapshot,
+    CombatSnapshot | NonCombatSnapshot,
     Field(discriminator="snapshot_kind"),
 ]
 
@@ -494,6 +471,5 @@ for _snapshot_model in (
     CombatState,
     CombatSnapshot,
     NonCombatSnapshot,
-    InventoryCombatSnapshot,
 ):
     _snapshot_model.model_rebuild(_types_namespace=_SNAPSHOT_TYPES)

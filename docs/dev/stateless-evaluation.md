@@ -1,447 +1,178 @@
-# Stateless rule evaluation (local implementation contract)
+# Stateless rule evaluation: current local contract
 
-ADR-001 Accepted establishes State Machine ownership. Module Contracts sections
-2/4/5/6/8 establish the semantic boundary; their candidate ABI, PRNG encoding,
-complex deltas and continuation remain OPEN. The types here are a versioned local
-implementation, subject to cross-repository review, rather than a new formal decision.
-See [the complete state inventory](stateless-evaluation-inventory.md).
+This is a migration of the existing Rule Engine toward one stateless evaluator.
+State Machine owns every authoritative runtime fact and the final transaction.
+The conversion is incomplete; see [migration progress and the finite roadmap](stateless-migration-progress.md)
+and [the complete field inventory](stateless-evaluation-inventory.md).
 
-## Contract and snapshot boundaries
+## Versions and breaking migration
 
-Import contracts from `dnd5e_engine.evaluation_contracts`, snapshot types from
-`evaluation_state`, operations from `evaluation_delta`, and RNG types from
-`evaluation_rng`. Local versions are `engine-evaluation/1`, `engine-snapshot/1`
-and current evaluator `dnd5e-evaluation/5`. Required nullable fields must still be present;
-empty collections explicitly attest empty state. Unknown envelope/operation fields
-and unknown discriminators fail schema validation. Legacy models are not changed.
+The current local candidate versions are:
 
-`RuleEvaluationRequest` has separate `operation_kind` and typed `payload`:
-`combat.intent` requires a CombatIntentPayload and CombatSnapshot; `rules.check`
-requires a matching typed CheckRequest. Both admitted schema branches represent
-Actor operations and require real actor_id. System effects/combat.start/source_ref
-are not admitted schema branches because their source authority details remain OPEN.
-The engine does not authenticate principals; SM authorizes the Actor and supplies
-the trusted snapshot and session pin. Schema acceptance does not imply execution support.
-
-CombatSnapshot and NonCombatSnapshot form a strict discriminator union. Both share
-complete CharacterState records (mapped from every existing Combatant mechanical
-field plus spell/Pact/known-spell/counter resources), explicit effects and scene.
-CombatSnapshot additionally carries initiative, sides, positions, movement ledgers,
-reactions, concentration, lifecycle/lineage, areas, objects, timed work, summons,
-transform original mechanics, resource expenditures and retained rule history.
-No snapshot contains RNG, callbacks, queue, loader object or CombatHandle.
-Derived HP/temp/condition indexes, topology, current Actor and canonical hooks are
-reconstructed. An in-flight execution context cannot be captured as a boundary.
-
-`capture_combat_snapshot` is an internal read-only migration/parity helper over a
-provided context. It never looks up the registry and requires the actual static
-scene and world version. SM builds the same DTO from its own authoritative records;
-evaluate must not invoke a Legacy capture to fill missing input dependencies.
-
-Retained event_log is mechanical rule evidence, supplied by SM from committed
-events. ProposedEvents have neither committed IDs nor sequence allocation. SM must
-persist the returned ordered proposals together with the Delta/RNG in its own
-transaction before rebuilding future committed rule history. It must not recompute
-HP or resource payment from event text.
-
-## Failure and commit semantics
-
-| Result status | Delta/events/RNG | Required branch information |
+| Contract | Current version | Replaces |
 | --- | --- | --- |
-| accepted | Complete typed Delta, ordered proposals, explicit transition | choice/error null; accepted means evaluated |
-| rejected | null / empty / null | structured rule error |
-| needs_choice | null / empty / null | structured preflight choice |
-| unsupported | null / empty / null | structured missing capability |
+| RuleEvaluationRequest / Result | `engine-evaluation/6` | `/1`–`/5` |
+| StateSnapshot | `engine-snapshot/4` | `/1`–`/3` |
+| Availability request/result | `engine-availability/3` | `/1`–`/2` |
+| RulesetBinding evaluator | `dnd5e-evaluation/10` | `/9` and earlier |
 
-Schema errors, RulesetBindingError, unexpected exceptions/cancellation and transport
-errors remain outside these four statuses. RuleEvaluationResult.verify_request
-checks identity/world/binding correlation and input RNG association. SM still
-validates authorization, write scope, version, expected operation values and combined
-invariants in its own atomic transaction; Engine returns no CommandReceipt.
+Old envelopes, snapshots and results are explicitly rejected. There are no compatibility
+aliases for `InventoryCombatSnapshot`, `combat_inventory`, missing equipment or missing
+inventory. This is a breaking local protocol revision, not a silent shape change.
+Legacy public coroutine signatures remain; their corrected death/turn/payment/Mastery
+behavior is shared with the new execution path. A Legacy `CombatOutcome` is a separate
+host handoff API and must not be applied as a stateless StateDelta.
 
-StateDeltaOperation is closed: HP delta, temp HP, death state, conditions, damage
-attribution, action/attack budgets, turn state, movement ledger, damage sequence,
-processed zero-HP instances and death ledger. Expected values are explicit. Component
-updates are restricted to named mechanical components, never arbitrary object paths,
-JSON Patch, SQL, complete Actor replacement or complete Snapshot replacement.
-Complex effects, resources/inventory consumption and general continuation need
-additional independently reviewed operations before those paths can be admitted.
+ADR-001 Accepted and MODULE_CONTRACTS §4.2 DECIDED require exactly **CombatSnapshot /
+NonCombatSnapshot** scene discriminators. Both now require typed `InventoryState(entries=...)`,
+complete `CharacterStateV2` records, explicit EffectState records and SceneState.
+CombatSnapshot additionally carries the complete CombatState dependency closure.
+Every field is required, including nulls, empty collections and `entries=()` for a
+known empty inventory. No RNG, callbacks, queues, loaders or retained handles occur
+in Snapshot. Both Python instances and JSON are strictly revalidated.
 
-## Rules and RNG binding
+InventoryEntry carries instance identity, owner, item slug, quantity, charges remaining
+per unit and accessibility. Quantities/charges cannot be negative; owners must exist
+in the supplied actors and instance IDs must be unique. This homogeneous-stack model
+does not claim mixed per-unit charges. Actor held weapon/grip/occupied hand/trained
+Mastery facts are explicit. Carried slugs do not imply inventory quantities or charges.
+`capture_combat_snapshot` is an internal parity adapter requiring an explicitly supplied
+InventoryState; it cannot derive stock from Legacy runtime. `capture_evaluation_snapshot`
+preserves the input inventory and actor ordering. The mechanical projector fails on
+any unexpected inventory/component change.
 
-RulesetBinding pins ruleset_id, data_revision and evaluator_version. The current
-digest is SHA-256 over all enumerated effective typed categories/assets, canonical
-model fields, sorted mapping keys and sorted sets, preserving ordered sequences.
-This includes applicable homebrew overrides, not just the SRD base name. Listed
-assets must exist, identities be unique, and typed item accessors agree. Custom
-loaders must enumerate the entire effective corpus and remain immutable during an
-operation; the protocol cannot prove undisclosed content in an arbitrary loader.
-No digest cache permits stale pins after mutation. This encoding is a local choice.
+The three-field RulesetBinding still pins ruleset_id, effective data_revision and
+evaluator_version. SHA-256 includes all enumerated effective typed assets and overlays,
+checks accessor/enumeration identity, and has no stale cache. Loaders must remain immutable
+during evaluation. Final shared fingerprint/wire formats remain OPEN in Meta.
 
-RNGContext is a separate stream_id/version/state input. `stdlib-mt19937/1` encodes
-624 unsigned words, index 0..624 and nullable finite Gaussian cache from stdlib
-Random.getstate version 3. Restore uses Random(0) plus setstate, never pickle or
-global random draws. RNGTransition includes exact input state/version and successor,
-with validated state_changed. Unchanged state is legal when no draws occur. SM owns
-RNG stream version advancement; this implementation does not freeze the OPEN policy
-for no-consumption commits or promise replay across evaluator/data revisions.
+## Operation and result semantics
 
-## Supported operation matrix
+Import `evaluate` from `dnd5e_engine.evaluation`, DTOs from `evaluation_contracts` /
+`evaluation_state`, deltas from `evaluation_delta`, RNG from `evaluation_rng` and
+availability from `evaluation_availability`. Each request has session_id, command_id,
+operation_kind, real actor_id, typed payload, complete Snapshot, binding and RNGContext.
+No system/source-authority or combat.start payload is invented while those contracts
+remain OPEN. SM authenticates/authorizes the caller and approved write scope.
 
-| Capability | Current support through Batch 4 |
+| Operation | Current admitted subset |
 | --- | --- |
-| Typed request/result, Combat/NonCombat snapshot, closed attack Delta | Implemented and serialized |
-| Explicit RNG capture/restore/transition and effective corpus binding | Implemented |
-| Stateless evaluate / PC attack | Executable bounded basic weapon attack |
-| NPC explicit attack | Executable bounded carried-weapon or exact stat-block action attack |
-| Availability | Independent read-only available / unavailable / unknown query |
-| Noncombat checks execution, Spell/Effect/Reaction migration | Not migrated |
-| SQLite commit, receipt, Outbox, LLM/controller authorization | SM/Host responsibility; outside this repository batch |
+| combat.intent | One ordinary PC/NPC weapon Attack, or an exact reviewed stat-block AttackActivity |
+| rules.check | Explicitly adjudicated ordinary noncombat ability/skill check |
+| combat.item | Owned accessible single-use Potion of Healing, living self-drinker with declared free hand |
+| combat.close | Consistent terminal victory / TPK; no loot/effects/flight/forced end |
 
-## Batch 2 verification
+Common weapon properties Finesse/Versatile/Two-Handed/Reach/Heavy use the shared resolver
+and explicit held grip. Only untrained Mastery tuples are admitted; trained Masteries,
+Light/Loading/Ammunition/Thrown, effects, classes/features, extended budgets, reactions,
+complex grids, timing, areas, objects, summons/transforms remain unsupported. Stat-block
+Multiattack prose, recharge and legendary mechanics are refused. A parsed Activity or
+a retained DTO never proves support. War Pick's missing typed Versatile damage remains
+a data-related refusal. No new Spell, Feat, Monster or Item support was added here.
 
-From Batch 1 `980b893369b8ea663037519fe7513b1a5f9893e6`, the impact planner required
-integration. The explicitly requested Full gate passed locally in 484.48 seconds
-on Python 3.14.7: tooling 24, data 631 passed / 41 skipped, Engine 6,926, Bridge
-139 and Demo 53 passed, plus Ruff, formatting, strict mypy, Bandit, examples,
-strict MkDocs and isolated three-wheel / real Bridge HTTP installation smoke.
-The 41 skips require absent maintainer-only raw Foundry/oracle inputs. GNU make
-is unavailable on this Windows host; the temporary adapter executed the exact
-checked-in package Makefile dependency recipes through tools/validate.py,
-preserving thresholds. These are local results, not a claim of native CI Full.
+Checks support six abilities, eighteen skills, proficiency/expertise/Jack/Reliable Talent,
+explicit GM advantage/disadvantage flags and reviewed numeric modifiers. Missing DC
+returns one unambiguous `check.adjudication` choice with `required_fields=("dc",)` before
+RNG. Alternate governing ability with a nonzero projected skill bonus remains unsupported.
+Tools, senses, consumable modifiers and complex contexts need further migration.
 
-## Executable attack boundary (Batch 3)
+The Potion's actual HealActivity supplies dice, Bonus Action activation and one itemUses
+payment; shared healing computes the cap. Feeding/revival, shields, occupied hands,
+attunement/passives, persistent slug charge pools and non-single-use units are refused.
+InventoryConsume guards the complete old entry, changes exactly quantity minus one,
+preserves remaining-unit charges/access/ownership and retains a zero-quantity tombstone.
+HP, budget and any turn change accompany the same proposal. Full-HP drinking still
+consumes inventory, Bonus Action and dice without inventing an HPDelta. The private
+single-unit counter is removed before projection and cannot become a second payment.
 
-`await dnd5e_engine.evaluation.evaluate(request, loader=immutable_loader)` returns
-the validated proposal. Omitted loader uses a fresh bundled corpus; overlays must
-be passed explicitly and match the request pin. The entry never calls start_combat,
-reads/registers `_REGISTRY`, invokes a Bridge or commits/publishes external state.
-It creates one disposable `_LiveCombat`, a local queue and canonical turn hooks.
-Legacy keeps its registry and transaction wrapper and calls the same supplied-context
-executor. Gate ordering, Action Policy, Activity Resolver, damage folding and turn
-continuation are shared. No attack/damage rule algorithm was copied.
-
-Batch 3 admission allowed one PC weapon Attack on one opposing living target on a
-plain bright grid, with a known carried weapon, explicit range, ordinary typed attack
-activity and known damage types/formulas. Properties, mastery, active effects,
-conditions, classes/features, extended budgets, reactions, timing, areas, objects,
-transforms, summons and template-driven NPC mechanics return unsupported before
-restoring execution RNG or paying. Standard static R/I/V and numeric magical bonus
-use the existing resolver. Missing weapon identity can request a preflight choice;
-invalid identity/target, turn, range or action economy returns rejected. Legal misses
-and immune zero damage remain accepted with actual action payment and RNG.
-
-The adapter captures every resulting mechanical field, projects the closed typed
-operations and rejects unexpected unrepresented changes with EvaluationInvariantError.
-This guard is an internal failure, not a late unsupported partial result. The ordered
-history suffix is returned only as ProposedEvents. An exhaustive differential test
-consumer applies the Delta with expected-value checks and compares the complete final
-snapshot, events and PRNG state against Legacy. Faults after damage and cancellation
-cannot publish to registered listeners or change the input. Independent thread tests
-exercise different PRNG states and effective loaders.
-
-read_set currently contains a conservative whole-session world-version fence. It
-does not invent per-entity versions; SM must check this fence plus the pinned rules
-and RNG stream/version/input state atomically. Engine does not advance world/RNG
-versions, authenticate actors, retain results, or supply persistent idempotency.
-
-Batch 3 validation from `f726d554690ea36ac067dbf02c101bd814039ea4`: 105 targeted
-contract/baseline/attack tests passed. The requested local Full gate passed in
-472.73 seconds: tooling 24, data 631 passed / 41 unavailable-input skips, Engine
-6,976 (95.61% coverage), Bridge 139, Demo 53; all static/security/example/docs and
-isolated installation/HTTP checks passed using the verified Windows adapter.
-XP outcome hydration remains outside this attack slice; the NPC batch must retain
-Host-supplied XP values rather than assume all values are derivable from a template.
-
-## Explicit NPC and availability boundary (Batch 4)
-
-The same evaluate entry now admits NPC/Monster actors on their actual initiative
-turn. A carried ordinary weapon uses the same PC path. A stat_block_action_id must
-be a nonempty strict string matching exactly one action on that actor's supplied,
-rules-bound stat block. Names and descriptions are never used. One action-kind
-AttackActivity with explicit weapon classification, range in feet, ordinary damage
-parts and numeric bonuses is supported, including flat attack bonuses. Reserved
-Legacy Multiattack, multiple activities, recharge/limited uses, passive template
-traits, legendary/spellcasting mechanics and unreviewed activity state remain
-unsupported before execution RNG restoration. This path never drives Monster AI.
-Neutral canonical instant-duration encodings, single-target encodings and UI prompt
-metadata are admitted without inferring mechanics. Canonical Bandit scimitar and
-light-crossbow attacks pass complete Legacy/event/Delta/RNG differential tests.
-The broader corpus scan identifies 23 NPC action shapes under the current admission;
-that static count is not 23 independently executed acceptance tests. PC weapon
-properties/mastery remain unsupported; ordinary canonical PC equipment therefore
-needs further admission/delta work before a general MVP combat loop can use it.
-
-`ActionAvailabilityRequest` and `query_action_availability` live in
-`dnd5e_engine.evaluation_availability`. This distinct schema has no command_id or
-RNGContext. It calls the identical prepare_attack and checks context/RNG invariance;
-available means preflight succeeded on the returned snapshot version, unavailable
-means a known rule refusal, unknown means unsupported or an unresolved preflight
-choice. Schema/binding/internal errors stay exceptions. The result has a structured
-reason, actor/session identity, snapshot version and rules pin, with no delta,
-events, RNG transition or receipt. It does not authorize control of the actor.
-
-Snapshots now retain explicit Host XP for every encounter actor, including zero
-from Legacy's documented sparse-map default. This corrects the inventory's earlier
-Derived classification: a Host XP override cannot be reconstructed from CR. Actor,
-stat-block, movement and XP closure are validated. Entry points revalidate copied
-typed requests, including mutated payload source identities, before rule evaluation.
-
-This is sufficient to start **limited in-memory SM consumer tests**: validate the
-local schema, authorize actor and operation, obtain a complete snapshot plus rules
-and RNG pin, evaluate outside the transaction, then compare world/rules/RNG versions
-and every expected delta value before applying the entire result atomically. Tests
-already apply the full typed delta to PC and NPC snapshots and compare Legacy.
-SQLite atomicity, durable idempotency, receipts, event IDs/sequences and Outbox remain
-SM work. Cross-repository ABI adoption requires review. The Batch 4 evaluator revision
-was bumped to `/4` for this executable slice; future semantic changes must change the
-revision. Wire schema versions and RNG stream advancement are independent of it.
-
-Batch 4 validation from `32d10d6d80c93e62fed7440f938e1b756e8812a7`: 136 targeted
-contract/baseline/attack/NPC tests passed; strict mypy checked 99 Engine source files.
-The final local Full gate passed in 476.77 seconds: tooling 24, data 631 passed /
-41 unavailable-input skips, Engine 7,007 (95.65% coverage), Bridge 139 (97.05%),
-Demo 53, all static/security/example/docs checks and isolated three-wheel / real
-Bridge HTTP smoke. The same verified Windows Makefile adapter preserved all checks
-and thresholds. Two earlier Full attempts were cancelled during development and
-are not passing evidence. Missing-weapon choices now include only admitted weapons;
-when all carried weapons require unsupported mechanics the result is unsupported,
-and availability is unknown without execution RNG restoration.
-
-## Independent review corrections
-
-The follow-up evaluator revision `/5` fixes two shared damage rules, so both Legacy
-and stateless execution change together. SRD 5.2.1 applies resistance before
-vulnerability: seven damage with both becomes six after rounding. Character zero-HP
-handling now waits for the existing typed whole-instance callback and uses the
-sum after Temporary Hit Point absorption. An eight Slashing plus five Fire hit
-against one remaining HP and a ten-HP maximum causes instant death, without an
-intermediate Unconscious event or a spurious next-turn death-save RNG draw.
-
-The new `character_damage_instances` map is execution scratch, not retained state.
-It captures pre-hit HP and the representative typed event, is cleared at completion
-or actor departure, participates in Legacy transaction rollback, and prevents
-snapshot capture while a hit is incomplete. Separate hits retain separate IDs.
-
-Effects now use the explicit `evaluation_effects.EffectState` DTO family instead
-of Legacy authoring models. Every effect, duration, change, action policy, captured
-lifecycle and child-effect field must be supplied, including nulls and empty values.
-Nested values are strict and instances are revalidated; status serialization is
-deterministic. Movement ledgers also reject coercible numeric strings. The internal
-capture helper materializes existing Legacy values; evaluate never fills SM gaps.
-The wire versions remain `/1`, enforcing their documented explicit-field boundary.
-
-This correction does not admit complex Effect, Spell, Reaction, Area, Object or
-timed execution. Other retained complex Legacy records still need explicit nested
-DTO review before those capabilities can be admitted. Their presence continues to
-return unsupported before execution RNG or payment; schema acceptance alone is not
-evidence of a complete complex-state execution contract.
-
-## Terminal combat closure (Batch 5)
-
-`combat.close` uses `CombatClosePayload(kind="combat.close")` and wire version
-`engine-evaluation/2`. The existing `/1` attack/check request vocabulary and attack
-results remain supported. A `/1` envelope rejects the new operation/delta; result
-verification checks the envelope version as well as command, world and rules pin.
-The evaluator revision is `dnd5e-evaluation/6`. Snapshot `/1` retains its shape;
-death records now enforce every documented field explicitly, including nullable
-`killer_id`, and strict nested values. Internal Legacy capture materializes those
-values; evaluation never supplies omitted Host state. These are local candidate
-versions, not a decision on Meta's OPEN ABI questions.
-
-Only a nonempty party versus a nonempty encounter with a consistent terminal
-death ledger can close. The existing `_derive_ended_reason` and `_project_outcome`
-determine victory/TPK and rewards on disposable local state. A caller cannot
-declare a reason. Forced closure and flight are rejected. Dying, unrecorded dead,
-conditions, ongoing effects, reactions, areas, transforms and other unmigrated
-sidecars are unsupported. Loot has no admitted snapshot/operation representation:
-this slice supports only the Legacy projector's empty loot outcome and refuses a
-nonempty outcome. It does not generate or infer loot from defeated templates.
-
-The closed `CombatClose` delta includes the combat ID, `expected_ended=False`,
-`ended=True`, derived reason, strict deaths, party HP/positive Temporary HP,
-XP increments, expended-resource report and an explicitly empty loot tuple.
-HP, deaths and resource usage describe already committed input balances; the Host
-must **not apply them a second time**. XP increments and the ended transition are
-one atomic write guarded by the enclosing world fence and expected ended value.
-No absolute XP balance is invented. Event order appends exactly one typed
-`CombatEnded` after committed history. RNG state and input stream/version remain
-unchanged, without restoring the execution RNG. SM owns advancement policy.
-
-Legacy monster/NPC deaths retain `is_alive=True` at zero HP despite their death
-record. Closure adds explicit `DeathStateUpdate` operations to normalize these
-recorded deaths to false, before the close operation. Legacy attack/end APIs stay
-unchanged. Recorded Character deaths must already have `is_alive=False`. If both
-sides are dead, the shared Legacy victory priority is preserved and awards no XP
-to dead PCs. Re-evaluating identical input returns an identical proposal; closing
-an already-ended snapshot is rejected. Durable replay remains SM's receipt duty.
-
-SM must adopt wire `/2`, the `/6` evaluator pin, `combat.close` authorization and
-the new delta consumer; validate all expected values, references and invariant
-reports, then commit normalization, ended state, XP, RNG, ordered events, receipt
-and outbox together. Its existing attack-only consumer cannot accept this result
-unchanged. This removes the Engine closure dependency for the admitted subset;
-active-combat recovery across processes remains outside MVP. Tests compare the
-actual Legacy outcome/events, consume closure deltas independently, forbid registry
-and CombatHandle use, check repeated/invalid/versioned inputs and inject projector
-and Host-commit faults.
-
-## Common weapons with explicit equipment (Batch 6)
-
-Wire `engine-evaluation/3`, snapshot `engine-snapshot/2`, availability
-`engine-availability/2` and evaluator `dnd5e-evaluation/7` add the common-weapon
-slice. Old snapshot `/1`, envelope `/1` attacks and `/2` closure remain readable
-and retain their conservative admission. A `/2` snapshot cannot be placed in an
-older request/query envelope. Every actor in the new snapshot must supply all
-`CharacterStateV2` fields: held weapon identity (nullable), grip (`none`,
-`one_handed`, `two_handed`), other-hand occupancy and trained weapon mastery slugs
-(explicit tuple). Mixed actor versions, missing fields, duplicate mastery IDs,
-un-carried held weapons and conflicting hand occupancy fail schema validation.
-An attack must name the supplied held weapon and match its declared grip.
-
-Only empty mastery-training tuples are admitted by this stateless slice. The
-shared mastery resolver and Nick/Cleave budget gates now consult explicit trained
-identities. `Combatant.weapon_mastery_slugs=None` preserves the pre-existing
-Stateful compatibility behavior; the new stateless snapshot never admits that
-sentinel. Empty means untrained: owning a weapon does not activate its mastery.
-Nonempty training or existing mastery marks remain unsupported before RNG. This
-is not an implementation of trained Mastery in the stateless interface.
-
-| Property | Supported behavior and dependency | Executed canonical examples |
+| Result status | Mechanical material | Other required fields |
 | --- | --- | --- |
-| Finesse | Shared best STR/DEX attack and damage ability | Rapier, Whip |
-| Versatile | Shared base/alternate damage, matching authoritative grip | Longsword in both grips; Quarterstaff |
-| Two-Handed | Supplied two-handed grip and unoccupied other hand | Greatclub, Greatsword, Greataxe |
-| Reach | Shared reach/range preflight and resolver | Glaive, Halberd, Pike, Whip at 10 ft |
-| Heavy | Shared score threshold and disadvantage, explicit grip | Greatsword at STR 12 and 13 |
-| Ammunition, Loading, Thrown, Light, Special, Range | Unsupported; associated inventory, extra swings or other mechanics are not migrated | Dagger, Shortsword, Spear, Shortbow, Light Crossbow refusals |
-| Trained Mastery, attunement, passive effects, charges | Unsupported before execution RNG | Nonempty mastery training and complex item admission |
+| accepted | Complete StateDelta (operations may be empty), ordered ProposedEvents, explicit RNGTransition | choice/error null |
+| rejected | No delta/RNG/events | Structured RuleError |
+| needs_choice | No delta/RNG/events | Typed preflight choice, no error |
+| unsupported | No delta/RNG/events | Structured capability error |
 
-The actual bundled corpus contains 86 weapons. Admission inventory identifies
-19 canonical ordinary candidates with complete alternate damage: Battleaxe, Flail, Glaive, Greataxe, Greatclub,
-Greatsword, Halberd, Lance, Longsword, Mace, Maul, Morningstar, Pike, Quarterstaff,
-Rapier, Staff, Warhammer, Whip and Wooden Staff. Each is executed against
-the shared Stateful path with PC/NPC actors and hit/miss/critical seeds, comparing
-the entire resulting snapshot, ordered events and RNG. Longsword additionally
-tests both grips with an independent known-dice oracle. Of the remaining 67,
-26 have excluded properties, 37 require attunement/effects/uses, two have non-basic
-attack/damage, one has no single canonical activity, and War Pick declares Versatile
-without a typed alternate damage part. War Pick is explicitly unsupported in all
-six PC/NPC/seed cases, before RNG; the evaluator does not invent its missing dice.
-These counts are a corpus inventory, not support for those rejected mechanisms.
+Legal misses/failed checks are accepted with their actual costs/draws. Schema/binding,
+internal/cancellation and transport failures are outside these four statuses. Results
+verify request identity/version/binding and exact RNG input. ProposedEvents have no
+authoritative event ID/sequence. SM alone validates expected values, references, combined
+invariants, permissions and OCC, then atomically commits Delta/RNG/events/receipt/outbox.
+Engine returns no durable receipt, does no SQL write or external publication, and never
+calculates commit success. Whole-world read fencing is conservative and explicit.
 
-No attack/damage/range/proficiency/action formula is duplicated. Canonical activity
-metadata is accepted only when its explicit weapon classification, base damage
-and range agree with the existing shared rules; alternate bonuses, damage parts,
-resource consumption and target templates still fail closed. The new equipment
-fields are unchanged read dependencies during attacks, so the existing complete
-attack delta vocabulary suffices. Availability uses the exact same preflight and
-versions; it neither equips a weapon nor reserves an action. SM must author the
-new equipment/mastery facts, adopt the schemas and pin, and retain its existing
-atomic expected-value/Delta/Event/RNG transaction.
+## Death, turn and closure stabilization
 
+The shared terminal Death fold now synchronizes dead_ids, DeathRecord and is_alive=False
+for all creature kinds. Zero-HP Characters still awaiting death saves are distinct;
+their lifecycle is not newly admitted. Shared turn advancement skips recorded dead
+creatures without their start/end hooks or RNG and bounds the all-dead scan. Dead
+roster entries and history remain available for outcome projection. After killing one
+enemy, remaining live actors can continue legal attacks with the complete committed
+Snapshot. Attack, item and closure admission share exact death-ledger consistency checks;
+unrecorded/contradictory death, HP, life state, kind, location or killer is refused before
+RNG. Dead targets are rejected before payment.
 
-## Batch 7: adjudicated noncombat checks
+CombatClose now has only combat_id, expected_ended=False, ended=True, derived reason,
+**xp_increments** and **historical: HistoricalCombatOutcome**. The historical record
+contains deaths, residual HP/temp HP, expended resources and the explicitly empty loot
+list. Those values already exist in the input: they are reports, never new writes.
+Only ended and XP increments are new consequences, committed once under both world
+and ended fences. Old flat residual_hp/expended_resources/xp_awarded fields are rejected.
+Do not apply HP/deaths, pay resources, or grant XP by translating historical reports
+back into mutations. Already-ended/history-ended input rejects a repeated closure.
 
-`engine-evaluation/4` adds executable `rules.check` on `NonCombatSnapshot` /1 or /2;
-`dnd5e-evaluation/8` is the evaluator pin. Earlier wire versions keep their previous
-unimplemented check boundary. Attack (/1 and /2 snapshots) and closure remain compatible.
-The new `CheckPayload` requires **all** inherited CheckRequest fields, including explicit
-nullable fields and empty advantage/disadvantage tuples. Unknown/coerced or omitted fields
-are schema errors; legacy CheckRequest remains unchanged. JSON arrays retain strict element
-validation. An explicit `dc=None` returns `needs_choice` with a typed `check.adjudication`
-choice requiring `dc`; no difficulty or ability is inferred from prose.
+Closure calls the shared reason/outcome projector on disposable supplied state and
+returns one CombatEnded plus an unchanged RNGTransition without restoring execution
+RNG. Victory priority when both sides are dead matches Legacy, with no XP for dead PCs.
+Nonempty loot or any newly unrepresented outcome consequence fails closed.
 
-Supported: all six abilities and 18 SRD skills; explicit governing ability (including GM
-variants); proficiency, expertise, Jack of All Trades, Reliable Talent, reviewed numeric
-skill bonuses, declared armor Stealth disadvantage, and explicit GM advantage/disadvantage
-(`flag`). Resolution calls the existing `resolve_check_request`, shared `check_modifier`
-and D20 primitive with a restored per-request RNG. The old `check.resolve_check` API is
-unchanged and supplies differential evidence for canonical ability/skill adjudications.
-Checks use internal cost ownership: they do not implement free Search/Study/Influence Actions.
+The shared slot payment ledger was corrected independently of closure: `_take_spell_slot`
+records the actual owner and `spell_slot:<level>` or `pact_slot:<level>` after decrementing
+that exact pool. Applying concentration to a target does not infer payment or use effect
+names as resource identities. This ledger reports slot spends, not a claim that all
+Legacy item/feature expenditure families have migrated. Snapshot retains complete actual
+slot/counter balances; future resource deltas must use those authoritative facts.
+Nick Action Policy and attack-origin classification now share the same Mastery-training
+predicate as payment. Legacy None training retains its compatibility behavior; new
+Snapshot never admits that sentinel.
 
-A failed DC is `accepted`, carrying one real `CheckRolled`, an empty StateDelta with the
-world fence, and the actual RNGTransition. Nonaccepted results carry no mechanical proposal.
-Unknown/dead/dying actors and absent targets are rejected. Tools, granted-die redemption,
-non-generic action contexts, sensory checks, derived advantage sources, effects/conditions,
-class/species/feature sources and passive equipment effects remain unsupported before RNG.
-All supplied actors and effects remain in the snapshot; unmigrated dependencies are refused.
+## RNG, isolation and remaining compatibility work
 
-State Machine must accept event-only mechanical results, atomically commit CheckRolled and
-RNG advancement with the request fingerprint/OCC guards, and decide its own event-only
-world_version and RNG stream-version policy. Neither OPEN policy is frozen here. It must
-supply the explicit adjudication payload and matching evaluator/data binding, route noncombat
-requests separately from combat intents, and handle `check.adjudication` before committing.
+RNGContext remains separate from Snapshot. `stdlib-mt19937/1` carries all 624 words,
+index and finite/null Gaussian cache. Restoring uses Random(0) + setstate, never pickle
+or module-global draws. Preflight uses a private fixed sentinel; real request state is
+restored only after admission. No-draw and event-only stream/world version policies
+remain SM/Meta OPEN decisions. Engine does not advance authoritative versions.
 
+Attack/item reuse `_submit_live_intent`, shared action/cost/funding gates and Activity
+Resolver on a disposable `_LiveCombat`; check reuses the check pipeline and closure
+reuses outcome rules. No duplicated Attack/Damage/Healing formula was introduced.
+All accepted/failed proposals are private until returned. Exceptions discard the context;
+no retained registry, listener, receipt, database or external-state update is required.
+Complex state is still guarded out until its full hydration and Delta contract exist.
 
-## Batch 8: owned consumable healing
+The SM checkout observed during this task pins Engine/Data `602dcb8`, evaluation `/1`/`/4`
+and evaluator `/4`/`/8`, with ongoing work on combat-close/check integration. It must
+explicitly upgrade versions, snapshot facts and consumers; in particular closure must
+read the new historical report and write only the new consequences. It does not yet
+consume this version. No SM file was changed or SM test result claimed. See the
+[migration progress ABI checkpoint](stateless-migration-progress.md#cross-repository-abi-checkpoint).
 
-`engine-evaluation/5`, evaluator `dnd5e-evaluation/9`, introduces `combat.item` with
-strict ItemUsePayload: kind, authoritative inventory instance ID, selected activity ID,
-and explicit target ID. It requires `InventoryCombatSnapshot`, kind `combat_inventory`,
-schema `engine-snapshot/3`. Every actor supplies CharacterStateV2. Previous combat and
-noncombat snapshots /1 and /2 retain their exact shape and old operation boundaries;
-checks execute on wire /4 or /5, common weapons on /3 or later, closure on /2 or later.
-The new inventory snapshot is deliberately accepted only for combat.item. Availability
-continues to cover attacks; it does not claim item-query support.
+## Regression evidence and verification scope
 
-Each required InventoryEntry contains instance_id, owner_id, item_slug, quantity,
-charges_remaining_per_unit and accessible. IDs are unique, owners must be present actors,
-and numeric/boolean fields are strict. An entry represents a homogeneous owned stack,
-not an arbitrary mixed-charge container. The first reviewed item is the real SRD Potion
-of Healing with exactly one ordinary self-target HealActivity, one itemUses charge,
-1-charge auto-destroy units, fixed dice and no effects/timing/scaling or attunement.
-Canonical data supplies 2d4+2 and Bonus Action activation; formulas are executed solely by
-the shared Healing Resolver. Item identity is an explicit reviewed allowlist; its name
-and description never determine behavior. Altered mechanical sidecars fail closed.
+Tests preserve independent expected-value consumers and Legacy comparisons for complete
+state, ordered events, RNG, miss/crit/R-I-V, ownership/cost, full inventory depletion,
+closure fences and rollback. Stabilization adds multi-enemy continuation/dead-turn skipping,
+strict two-context inventory schemas, old-version/flat-outcome rejection, read-only
+Attack/Check/Item/Closure guards, actual payer/pool and untrained Nick policy regressions.
+Canonical weapon differential cases now include an actual natural-20 seed.
+Legacy Demo showcase inputs were updated for skipped dead turns (including Garrick's
+real turn after the first rat dies), retaining every proof-event/replay assertion and
+adding a surviving-player-turn regression. Demo remains a Legacy consumer.
 
-Only living self-drinkers with a declared free hand and accessible owned stock are
-admitted (PC and NPC share the path). This first admission conservatively refuses any
-equipped shield, including a shield user with no held weapon. Accessible means Host-declared
-ready stock requiring no additional retrieval operation in this bounded invocation. Feeding others, revival, two occupied hands,
-complex items, persistent slug charge pools and non-single-use units remain outside this
-slice. Missing/foreign/inaccessible/empty inventory, invalid targets/activities, exhausted
-Bonus Actions and wrong turns reject before RNG. Unmigrated mechanics return unsupported.
-All support/ownership/payment checks precede RNG restoration. Schema and binding failures
-remain outside the four rule statuses.
-
-`InventoryConsume(kind="inventory.consume", expected, value, amount=1)` guards the entire
-entry, preserves instance/owner/slug/access/remaining-unit charges, and decrements exactly
-one unit. Zero quantity remains an explicit tombstone. The existing HPDelta carries the
-actual capped recovery; ActionBudgetUpdate and any shared turn/lifecycle deltas carry the
-actual costs. The ordered proposal includes IntentSubmitted and HealingApplied, with the
-real RNGTransition. At full HP the inventory, Bonus Action and dice are still consumed;
-no HPDelta is invented. SM must commit all these components atomically and retain command
-idempotency/OCC authorization; events never substitute for mechanical deltas.
-
-The disposable Legacy context derives a fresh single-unit charge pool from the explicit
-inventory balance, verifies an exact one-charge spend, and removes that private counter
-before exhaustive state projection. No per-slug authoritative charge pool is persisted,
-and the next fresh inventory unit remains usable. Other actor counters are preserved.
-The shared action-cost classifier now respects the selected typed item's Bonus Action
-activation (also the sole uncharged activity); a regression first demonstrated the old
-Action mischarge. Legacy public signatures remain unchanged. This mechanical correction
-is shared by Stateful and Stateless paths, with canonical and renamed synthetic tests.
-
-SM migration: add authoritative inventory stacks/instances and access/charge facts; route
-combat.item with snapshot /3; admit inventory.consume with full expected-value guards;
-permit positive HPDelta for this operation; apply all budget/turn updates; bind real event
-actor/target and item-instance provenance through the typed result; commit RNG/events/receipt
-in the same transaction. Do not infer quantity/ownership from carried_item_slugs, or apply
-the removed private Legacy charge counter as an additional payment. Engine implements no
-SQL transaction, persistent inventory or durable receipt.
-
-
-Batch 8 self-review also closes a check-admission combination: alternate governing
-ability plus a nonzero projected skill_check_bonuses entry is unsupported before RNG.
-The shared check modifier applies that scalar only for the skill's canonical ability;
-the stateless boundary must not accept and silently drop a supplied mechanical bonus.
-Canonical skill bonuses and GM ability variants without such a bonus remain supported.
-No shared check formula or Legacy API was changed for this restriction.
-
-
-The final equipment self-review also rejects a two-handed grip with shield_equipped=True,
-even when other_hand_occupied was incorrectly supplied as False. Existing shield facts
-cannot be hidden by the added hand flag. This is an invariant correction on the unchanged
-/2 field shape (also inherited by inventory /3), covered before RNG by a real Greatsword
-regression; Legacy public actor fields remain backward compatible.
+The first new death regression failed before repair at the dead creature's turn.
+Independent Haste and untrained Nick regressions also failed before their shared-core
+fixes. The final task delivery records the executed Full/static/security/docs/wheel
+results; this document does not infer CI or cross-repository success from unit tests.
+Windows Full uses the verified adapter executing exact checked-in package Makefile
+recipes through tools/validate.py when GNU make is absent, with original coverage floors.

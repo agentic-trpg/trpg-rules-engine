@@ -67,10 +67,7 @@ async def evaluate(
         result = RuleEvaluationResult(**common, **await evaluate_item(request, assets))
         result.verify_request(request)
         return result
-    if request.operation_kind == "rules.check" and request.schema_version in (
-        "engine-evaluation/4",
-        "engine-evaluation/5",
-    ):
+    if request.operation_kind == "rules.check":
         result = RuleEvaluationResult(**common, **evaluate_check(request, assets))
         result.verify_request(request)
         return result
@@ -102,9 +99,7 @@ async def evaluate(
             request.actor_id,
             request.payload,
             assets,
-            common_weapons=request.schema_version
-            in ("engine-evaluation/3", "engine-evaluation/4", "engine-evaluation/5")
-            and snapshot.snapshot_schema_version == "engine-snapshot/2",
+            common_weapons=True,
         )
         if admission.status != "accepted":
             return RuleEvaluationResult(

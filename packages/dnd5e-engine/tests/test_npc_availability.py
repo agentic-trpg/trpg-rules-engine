@@ -38,6 +38,7 @@ from dnd5e_engine.evaluation_contracts import CombatIntentPayload, RuleEvaluatio
 from dnd5e_engine.evaluation_rng import RNGContext, RNGState
 from dnd5e_engine.evaluation_ruleset import ruleset_binding
 from dnd5e_engine.evaluation_snapshot import capture_combat_snapshot
+from dnd5e_engine.evaluation_state import InventoryState
 from dnd5e_engine.specs import GridScene
 from tests.evaluation_support import FOE, HERO, WEAPON, synthetic_combat, synthetic_loader
 from tests.test_stateless_attack import apply_delta, execute, request_and_live
@@ -107,10 +108,14 @@ def npc_case(*, seed=0, hero_hp=40, hero_max=40, flat=False):
     live.current_actor_id = FOE
     live.turn_serial = 2
     snapshot = capture_combat_snapshot(
-        live, grid=GridScene(width=3, height=3), world_version=7, combat_id="combat:synthetic"
+        live,
+        inventory_state=InventoryState(entries=()),
+        grid=GridScene(width=3, height=3),
+        world_version=7,
+        combat_id="combat:synthetic",
     )
     request = RuleEvaluationRequest(
-        schema_version="engine-evaluation/1",
+        schema_version="engine-evaluation/6",
         session_id=live.session_id,
         command_id="command:npc",
         operation_kind="combat.intent",
@@ -127,7 +132,7 @@ def npc_case(*, seed=0, hero_hp=40, hero_max=40, flat=False):
 
 def query_for(request):
     return ActionAvailabilityRequest(
-        schema_version="engine-availability/1",
+        schema_version="engine-availability/3",
         session_id=request.session_id,
         operation_kind="combat.intent",
         actor_id=request.actor_id,
@@ -161,7 +166,11 @@ def test_explicit_npc_matches_legacy_complete_delta_events_rng_and_host_xp(
     assert result.proposed_events == tuple(live.event_log)
     assert result.rng_transition.next_state == RNGState.capture(live.rng)
     after = capture_combat_snapshot(
-        live, grid=GridScene(width=3, height=3), world_version=7, combat_id="combat:synthetic"
+        live,
+        inventory_state=InventoryState(entries=()),
+        grid=GridScene(width=3, height=3),
+        world_version=7,
+        combat_id="combat:synthetic",
     )
     assert apply_delta(request.state_snapshot, result) == after
     assert after.combat_state.xp_value_by_entity == {FOE: 175}
@@ -322,7 +331,9 @@ def test_missing_weapon_does_not_offer_unsupported_choices(monkeypatch):
     request, _, _ = request_and_live()
     request.payload.weapon_id = None
     loader = synthetic_loader()
-    loader.get_weapon(WEAPON).mastery = "vex"
+    from dnd5e_srd_data.schema.item import WeaponProperty
+
+    loader.get_weapon(WEAPON).properties = {WeaponProperty.LIGHT}
     request = request.model_copy(update={"ruleset_binding": ruleset_binding(loader)})
 
     def forbidden(*args, **kwargs):
@@ -418,6 +429,7 @@ def test_canonical_bandit_explicit_attack_is_executable_and_matches_legacy(actio
             ),
             "state_snapshot": capture_combat_snapshot(
                 live,
+                inventory_state=InventoryState(entries=()),
                 grid=GridScene(width=3, height=3),
                 world_version=7,
                 combat_id="combat:synthetic",
@@ -432,5 +444,9 @@ def test_canonical_bandit_explicit_attack_is_executable_and_matches_legacy(actio
     assert result.proposed_events == tuple(live.event_log)
     assert result.rng_transition.next_state == RNGState.capture(live.rng)
     assert apply_delta(request.state_snapshot, result) == capture_combat_snapshot(
-        live, grid=GridScene(width=3, height=3), world_version=7, combat_id="combat:synthetic"
+        live,
+        inventory_state=InventoryState(entries=()),
+        grid=GridScene(width=3, height=3),
+        world_version=7,
+        combat_id="combat:synthetic",
     )

@@ -19,6 +19,7 @@ from dnd5e_engine.evaluation_effects import effect_state
 from dnd5e_engine.evaluation_rng import RNGState
 from dnd5e_engine.evaluation_ruleset import ruleset_binding
 from dnd5e_engine.evaluation_snapshot import capture_combat_snapshot
+from dnd5e_engine.evaluation_state import InventoryState
 from dnd5e_engine.specs import GridScene
 from dnd5e_engine.types.effects import ActiveEffect, ActiveEffectChange, ActiveEffectDuration
 from tests.evaluation_support import FOE, HERO
@@ -31,6 +32,7 @@ def recapture(request, live):
         update={
             "state_snapshot": capture_combat_snapshot(
                 live,
+                inventory_state=InventoryState(entries=()),
                 grid=GridScene(width=3, height=3),
                 world_version=7,
                 combat_id="combat:synthetic",

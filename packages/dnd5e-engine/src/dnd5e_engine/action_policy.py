@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Literal
 
 from dnd5e_srd_data.schema.action_policy import ActionType
 
+from dnd5e_engine.activities.mastery import mastery_available
 from dnd5e_engine.rules.effects import effective_effects
 
 if TYPE_CHECKING:
@@ -194,6 +195,7 @@ def preflight_intent_policy(
         funding == "light_offhand"
         and weapon is not None
         and weapon.mastery == "nick"
+        and mastery_available(weapon, actor)
         and needs_new_attack_action(live, actor)
     ):
         from dnd5e_engine.orchestrator import IntentRejectedError
@@ -208,7 +210,12 @@ def preflight_intent_policy(
             cost.is_bonus_action
             or funding in ("light_bonus", "flurry", "martial_arts_bonus", "construct_bonus")
             or (
-                funding == "light_offhand" and not (weapon is not None and weapon.mastery == "nick")
+                funding == "light_offhand"
+                and not (
+                    weapon is not None
+                    and weapon.mastery == "nick"
+                    and mastery_available(weapon, actor)
+                )
             )
         )
         payment: Literal["action", "bonus", "reaction"] = (

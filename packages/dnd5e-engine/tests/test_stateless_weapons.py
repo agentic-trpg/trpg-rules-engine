@@ -16,6 +16,7 @@ from dnd5e_engine.evaluation_contracts import CombatIntentPayload, RuleEvaluatio
 from dnd5e_engine.evaluation_rng import RNGState
 from dnd5e_engine.evaluation_ruleset import ruleset_binding
 from dnd5e_engine.evaluation_snapshot import capture_combat_snapshot
+from dnd5e_engine.evaluation_state import InventoryState
 from dnd5e_engine.events import AttackRolled, DamageApplied
 from dnd5e_engine.specs import GridScene
 from tests.evaluation_support import FOE, HERO
@@ -69,14 +70,15 @@ def weapon_case(
     live.actor_zone[actor_id] = "0,0"
     snapshot = capture_combat_snapshot(
         live,
+        inventory_state=InventoryState(entries=()),
         grid=GridScene(width=4, height=3),
         world_version=7,
         combat_id="combat:synthetic",
-        snapshot_schema_version="engine-snapshot/2",
+        snapshot_schema_version="engine-snapshot/4",
     )
     request = request.model_copy(
         update={
-            "schema_version": "engine-evaluation/3",
+            "schema_version": "engine-evaluation/6",
             "actor_id": actor_id,
             "payload": CombatIntentPayload(
                 intent_type="attack", weapon_id=slug, target_id=target_id, two_handed=two_handed
@@ -90,7 +92,7 @@ def weapon_case(
 
 def availability(request, loader):
     query = ActionAvailabilityRequest(
-        schema_version="engine-availability/2",
+        schema_version="engine-availability/3",
         session_id=request.session_id,
         operation_kind="combat.intent",
         actor_id=request.actor_id,
@@ -102,7 +104,7 @@ def availability(request, loader):
 
 
 @pytest.mark.parametrize("npc", [False, True])
-@pytest.mark.parametrize("seed,ac", [(0, 1), (1, 99), (31, 1)])
+@pytest.mark.parametrize("seed,ac", [(0, 1), (1, 99), (31, 1), (5, 1)])
 @pytest.mark.parametrize(
     "slug,two_handed,distance",
     [
@@ -157,10 +159,11 @@ def test_real_weapons_match_legacy_full_state_rng_events_and_budgets(
     assert result.rng_transition.next_state == RNGState.capture(live.rng)
     expected = capture_combat_snapshot(
         live,
+        inventory_state=InventoryState(entries=()),
         grid=GridScene(width=4, height=3),
         world_version=7,
         combat_id="combat:synthetic",
-        snapshot_schema_version="engine-snapshot/2",
+        snapshot_schema_version="engine-snapshot/4",
     )
     assert apply_delta(request.state_snapshot, result) == expected
     assert not expected.combat_state.vex_grants
@@ -244,7 +247,7 @@ def test_new_equipment_fields_required_and_versioned(field):
     del wire["state_snapshot"]["character_states"][0][field]
     with pytest.raises(ValidationError):
         RuleEvaluationRequest.model_validate(wire)
-    with pytest.raises(ValidationError, match="snapshot /2 requires"):
+    with pytest.raises(ValidationError, match="engine-evaluation/6"):
         execute(request.model_copy(update={"schema_version": "engine-evaluation/2"}), loader)
 
 
@@ -257,9 +260,14 @@ def test_inconsistent_two_hand_equipment_is_schema_error():
 
 def test_capture_cannot_discard_explicit_equipment_dependencies():
     _, _, live, _ = weapon_case()
-    with pytest.raises(ValueError, match="requires snapshot /2"):
+    live.initiative[0] = live.initiative[0].model_copy(update={"weapon_grip": None})
+    with pytest.raises(ValidationError, match="weapon_grip"):
         capture_combat_snapshot(
-            live, grid=GridScene(width=4, height=3), world_version=7, combat_id="combat:synthetic"
+            live,
+            inventory_state=InventoryState(entries=()),
+            grid=GridScene(width=4, height=3),
+            world_version=7,
+            combat_id="combat:synthetic",
         )
 
 

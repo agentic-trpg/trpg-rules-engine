@@ -45,7 +45,7 @@ def check_case(*, seed=1, skill="athletics", ability="str", actor_updates=None, 
     payload.update(adjudication)
     return request.model_copy(
         update={
-            "schema_version": "engine-evaluation/4",
+            "schema_version": "engine-evaluation/6",
             "operation_kind": "rules.check",
             "payload": CheckPayload(**payload),
             "state_snapshot": NonCombatSnapshot(
@@ -180,7 +180,7 @@ def test_v2_snapshot_and_npc_share_the_check_pipeline():
     )
     request = request.model_copy(
         update={
-            "schema_version": "engine-evaluation/4",
+            "schema_version": "engine-evaluation/6",
             "operation_kind": "rules.check",
             "payload": payload,
             "state_snapshot": snapshot,

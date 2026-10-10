@@ -17,7 +17,7 @@ from dnd5e_engine.evaluation_contracts import (
 from dnd5e_engine.evaluation_rng import RNGState
 from dnd5e_engine.evaluation_ruleset import RulesetBindingError
 from dnd5e_engine.evaluation_snapshot import capture_combat_snapshot
-from dnd5e_engine.evaluation_state import CombatSnapshot
+from dnd5e_engine.evaluation_state import CombatSnapshot, InventoryState
 from dnd5e_engine.events import CombatEnded
 from dnd5e_engine.outcome import DeathRecord, LootDrop
 from dnd5e_engine.specs import GridScene
@@ -46,12 +46,16 @@ def terminal_request(*, defeat=False):
     else:
         asyncio.run(orch.submit_player_intent(handle, HERO, request.payload))
     snapshot = capture_combat_snapshot(
-        live, grid=GridScene(width=3, height=3), world_version=7, combat_id="combat:synthetic"
+        live,
+        inventory_state=InventoryState(entries=()),
+        grid=GridScene(width=3, height=3),
+        world_version=7,
+        combat_id="combat:synthetic",
     )
     return (
         request.model_copy(
             update={
-                "schema_version": "engine-evaluation/2",
+                "schema_version": "engine-evaluation/6",
                 "operation_kind": "combat.close",
                 "payload": CombatClosePayload(kind="combat.close"),
                 "state_snapshot": snapshot,
@@ -77,12 +81,14 @@ def consume(snapshot, result, *, xp=10, fail=False):
         elif isinstance(op, delta.CombatClose):
             assert state["combat_id"] == op.combat_id
             assert state["ended"] is op.expected_ended
-            assert op.residual_hp == {i: actors[i]["hp_current"] for i in state["party_ids"]}
-            assert {r.target_id for r in op.deaths} == state["dead_ids"]
-            assert set(op.xp_awarded) <= state["party_ids"] - state["dead_ids"]
-            assert op.expended_resources == state["expended_resources"]
+            assert op.historical.residual_hp == {
+                i: actors[i]["hp_current"] for i in state["party_ids"]
+            }
+            assert {r.target_id for r in op.historical.deaths} == state["dead_ids"]
+            assert set(op.xp_increments) <= state["party_ids"] - state["dead_ids"]
+            assert op.historical.expended_resources == state["expended_resources"]
             state["ended"] = op.ended
-            xp += op.xp_awarded.get(HERO, 0)
+            xp += op.xp_increments.get(HERO, 0)
         else:
             raise TypeError(f"unexpected closure operation {op.kind}")
     state["event_log"] += tuple(e.model_dump() for e in result.proposed_events)
@@ -118,9 +124,10 @@ def test_terminal_closure_legacy_outcome_and_atomic_consumer(monkeypatch, defeat
     closure = result.state_delta.operations[-1]
     assert isinstance(closure, delta.CombatClose)
     assert closure.reason == legacy.outcome.ended_reason
-    for field in ("residual_hp", "residual_temp_hp", "xp_awarded", "expended_resources"):
-        assert getattr(closure, field) == getattr(legacy.outcome, field)
-    assert [r.model_dump() for r in closure.deaths] == [
+    assert closure.xp_increments == legacy.outcome.xp_awarded
+    for field in ("residual_hp", "residual_temp_hp", "expended_resources"):
+        assert getattr(closure.historical, field) == getattr(legacy.outcome, field)
+    assert [r.model_dump() for r in closure.historical.deaths] == [
         r.model_dump() for r in legacy.outcome.deaths
     ]
     assert result.proposed_events == tuple(legacy.events) == (CombatEnded(reason=closure.reason),)
@@ -150,7 +157,7 @@ def test_nonterminal_and_alien_actor_rejected_without_rng(monkeypatch):
     request, _, _ = request_and_live()
     request = request.model_copy(
         update={
-            "schema_version": "engine-evaluation/2",
+            "schema_version": "engine-evaluation/6",
             "operation_kind": "combat.close",
             "payload": CombatClosePayload(kind="combat.close"),
         }
@@ -216,7 +223,7 @@ def test_inconsistent_or_unmigrated_closure_refused(monkeypatch, mutation):
 
 def test_closure_versions_and_binding():
     request, _, _ = terminal_request()
-    with pytest.raises(ValidationError, match="requires engine-evaluation/2"):
+    with pytest.raises(ValidationError):
         execute(request.model_copy(update={"schema_version": "engine-evaluation/1"}))
     with pytest.raises(ValidationError):
         execute(request.model_copy(update={"schema_version": "engine-evaluation/99"}))
@@ -231,7 +238,7 @@ def test_closure_versions_and_binding():
             )
         )
     result = execute(request)
-    with pytest.raises(ValidationError, match="closure delta requires"):
+    with pytest.raises(ValidationError):
         RuleEvaluationResult.model_validate(
             result.model_copy(update={"schema_version": "engine-evaluation/1"})
         )
@@ -239,7 +246,7 @@ def test_closure_versions_and_binding():
     attack_result = execute(attack)
     with pytest.raises(ValueError, match="identity/version/binding"):
         attack_result.verify_request(
-            attack.model_copy(update={"schema_version": "engine-evaluation/2"})
+            attack.model_copy(update={"schema_version": "engine-evaluation/1"})
         )
 
 
@@ -286,8 +293,8 @@ def test_resources_and_zero_xp_are_informational_balances():
     request.state_snapshot.combat_state.xp_value_by_entity[FOE] = 0
     result = execute(request)
     closure = result.state_delta.operations[-1]
-    assert closure.xp_awarded == {}
-    assert closure.expended_resources == {HERO: {"1": 2}}
+    assert closure.xp_increments == {}
+    assert closure.historical.expended_resources == {HERO: {"1": 2}}
     assert all(
         isinstance(op, (delta.CombatClose, delta.DeathStateUpdate))
         for op in result.state_delta.operations

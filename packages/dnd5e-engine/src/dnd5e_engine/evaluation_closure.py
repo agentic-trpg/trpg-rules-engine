@@ -7,9 +7,10 @@ from dnd5e_srd_data.loader import AssetLoader
 from dnd5e_engine import orchestrator as orch
 from dnd5e_engine.evaluation_context import execution_context
 from dnd5e_engine.evaluation_contracts import RuleError, RuleEvaluationRequest
-from dnd5e_engine.evaluation_delta import CombatClose, StateDelta
+from dnd5e_engine.evaluation_death import death_consistency
+from dnd5e_engine.evaluation_delta import CombatClose, HistoricalCombatOutcome, StateDelta
 from dnd5e_engine.evaluation_preflight import snapshot_support_failure, template_support_failure
-from dnd5e_engine.evaluation_projection import EvaluationInvariantError, attack_delta
+from dnd5e_engine.evaluation_projection import EvaluationInvariantError
 from dnd5e_engine.evaluation_rng import RNGTransition
 from dnd5e_engine.evaluation_state import ClosureDeath, CombatSnapshot
 from dnd5e_engine.events import CombatEnded
@@ -38,37 +39,6 @@ def _refuse(
     )
 
 
-def _death_consistency(snapshot: CombatSnapshot) -> str | None:
-    state = snapshot.combat_state
-    actors = {actor.entity_id: actor for actor in snapshot.character_states}
-    records = state.deaths_recorded
-    if (
-        len({r.target_id for r in records}) != len(records)
-        or {r.target_id for r in records} != state.dead_ids
-    ):
-        return "death records must identify every dead actor exactly once"
-    kinds = {"Character": "character", "Monster": "monster", "NPC": "npc"}
-    for record in records:
-        actor = actors.get(record.target_id)
-        if (
-            actor is None
-            or actor.hp_current != 0
-            or record.target_kind != kinds[actor.entity_type]
-            or record.location_id != snapshot.scene_state.scene_id
-            or (record.killer_id is not None and record.killer_id not in actors)
-        ):
-            return "death record contradicts actor, HP, kind, location or killer"
-    for actor in actors.values():
-        if actor.entity_id in state.dead_ids:
-            # Legacy NPC/monster death records do not flip is_alive. This is
-            # normalized explicitly by a DeathStateUpdate, never by changing Legacy.
-            if actor.entity_type == "Character" and actor.is_alive:
-                return "a recorded character death requires is_alive=False"
-        elif actor.hp_current == 0 or not actor.is_alive:
-            return "dying or dead actors without a terminal death record are not migrated"
-    return None
-
-
 def evaluate_closure(request: RuleEvaluationRequest, loader: AssetLoader) -> ClosureEvaluation:
     snapshot = request.state_snapshot
     if not isinstance(snapshot, CombatSnapshot):
@@ -78,12 +48,10 @@ def evaluate_closure(request: RuleEvaluationRequest, loader: AssetLoader) -> Clo
         return _refuse("rejected", "actor_invalid", "closure actor is absent from the roster")
     if state.ended or any(isinstance(event, CombatEnded) for event in state.event_log):
         return _refuse("rejected", "combat_ended", "combat has already ended")
-    failure = snapshot_support_failure(snapshot, terminal=True) or template_support_failure(
-        snapshot, loader
-    )
+    failure = snapshot_support_failure(snapshot) or template_support_failure(snapshot, loader)
     if failure:
         return _refuse("unsupported", "closure.capability", failure)
-    failure = _death_consistency(snapshot)
+    failure = death_consistency(snapshot)
     if failure:
         return _refuse("unsupported", "closure.death_state", failure)
     if not state.party_ids or not state.encounter_ids:
@@ -116,33 +84,25 @@ def evaluate_closure(request: RuleEvaluationRequest, loader: AssetLoader) -> Clo
         return _refuse("unsupported", "closure.loot", "loot requires an inventory delta")
     if outcome.ended_reason != reason:
         raise EvaluationInvariantError("closure projector changed its derived reason")
-    normalized = snapshot.model_copy(
-        update={
-            "character_states": tuple(
-                actor.model_copy(update={"is_alive": False})
-                if actor.entity_id in state.dead_ids
-                else actor
-                for actor in snapshot.character_states
-            )
-        }
-    )
     closure = CombatClose(
         kind="combat.close",
         combat_id=state.combat_id,
         expected_ended=False,
         ended=True,
         reason=reason,
-        deaths=tuple(ClosureDeath.model_validate(r.model_dump()) for r in outcome.deaths),
-        residual_hp=outcome.residual_hp,
-        residual_temp_hp=outcome.residual_temp_hp,
-        xp_awarded=outcome.xp_awarded,
-        expended_resources=outcome.expended_resources,
-        loot_drops=(),
+        xp_increments=outcome.xp_awarded,
+        historical=HistoricalCombatOutcome(
+            deaths=tuple(ClosureDeath.model_validate(r.model_dump()) for r in outcome.deaths),
+            residual_hp=outcome.residual_hp,
+            residual_temp_hp=outcome.residual_temp_hp,
+            expended_resources=outcome.expended_resources,
+            loot_drops=(),
+        ),
     )
     return dict(
         status="accepted",
         state_delta=StateDelta(
-            operations=(*attack_delta(snapshot, normalized).operations, closure),
+            operations=(closure,),
             expected_world_version=snapshot.world_version,
         ),
         proposed_events=(CombatEnded(reason=reason),),

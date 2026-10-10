@@ -20,7 +20,12 @@ from dnd5e_engine.evaluation_effects import effect_state
 from dnd5e_engine.evaluation_rng import RNGContext, RNGState, RNGTransition
 from dnd5e_engine.evaluation_ruleset import RulesetBindingError, ruleset_binding, verify_ruleset
 from dnd5e_engine.evaluation_snapshot import capture_combat_snapshot
-from dnd5e_engine.evaluation_state import CombatSnapshot, NonCombatSnapshot, StateSnapshot
+from dnd5e_engine.evaluation_state import (
+    CombatSnapshot,
+    InventoryState,
+    NonCombatSnapshot,
+    StateSnapshot,
+)
 from dnd5e_engine.specs import GridScene
 from dnd5e_engine.types.effects import ActiveEffect
 from tests.evaluation_support import FOE, HERO, WEAPON, synthetic_combat, synthetic_loader
@@ -29,10 +34,14 @@ from tests.evaluation_support import FOE, HERO, WEAPON, synthetic_combat, synthe
 def input_request():
     _, live = synthetic_combat()
     snapshot = capture_combat_snapshot(
-        live, grid=GridScene(width=3, height=3), world_version=7, combat_id="combat:synthetic"
+        live,
+        inventory_state=InventoryState(entries=()),
+        grid=GridScene(width=3, height=3),
+        world_version=7,
+        combat_id="combat:synthetic",
     )
     return RuleEvaluationRequest(
-        schema_version="engine-evaluation/1",
+        schema_version="engine-evaluation/6",
         session_id=live.session_id,
         command_id="command:synthetic",
         operation_kind="combat.intent",
@@ -46,7 +55,7 @@ def input_request():
 
 def result_for(request, status="accepted"):
     return RuleEvaluationResult(
-        schema_version="engine-evaluation/1",
+        schema_version="engine-evaluation/6",
         session_id=request.session_id,
         command_id=request.command_id,
         input_world_version=request.state_snapshot.world_version,

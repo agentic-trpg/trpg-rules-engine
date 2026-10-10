@@ -85,6 +85,19 @@ def synthetic_combat(*, seed=0, ac=10, hp=100, temp_hp=0):
             )
         )
     live = _get_live(result.handle)
+    # The evaluation fixture explicitly declares its equipment facts. The
+    # capture adapter is forbidden to invent them from legacy None sentinels.
+    live.initiative = [
+        actor.model_copy(
+            update={
+                "weapon_in_hands": WEAPON if actor.entity_id == HERO else None,
+                "weapon_grip": "one_handed" if actor.entity_id == HERO else "none",
+                "other_hand_occupied": False,
+                "weapon_mastery_slugs": (),
+            }
+        )
+        for actor in live.initiative
+    ]
     if temp_hp:
         _emit(live, TempHpApplied(target_id=FOE, amount=temp_hp))
     # Baselines begin after initiative/turn initialization, with explicit PRNG state.

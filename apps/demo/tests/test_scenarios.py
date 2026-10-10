@@ -53,21 +53,21 @@ _BRYNN_APPROACH = [(2, 5), (3, 5), (4, 5), (5, 5), (6, 5), (7, 4)]
 
 SHOWCASE_SCRIPTS: dict[str, list[Command]] = {
     # Brynn closes to melee range (grid movement around/through the cover
-    # wall), both PCs land opening attacks, then three monster turns play
-    # out — one of which draws Brynn's opportunity attack.
+    # wall), both PCs land opening attacks. A dead goblin is skipped by the
+    # shared turn core; the two living monster turns include an opportunity attack.
     "goblin-ambush": [
         *[_move("char:brynn", cell_id(c, r)) for c, r in _BRYNN_APPROACH],
         _attack("char:brynn", "longsword", "mon:gob1"),
         _attack("char:sera", "shortbow", "mon:gob2"),
         MonsterTurnCommand(),
         MonsterTurnCommand(),
-        MonsterTurnCommand(),
     ],
     # Orin's cone catches four giant rats in distinct corridor-mouth
     # cells in one cast: four Dex saves, half damage on a save, full on a
-    # fail. One monster turn closes out the round.
+    # fail. The first rat dies; Garrick's actual turn precedes the survivors.
     "burning-hands": [
         _cast("char:orin", "burning-hands", target="mon:rat1"),
+        _pass("char:garrick"),
         MonsterTurnCommand(),
     ],
     # Doran closes on the captain, Mira holds it (Paralyzed, concentration
@@ -156,6 +156,22 @@ async def test_replay_equivalence_across_all_scenarios() -> None:
         a = await replay_fight(log, *fresh_specs(s))
         b = await replay_fight(log, *fresh_specs(s))
         assert [e.model_dump() for e in a.all_events] == [e.model_dump() for e in b.all_events]
+
+
+async def test_dead_goblins_yield_the_next_live_player_turn() -> None:
+    s = get_scenario("goblin-ambush")
+    out = await replay_fight(
+        FightLog(scenario_id=s.id, seed=s.default_seed, commands=SHOWCASE_SCRIPTS[s.id]),
+        *fresh_specs(s),
+    )
+    assert out.rejected_reason is None
+    assert out.view.dead_ids == {"mon:gob1", "mon:gob2"}
+    assert not out.is_over  # The third goblin is still active.
+    current = out.view.initiative[out.view.current_turn_index]
+    assert current.entity_id == "char:brynn"
+    assert current.is_alive
+    assert current.action_available
+    assert all(not c.is_alive for c in out.view.initiative if c.entity_id in out.view.dead_ids)
 
 
 def test_fresh_specs_returns_new_instances() -> None:

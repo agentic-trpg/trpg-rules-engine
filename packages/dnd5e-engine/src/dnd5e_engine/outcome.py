@@ -82,7 +82,8 @@ class CombatOutcome(BaseModel):
     residual_temp_hp: dict[str, int] = Field(default_factory=dict)
     loot_drops: list[LootDrop] = Field(default_factory=list)
     xp_awarded: dict[str, int] = Field(default_factory=dict)
-    # pc_id → {slot_level_or_feature: count_used}
+    # payer_id → {"spell_slot:<level>" / "pact_slot:<level>": count_used}.
+    # Historical slot spends; never infer them from concentration effect targets.
     expended_resources: dict[str, dict[str, int]] = Field(default_factory=dict)
 
 

@@ -21,7 +21,7 @@ from dnd5e_engine.evaluation_projection import EvaluationInvariantError, attack_
 from dnd5e_engine.evaluation_rng import RNGContext, RNGState
 from dnd5e_engine.evaluation_ruleset import RulesetBindingError, ruleset_binding
 from dnd5e_engine.evaluation_snapshot import capture_combat_snapshot
-from dnd5e_engine.evaluation_state import CombatSnapshot
+from dnd5e_engine.evaluation_state import CombatSnapshot, InventoryState
 from dnd5e_engine.events import AttackRolled
 from dnd5e_engine.specs import GridScene
 from dnd5e_engine.types.effects import ActiveEffect
@@ -31,10 +31,14 @@ from tests.evaluation_support import FOE, HERO, WEAPON, synthetic_combat, synthe
 def request_and_live(**kwargs):
     handle, live = synthetic_combat(**kwargs)
     snapshot = capture_combat_snapshot(
-        live, grid=GridScene(width=3, height=3), world_version=7, combat_id="combat:synthetic"
+        live,
+        inventory_state=InventoryState(entries=()),
+        grid=GridScene(width=3, height=3),
+        world_version=7,
+        combat_id="combat:synthetic",
     )
     request = RuleEvaluationRequest(
-        schema_version="engine-evaluation/1",
+        schema_version="engine-evaluation/6",
         session_id=live.session_id,
         command_id="command:synthetic",
         operation_kind="combat.intent",
@@ -126,6 +130,7 @@ def test_legacy_stateless_complete_delta_events_and_rng(seed, ac, hp, temp_hp, d
             update={
                 "state_snapshot": capture_combat_snapshot(
                     live,
+                    inventory_state=InventoryState(entries=()),
                     grid=GridScene(width=3, height=3),
                     world_version=7,
                     combat_id="combat:synthetic",
@@ -135,7 +140,11 @@ def test_legacy_stateless_complete_delta_events_and_rng(seed, ac, hp, temp_hp, d
     before = deepcopy(request)
     asyncio.run(orch.submit_player_intent(handle, HERO, request.payload))
     legacy = capture_combat_snapshot(
-        live, grid=GridScene(width=3, height=3), world_version=7, combat_id="combat:synthetic"
+        live,
+        inventory_state=InventoryState(entries=()),
+        grid=GridScene(width=3, height=3),
+        world_version=7,
+        combat_id="combat:synthetic",
     )
     registered = dict(orch._REGISTRY)
     result = execute(request)

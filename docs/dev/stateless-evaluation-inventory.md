@@ -8,7 +8,7 @@ Accepted ownership semantics govern this migration. Candidate Python names, RNG
 encoding, complex continuation and delta shapes remain local implementation choices;
 this document does not freeze a cross-repository ABI.
 
-## Batch 6 inventory additions
+## Historical Batch 6 inventory additions (superseded versions)
 
 Snapshot `/2` adds four authoritative Actor dependencies: `weapon_in_hands`,
 `weapon_grip`, `other_hand_occupied` and `weapon_mastery_slugs`. SM supplies them
@@ -17,8 +17,25 @@ flag and an empty trained tuple. They are equipment/eligibility facts, not value
 inferred from a weapon name or property. Attacks read them without mutation.
 Internal Legacy capture refuses snapshot `/1` when these facts are populated;
 they cannot be discarded by downgrading. Legacy `None` compatibility sentinels
-are permitted only on the older bounded interface. Full weapon capability and
+remain valid only in Legacy public runtime; the current evaluator rejects them. Full weapon capability and
 version/migration details are in [stateless evaluation](stateless-evaluation.md).
+
+## Current stabilization additions
+
+Current snapshots are version `/4` only, with precisely CombatSnapshot and
+NonCombatSnapshot discriminators. Both require InventoryState(entries=...),
+strict owner/instance closure and complete CharacterStateV2 equipment. Older snapshot
+versions and the third combat_inventory context are rejected explicitly; no empty
+inventory or equipment fact is inferred. Capture requires supplied inventory and the
+projector preserves it. The shared Death fold sets is_alive=False and turn advancement
+skips dead_ids; complete DeathRecord evidence remains authoritative input. Closure
+separates new XP/ended writes from a typed historical balance report. Shared slot
+expenditure is recorded at payment by actual payer/pool/level, never from Effect names.
+See [current contracts](stateless-evaluation.md) and
+[global migration progress](stateless-migration-progress.md).
+
+The field index below is the original Legacy baseline inventory, not a declaration
+that every listed dependency is already admitted by stateless evaluation.
 
 ## Ownership and lifetime
 
@@ -655,7 +672,7 @@ a name can show a same-named DTO consumer; verify the receiver at the linked loc
 | `action_surge_used_this_turn` | - | `orchestrator.py:10950 (_action_surge_failure)`; `orchestrator.py:7954 (_action_surge_opportunity)` |
 
 
-## Batch 7 check dependency boundary
+## Historical Batch 7 check dependency boundary (superseded versions)
 
 NonCombatSnapshot retains the complete CharacterState (/1) or CharacterStateV2 (/2),
 effects and scene. Check projection uses explicit scores, PB/level, skill proficiency and
@@ -669,7 +686,12 @@ the CheckRolled proposal and RNGTransition form the complete submission unit. A 
 check.adjudication choice is versioned in evaluation /4; no new mechanical delta kind is added.
 
 
-## Batch 8 inventory and healing boundary
+## Historical Batch 8 inventory and healing boundary (superseded architecture)
+
+The following records the original Batch 8 design. Stabilization replaces its third
+context and combat_view conversion with the mandatory InventoryState component in
+both snapshot /4 contexts; current contracts are linked above. The original versions
+below are no longer accepted.
 
 InventoryCombatSnapshot /3 adds a required inventory_state tuple over the complete /2
 combat dependencies. Its complete combat_view reuses existing dependency-closure validation;

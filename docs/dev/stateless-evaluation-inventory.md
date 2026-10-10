@@ -22,7 +22,7 @@ version/migration details are in [stateless evaluation](stateless-evaluation.md)
 
 ## Current stabilization additions
 
-Current snapshots are version `/8` only, with precisely CombatSnapshot and
+Current snapshots are version `/9` only, with precisely CombatSnapshot and
 NonCombatSnapshot discriminators. Both require InventoryState(entries=...),
 strict owner/instance closure and complete CharacterStateV2 equipment. Older snapshot
 versions and the third combat_inventory context are rejected explicitly; no empty
@@ -803,3 +803,23 @@ amount; slot/feature mirror and HP writes commit together with typed RestResolve
 HealingApplied and RNG proposals. Real Second Wind, HD consumption and Pact recovery
 execute without live resource containers. Long Rest, general item/feature recovery,
 rest-modifying effects and world time remain unmigrated or upper-layer responsibilities.
+
+
+## R17 selected effect lifecycle inventory
+
+The existing authorized SRD Cunning Strike Poison slice reads one complete EffectState,
+its canonical source/activity, captured CON/DC/magic, full-identity LifecycleRecord,
+application/repeat/expiry clocks, ConditionLink and the actual linked ConditionRecord.
+Other effect/condition/source dependencies refuse before RNG. Repeat Save shares R15's
+pure kernel; repeat/cap predicates share OngoingEffectLifecycle. The original lineage
+cleanup filter is extracted unchanged and retained by the Legacy fold.
+
+EffectLifecycleUpdate carries full old/new effect, clock and lineage with one identity
+and combat ID; retained effects can only advance the repeat serial, and expiry removes
+the entire bundle. ConditionsUpdate and R11 turn/budget/ledger operations carry the
+other changes. Proposed SaveRolled/EffectExpired/ConditionRemoved remain ordered within
+TurnPhase before TurnEnded. Full world/RNG fences and atomic SM commit are unchanged.
+No Apply operation, concentration state mutation or new Snapshot context is admitted.
+
+Snapshot /9 requires all lifecycle clock/application/spec/repeat wire fields explicitly;
+authoring defaults never repair admitted runtime dependencies.

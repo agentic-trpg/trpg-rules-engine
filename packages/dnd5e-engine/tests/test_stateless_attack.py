@@ -40,7 +40,7 @@ def request_and_live(**kwargs):
         combat_id="combat:synthetic",
     )
     request = RuleEvaluationRequest(
-        schema_version="engine-evaluation/12",
+        schema_version="engine-evaluation/13",
         session_id=live.session_id,
         command_id="command:synthetic",
         operation_kind="combat.intent",

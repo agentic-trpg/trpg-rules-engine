@@ -41,7 +41,7 @@ classification applies only to the stated bounded capability, not its whole fami
 | --- | --- | --- | --- |
 | Result/binding/RNG envelope | Fully migrated local candidate | Yes for envelope | `evaluation_contracts`, `evaluation_ruleset`, `evaluation_rng`; durable commit/receipt is SM work |
 | Combat initialization / Start | Complete bounded local candidate; **public ABI blocked C-16** | **Yes, R13–R14** for bounded core and explicit ordinary NPC binding | `evaluation_initialization` / shared initiative_rules and turn_rules; explicit NonCombat setup and closed creation candidate. Legacy start, general hydration and consumer cutover remain |
-| Turn / Action Economy | Bounded explicit Pass and Attack/Item | **Yes, R11** for bounded lifecycle | `evaluation_turn` plus shared `turn_rules` / death saves; complete reset/dead skipping/round wrap/ordinary dying PC. Complex expiry, reactions and extended actions remain Legacy |
+| Turn / Action Economy | Bounded explicit Pass and Attack/Item | **Yes, R11** for bounded lifecycle | `evaluation_turn` plus shared `turn_rules` / death saves; complete reset/dead skipping/round wrap/ordinary dying PC. General expiry, reactions and extended actions remain Legacy; R17 adds bounded Poison |
 | Movement / positioning | Bounded Walk, Action Dash/Disengage | **Yes, R12** for admitted subset | `evaluation_movement` reuses GridTopology/movement/turn rules and closed PositionUpdate. OA, special modes, stat-block reaction templates, forced movement, effects/areas remain Legacy |
 | Ordinary PC/NPC weapon or explicit stat-block single Attack | Fully migrated bounded subset | **Yes, R9** | `evaluation_preflight` → `evaluation_attack.execute_attack` → Activity Resolver → `evaluation_projection.attack_delta`; no Legacy execution context |
 | Attack / Damage / Death overall | Partially migrated | Partially | Ordinary roll/hit/miss/crit/R-I-V/temp HP/death/payment/turn and attack-induced next-turn death save migrated; riders, trained Masteries, Multiattack/recharge/legendary/effects remain Legacy |
@@ -50,7 +50,8 @@ classification applies only to the stated bounded capability, not its whole fami
 | Saves / skill checks overall | Partially migrated | Partially | Tools/senses, combat source/cover, effect and finite modifier consumption remain restricted |
 | Owned single-use self-healing consumable | Fully migrated bounded external contract | **Yes, R10** | `evaluation_items` → shared CombatComputation / HealActivity / item_rules; inventory/HP/budget/turn/events/RNG remain complete |
 | Inventory / resource payment overall | Partially migrated: owned consumable plus typed HD/Pact/Second Wind rest recovery | **Yes, R10/R16** for those slices; no for general execution | Mandatory typed InventoryState; complete consume guard. Equip/transfer/recharge/ammunition/general pool/restore operations absent; Legacy slot/counter/rest machinery remains |
-| Conditions / effects / concentration | Legacy Stateful Only for general inputs | No | Complete Snapshot records retained and refused; `effect_lifecycle`, `live_effect_lifecycle`, condition/concentration folds. Attack-produced unconscious/prone/death-save state is a bounded exception |
+| Bounded existing Poison lifecycle | Fully migrated local subset | **Yes, R17** | Authorized single Cunning Strike Poison → shared Save/repeat/expiry/lineage kernels → closed Effect/Condition/Turn proposals; no Apply API |
+| Conditions / effects / concentration overall | Partially migrated | Partially | R17 Poison and attack-produced dying conditions migrated; general multi-effect, concentration, creation, areas and child cascades remain Legacy |
 | Spellcasting / Features | Legacy Stateful Only | No | `spell_execution`, `feature_runtime`, `live_features`, `live_spell_delivery`, `activities/cast`; existing repertoire/costs/timing/grants/riders remain, no evaluation entry |
 | Reaction / pending choice | Partially migrated choices only | Yes for draw-free choices; no for reactions | Weapon/missing-DC choices typed; `reactions`, `live_reactions`, `timed_activities` execution/windows/continuation remain Legacy; complex ABI OPEN |
 | Areas / environment / objects | Legacy Stateful Only | No | `persistent_areas`, `environment`, `combat_objects`, `ongoing_spell_activation`; state captured then refused; source/lifetime/geometry/history Delta missing |
@@ -112,7 +113,7 @@ capabilities. Expanding admission before complete rule dependencies/Delta exist 
 The [field inventory](stateless-evaluation-inventory.md) remains complete. R9 changes
 no Snapshot fields or Delta shapes. Required inventory/equipment/effect/resource facts
 are never silently filled. Complex sidecars, traits/features, trained Masteries,
-Reaction/Effect/Spell and extended actions remain rejected before payment/RNG.
+General Reaction/Effect/Spell and extended actions remain rejected before payment/RNG; R17 admits only its reviewed Poison End Turn slice.
 
 Attack projects HPDelta, TempHPSet, DeathStateUpdate, ConditionsUpdate,
 ActionBudgetUpdate, DamageAttributionUpdate, TurnUpdate, MovementLedgerUpdate,
@@ -123,10 +124,11 @@ checked unchanged. Damage rules accumulate typed packets by damage-instance iden
 not narration, before deciding Character massive damage. Attack-induced death saves
 preserve natural-20 HP/prone/movement restoration and explicit RNG draws.
 
-Existing dying/unconscious input remains outside admission; this is not a general
-standalone death-save or revive migration. Initialization, position, resource/HD,
-effect/condition/concentration graph, reaction continuation, areas/objects and roster
-changes still need closed DTO operations and independent consumer tests.
+R9 initially excluded dying/unconscious input. R11 now admits its bounded dying-PC
+Pass path; R13–R16 add closed initialization, position and resource/HD operations,
+and R17 adds one existing Poison lifecycle. General revive, concentration/effect
+graphs, reaction continuation, areas/objects and roster changes still need closed
+DTO operations and independent consumer tests.
 
 ## Remaining production Legacy chains
 
@@ -273,7 +275,7 @@ blocked C-16; this repository-local candidate is not a production SM integration
 R13 local versions at that boundary: evaluation /9, Snapshot /6, availability /5, evaluator /15.
 Legacy Bridge/Demo production behavior is preserved, not migrated or retired.
 
-## Next four migration priorities after R13
+## Historical priorities after R13 (superseded by R17 checkpoint)
 
 | Priority | Existing capability to migrate | Required exit |
 | --- | --- | --- |
@@ -346,3 +348,41 @@ Explicit item-instance and action-budget ownership remain separate. Long Rest an
 general feature/item/effect recovery are restricted; world time and rest permission
 remain SM work. Local versions are evaluation /12, Snapshot /8, availability /7,
 evaluator /18; shared encodings and complex Delta ABI remain OPEN.
+
+
+## R17 ongoing effect extraction
+
+R17 starts at R16 `8f33de17de42577493b7893b336413ab20489c4e`.
+Both dimensions are complete for one already authorized, nonconcentration SRD Cunning
+Strike Poison lifecycle. Explicit Pass retains R11 turn advancement, calls the R15
+Save core, and shares original OngoingEffectLifecycle repeat/cap arithmetic and the
+extracted condition lineage filter. Removed dependency edges for this successful
+chain: live_effect_lifecycle.run_repeats/roll_live_save, Legacy hydration/reaction hooks,
+registered Turn hooks, _emit expiry folds and Snapshot recapture. No replacement
+persistent runtime or general hook dispatcher is introduced.
+
+Full old/new Effect/Lifecycle/ConditionLink guards, Condition/Turn deltas, event order,
+RNG and whole-world fence are complete for the selected slice. Real canonical Poison,
+PC/NPC repeat success/failure, same-boundary duration cap, no-draw source turns,
+multiple committed turns, replay/concurrency, pre-draw refusals and post-Save/expiry/
+projection faults have independent expected values and separately invoked Legacy parity.
+No C-16 application API or concentration support is claimed. General child effects,
+multiple origins/effects, one-use modifiers, areas and interruption remain restricted.
+Local versions: evaluation /13, Snapshot /9, availability /8, evaluator /19.
+Lifecycle clock/application/spec/repeat wire fields are required and serialize fully;
+missing dependencies cannot be repaired with Legacy authoring defaults.
+
+## Next four migration priorities after R17
+
+| Batch candidate | Existing execution dependency to remove | Required exit |
+| --- | --- | --- |
+| R18: concentration and multi-effect lineage | live concentration checks/drop/linked expiry and _emit cascades | Explicit authorized graph, shared save/damage core, closed atomic cleanup and complete event/RNG parity; no new source API |
+| R19: broader resource payment and Long Rest | Legacy slot/feature/item payment and recovery containers | Typed owned capacities, original cost/recovery resolvers, finite modifier consumption and last-unit/rollback parity |
+| R20: bounded existing Spell/Feature execution | live spell/feature preparation and resolver contexts | Complete target/source/repertoire/cost/effect closure using R15–R19 kernels; no Live hydration |
+| R21: predeclared Reaction continuation | Legacy reaction dispatcher/interrupt runtime | Resolve Meta C-04 before ABI publication; complete window/payment/RNG/continuation state and replay parity |
+
+These are proposed priorities, not new approved APIs. Persistent area/object/timing,
+complex monsters, general derivation, authoritative SM consumer integration and the
+Bridge/Demo production cutover still follow. Public creation and C-16, complex Delta
+C-15, shared wire/RNG/commit policies stay OPEN. Migration completion is measured by
+removed original execution chains and migrated existing rules, not DTO/file counts.

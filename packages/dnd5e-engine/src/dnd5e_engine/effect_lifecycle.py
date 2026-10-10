@@ -5,11 +5,33 @@ No events, source prose, RNG, or mutable combat state are inspected here.
 
 from __future__ import annotations
 
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass, replace
 from typing import Literal
 
 from dnd5e_srd_data.schema.lifecycle import EffectLifecycleSpec, OneUseModifier
 from pydantic import BaseModel, ConfigDict, model_validator
+
+from dnd5e_engine.types.conditions import ActiveCondition
+
+
+def conditions_after_effect_expiry(
+    conditions: Sequence[ActiveCondition],
+    effect_id: str,
+    statuses: Collection[str],
+    shared_id_statuses: Collection[str],
+) -> list[ActiveCondition]:
+    """Original lineage filter, shared by Legacy and independent lifecycle folds."""
+    return [
+        ac
+        for ac in conditions
+        if not (
+            ac.source_effect_id == effect_id
+            and ac.condition in statuses
+            and ac.condition not in shared_id_statuses
+        )
+    ]
+
 
 EffectIdentity = tuple[str, str, str]
 EffectSourceKind = Literal["spell", "feature", "item", "monster"]

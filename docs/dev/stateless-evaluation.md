@@ -11,10 +11,10 @@ The current local candidate versions are:
 
 | Contract | Current version | Replaces |
 | --- | --- | --- |
-| RuleEvaluationRequest / Result | `engine-evaluation/12` | `/1`–`/11` |
-| StateSnapshot | `engine-snapshot/8` | `/1`–`/7` |
-| Availability request/result | `engine-availability/7` | `/1`–`/6` |
-| RulesetBinding evaluator | `dnd5e-evaluation/18` | `/17` and earlier |
+| RuleEvaluationRequest / Result | `engine-evaluation/13` | `/1`–`/12` |
+| StateSnapshot | `engine-snapshot/9` | `/1`–`/8` |
+| Availability request/result | `engine-availability/8` | `/1`–`/7` |
+| RulesetBinding evaluator | `dnd5e-evaluation/19` | `/18` and earlier |
 
 Old envelopes, snapshots and results are explicitly rejected. There are no compatibility
 aliases for `InventoryCombatSnapshot`, `combat_inventory`, missing equipment or missing
@@ -57,7 +57,7 @@ remain OPEN. SM authenticates/authorizes the caller and approved write scope.
 
 | Operation | Current admitted subset |
 | --- | --- |
-| combat.intent | One ordinary PC/NPC weapon Attack, an exact reviewed stat-block AttackActivity, explicit plain Pass / End Turn, ordinary Walk, Action Dash / Disengage |
+| combat.intent | One ordinary PC/NPC weapon Attack, an exact reviewed stat-block AttackActivity, explicit plain Pass / End Turn (including the bounded R17 Poison lifecycle), ordinary Walk, Action Dash / Disengage |
 | rules.check | Explicitly adjudicated ordinary noncombat ability/skill check |
 | rules.save | Explicit noncombat actor saving throw; six abilities and fixed DC |
 | rules.rest | Bounded noncombat Short Rest: explicit Hit Dice, Pact Slots and reviewed Second Wind recovery |
@@ -66,7 +66,7 @@ remain OPEN. SM authenticates/authorizes the caller and approved write scope.
 
 Common weapon properties Finesse/Versatile/Two-Handed/Reach/Heavy use the shared resolver
 and explicit held grip. Only untrained Mastery tuples are admitted; trained Masteries,
-Light/Loading/Ammunition/Thrown, effects, classes/features, extended budgets, reactions,
+Light/Loading/Ammunition/Thrown, general effects, classes/features, extended budgets, reactions,
 complex grids for Attack/Item, timing, areas, objects, summons/transforms remain unsupported. Stat-block
 Multiattack prose, recharge and legendary mechanics are refused. A parsed Activity or
 a retained DTO never proves support. War Pick's missing typed Versatile damage remains
@@ -382,3 +382,42 @@ commits expected resource/HP writes, events, RNG and receipt. Repeated evaluatio
 deterministic; expected-value/version checks prevent a second application of old writes.
 No-draw/event-only version policies remain OPEN. Evaluation /12, Snapshot /8,
 availability /7 and evaluator /18 are local candidates, not a frozen Meta C-15 ABI.
+
+
+## R17 existing authorized Poison lifecycle
+
+Explicit plain Pass now admits exactly one existing Cunning Strike Poison effect,
+identified by the reviewed feature/activity binding in the pinned corpus. Its full
+Effect identity, source/target, captured nonmagical CON/DC, duration, lifecycle clock,
+and successfully attached poisoned Condition lineage must agree. Admission compares
+the complete canonical effect declaration and original lifecycle registration rules;
+unknown sources, numeric modifiers, disabled/transfer/child effects, additional
+conditions, areas, reactions, concentration and dying/dead branches refuse before RNG.
+This is lifecycle evaluation over an already authorized Snapshot, not a new Apply API.
+C-16 source permission remains unresolved and no rules.effect operation is added.
+
+EffectTurnComputation reuses the R11 turn core. At target turn-end it uses R15's shared
+resolve_snapshot_save and original roll_save, marks the explicit repeat serial, then
+expires on success or the captured round cap. Repeat precedes cap expiry, matching the
+original hook order. Failed saves are accepted with actual SaveRolled and RNG; other
+actors' turns and already processed target boundaries draw nothing. The original
+OngoingEffectLifecycle owns repeat/expiry clock arithmetic. Typed managed effects use
+that clock instead of decrementing a second duration counter, exactly as Legacy does.
+The original condition lineage filter is now a shared pure helper used by both folds.
+
+A closed local EffectLifecycleUpdate guards the complete old Effect, LifecycleRecord
+and ConditionLink, plus full identity/combat ID. It either advances only the repeat
+serial or removes all three records together. ConditionsUpdate and ordinary turn/
+budget/ledger operations accompany the same world/read fence and ordered events.
+SM validates the whole combination and atomically commits Delta/RNG/events/receipt;
+the new projector retains all previous omission guards. No authoritative state is
+mutated during evaluation and no LiveCombat, handle, registry or Legacy hook executes.
+
+Independent expected rolls, actual PC/NPC Legacy full-state/event/RNG comparisons,
+success/failure/cap ordering, multiple committed turns, repeat/concurrent replay,
+stale guards and faults after real Save/cleanup/projection cover this bounded slice.
+Concentration preservation/break/cascade, general effect application/expiry, shared
+condition origins, multi-effect interactions, areas and interrupts remain unmigrated.
+Evaluation /13, Snapshot /9, availability /8 and evaluator /19 version this local
+C-15 candidate. Lifecycle clock/application/spec/repeat fields serialize explicitly;
+wire requests missing any of them are rejected rather than filled from Legacy defaults. This does not freeze a cross-repository ABI.

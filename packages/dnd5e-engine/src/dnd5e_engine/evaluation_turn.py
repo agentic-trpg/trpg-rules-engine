@@ -50,20 +50,31 @@ def evaluate_turn(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
         return _refuse("rejected", "not_actor_turn", "actor does not own this turn")
     if request.actor_id in state.dead_ids:
         return _refuse("rejected", "actor_incapacitated", "recorded dead actors have no turn")
-    failure = snapshot_support_failure(
-        snapshot, turn_lifecycle=True, movement=True
-    ) or template_support_failure(snapshot, loader)
+    # Lazy import keeps the shared R15 Save core independent of turn dispatch.
+    from dnd5e_engine.evaluation_effect_turn import (
+        EffectTurnComputation,
+        effect_turn_delta,
+        effect_turn_support_failure,
+    )
+
+    has_effect = bool(snapshot.effect_states)
+    failure = (
+        effect_turn_support_failure(snapshot, loader)
+        if has_effect
+        else snapshot_support_failure(snapshot, turn_lifecycle=True, movement=True)
+        or template_support_failure(snapshot, loader)
+    )
     if failure:
         return _refuse("unsupported", "turn.capability", failure)
     rng = request.rng_context.state.restore()
-    computation = CombatComputation(snapshot, rng)
+    computation = (EffectTurnComputation if has_effect else CombatComputation)(snapshot, rng)
     computation.emit(IntentSubmitted(actor_id=request.actor_id, intent_type="pass"))
     # Pass pays no Action; it closes the turn even with unused budgets.
     computation.finish_turn(request.actor_id, force=True)
     after = computation.result()
     return dict(
         status="accepted",
-        state_delta=attack_delta(snapshot, after),
+        state_delta=(effect_turn_delta if has_effect else attack_delta)(snapshot, after),
         proposed_events=tuple(computation.events),
         rng_transition=RNGTransition.between(request.rng_context, rng),
         choice=None,

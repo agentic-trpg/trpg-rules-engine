@@ -30,7 +30,7 @@ from dnd5e_engine.types.combat import Combatant
 def character_state(
     live: _LiveCombat,
     actor: Combatant,
-    version: Literal["engine-snapshot/8"] = "engine-snapshot/8",
+    version: Literal["engine-snapshot/9"] = "engine-snapshot/9",
 ) -> CharacterStateV2:
     value = actor.model_dump(mode="python")
     value["death_saves"] = value["death_saves"] or None
@@ -51,7 +51,7 @@ def capture_combat_snapshot(
     combat_id: str,
     inventory_state: InventoryState,
     resource_state: ResourceState | None,
-    snapshot_schema_version: Literal["engine-snapshot/8"] = "engine-snapshot/8",
+    snapshot_schema_version: Literal["engine-snapshot/9"] = "engine-snapshot/9",
 ) -> CombatSnapshot:
     """Capture a completed boundary; no registry lookup or RNG serialization.
 

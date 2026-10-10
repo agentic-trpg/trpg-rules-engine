@@ -5,14 +5,17 @@ from typing import Annotated, Literal, Self
 from pydantic import Field, model_validator
 
 from dnd5e_engine.evaluation_base import EvaluationModel
+from dnd5e_engine.evaluation_effects import EffectState
 from dnd5e_engine.evaluation_resources import ResourcePool
 from dnd5e_engine.evaluation_state import (
     ClosureDeath,
     CombatSetupState,
     CombatState,
+    ConditionLink,
     ConditionRecord,
     DeathSaveRecord,
     InventoryEntry,
+    LifecycleRecord,
     MovementLedgerState,
 )
 from dnd5e_engine.outcome import DeathRecord
@@ -284,6 +287,54 @@ class ResourceUpdate(EvaluationModel):
         return self
 
 
+class EffectLifecycleUpdate(EvaluationModel):
+    """Local C-15 candidate: atomic selected effect/clock/lineage transition."""
+
+    kind: Literal["combat.effect_lifecycle_update"]
+    combat_id: Annotated[str, Field(min_length=1)]
+    identity: tuple[str, str, str]
+    expected_effect: EffectState
+    effect: EffectState | None
+    expected_lifecycle: LifecycleRecord
+    lifecycle: LifecycleRecord | None
+    expected_lineage: ConditionLink
+    lineage: ConditionLink | None
+
+    @model_validator(mode="after")
+    def complete_identity(self) -> Self:
+        effect = self.expected_effect
+        if (
+            self.identity != (effect.target_id, effect.id, effect.origin)
+            or self.expected_lifecycle.identity != self.identity
+            or self.expected_lifecycle.state.identity != self.identity
+            or self.expected_lineage.identity != self.identity
+        ):
+            raise ValueError("effect transition expected identities differ")
+        removed = (self.effect is None, self.lifecycle is None, self.lineage is None)
+        if any(removed) and not all(removed):
+            raise ValueError("effect, clock and lineage must be removed atomically")
+        if self.effect is not None:
+            assert self.lifecycle is not None
+            assert self.lineage is not None
+            old, new = self.expected_lifecycle.state, self.lifecycle.state
+            from dataclasses import replace
+
+            if (
+                self.effect != self.expected_effect
+                or self.lineage != self.expected_lineage
+                or self.lifecycle.identity != self.identity
+                or new.last_repeat_turn_serial is None
+                or new.last_repeat_turn_serial < old.applied_turn_serial
+                or (
+                    old.last_repeat_turn_serial is not None
+                    and new.last_repeat_turn_serial <= old.last_repeat_turn_serial
+                )
+                or new != replace(old, last_repeat_turn_serial=new.last_repeat_turn_serial)
+            ):
+                raise ValueError("retained effect may only advance its repeat clock")
+        return self
+
+
 StateDeltaOperation = Annotated[
     HPDelta
     | TempHPSet
@@ -300,7 +351,8 @@ StateDeltaOperation = Annotated[
     | CombatClose
     | InventoryConsume
     | CombatCreationCandidate
-    | ResourceUpdate,
+    | ResourceUpdate
+    | EffectLifecycleUpdate,
     Field(discriminator="kind"),
 ]
 

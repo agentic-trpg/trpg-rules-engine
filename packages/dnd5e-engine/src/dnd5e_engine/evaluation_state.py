@@ -6,16 +6,30 @@ values. These local versioned types are not a cross-repository ABI decision.
 
 from __future__ import annotations
 
-from typing import Annotated, Literal, Self
+from dataclasses import fields
+from typing import Annotated, Any, Literal, Self
 
 from dnd5e_srd_data.schema.monster import CreatureSize, MonsterTraitMechanic
 from dnd5e_srd_data.schema.spell import Spell
-from pydantic import ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    ConfigDict,
+    Field,
+    ValidationInfo,
+    field_serializer,
+    field_validator,
+    model_validator,
+)
 
 from dnd5e_engine.activities.conjuration import StatBlockMagnitudes, TransformSource
 from dnd5e_engine.effect_lifecycle import OngoingEffectLifecycle
 from dnd5e_engine.evaluation_base import EvaluationModel
-from dnd5e_engine.evaluation_effects import EffectState
+from dnd5e_engine.evaluation_effects import (
+    EffectLifecycleApplicationState,
+    EffectLifecycleSpecState,
+    EffectState,
+    RepeatSaveState,
+    explicit_effect_fields,
+)
 from dnd5e_engine.evaluation_resources import FeatureResource, ResourceState, SlotResource
 from dnd5e_engine.events import CombatEvent, DamageType
 from dnd5e_engine.movement import MovementLedger
@@ -251,6 +265,42 @@ class LifecycleRecord(EvaluationModel):
     identity: tuple[str, str, str]
     state: OngoingEffectLifecycle
 
+    @field_validator("state", mode="before")
+    @classmethod
+    def complete_clock(cls, value: Any, info: ValidationInfo) -> Any:
+        if isinstance(value, dict):
+            if set(value) != {field.name for field in fields(OngoingEffectLifecycle)}:
+                raise ValueError("all lifecycle clock fields must be explicit")
+            application = value.get("application")
+            if not isinstance(application, dict) or set(application) != set(
+                EffectLifecycleApplicationState.model_fields
+            ):
+                raise ValueError("all captured lifecycle application fields must be explicit")
+            spec = application.get("spec")
+            if not isinstance(spec, dict) or set(spec) != set(
+                EffectLifecycleSpecState.model_fields
+            ):
+                raise ValueError("all captured lifecycle spec fields must be explicit")
+            repeat = spec.get("repeat_save")
+            if repeat is not None and (
+                not isinstance(repeat, dict) or set(repeat) != set(RepeatSaveState.model_fields)
+            ):
+                raise ValueError("all repeat-save fields must be explicit")
+            if info.mode == "json":
+                # Preserve strict dataclass tuple fields across the before-validator.
+                value = dict(value)
+                for name in ("identity", "remaining_one_use_modifiers"):
+                    if isinstance(value[name], list):
+                        value[name] = tuple(value[name])
+        return value
+
+    @field_serializer("state")
+    def explicit_clock(self, value: OngoingEffectLifecycle) -> dict[str, Any]:
+        return {
+            field.name: explicit_effect_fields(getattr(value, field.name))
+            for field in fields(value)
+        }
+
 
 class EffectTurnRecord(EvaluationModel):
     identity: tuple[str, str, str]
@@ -405,7 +455,7 @@ class InventoryState(EvaluationModel):
 
 
 class SnapshotBase(EvaluationModel):
-    snapshot_schema_version: Literal["engine-snapshot/8"]
+    snapshot_schema_version: Literal["engine-snapshot/9"]
     session_id: Annotated[str, Field(min_length=1)]
     world_version: Annotated[int, Field(ge=0)]
     character_states: tuple[CharacterStateV2, ...]

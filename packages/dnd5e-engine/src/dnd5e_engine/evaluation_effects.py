@@ -108,21 +108,25 @@ class EffectState(EvaluationModel):
         return sorted(statuses)
 
 
-def effect_state(effect: ActiveEffect) -> EffectState:
-    """Capture explicit values from an existing Legacy document, never from SM gaps."""
+def explicit_effect_fields(value: Any) -> Any:
+    """Preserve every lifecycle field, including defaults normally omitted by authoring."""
     import copy
 
     from pydantic import BaseModel
 
-    def fields(value: Any) -> Any:
-        if isinstance(value, BaseModel):
-            return {name: fields(getattr(value, name)) for name in type(value).model_fields}
-        if isinstance(value, dict):
-            return {key: fields(item) for key, item in value.items()}
-        if isinstance(value, list):
-            return [fields(item) for item in value]
-        if isinstance(value, tuple):
-            return tuple(fields(item) for item in value)
-        return copy.deepcopy(value)
+    if isinstance(value, BaseModel):
+        return {
+            name: explicit_effect_fields(getattr(value, name)) for name in type(value).model_fields
+        }
+    if isinstance(value, dict):
+        return {key: explicit_effect_fields(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [explicit_effect_fields(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(explicit_effect_fields(item) for item in value)
+    return copy.deepcopy(value)
 
-    return EffectState.model_validate(fields(effect))
+
+def effect_state(effect: ActiveEffect) -> EffectState:
+    """Capture explicit values from an existing Legacy document, never from SM gaps."""
+    return EffectState.model_validate(explicit_effect_fields(effect))

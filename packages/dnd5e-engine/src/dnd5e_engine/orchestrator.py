@@ -5012,15 +5012,11 @@ def _emit_apply_effect_expired(live: _LiveCombat, event: EffectExpired) -> None:
             for status in conditions
         }
         if combatant is not None:
-            new_conditions = [
-                ac
-                for ac in combatant.conditions
-                if not (
-                    ac.source_effect_id == event.effect_id
-                    and ac.condition in statuses
-                    and ac.condition not in shared_id_statuses
-                )
-            ]
+            from dnd5e_engine.effect_lifecycle import conditions_after_effect_expiry
+
+            new_conditions = conditions_after_effect_expiry(
+                combatant.conditions, event.effect_id, statuses, shared_id_statuses
+            )
             if new_conditions != combatant.conditions:
                 for idx, c in enumerate(live.initiative):
                     if c.entity_id == event.target_id:

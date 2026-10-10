@@ -1,0 +1,158 @@
+"""Bounded, RNG-free closure using the Legacy outcome projector on private state."""
+
+from typing import Literal, TypedDict
+
+from dnd5e_srd_data.loader import AssetLoader
+
+from dnd5e_engine import orchestrator as orch
+from dnd5e_engine.evaluation_context import execution_context
+from dnd5e_engine.evaluation_contracts import RuleError, RuleEvaluationRequest
+from dnd5e_engine.evaluation_delta import CombatClose, StateDelta
+from dnd5e_engine.evaluation_preflight import snapshot_support_failure, template_support_failure
+from dnd5e_engine.evaluation_projection import EvaluationInvariantError, attack_delta
+from dnd5e_engine.evaluation_rng import RNGTransition
+from dnd5e_engine.evaluation_state import ClosureDeath, CombatSnapshot
+from dnd5e_engine.events import CombatEnded
+from dnd5e_engine.lib_loader import scoped_lib_loader
+
+
+class ClosureEvaluation(TypedDict):
+    status: Literal["accepted", "rejected", "unsupported"]
+    state_delta: StateDelta | None
+    proposed_events: tuple[CombatEnded, ...]
+    rng_transition: RNGTransition | None
+    choice: None
+    error: RuleError | None
+
+
+def _refuse(
+    status: Literal["rejected", "unsupported"], code: str, reason: str
+) -> ClosureEvaluation:
+    return dict(
+        status=status,
+        state_delta=None,
+        proposed_events=(),
+        rng_transition=None,
+        choice=None,
+        error=RuleError(code=code, reason=reason),
+    )
+
+
+def _death_consistency(snapshot: CombatSnapshot) -> str | None:
+    state = snapshot.combat_state
+    actors = {actor.entity_id: actor for actor in snapshot.character_states}
+    records = state.deaths_recorded
+    if (
+        len({r.target_id for r in records}) != len(records)
+        or {r.target_id for r in records} != state.dead_ids
+    ):
+        return "death records must identify every dead actor exactly once"
+    kinds = {"Character": "character", "Monster": "monster", "NPC": "npc"}
+    for record in records:
+        actor = actors.get(record.target_id)
+        if (
+            actor is None
+            or actor.hp_current != 0
+            or record.target_kind != kinds[actor.entity_type]
+            or record.location_id != snapshot.scene_state.scene_id
+            or (record.killer_id is not None and record.killer_id not in actors)
+        ):
+            return "death record contradicts actor, HP, kind, location or killer"
+    for actor in actors.values():
+        if actor.entity_id in state.dead_ids:
+            # Legacy NPC/monster death records do not flip is_alive. This is
+            # normalized explicitly by a DeathStateUpdate, never by changing Legacy.
+            if actor.entity_type == "Character" and actor.is_alive:
+                return "a recorded character death requires is_alive=False"
+        elif actor.hp_current == 0 or not actor.is_alive:
+            return "dying or dead actors without a terminal death record are not migrated"
+    return None
+
+
+def evaluate_closure(request: RuleEvaluationRequest, loader: AssetLoader) -> ClosureEvaluation:
+    snapshot = request.state_snapshot
+    if not isinstance(snapshot, CombatSnapshot):
+        raise EvaluationInvariantError("closure requires a combat snapshot")
+    state = snapshot.combat_state
+    if request.actor_id not in state.initiative_ids:
+        return _refuse("rejected", "actor_invalid", "closure actor is absent from the roster")
+    if state.ended or any(isinstance(event, CombatEnded) for event in state.event_log):
+        return _refuse("rejected", "combat_ended", "combat has already ended")
+    failure = snapshot_support_failure(snapshot, terminal=True) or template_support_failure(
+        snapshot, loader
+    )
+    if failure:
+        return _refuse("unsupported", "closure.capability", failure)
+    failure = _death_consistency(snapshot)
+    if failure:
+        return _refuse("unsupported", "closure.death_state", failure)
+    if not state.party_ids or not state.encounter_ids:
+        return _refuse("rejected", "closure.nonterminal", "both combat sides must be nonempty")
+    if not set(state.expended_resources) <= state.party_ids or any(
+        not resource or count < 0
+        for resources in state.expended_resources.values()
+        for resource, count in resources.items()
+    ):
+        return _refuse("unsupported", "closure.resources", "resource ledger is not representable")
+    with scoped_lib_loader(loader):
+        live = execution_context(snapshot, loader)
+        reason = orch._derive_ended_reason(live)
+        if reason not in ("victory", "defeat_tpk"):
+            return _refuse("rejected", "closure.nonterminal", "combat is not a victory or TPK")
+        outcome = orch._project_outcome(live)
+    # Fail closed if the shared projector later gains another consequence.
+    if set(type(outcome).model_fields) != {
+        "handle_id",
+        "ended_reason",
+        "deaths",
+        "residual_hp",
+        "residual_temp_hp",
+        "xp_awarded",
+        "expended_resources",
+        "loot_drops",
+    }:
+        raise EvaluationInvariantError("unrepresented combat outcome field")
+    if outcome.loot_drops:
+        return _refuse("unsupported", "closure.loot", "loot requires an inventory delta")
+    if outcome.ended_reason != reason:
+        raise EvaluationInvariantError("closure projector changed its derived reason")
+    normalized = snapshot.model_copy(
+        update={
+            "character_states": tuple(
+                actor.model_copy(update={"is_alive": False})
+                if actor.entity_id in state.dead_ids
+                else actor
+                for actor in snapshot.character_states
+            )
+        }
+    )
+    closure = CombatClose(
+        kind="combat.close",
+        combat_id=state.combat_id,
+        expected_ended=False,
+        ended=True,
+        reason=reason,
+        deaths=tuple(ClosureDeath.model_validate(r.model_dump()) for r in outcome.deaths),
+        residual_hp=outcome.residual_hp,
+        residual_temp_hp=outcome.residual_temp_hp,
+        xp_awarded=outcome.xp_awarded,
+        expended_resources=outcome.expended_resources,
+        loot_drops=(),
+    )
+    return dict(
+        status="accepted",
+        state_delta=StateDelta(
+            operations=(*attack_delta(snapshot, normalized).operations, closure),
+            expected_world_version=snapshot.world_version,
+        ),
+        proposed_events=(CombatEnded(reason=reason),),
+        rng_transition=RNGTransition(
+            stream_id=request.rng_context.stream_id,
+            input_version=request.rng_context.version,
+            input_state=request.rng_context.state,
+            next_state=request.rng_context.state,
+            state_changed=False,
+        ),
+        choice=None,
+        error=None,
+    )

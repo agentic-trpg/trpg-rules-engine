@@ -236,3 +236,52 @@ timed execution. Other retained complex Legacy records still need explicit neste
 DTO review before those capabilities can be admitted. Their presence continues to
 return unsupported before execution RNG or payment; schema acceptance alone is not
 evidence of a complete complex-state execution contract.
+
+## Terminal combat closure (Batch 5)
+
+`combat.close` uses `CombatClosePayload(kind="combat.close")` and wire version
+`engine-evaluation/2`. The existing `/1` attack/check request vocabulary and attack
+results remain supported. A `/1` envelope rejects the new operation/delta; result
+verification checks the envelope version as well as command, world and rules pin.
+The evaluator revision is `dnd5e-evaluation/6`. Snapshot `/1` retains its shape;
+death records now enforce every documented field explicitly, including nullable
+`killer_id`, and strict nested values. Internal Legacy capture materializes those
+values; evaluation never supplies omitted Host state. These are local candidate
+versions, not a decision on Meta's OPEN ABI questions.
+
+Only a nonempty party versus a nonempty encounter with a consistent terminal
+death ledger can close. The existing `_derive_ended_reason` and `_project_outcome`
+determine victory/TPK and rewards on disposable local state. A caller cannot
+declare a reason. Forced closure and flight are rejected. Dying, unrecorded dead,
+conditions, ongoing effects, reactions, areas, transforms and other unmigrated
+sidecars are unsupported. Loot has no admitted snapshot/operation representation:
+this slice supports only the Legacy projector's empty loot outcome and refuses a
+nonempty outcome. It does not generate or infer loot from defeated templates.
+
+The closed `CombatClose` delta includes the combat ID, `expected_ended=False`,
+`ended=True`, derived reason, strict deaths, party HP/positive Temporary HP,
+XP increments, expended-resource report and an explicitly empty loot tuple.
+HP, deaths and resource usage describe already committed input balances; the Host
+must **not apply them a second time**. XP increments and the ended transition are
+one atomic write guarded by the enclosing world fence and expected ended value.
+No absolute XP balance is invented. Event order appends exactly one typed
+`CombatEnded` after committed history. RNG state and input stream/version remain
+unchanged, without restoring the execution RNG. SM owns advancement policy.
+
+Legacy monster/NPC deaths retain `is_alive=True` at zero HP despite their death
+record. Closure adds explicit `DeathStateUpdate` operations to normalize these
+recorded deaths to false, before the close operation. Legacy attack/end APIs stay
+unchanged. Recorded Character deaths must already have `is_alive=False`. If both
+sides are dead, the shared Legacy victory priority is preserved and awards no XP
+to dead PCs. Re-evaluating identical input returns an identical proposal; closing
+an already-ended snapshot is rejected. Durable replay remains SM's receipt duty.
+
+SM must adopt wire `/2`, the `/6` evaluator pin, `combat.close` authorization and
+the new delta consumer; validate all expected values, references and invariant
+reports, then commit normalization, ended state, XP, RNG, ordered events, receipt
+and outbox together. Its existing attack-only consumer cannot accept this result
+unchanged. This removes the Engine closure dependency for the admitted subset;
+active-combat recovery across processes remains outside MVP. Tests compare the
+actual Legacy outcome/events, consume closure deltas independently, forbid registry
+and CombatHandle use, check repeated/invalid/versioned inputs and inject projector
+and Host-commit faults.

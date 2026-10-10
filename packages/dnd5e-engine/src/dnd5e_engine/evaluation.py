@@ -2,15 +2,17 @@
 
 import copy
 import random
-from typing import Literal, TypedDict
+from typing import TypedDict
 
 from dnd5e_srd_data import BundledAssetLoader
 from dnd5e_srd_data.loader import AssetLoader
 
 from dnd5e_engine import action_policy
 from dnd5e_engine import orchestrator as orch
+from dnd5e_engine.evaluation_closure import evaluate_closure
 from dnd5e_engine.evaluation_contracts import (
     CombatIntentPayload,
+    EvaluationVersion,
     ReadVersion,
     RuleError,
     RuleEvaluationRequest,
@@ -27,7 +29,7 @@ from dnd5e_engine.specs import GridScene
 
 
 class _ResultIdentity(TypedDict):
-    schema_version: Literal["engine-evaluation/1"]
+    schema_version: EvaluationVersion
     session_id: str
     command_id: str
     input_world_version: int
@@ -74,6 +76,11 @@ async def evaluate(
             ),
         ),
     )
+    if request.operation_kind == "combat.close":
+        closure = evaluate_closure(request, assets)
+        result = RuleEvaluationResult(**common, **closure)
+        result.verify_request(request)
+        return result
     if (
         request.operation_kind != "combat.intent"
         or not isinstance(request.state_snapshot, CombatSnapshot)

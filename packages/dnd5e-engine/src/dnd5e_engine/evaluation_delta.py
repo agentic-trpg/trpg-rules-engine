@@ -5,7 +5,12 @@ from typing import Annotated, Literal, Self
 from pydantic import Field, model_validator
 
 from dnd5e_engine.evaluation_base import EvaluationModel
-from dnd5e_engine.evaluation_state import ConditionRecord, DeathSaveRecord, MovementLedgerState
+from dnd5e_engine.evaluation_state import (
+    ClosureDeath,
+    ConditionRecord,
+    DeathSaveRecord,
+    MovementLedgerState,
+)
 from dnd5e_engine.outcome import DeathRecord
 
 
@@ -150,6 +155,27 @@ class DeathLedgerUpdate(EvaluationModel):
     records: tuple[DeathRecord, ...]
 
 
+class CombatClose(EvaluationModel):
+    """One atomic ended fence and XP increments, plus informational final balances.
+
+    HP/resources/deaths are already authoritative in the input snapshot. They
+    must not be paid/applied again. XP increments are new and apply only with
+    expected_ended=False and the enclosing world-version fence.
+    """
+
+    kind: Literal["combat.close"]
+    combat_id: Annotated[str, Field(min_length=1)]
+    expected_ended: Literal[False]
+    ended: Literal[True]
+    reason: Literal["victory", "defeat_tpk"]
+    deaths: tuple[ClosureDeath, ...]
+    residual_hp: dict[str, Annotated[int, Field(ge=0)]]
+    residual_temp_hp: dict[str, Annotated[int, Field(gt=0)]]
+    xp_awarded: dict[str, Annotated[int, Field(gt=0)]]
+    expended_resources: dict[str, dict[str, Annotated[int, Field(ge=0)]]]
+    loot_drops: tuple[()]  # No loot operation is admitted by this version.
+
+
 StateDeltaOperation = Annotated[
     HPDelta
     | TempHPSet
@@ -161,7 +187,8 @@ StateDeltaOperation = Annotated[
     | MovementLedgerUpdate
     | DamageSequenceUpdate
     | ProcessedDamageUpdate
-    | DeathLedgerUpdate,
+    | DeathLedgerUpdate
+    | CombatClose,
     Field(discriminator="kind"),
 ]
 

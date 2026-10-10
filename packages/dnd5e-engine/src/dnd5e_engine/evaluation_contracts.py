@@ -5,7 +5,7 @@ from typing import Annotated, Literal, Self
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from dnd5e_engine.evaluation_base import EvaluationModel
-from dnd5e_engine.evaluation_delta import StateDelta
+from dnd5e_engine.evaluation_delta import CombatClose, StateDelta
 from dnd5e_engine.evaluation_rng import RNGContext, RNGTransition
 from dnd5e_engine.evaluation_ruleset import RulesetBinding
 from dnd5e_engine.evaluation_state import CombatSnapshot, StateSnapshot
@@ -14,6 +14,13 @@ from dnd5e_engine.orchestrator import PlayerIntent
 from dnd5e_engine.types.checks import CheckRequest
 
 SCHEMA_VERSION = "engine-evaluation/1"
+EvaluationVersion = Literal["engine-evaluation/1", "engine-evaluation/2"]
+
+
+class CombatClosePayload(EvaluationModel):
+    """No caller-supplied end reason, reward or claimed death."""
+
+    kind: Literal["combat.close"]
 
 
 class CombatIntentPayload(PlayerIntent):
@@ -25,12 +32,12 @@ class CombatIntentPayload(PlayerIntent):
 
 
 class RuleEvaluationRequest(EvaluationModel):
-    schema_version: Literal["engine-evaluation/1"]
+    schema_version: EvaluationVersion
     session_id: Annotated[str, Field(min_length=1)]
     command_id: Annotated[str, Field(min_length=1)]
-    operation_kind: Literal["combat.intent", "rules.check"]
+    operation_kind: Literal["combat.intent", "rules.check", "combat.close"]
     actor_id: Annotated[str, Field(min_length=1)]
-    payload: CombatIntentPayload | CheckRequest
+    payload: CombatIntentPayload | CheckRequest | CombatClosePayload
     state_snapshot: StateSnapshot
     ruleset_binding: RulesetBinding
     rng_context: RNGContext
@@ -46,6 +53,13 @@ class RuleEvaluationRequest(EvaluationModel):
                 raise ValueError("combat.intent requires a combat snapshot")
             if self.payload.source_id is not None and self.payload.source_id != self.actor_id:
                 raise ValueError("payload source_id differs from actor_id")
+        elif self.operation_kind == "combat.close":
+            if self.schema_version != "engine-evaluation/2":
+                raise ValueError("combat.close requires engine-evaluation/2")
+            if not isinstance(self.payload, CombatClosePayload) or not isinstance(
+                self.state_snapshot, CombatSnapshot
+            ):
+                raise ValueError("combat.close requires a closure payload and combat snapshot")
         elif not isinstance(self.payload, CheckRequest) or self.payload.actor_id != self.actor_id:
             raise ValueError("rules.check requires a matching actor and typed check payload")
         return self
@@ -80,7 +94,7 @@ ProposedEvents = tuple[CombatEvent, ...]
 
 
 class RuleEvaluationResult(EvaluationModel):
-    schema_version: Literal["engine-evaluation/1"]
+    schema_version: EvaluationVersion
     session_id: Annotated[str, Field(min_length=1)]
     command_id: Annotated[str, Field(min_length=1)]
     input_world_version: Annotated[int, Field(ge=0)]
@@ -116,6 +130,10 @@ class RuleEvaluationResult(EvaluationModel):
                 raise ValueError("accepted forbids choice/error")
             if self.state_delta.expected_world_version != self.input_world_version:
                 raise ValueError("delta and result world versions differ")
+            if self.schema_version == "engine-evaluation/1" and any(
+                isinstance(op, CombatClose) for op in self.state_delta.operations
+            ):
+                raise ValueError("closure delta requires engine-evaluation/2")
         else:
             if (
                 self.state_delta is not None
@@ -134,11 +152,13 @@ class RuleEvaluationResult(EvaluationModel):
 
     def verify_request(self, request: RuleEvaluationRequest) -> None:
         if (
+            self.schema_version,
             self.session_id,
             self.command_id,
             self.input_world_version,
             self.input_ruleset_binding,
         ) != (
+            request.schema_version,
             request.session_id,
             request.command_id,
             request.state_snapshot.world_version,

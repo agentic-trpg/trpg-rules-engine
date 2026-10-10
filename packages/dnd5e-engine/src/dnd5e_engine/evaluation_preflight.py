@@ -31,7 +31,7 @@ def refused(status: Literal["rejected", "unsupported"], code: str, reason: str) 
     return AttackAdmission(status=status, error=RuleError(code=code, reason=reason))
 
 
-def snapshot_support_failure(snapshot: CombatSnapshot) -> str | None:
+def snapshot_support_failure(snapshot: CombatSnapshot, *, terminal: bool = False) -> str | None:
     state = snapshot.combat_state
     # Full dependencies remain in the DTO, even when this slice cannot execute them.
     unsupported = (
@@ -107,7 +107,9 @@ def snapshot_support_failure(snapshot: CombatSnapshot) -> str | None:
             or actor.action_grant_groups_spent
         ):
             return "actor effects, features or extended attack budgets are not migrated"
-        if actor.hp_current <= 0 or not actor.is_alive or actor.entity_id in state.dead_ids:
+        if not terminal and (
+            actor.hp_current <= 0 or not actor.is_alive or actor.entity_id in state.dead_ids
+        ):
             return "pre-existing dying/dead actors require lifecycle migration"
     return None
 

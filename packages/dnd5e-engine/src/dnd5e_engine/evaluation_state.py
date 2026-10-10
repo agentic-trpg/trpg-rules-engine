@@ -10,7 +10,7 @@ from typing import Annotated, Literal, Self
 
 from dnd5e_srd_data.schema.monster import CreatureSize, MonsterTraitMechanic
 from dnd5e_srd_data.schema.spell import Spell
-from pydantic import ConfigDict, Field, model_validator
+from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from dnd5e_engine.activities.conjuration import StatBlockMagnitudes, TransformSource
 from dnd5e_engine.effect_lifecycle import OngoingEffectLifecycle
@@ -34,6 +34,16 @@ class DeathSaveRecord(EvaluationModel):
     successes: Annotated[int, Field(ge=0, le=3)]
     failures: Annotated[int, Field(ge=0, le=3)]
     is_stable: bool
+
+
+class ClosureDeath(EvaluationModel):
+    """Strict boundary for the death records now admitted by combat.close."""
+
+    target_id: Annotated[str, Field(min_length=1)]
+    target_kind: Literal["character", "npc", "monster"]
+    location_id: Annotated[str, Field(min_length=1)]
+    reason: Literal["damage", "death_saves", "instant_kill"]
+    killer_id: str | None
 
 
 class ConditionRecord(EvaluationModel):
@@ -323,6 +333,20 @@ class CombatState(EvaluationModel):
     transforms: dict[str, TransformState]
     summons: dict[str, SummonState]
     summon_counts: dict[str, int]
+
+    @field_validator("deaths_recorded", mode="before")
+    @classmethod
+    def explicit_deaths(cls, value: object) -> object:
+        if isinstance(value, list):
+            return [
+                DeathRecord.model_validate(
+                    ClosureDeath.model_validate(
+                        record.model_dump() if isinstance(record, DeathRecord) else record
+                    ).model_dump()
+                )
+                for record in value
+            ]
+        return value
 
     @model_validator(mode="after")
     def turn_bounds(self) -> Self:

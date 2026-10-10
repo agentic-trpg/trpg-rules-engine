@@ -16,6 +16,7 @@ from dnd5e_engine.evaluation_contracts import (
     RuleEvaluationRequest,
     RuleEvaluationResult,
 )
+from dnd5e_engine.evaluation_effects import effect_state
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError, attack_delta
 from dnd5e_engine.evaluation_rng import RNGContext, RNGState
 from dnd5e_engine.evaluation_ruleset import RulesetBindingError, ruleset_binding
@@ -281,7 +282,7 @@ def test_preflight_boundaries_do_not_draw_or_change_snapshot(change):
         state.__dict__["ended"] = True
     elif change == "effect":
         request.state_snapshot.__dict__["effect_states"] = (
-            ActiveEffect(id="x", name="x", origin="x", target_id=HERO),
+            effect_state(ActiveEffect(id="x", name="x", origin="x", target_id=HERO)),
         )
     else:
         state.actor_zone[HERO] = "9,9"
@@ -329,7 +330,11 @@ def test_omission_guard_rejects_unrepresented_actor_combat_and_effect_changes():
     with pytest.raises(EvaluationInvariantError, match="combat changes"):
         attack_delta(before, after)
     after = before.model_copy(
-        update={"effect_states": (ActiveEffect(id="x", name="x", origin="x", target_id=HERO),)}
+        update={
+            "effect_states": (
+                effect_state(ActiveEffect(id="x", name="x", origin="x", target_id=HERO)),
+            )
+        }
     )
     with pytest.raises(EvaluationInvariantError, match="snapshot dependency"):
         attack_delta(before, after)

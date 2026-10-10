@@ -187,15 +187,16 @@ def test_every_damage_type_halves_once_without_rng(damage_type, amount, magical)
 @pytest.mark.parametrize(
     ("static", "sidecar", "expected"),
     [
-        ({}, {"vulnerabilities": ["poison"]}, 11),
-        ({"damage_vulnerabilities": ["poison"]}, {}, 11),
+        # SRD 5.2.1: Petrified resistance first, then vulnerability: (11 // 2) * 2.
+        ({}, {"vulnerabilities": ["poison"]}, 10),
+        ({"damage_vulnerabilities": ["poison"]}, {}, 10),
         ({"damage_immunities": ["poison"]}, {}, 0),
         ({"damage_vulnerabilities": ["poison"], "damage_immunities": ["poison"]}, {}, 0),
         ({}, {"immunities": ["poison"]}, 0),
         ({"damage_resistances": ["all"]}, {"resistances": ["all", "all"]}, 5),
     ],
 )
-def test_existing_modifier_order_and_nonstacking(static, sidecar, expected):
+def test_srd_modifier_order_and_nonstacking(static, sidecar, expected):
     _result, live, rng = _start(target_stats=static)
     target = _find_combatant(live, TARGET)
     ctx = _context(live)

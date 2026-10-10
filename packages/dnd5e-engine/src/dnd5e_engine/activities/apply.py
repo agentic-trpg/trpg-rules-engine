@@ -1,22 +1,13 @@
 """Damage application for the Activity resolver — partition by type, apply
 target-side vulnerability / resistance / immunity, emit ``DamageApplied``.
 
-MIRRORS, does not import from, ``effects/damage.py``:
+SRD 5.2.1 applies resistance first (halved, rounded down), then vulnerability
+(doubled); immunity yields zero. An ``"all"`` wildcard is honored in each list.
+Every valid type emits DamageApplied, including immune zero damage. All types
+in one hit share an instance ID and complete together through the typed callback.
 
-* Apply order is vulnerability ×2 → resistance //2 (integer floor) → immunity ⇒ 0,
-  matching ``_apply_resistance`` (the legacy ``do_resistances`` order). An ``"all"``
-  wildcard is honored in each list (SRD §Conditions/Petrified emits "all").
-* ``is_overkill`` mirrors ``effects/damage.py:192`` — ``final_amount >
-  target.hp_current`` (strictly greater).
-* The ``DamageApplied`` event is emitted UNCONDITIONALLY after applying
-  modifiers, exactly as ``effects/damage.py`` does: an immune type yields
-  ``DamageApplied(amount=0)``, never a suppressed event.
-
-Modifier sources differ from the effects path. ``effects/damage.py`` reads only
-the sidecar (``_read_passive_modifiers``); the Activity resolver MERGES the
-static ``Combatant`` lists (``damage_resistances`` / ``damage_immunities``) with
-the sidecar lists at ``ctx.passive_damage_modifiers[entity_id]``. Vulnerabilities
-have no static field on ``Combatant`` and come ONLY from the sidecar.
+The resolver merges static Combatant resistance/immunity lists with projected
+sidecars. Static vulnerabilities are supplied by the live projection sidecar.
 
 Unknown damage types (outside the SRD 13-type set) are logged with the
 ``damage_type_invalid`` marker and skipped — the rolled dict is keyed by free
@@ -45,7 +36,7 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 # SRD 5.1 §Damage Types — the closed 13-type set, sourced from the DamageType
-# Literal so the two never drift. Mirrors ``effects/damage.py:120``.
+# Literal so the two never drift.
 _SRD_DAMAGE_TYPES: Final[frozenset[str]] = frozenset(get_args(DamageType))
 
 # C22 — the SRD Bludgeoning / Piercing / Slashing triple. A magical source
@@ -121,7 +112,7 @@ def apply_damage(
     For each ``(damage_type, amount)``: validate the type against the SRD set
     (skip + log ``damage_type_invalid`` on miss), merge the static ``Combatant``
     resist/immune lists with the sidecar resist/immune/vuln lists, apply
-    vuln→resist→immune, compute ``is_overkill``, and emit ``DamageApplied``.
+    resist→vuln→immune, compute ``is_overkill``, and emit ``DamageApplied``.
 
     ``magical`` — the damage comes from a magic weapon (``Weapon.magical``) or
     a spell. SRD "resistance to Bludgeoning, Piercing, and Slashing from
@@ -271,15 +262,11 @@ def _apply_modifiers(
     immunities: set[str],
     vulnerabilities: set[str],
 ) -> int:
-    """Apply vuln (×2) → resist (//2 floor) → immune (⇒0) in the legacy evaluator order.
-
-    Mirrors ``effects/damage.py:_apply_resistance``. The ``"all"`` wildcard is
-    honored in each list (SRD §Conditions/Petrified resistance-to-all).
-    """
-    if damage_type in vulnerabilities or "all" in vulnerabilities:
-        amount *= 2
+    """SRD 5.2.1: resistance (//2), vulnerability (×2), immunity (zero)."""
     if damage_type in resistances or "all" in resistances:
         amount //= 2
+    if damage_type in vulnerabilities or "all" in vulnerabilities:
+        amount *= 2
     if damage_type in immunities or "all" in immunities:
         amount = 0
     return amount

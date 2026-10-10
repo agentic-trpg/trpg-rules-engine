@@ -3,6 +3,7 @@
 import copy
 from typing import Any
 
+from dnd5e_engine.evaluation_effects import effect_state
 from dnd5e_engine.evaluation_state import (
     CharacterState,
     CombatSnapshot,
@@ -49,6 +50,7 @@ def capture_combat_snapshot(
         or live.reaction_resolution_depth
         or live.undead_fortitude_holds
         or live.lifecycle_damage
+        or live.character_damage_instances
     ):
         raise ValueError("cannot capture an in-flight execution boundary")
     actors = tuple(character_state(live, actor) for actor in live.initiative)
@@ -134,7 +136,7 @@ def capture_combat_snapshot(
         world_version=world_version,
         character_states=actors,
         effect_states=tuple(
-            copy.deepcopy(effect) for effects in live.active_effects.values() for effect in effects
+            effect_state(effect) for effects in live.active_effects.values() for effect in effects
         ),
         scene_state=SceneState(
             scene_id=live.scene_location_id,

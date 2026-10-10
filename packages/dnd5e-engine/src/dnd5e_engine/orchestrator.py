@@ -3103,6 +3103,12 @@ def _take_legendary_action(live: _LiveCombat, monster: Combatant) -> None:
 # ── Internal live-combat state ──────────────────────────────────────────────
 
 
+@dataclass(frozen=True)
+class _CharacterDamageInstance:
+    hp_before: int
+    event: DamageApplied
+
+
 @dataclass
 class _LiveCombat:
     """Per-combat state held by the orchestrator.
@@ -3236,6 +3242,11 @@ class _LiveCombat:
     # Explicit canonical metadata; full identity owns every registration.
     effect_lifecycles: dict[EffectIdentity, OngoingEffectLifecycle] = field(default_factory=dict)
     lifecycle_damage: dict[tuple[str, str], int] = field(default_factory=dict)
+    # Transient until the shared damage-instance completion callback. A
+    # character's zero-HP outcome uses the entire hit, across damage types.
+    character_damage_instances: dict[tuple[str, str], _CharacterDamageInstance] = field(
+        default_factory=dict
+    )
     # Per-call event subscribers — ``start_combat`` and ``end_combat`` push a
     # local list's ``append`` here to capture events emitted during their
     # body, then pop it on return. This is how those entry points surface
@@ -5064,6 +5075,11 @@ def _emit_apply_damage(live: _LiveCombat, event: DamageApplied) -> None:
     tracked = live.tracked_hp.get(event.target_id)
     if tracked is None:
         return
+    if event.target_id in live.party_ids and event.damage_instance_id is not None:
+        live.character_damage_instances.setdefault(
+            (event.target_id, event.damage_instance_id),
+            _CharacterDamageInstance(hp_before=tracked, event=event),
+        )
     # Temp HP absorbs first (SRD §Temporary Hit Points).
     temp = live.tracked_temp_hp.get(event.target_id, 0)
     remaining = event.amount
@@ -5168,7 +5184,10 @@ def _emit_apply_damage(live: _LiveCombat, event: DamageApplied) -> None:
             # concentrating (the SRD is silent; a host can drop it).
             _leave_roster(live, event.target_id, "zero_hp")
         elif event.target_id in live.party_ids:
-            _apply_zero_hp_to_character(live, event, hp_before=tracked, damage_after_temp=remaining)
+            if event.damage_instance_id is None:
+                _apply_zero_hp_to_character(
+                    live, event, hp_before=tracked, damage_after_temp=remaining
+                )
         else:
             # SRD 5.2 "Monster Death" — a monster dies the instant it drops to
             # 0 HP. Recursion guard: _emit re-enters here for the Death, but
@@ -5179,6 +5198,20 @@ def _emit_apply_damage(live: _LiveCombat, event: DamageApplied) -> None:
             _record_death(live, death_event, killer_id=killer)
             live.event_log.append(death_event)
             live.event_queue.put_nowait(death_event)
+
+
+def _complete_character_damage_instance(
+    live: _LiveCombat, target_id: str, instance_id: str, damage_after_temp: int
+) -> None:
+    pending = live.character_damage_instances.pop((target_id, instance_id), None)
+    if (
+        pending is not None
+        and live.tracked_hp.get(target_id, 1) <= 0
+        and target_id not in live.dead_ids
+    ):
+        _apply_zero_hp_to_character(
+            live, pending.event, hp_before=pending.hp_before, damage_after_temp=damage_after_temp
+        )
 
 
 def _apply_zero_hp_to_character(

@@ -10,11 +10,12 @@ from typing import Annotated, Literal, Self
 
 from dnd5e_srd_data.schema.monster import CreatureSize, MonsterTraitMechanic
 from dnd5e_srd_data.schema.spell import Spell
-from pydantic import Field, model_validator
+from pydantic import ConfigDict, Field, model_validator
 
 from dnd5e_engine.activities.conjuration import StatBlockMagnitudes, TransformSource
 from dnd5e_engine.effect_lifecycle import OngoingEffectLifecycle
 from dnd5e_engine.evaluation_base import EvaluationModel
+from dnd5e_engine.evaluation_effects import EffectState
 from dnd5e_engine.events import CombatEvent, DamageType
 from dnd5e_engine.movement import MovementLedger
 from dnd5e_engine.outcome import DeathRecord
@@ -25,7 +26,7 @@ from dnd5e_engine.timed_activities import PendingTimedActivity
 from dnd5e_engine.types.checks import HelpCheckGrant
 from dnd5e_engine.types.combat import Combatant, FightingStyle, MonsterActionUses, WornArmor
 from dnd5e_engine.types.conditions import ConditionScope
-from dnd5e_engine.types.effects import ActiveEffect, ActiveEffectDuration
+from dnd5e_engine.types.effects import ActiveEffectDuration
 from dnd5e_engine.types.objects import CombatObject
 
 
@@ -62,6 +63,10 @@ class MovementModesState(EvaluationModel):
 
 class MovementLedgerState(MovementLedger):
     """Boundary fields cannot silently become a fresh turn's default ledger."""
+
+    model_config = ConfigDict(
+        extra="forbid", frozen=True, strict=True, revalidate_instances="always"
+    )
 
     spent_ft: Annotated[int, Field(ge=0)] = Field(...)
     distance_ft: Annotated[int, Field(ge=0)] = Field(...)
@@ -337,7 +342,7 @@ class SnapshotBase(EvaluationModel):
     session_id: Annotated[str, Field(min_length=1)]
     world_version: Annotated[int, Field(ge=0)]
     character_states: tuple[CharacterState, ...]
-    effect_states: tuple[ActiveEffect, ...]
+    effect_states: tuple[EffectState, ...]
     scene_state: SceneState
 
     @model_validator(mode="after")

@@ -11,7 +11,7 @@ See [the complete state inventory](stateless-evaluation-inventory.md).
 Import contracts from `dnd5e_engine.evaluation_contracts`, snapshot types from
 `evaluation_state`, operations from `evaluation_delta`, and RNG types from
 `evaluation_rng`. Local versions are `engine-evaluation/1`, `engine-snapshot/1`
-and final evaluator `dnd5e-evaluation/4`. Required nullable fields must still be present;
+and current evaluator `dnd5e-evaluation/5`. Required nullable fields must still be present;
 empty collections explicitly attest empty state. Unknown envelope/operation fields
 and unknown discriminators fail schema validation. Legacy models are not changed.
 
@@ -193,8 +193,8 @@ and RNG pin, evaluate outside the transaction, then compare world/rules/RNG vers
 and every expected delta value before applying the entire result atomically. Tests
 already apply the full typed delta to PC and NPC snapshots and compare Legacy.
 SQLite atomicity, durable idempotency, receipts, event IDs/sequences and Outbox remain
-SM work. Cross-repository ABI adoption requires review. The final evaluator revision
-is bumped to `/4` for this executable slice; future semantic changes must change the
+SM work. Cross-repository ABI adoption requires review. The Batch 4 evaluator revision
+was bumped to `/4` for this executable slice; future semantic changes must change the
 revision. Wire schema versions and RNG stream advancement are independent of it.
 
 Batch 4 validation from `32d10d6d80c93e62fed7440f938e1b756e8812a7`: 136 targeted
@@ -207,3 +207,32 @@ and thresholds. Two earlier Full attempts were cancelled during development and
 are not passing evidence. Missing-weapon choices now include only admitted weapons;
 when all carried weapons require unsupported mechanics the result is unsupported,
 and availability is unknown without execution RNG restoration.
+
+## Independent review corrections
+
+The follow-up evaluator revision `/5` fixes two shared damage rules, so both Legacy
+and stateless execution change together. SRD 5.2.1 applies resistance before
+vulnerability: seven damage with both becomes six after rounding. Character zero-HP
+handling now waits for the existing typed whole-instance callback and uses the
+sum after Temporary Hit Point absorption. An eight Slashing plus five Fire hit
+against one remaining HP and a ten-HP maximum causes instant death, without an
+intermediate Unconscious event or a spurious next-turn death-save RNG draw.
+
+The new `character_damage_instances` map is execution scratch, not retained state.
+It captures pre-hit HP and the representative typed event, is cleared at completion
+or actor departure, participates in Legacy transaction rollback, and prevents
+snapshot capture while a hit is incomplete. Separate hits retain separate IDs.
+
+Effects now use the explicit `evaluation_effects.EffectState` DTO family instead
+of Legacy authoring models. Every effect, duration, change, action policy, captured
+lifecycle and child-effect field must be supplied, including nulls and empty values.
+Nested values are strict and instances are revalidated; status serialization is
+deterministic. Movement ledgers also reject coercible numeric strings. The internal
+capture helper materializes existing Legacy values; evaluate never fills SM gaps.
+The wire versions remain `/1`, enforcing their documented explicit-field boundary.
+
+This correction does not admit complex Effect, Spell, Reaction, Area, Object or
+timed execution. Other retained complex Legacy records still need explicit nested
+DTO review before those capabilities can be admitted. Their presence continues to
+return unsupported before execution RNG or payment; schema acceptance alone is not
+evidence of a complete complex-state execution contract.

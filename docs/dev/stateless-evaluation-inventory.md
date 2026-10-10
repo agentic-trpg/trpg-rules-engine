@@ -113,6 +113,14 @@ Declaration locations pin the source of each field. A fields must be serialized 
 excluded by an explicit unsupported input profile. D fields need their stated source
 and deterministic rebuilding. E fields are recreated and never cross the boundary.
 
+### `_CharacterDamageInstance` — `orchestrator.py`
+
+This follow-up scratch record exists only between typed damage emission and the
+shared instance-completion callback. Both fields are E: `hp_before` captures the
+pre-hit tracked HP; `event` retains the first DamageApplied for source/critical-hit
+metadata. `_emit_apply_damage` creates it; `_complete_character_damage_instance`
+consumes it; departure clears it. No RNG, loader lookup or retained state is added.
+
 ### `_LiveCombat` — `orchestrator.py`
 
 | Field | Class | Declaration / recovery source |
@@ -162,6 +170,7 @@ and deterministic rebuilding. E fields are recreated and never cross the boundar
 | `conditions_by_effect` | A | `orchestrator.py:3235`; explicit retained field; initialization and rule folds own writes |
 | `effect_lifecycles` | A | `orchestrator.py:3237`; explicit retained field; initialization and rule folds own writes |
 | `lifecycle_damage` | E | `orchestrator.py:3238`; private per-call scratch or delivery object |
+| `character_damage_instances` | E | `orchestrator.py:3247`; captures pre-hit HP and first typed damage event until the shared whole-instance completion callback; never serialized |
 | `event_listeners` | E | `orchestrator.py:3244`; private per-call scratch or delivery object |
 | `pending_reactions` | A | `orchestrator.py:3248`; explicit retained field; initialization and rule folds own writes |
 | `active_reaction_responses` | A | `orchestrator.py:3249`; explicit retained field; initialization and rule folds own writes |
@@ -520,7 +529,8 @@ a name can show a same-named DTO consumer; verify the receiver at the linked loc
 | `concentration_rounds_remaining` | `live_effect_lifecycle.py:79 (forget_effect)`; `orchestrator.py:3944 (_drop_concentration)`; `orchestrator.py:6563 (_record_effect_lifecycle_links)` | `orchestrator.py:6734 (_hook_concentration_expiry)`; `orchestrator.py:8918 (_purge_entity_state)` |
 | `conditions_by_effect` | `orchestrator.py:4061 (_release_one_grapple_effect)`; `orchestrator.py:5330 (_attach_effect_statuses)`; `orchestrator.py:5371 (_remove_condition_sources)` | `live_effect_lifecycle.py:35 (register_effect)`; `orchestrator.py:3906 (_drop_concentration)`; `orchestrator.py:5369 (_remove_condition_sources)` |
 | `effect_lifecycles` | `live_effect_lifecycle.py:123 (observe_modifier_consumption)`; `live_effect_lifecycle.py:199 (run_repeats)`; `live_effect_lifecycle.py:39 (register_effect)` | `live_effect_lifecycle.py:116 (observe_modifier_consumption)`; `live_effect_lifecycle.py:136 (expire_effect)`; `live_effect_lifecycle.py:192 (run_repeats)` |
-| `lifecycle_damage` | `live_effect_lifecycle.py:247 (record_damage)`; `live_effect_lifecycle.py:251 (damage_instance_completed)`; `live_effect_lifecycle.py:273 (actor_departed)` | `live_effect_lifecycle.py:247 (record_damage)`; `live_effect_lifecycle.py:272 (actor_departed)` |
+| `lifecycle_damage` | `live_effect_lifecycle.py:247 (record_damage)`; `live_effect_lifecycle.py:253 (damage_instance_completed)`; `live_effect_lifecycle.py:278 (actor_departed)` | `live_effect_lifecycle.py:247 (record_damage)`; `live_effect_lifecycle.py:253 (damage_instance_completed)` |
+| `character_damage_instances` | `orchestrator.py:5079 (_emit_apply_damage)`; `orchestrator.py:5206 (_complete_character_damage_instance)`; `live_effect_lifecycle.py:280 (actor_departed)` | `orchestrator.py:5206 (_complete_character_damage_instance)`; `evaluation_snapshot.py (in-flight capture guard)` |
 | `event_listeners` | `orchestrator.py:11774 (_execution_transaction)`; `orchestrator.py:11786 (_execution_transaction)`; `orchestrator.py:7889 (_start_combat)` | `orchestrator.py:11760 (_execution_transaction)`; `orchestrator.py:4868 (_emit)` |
 | `pending_reactions` | `live_reactions.py:242 (register_pending_reaction)`; `live_reactions.py:243 (register_pending_reaction)`; `live_reactions.py:357 (fire_reaction)` | `live_reactions.py:242 (register_pending_reaction)`; `live_reactions.py:350 (fire_reaction)`; `live_reactions.py:543 (observe_reaction_lifecycle)` |
 | `active_reaction_responses` | `live_reactions.py:470 (record_reaction_effects)`; `live_reactions.py:536 (observe_reaction_lifecycle)`; `live_reactions.py:544 (observe_reaction_lifecycle)` | `live_reactions.py:468 (record_reaction_effects)`; `live_reactions.py:507 (targeted_spell_opportunities)`; `live_reactions.py:538 (observe_reaction_lifecycle)` |

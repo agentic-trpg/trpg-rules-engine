@@ -16,11 +16,13 @@ from dnd5e_engine.evaluation_contracts import (
     RuleEvaluationResult,
 )
 from dnd5e_engine.evaluation_delta import HPDelta, StateDelta, StateDeltaOperation
+from dnd5e_engine.evaluation_effects import effect_state
 from dnd5e_engine.evaluation_rng import RNGContext, RNGState, RNGTransition
 from dnd5e_engine.evaluation_ruleset import RulesetBindingError, ruleset_binding, verify_ruleset
 from dnd5e_engine.evaluation_snapshot import capture_combat_snapshot
 from dnd5e_engine.evaluation_state import CombatSnapshot, NonCombatSnapshot, StateSnapshot
 from dnd5e_engine.specs import GridScene
+from dnd5e_engine.types.effects import ActiveEffect
 from tests.evaluation_support import FOE, HERO, WEAPON, synthetic_combat, synthetic_loader
 
 
@@ -192,12 +194,14 @@ def test_snapshot_dependency_closure_is_not_optional(mutation):
         state["current_turn_index"] = 99
     else:
         value["effect_states"] = [
-            {
-                "id": "effect:synthetic",
-                "name": "Synthetic",
-                "target_id": "missing:actor",
-                "origin": "synthetic",
-            }
+            effect_state(
+                ActiveEffect(
+                    id="effect:synthetic",
+                    name="Synthetic",
+                    target_id="missing:actor",
+                    origin="synthetic",
+                )
+            ).model_dump(mode="json")
         ]
     with pytest.raises(ValidationError):
         CombatSnapshot.model_validate_json(json.dumps(value))

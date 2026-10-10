@@ -248,7 +248,12 @@ def record_damage(live: _LiveCombat, target_id: str, instance_id: str | None, am
 
 
 def damage_instance_completed(live: _LiveCombat, damage: DamageInstanceContext) -> None:
+    from dnd5e_engine import orchestrator as orch
+
     amount = live.lifecycle_damage.pop((damage.target_id, damage.damage_instance_id), 0)
+    orch._complete_character_damage_instance(
+        live, damage.target_id, damage.damage_instance_id, amount
+    )
     if amount > 0:
         expire_damaged(live, damage.target_id)
 
@@ -271,3 +276,5 @@ def actor_departed(live: _LiveCombat, actor_id: str) -> None:
             expire_effect(live, identity, "remove_ieffect")
     for key in [key for key in live.lifecycle_damage if key[0] == actor_id]:
         live.lifecycle_damage.pop(key, None)
+    for key in [key for key in live.character_damage_instances if key[0] == actor_id]:
+        live.character_damage_instances.pop(key, None)

@@ -7,6 +7,7 @@ from pydantic_core import to_json
 
 from dnd5e_engine.evaluation_base import EvaluationModel
 from dnd5e_engine.evaluation_delta import StateDelta
+from dnd5e_engine.evaluation_resources import HitDieSpend
 from dnd5e_engine.evaluation_rng import RNGContext, RNGTransition
 from dnd5e_engine.evaluation_ruleset import RulesetBinding
 from dnd5e_engine.evaluation_state import CombatSnapshot, StateSnapshot
@@ -22,8 +23,8 @@ from dnd5e_engine.intents import PlayerIntent
 from dnd5e_engine.rules.skills import Skill
 from dnd5e_engine.types.checks import CheckRequest, GrantedDie
 
-SCHEMA_VERSION = "engine-evaluation/11"
-EvaluationVersion = Literal["engine-evaluation/11"]
+SCHEMA_VERSION = "engine-evaluation/12"
+EvaluationVersion = Literal["engine-evaluation/12"]
 
 
 class ItemUsePayload(EvaluationModel):
@@ -64,6 +65,19 @@ class SavePayload(EvaluationModel):
     is_magical: bool
 
 
+class RestPayload(EvaluationModel):
+    kind: Literal["rules.rest"]
+    target_id: Annotated[str, Field(min_length=1)]
+    rest_type: Literal["short", "long"]
+    hit_dice: tuple[HitDieSpend, ...]
+
+    @model_validator(mode="after")
+    def unique_spend(self) -> Self:
+        if len({s.pool_id for s in self.hit_dice}) != len(self.hit_dice):
+            raise ValueError("a rest must name each spent Hit Dice pool once")
+        return self
+
+
 class CombatClosePayload(EvaluationModel):
     """No caller-supplied end reason, reward or claimed death."""
 
@@ -83,10 +97,17 @@ class RuleEvaluationRequest(EvaluationModel):
     session_id: Annotated[str, Field(min_length=1)]
     command_id: Annotated[str, Field(min_length=1)]
     operation_kind: Literal[
-        "combat.intent", "rules.check", "combat.close", "combat.item", "rules.save"
+        "combat.intent", "rules.check", "combat.close", "combat.item", "rules.save", "rules.rest"
     ]
     actor_id: Annotated[str, Field(min_length=1)]
-    payload: CombatIntentPayload | CheckPayload | CombatClosePayload | ItemUsePayload | SavePayload
+    payload: (
+        CombatIntentPayload
+        | CheckPayload
+        | CombatClosePayload
+        | ItemUsePayload
+        | SavePayload
+        | RestPayload
+    )
     state_snapshot: StateSnapshot
     ruleset_binding: RulesetBinding
     rng_context: RNGContext
@@ -96,6 +117,10 @@ class RuleEvaluationRequest(EvaluationModel):
     def strict_check_payload(cls, value: object, info: ValidationInfo) -> object:
         if info.mode == "json" and info.data.get("operation_kind") == "combat.intent":
             return CombatIntentPayload.model_validate_json(to_json(value))
+        if info.data.get("operation_kind") == "rules.rest":
+            if info.mode == "json":
+                return RestPayload.model_validate_json(to_json(value))
+            return RestPayload.model_validate(value)
         if info.data.get("operation_kind") == "rules.save":
             if info.mode == "json":
                 return SavePayload.model_validate_json(to_json(value))
@@ -111,6 +136,10 @@ class RuleEvaluationRequest(EvaluationModel):
     def operation_payload(self) -> Self:
         if self.session_id != self.state_snapshot.session_id:
             raise ValueError("request and snapshot session identities differ")
+        if self.operation_kind == "rules.rest":
+            if not isinstance(self.payload, RestPayload) or self.payload.target_id != self.actor_id:
+                raise ValueError("rules.rest requires the actual resting actor")
+            return self
         if self.operation_kind == "rules.save":
             if not isinstance(self.payload, SavePayload) or self.payload.target_id != self.actor_id:
                 raise ValueError("rules.save requires the real saving actor as target")

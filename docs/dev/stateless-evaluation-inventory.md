@@ -22,7 +22,7 @@ version/migration details are in [stateless evaluation](stateless-evaluation.md)
 
 ## Current stabilization additions
 
-Current snapshots are version `/7` only, with precisely CombatSnapshot and
+Current snapshots are version `/8` only, with precisely CombatSnapshot and
 NonCombatSnapshot discriminators. Both require InventoryState(entries=...),
 strict owner/instance closure and complete CharacterStateV2 equipment. Older snapshot
 versions and the third combat_inventory context are rejected explicitly; no empty
@@ -786,3 +786,20 @@ Canonical clause overrides, time-varying lineage, finite modifiers and resource-
 dependent saves are refused before draw. Shared roll_save and modifier projection
 replace Legacy hydration on this bounded successful path. General live_save_modifiers,
 reaction/concentration/resource save chains remain in the historical inventory.
+
+
+## R16 typed resource inventory
+
+Both Snapshot scenes require an explicit nullable ResourceState. Non-null pools have
+closed Hit Dice / spell-slot / Pact-slot / feature-use kinds with real owner, stable
+identity, current and maximum; Hit Dice additionally bind canonical class/die facts.
+InventoryEntry instances and combat action budgets retain separate contracts. Actor
+slot/spent maps must equal their typed pool mirrors; they are never a second authority.
+Null is an unavailable closure, not a fabricated empty capacity, and rest refuses it.
+
+Bounded Short Rest reuses resolve_short_rest, recover_feature_uses and healing_balance.
+ResourceUpdate preserves identity/capacity and guards full old/new values plus signed
+amount; slot/feature mirror and HP writes commit together with typed RestResolved,
+HealingApplied and RNG proposals. Real Second Wind, HD consumption and Pact recovery
+execute without live resource containers. Long Rest, general item/feature recovery,
+rest-modifying effects and world time remain unmigrated or upper-layer responsibilities.

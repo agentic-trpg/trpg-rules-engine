@@ -15,7 +15,7 @@ from typing import Annotated, Literal
 
 from dnd5e_srd_data.schema.common import ReactionTriggerKind
 from dnd5e_srd_data.schema.environment import EnvironmentalSpec
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from dnd5e_engine.movement import MovementMode
 from dnd5e_engine.spell_execution import ExecutionClass, ExecutionFailure
@@ -924,6 +924,31 @@ class LegendaryResistanceUsed(BaseModel):
     uses_remaining: int
 
 
+class RestSpend(BaseModel):
+    model_config = {"extra": "forbid", "frozen": True}
+    pool_id: str = Field(min_length=1)
+    die_size: Literal[6, 8, 10, 12]
+    amount: int = Field(ge=1)
+    healing_rolls: tuple[int, ...]
+
+    @model_validator(mode="after")
+    def roll_count(self) -> RestSpend:
+        if len(self.healing_rolls) != self.amount or any(n < 1 for n in self.healing_rolls):
+            raise ValueError("rest roll evidence must match spent dice")
+        return self
+
+
+class RestResolved(BaseModel):
+    model_config = {"extra": "forbid", "frozen": True}
+    type: Literal["rest_resolved"] = "rest_resolved"
+    actor_id: str
+    rest_type: Literal["short"]
+    hit_dice: tuple[RestSpend, ...]
+    pact_slots_restored: dict[Annotated[int, Field(ge=1, le=9)], Annotated[int, Field(ge=0)]]
+    feature_uses_restored: dict[Annotated[str, Field(min_length=1)], Annotated[int, Field(ge=0)]]
+    hp_regained: int = Field(ge=0)
+
+
 CombatEvent = Annotated[
     RoundStarted
     | RoundEnded
@@ -935,6 +960,7 @@ CombatEvent = Annotated[
     | AttackRiderTriggered
     | EffectModifiersConsumed
     | SaveRolled
+    | RestResolved
     | CheckRolled
     | DamageApplied
     | HealingApplied
@@ -989,6 +1015,7 @@ ALL_COMBAT_EVENT_TYPES: tuple[type[BaseModel], ...] = (
     AttackRiderTriggered,
     EffectModifiersConsumed,
     SaveRolled,
+    RestResolved,
     CheckRolled,
     DamageApplied,
     HealingApplied,
@@ -1078,6 +1105,8 @@ __all__ = [
     "ReactionTriggered",
     "RechargeRolled",
     "RequiredSense",
+    "RestResolved",
+    "RestSpend",
     "RiderResourceSpent",
     "RoundEnded",
     "RoundStarted",

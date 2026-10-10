@@ -21,6 +21,7 @@ from dnd5e_engine.evaluation_items import evaluate_item
 from dnd5e_engine.evaluation_movement import evaluate_movement
 from dnd5e_engine.evaluation_preflight import prepare_attack
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError, attack_delta
+from dnd5e_engine.evaluation_rest import evaluate_rest
 from dnd5e_engine.evaluation_rng import RNGTransition
 from dnd5e_engine.evaluation_ruleset import RulesetBinding, verify_ruleset
 from dnd5e_engine.evaluation_saves import evaluate_save
@@ -64,6 +65,10 @@ async def evaluate(
     )
     if request.operation_kind == "combat.item":
         result = RuleEvaluationResult(**common, **await evaluate_item(request, assets))
+        result.verify_request(request)
+        return result
+    if request.operation_kind == "rules.rest":
+        result = RuleEvaluationResult(**common, **evaluate_rest(request, assets))
         result.verify_request(request)
         return result
     if request.operation_kind == "rules.save":

@@ -22,6 +22,7 @@ def attack_delta(
         or before.world_version != after.world_version
         or before.effect_states != after.effect_states
         or before.inventory_state != after.inventory_state
+        or before.resource_state != after.resource_state
         or before.scene_state != after.scene_state
         or tuple(a.entity_id for a in before.character_states)
         != tuple(a.entity_id for a in after.character_states)

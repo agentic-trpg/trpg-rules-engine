@@ -5,6 +5,7 @@ from typing import Annotated, Literal, Self
 from pydantic import Field, model_validator
 
 from dnd5e_engine.evaluation_base import EvaluationModel
+from dnd5e_engine.evaluation_resources import ResourcePool
 from dnd5e_engine.evaluation_state import (
     ClosureDeath,
     CombatSetupState,
@@ -262,6 +263,27 @@ class CombatCreationCandidate(EvaluationModel):
         return self
 
 
+class ResourceUpdate(EvaluationModel):
+    kind: Literal["resource.update"]
+    owner_id: Annotated[str, Field(min_length=1)]
+    pool_id: Annotated[str, Field(min_length=1)]
+    expected: ResourcePool
+    value: ResourcePool
+    amount: int
+
+    @model_validator(mode="after")
+    def owned_transition(self) -> Self:
+        if (
+            self.owner_id != self.expected.owner_id
+            or self.pool_id != self.expected.pool_id
+            or self.expected.model_dump(exclude={"current"})
+            != self.value.model_dump(exclude={"current"})
+            or self.expected.current + self.amount != self.value.current
+        ):
+            raise ValueError("resource update changes identity/capacity or has invalid arithmetic")
+        return self
+
+
 StateDeltaOperation = Annotated[
     HPDelta
     | TempHPSet
@@ -277,7 +299,8 @@ StateDeltaOperation = Annotated[
     | DeathLedgerUpdate
     | CombatClose
     | InventoryConsume
-    | CombatCreationCandidate,
+    | CombatCreationCandidate
+    | ResourceUpdate,
     Field(discriminator="kind"),
 ]
 

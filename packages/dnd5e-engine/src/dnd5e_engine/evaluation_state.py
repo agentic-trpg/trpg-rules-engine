@@ -16,6 +16,7 @@ from dnd5e_engine.activities.conjuration import StatBlockMagnitudes, TransformSo
 from dnd5e_engine.effect_lifecycle import OngoingEffectLifecycle
 from dnd5e_engine.evaluation_base import EvaluationModel
 from dnd5e_engine.evaluation_effects import EffectState
+from dnd5e_engine.evaluation_resources import FeatureResource, ResourceState, SlotResource
 from dnd5e_engine.events import CombatEvent, DamageType
 from dnd5e_engine.movement import MovementLedger
 from dnd5e_engine.outcome import DeathRecord
@@ -404,10 +405,11 @@ class InventoryState(EvaluationModel):
 
 
 class SnapshotBase(EvaluationModel):
-    snapshot_schema_version: Literal["engine-snapshot/7"]
+    snapshot_schema_version: Literal["engine-snapshot/8"]
     session_id: Annotated[str, Field(min_length=1)]
     world_version: Annotated[int, Field(ge=0)]
     character_states: tuple[CharacterStateV2, ...]
+    resource_state: ResourceState | None
     effect_states: tuple[EffectState, ...]
     inventory_state: InventoryState
     scene_state: SceneState
@@ -422,6 +424,36 @@ class SnapshotBase(EvaluationModel):
             raise ValueError("duplicate effect identity or absent effect target")
         if any(entry.owner_id not in ids for entry in self.inventory_state.entries):
             raise ValueError("inventory owner is absent from snapshot")
+        return self
+
+    @model_validator(mode="after")
+    def owned_resource_closure(self) -> Self:
+        if self.resource_state is None:
+            return self
+        actors = {a.entity_id: a for a in self.character_states}
+        if any(p.owner_id not in actors for p in self.resource_state.pools):
+            raise ValueError("resource owner is absent")
+        for actor in actors.values():
+            pools = [p for p in self.resource_state.pools if p.owner_id == actor.entity_id]
+            for kind, current in (
+                ("spell_slot", actor.spell_slots),
+                ("pact_slot", actor.pact_slots),
+            ):
+                if {
+                    p.level: p.current
+                    for p in pools
+                    if isinstance(p, SlotResource) and p.kind == kind
+                } != current:
+                    raise ValueError("slot resource component contradicts actor balance")
+            features = {
+                "feature_use:" + p.feature_slug: {"spent": p.maximum - p.current}
+                for p in pools
+                if isinstance(p, FeatureResource)
+            }
+            if features != {
+                k: v for k, v in actor.custom_counters.items() if k.startswith("feature_use:")
+            }:
+                raise ValueError("feature resource component contradicts actor spent balance")
         return self
 
 

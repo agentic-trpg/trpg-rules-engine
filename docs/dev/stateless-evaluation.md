@@ -11,10 +11,10 @@ The current local candidate versions are:
 
 | Contract | Current version | Replaces |
 | --- | --- | --- |
-| RuleEvaluationRequest / Result | `engine-evaluation/11` | `/1`–`/10` |
-| StateSnapshot | `engine-snapshot/7` | `/1`–`/6` |
-| Availability request/result | `engine-availability/6` | `/1`–`/5` |
-| RulesetBinding evaluator | `dnd5e-evaluation/17` | `/16` and earlier |
+| RuleEvaluationRequest / Result | `engine-evaluation/12` | `/1`–`/11` |
+| StateSnapshot | `engine-snapshot/8` | `/1`–`/7` |
+| Availability request/result | `engine-availability/7` | `/1`–`/6` |
+| RulesetBinding evaluator | `dnd5e-evaluation/18` | `/17` and earlier |
 
 Old envelopes, snapshots and results are explicitly rejected. There are no compatibility
 aliases for `InventoryCombatSnapshot`, `combat_inventory`, missing equipment or missing
@@ -60,6 +60,7 @@ remain OPEN. SM authenticates/authorizes the caller and approved write scope.
 | combat.intent | One ordinary PC/NPC weapon Attack, an exact reviewed stat-block AttackActivity, explicit plain Pass / End Turn, ordinary Walk, Action Dash / Disengage |
 | rules.check | Explicitly adjudicated ordinary noncombat ability/skill check |
 | rules.save | Explicit noncombat actor saving throw; six abilities and fixed DC |
+| rules.rest | Bounded noncombat Short Rest: explicit Hit Dice, Pact Slots and reviewed Second Wind recovery |
 | combat.item | Owned accessible single-use Potion of Healing, living self-drinker with declared free hand |
 | combat.close | Consistent terminal victory / TPK; no loot/effects/flight/forced end |
 
@@ -343,3 +344,41 @@ Standalone combat saves and magical source authorization remain bounded out; no
 system source_ref or rules.effect API is introduced. The shared pure save seam is
 available for separately admitted lifecycle calculations. Evaluation /11 and evaluator
 /17 are local candidates; Snapshot /7 and availability /6 remain unchanged.
+
+
+## R16 explicit resources and bounded Short Rest
+
+Snapshot /8 requires `resource_state: ResourceState | None` on both scene contexts.
+Null explicitly means the extra capacity/ownership closure is unavailable; it is not
+an empty pool, and rest cannot run with it. Existing admitted operations that do not
+read or pay these pools preserve it. Capture requires the caller to supply this value;
+Legacy runtime cannot invent missing Hit Dice or maxima. No third Snapshot context is
+introduced. Provided components validate owner identity, current/maximum bounds,
+unique mechanical pool identity and equality with retained actor slot/spent mirrors.
+Those mirrors are compatibility representations of the same supplied fact.
+
+Closed pool kinds distinguish class Hit Dice, ordinary spell slots, Pact Slots and
+feature uses. InventoryEntry independently owns each item instance/stack/charge fact;
+AttackBudgetState independently owns the combat action budget. They are not interchangeable
+counters. ResourceUpdate retains complete expected/new pool values, owner, pool identity
+and signed amount; it preserves capacity and identity. Applying a slot/feature update
+also updates its validated actor mirror in the same transaction. HPDelta, typed
+RestResolved/HealingApplied events and RNGTransition form one uncommitted unit.
+
+`rules.rest` requires the real resting actor, a typed Short/Long discriminator and
+ordered, unique pool-specific HitDieSpend values. The admitted Short Rest verifies
+class/die binding, full Hit Dice maxima/levels, real capacities, feature ownership and
+all costs before RNG. It calls the existing resolve_short_rest for each selected pool
+in request order, sharing its CON modifier and per-die minimum-one semantics, caps HP
+through the existing healing kernel, restores Pact Slots from supplied maxima, and
+preserves ordinary spell slots, inventory and action budgets. Reviewed Second Wind
+uses its pinned Short Rest recovery declaration and recover_feature_uses; its explicit
+maximum/current/spent facts are never inferred from a slug or default cap.
+
+Other feature/item recharge, rest-modifying effects/species/subclasses and Long Rest
+remain unsupported before draw. Engine decides no authorization, elapsed world time,
+scene/quest change or interruption. SM validates those conditions and atomically
+commits expected resource/HP writes, events, RNG and receipt. Repeated evaluation is
+deterministic; expected-value/version checks prevent a second application of old writes.
+No-draw/event-only version policies remain OPEN. Evaluation /12, Snapshot /8,
+availability /7 and evaluator /18 are local candidates, not a frozen Meta C-15 ABI.

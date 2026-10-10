@@ -33,6 +33,7 @@ def recapture(request, live):
         update={
             "state_snapshot": capture_combat_snapshot(
                 live,
+                resource_state=None,
                 inventory_state=InventoryState(entries=()),
                 grid=GridScene.model_validate(request.state_snapshot.scene_state.grid.model_dump()),
                 world_version=7,

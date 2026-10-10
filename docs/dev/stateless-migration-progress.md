@@ -49,14 +49,15 @@ classification applies only to the stated bounded capability, not its whole fami
 | Standalone saving throws | Fully migrated bounded NonCombat actor subset | **Yes, R15** | Shared actor_stats, condition projection and roll_save; six abilities, explicit DC/flags, permanent session auto-fail; no Legacy hydration |
 | Saves / skill checks overall | Partially migrated | Partially | Tools/senses, combat source/cover, effect and finite modifier consumption remain restricted |
 | Owned single-use self-healing consumable | Fully migrated bounded external contract | **Yes, R10** | `evaluation_items` → shared CombatComputation / HealActivity / item_rules; inventory/HP/budget/turn/events/RNG remain complete |
-| Inventory / resource payment overall | Partially migrated | No for general execution | Mandatory typed InventoryState; complete consume guard. Equip/transfer/recharge/ammunition/general pool/restore operations absent; Legacy slot/counter/rest machinery remains |
+| Inventory / resource payment overall | Partially migrated: owned consumable plus typed HD/Pact/Second Wind rest recovery | **Yes, R10/R16** for those slices; no for general execution | Mandatory typed InventoryState; complete consume guard. Equip/transfer/recharge/ammunition/general pool/restore operations absent; Legacy slot/counter/rest machinery remains |
 | Conditions / effects / concentration | Legacy Stateful Only for general inputs | No | Complete Snapshot records retained and refused; `effect_lifecycle`, `live_effect_lifecycle`, condition/concentration folds. Attack-produced unconscious/prone/death-save state is a bounded exception |
 | Spellcasting / Features | Legacy Stateful Only | No | `spell_execution`, `feature_runtime`, `live_features`, `live_spell_delivery`, `activities/cast`; existing repertoire/costs/timing/grants/riders remain, no evaluation entry |
 | Reaction / pending choice | Partially migrated choices only | Yes for draw-free choices; no for reactions | Weapon/missing-DC choices typed; `reactions`, `live_reactions`, `timed_activities` execution/windows/continuation remain Legacy; complex ABI OPEN |
 | Areas / environment / objects | Legacy Stateful Only | No | `persistent_areas`, `environment`, `combat_objects`, `ongoing_spell_activation`; state captured then refused; source/lifetime/geometry/history Delta missing |
 | Bounded victory / TPK closure | Fully migrated bounded external contract | **Yes, R10** | `evaluation_closure` → shared outcome_rules on explicit values; XP/history/events and unchanged RNG |
 | Closure / outcome overall | Partially migrated | No | Flight/forced end/effect handoff missing; loot generation and durable cross-combat effects were already Host/deferred gaps |
-| Rest / derivation | Legacy Stateful Only as evaluation operation | Pure algorithms already exist; no complete path | `rest`, `build_spec`, `build_party`; resource/HD/recovery envelope and Delta missing |
+| Bounded Short Rest | Fully migrated local subset | **Yes, R16** | Explicit HD/Pact/Second Wind ownership and capacities → shared rest kernels → closed resource/HP/events/RNG proposals |
+| Rest / derivation overall | Partially migrated | Pure algorithms retained; consumer/general recovery migration incomplete | Long Rest, other feature/item recovery, derivation and rest-modifying effects remain outside the admitted path |
 | General 3D / arbitrary narrative / precise interrupted resume | Unsupported / Post-MVP | Not applicable | Preserve original Host/Deferred boundaries and Meta MVP scope |
 
 Original capabilities remain in the canonical spell capability audit, reviewed data
@@ -152,7 +153,7 @@ Read-only observation: SM `4e5cc5ac2765be89f0b4164bc6923083539374c4`, branch
 `feat/sm-b14-npc-persistent-state`; dependency pin remains Engine/Data
 `602dcb8d448e670049427bbb751d6ed226005298`. Request builder uses evaluation `/1`/`/4`,
 Snapshot `/1`/`/2`; manifest accepts evaluator `/4`/`/8`. It cannot consume this branch's
-evaluation `/11`, Snapshot `/7`, availability `/6` and evaluator **`/17`**.
+evaluation `/12`, Snapshot `/8`, availability `/7` and evaluator **`/18`**.
 No SM file was changed and no SM tests/integration result are claimed.
 
 R10 changes only evaluator implementation binding `/11` → `/12`; strict external shapes
@@ -269,7 +270,7 @@ Required precombat timing/area/object facts refuse when nonempty, before RNG.
 
 Public combat.start/create source authorization and exact shared field mapping remain
 blocked C-16; this repository-local candidate is not a production SM integration.
-Current local versions: evaluation /9, Snapshot /6, availability /5, evaluator /15.
+R13 local versions at that boundary: evaluation /9, Snapshot /6, availability /5, evaluator /15.
 Legacy Bridge/Demo production behavior is preserved, not migrated or retired.
 
 ## Next four migration priorities after R13
@@ -323,3 +324,25 @@ cancellation leave inputs untouched. Missing targets, noncanonical clauses, cove
 features, active effects and finite-use save modifiers refuse before RNG. Snapshot
 /7 and availability /6 are unchanged; local evaluation /11 and evaluator /17 pin the
 new Actor operation. This does not migrate general saves, concentration or C-16.
+
+
+## R16 resource and rest migration
+
+R16 starts at R15 `315242732c3a34616e89cde834b0c4445c02592e`.
+Both dimensions are complete for the bounded Short Rest path: explicit typed Hit Dice,
+Pact Slots and Second Wind recovery with guarded resource/HP proposals and ordered
+RNG/events. The original rest algorithms were already pure. The removed execution
+dependency is the need to orchestrate their inputs and resource writeback through
+Legacy slot/custom-counter containers or manual Host-only result fragments. The new
+request reads only the supplied authoritative resource/actor components and proposes
+closed writes; it does not construct a new Stateful Runtime.
+
+Independent values and separately invoked original Rest/recovery resolvers verify
+mixed pool draw order, per-die minimum-one healing, HP caps, last units, actual SRD
+Fighter Second Wind recovery, Pact versus ordinary slots, replay/concurrency and
+pre-draw unsupported dependencies. Expected-value consumers, stale versions and
+post-roll/post-projection faults prove HP/resources/RNG remain atomic proposals.
+Explicit item-instance and action-budget ownership remain separate. Long Rest and
+general feature/item/effect recovery are restricted; world time and rest permission
+remain SM work. Local versions are evaluation /12, Snapshot /8, availability /7,
+evaluator /18; shared encodings and complex Delta ABI remain OPEN.

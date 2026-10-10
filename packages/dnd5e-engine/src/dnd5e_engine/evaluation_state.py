@@ -285,6 +285,7 @@ class CombatState(EvaluationModel):
     movement_ledgers: dict[str, MovementLedgerState]
     opportunity_attack_weapons: dict[str, str]
     monster_slug_by_entity: dict[str, str]
+    xp_value_by_entity: dict[str, Annotated[int, Field(ge=0)]]
     event_log: tuple[CombatEvent, ...]
     deaths_recorded: list[DeathRecord]
     dead_ids: set[str]
@@ -364,6 +365,10 @@ class CombatSnapshot(SnapshotBase):
             raise ValueError("snapshot sides reference missing actors")
         if set(state.movement_ledgers) != ids:
             raise ValueError("snapshot movement ledger closure is incomplete")
+        if not set(state.monster_slug_by_entity) <= ids:
+            raise ValueError("stat-block binding references an absent actor")
+        if not state.encounter_ids <= set(state.xp_value_by_entity) <= ids:
+            raise ValueError("snapshot Host XP closure is incomplete")
         for transform in state.transforms.values():
             if any(field not in CharacterState.model_fields for field in transform.replaced_fields):
                 raise ValueError("unknown transformed actor field")

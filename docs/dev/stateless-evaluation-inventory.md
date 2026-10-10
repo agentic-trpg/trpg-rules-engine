@@ -142,7 +142,7 @@ and deterministic rebuilding. E fields are recreated and never cross the boundar
 | `movement_ledgers` | A | `orchestrator.py:3146`; explicit retained field; initialization and rule folds own writes |
 | `opportunity_attack_weapons` | A | `orchestrator.py:3155`; explicit retained field; initialization and rule folds own writes |
 | `monster_slug_by_entity` | A | `orchestrator.py:3158`; explicit retained field; initialization and rule folds own writes |
-| `xp_value_by_entity` | D | `orchestrator.py:3161`; rebuild from actor/scene/rules/ordered retained evidence |
+| `xp_value_by_entity` | A | `orchestrator.py:3161`; Host EncounterMemberSpec overrides require explicit capture; outcome/XP consumer |
 | `event_log` | A | `orchestrator.py:3168`; explicit retained field; initialization and rule folds own writes |
 | `tracked_hp` | D | `orchestrator.py:3169`; rebuild from actor/scene/rules/ordered retained evidence |
 | `tracked_temp_hp` | D | `orchestrator.py:3170`; rebuild from actor/scene/rules/ordered retained evidence |

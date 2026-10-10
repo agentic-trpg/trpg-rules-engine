@@ -11,7 +11,7 @@ See [the complete state inventory](stateless-evaluation-inventory.md).
 Import contracts from `dnd5e_engine.evaluation_contracts`, snapshot types from
 `evaluation_state`, operations from `evaluation_delta`, and RNG types from
 `evaluation_rng`. Local versions are `engine-evaluation/1`, `engine-snapshot/1`
-and evaluator `dnd5e-evaluation/1`. Required nullable fields must still be present;
+and final evaluator `dnd5e-evaluation/4`. Required nullable fields must still be present;
 empty collections explicitly attest empty state. Unknown envelope/operation fields
 and unknown discriminators fail schema validation. Legacy models are not changed.
 
@@ -88,13 +88,13 @@ for no-consumption commits or promise replay across evaluator/data revisions.
 
 ## Supported operation matrix
 
-| Capability | Current support through Batch 3 |
+| Capability | Current support through Batch 4 |
 | --- | --- |
 | Typed request/result, Combat/NonCombat snapshot, closed attack Delta | Implemented and serialized |
 | Explicit RNG capture/restore/transition and effective corpus binding | Implemented |
 | Stateless evaluate / PC attack | Executable bounded basic weapon attack |
-| NPC explicit attack | Not implemented until Batch 4 |
-| Availability | Not implemented until Batch 4 |
+| NPC explicit attack | Executable bounded carried-weapon or exact stat-block action attack |
+| Availability | Independent read-only available / unavailable / unknown query |
 | Noncombat checks execution, Spell/Effect/Reaction migration | Not migrated |
 | SQLite commit, receipt, Outbox, LLM/controller authorization | SM/Host responsibility; outside this repository batch |
 
@@ -121,7 +121,7 @@ Legacy keeps its registry and transaction wrapper and calls the same supplied-co
 executor. Gate ordering, Action Policy, Activity Resolver, damage folding and turn
 continuation are shared. No attack/damage rule algorithm was copied.
 
-Admission currently allows one PC weapon Attack on one opposing living target on a
+Batch 3 admission allowed one PC weapon Attack on one opposing living target on a
 plain bright grid, with a known carried weapon, explicit range, ordinary typed attack
 activity and known damage types/formulas. Properties, mastery, active effects,
 conditions, classes/features, extended budgets, reactions, timing, areas, objects,
@@ -152,3 +152,58 @@ contract/baseline/attack tests passed. The requested local Full gate passed in
 isolated installation/HTTP checks passed using the verified Windows adapter.
 XP outcome hydration remains outside this attack slice; the NPC batch must retain
 Host-supplied XP values rather than assume all values are derivable from a template.
+
+## Explicit NPC and availability boundary (Batch 4)
+
+The same evaluate entry now admits NPC/Monster actors on their actual initiative
+turn. A carried ordinary weapon uses the same PC path. A stat_block_action_id must
+be a nonempty strict string matching exactly one action on that actor's supplied,
+rules-bound stat block. Names and descriptions are never used. One action-kind
+AttackActivity with explicit weapon classification, range in feet, ordinary damage
+parts and numeric bonuses is supported, including flat attack bonuses. Reserved
+Legacy Multiattack, multiple activities, recharge/limited uses, passive template
+traits, legendary/spellcasting mechanics and unreviewed activity state remain
+unsupported before execution RNG restoration. This path never drives Monster AI.
+Neutral canonical instant-duration encodings, single-target encodings and UI prompt
+metadata are admitted without inferring mechanics. Canonical Bandit scimitar and
+light-crossbow attacks pass complete Legacy/event/Delta/RNG differential tests.
+The broader corpus scan identifies 23 NPC action shapes under the current admission;
+that static count is not 23 independently executed acceptance tests. PC weapon
+properties/mastery remain unsupported; ordinary canonical PC equipment therefore
+needs further admission/delta work before a general MVP combat loop can use it.
+
+`ActionAvailabilityRequest` and `query_action_availability` live in
+`dnd5e_engine.evaluation_availability`. This distinct schema has no command_id or
+RNGContext. It calls the identical prepare_attack and checks context/RNG invariance;
+available means preflight succeeded on the returned snapshot version, unavailable
+means a known rule refusal, unknown means unsupported or an unresolved preflight
+choice. Schema/binding/internal errors stay exceptions. The result has a structured
+reason, actor/session identity, snapshot version and rules pin, with no delta,
+events, RNG transition or receipt. It does not authorize control of the actor.
+
+Snapshots now retain explicit Host XP for every encounter actor, including zero
+from Legacy's documented sparse-map default. This corrects the inventory's earlier
+Derived classification: a Host XP override cannot be reconstructed from CR. Actor,
+stat-block, movement and XP closure are validated. Entry points revalidate copied
+typed requests, including mutated payload source identities, before rule evaluation.
+
+This is sufficient to start **limited in-memory SM consumer tests**: validate the
+local schema, authorize actor and operation, obtain a complete snapshot plus rules
+and RNG pin, evaluate outside the transaction, then compare world/rules/RNG versions
+and every expected delta value before applying the entire result atomically. Tests
+already apply the full typed delta to PC and NPC snapshots and compare Legacy.
+SQLite atomicity, durable idempotency, receipts, event IDs/sequences and Outbox remain
+SM work. Cross-repository ABI adoption requires review. The final evaluator revision
+is bumped to `/4` for this executable slice; future semantic changes must change the
+revision. Wire schema versions and RNG stream advancement are independent of it.
+
+Batch 4 validation from `32d10d6d80c93e62fed7440f938e1b756e8812a7`: 136 targeted
+contract/baseline/attack/NPC tests passed; strict mypy checked 99 Engine source files.
+The final local Full gate passed in 476.77 seconds: tooling 24, data 631 passed /
+41 unavailable-input skips, Engine 7,007 (95.65% coverage), Bridge 139 (97.05%),
+Demo 53, all static/security/example/docs checks and isolated three-wheel / real
+Bridge HTTP smoke. The same verified Windows Makefile adapter preserved all checks
+and thresholds. Two earlier Full attempts were cancelled during development and
+are not passing evidence. Missing-weapon choices now include only admitted weapons;
+when all carried weapons require unsupported mechanics the result is unsupported,
+and availability is unknown without execution RNG restoration.

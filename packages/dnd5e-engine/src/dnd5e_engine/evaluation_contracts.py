@@ -2,7 +2,7 @@
 
 from typing import Annotated, Literal, Self
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from dnd5e_engine.evaluation_base import EvaluationModel
 from dnd5e_engine.evaluation_delta import StateDelta
@@ -18,6 +18,10 @@ SCHEMA_VERSION = "engine-evaluation/1"
 
 class CombatIntentPayload(PlayerIntent):
     """Reuse the legacy typed intent vocabulary; admission is evaluator-specific."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, revalidate_instances="always")
+
+    stat_block_action_id: Annotated[str, Field(strict=True, min_length=1)] | None = None
 
 
 class RuleEvaluationRequest(EvaluationModel):

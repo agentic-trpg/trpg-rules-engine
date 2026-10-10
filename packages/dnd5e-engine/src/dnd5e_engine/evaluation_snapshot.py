@@ -66,6 +66,7 @@ def capture_combat_snapshot(
         "summons",
         "timed_activities",
         "movement_ledgers",
+        "xp_value_by_entity",
     }
     value: dict[str, Any] = {
         name: copy.deepcopy(getattr(live, name))
@@ -87,6 +88,7 @@ def capture_combat_snapshot(
         )
     value.update(
         combat_id=combat_id,
+        xp_value_by_entity={key: live.xp_value_by_entity.get(key, 0) for key in live.encounter_ids},
         initiative_ids=tuple(actor.entity_id for actor in actors),
         timed_activities=TimedActivitiesState(
             pending=copy.deepcopy(live.timed_activities.pending),

@@ -58,7 +58,7 @@ async def evaluate(
     Schema/binding/internal exceptions propagate independently of rule status.
     Pass an immutable explicit loader for overlays; omitted loader is bundled data.
     """
-    request = copy.deepcopy(request)
+    request = RuleEvaluationRequest.model_validate(copy.deepcopy(request))
     assets = loader if loader is not None else BundledAssetLoader()
     verify_ruleset(request.ruleset_binding, assets)
     common: _ResultIdentity = dict(

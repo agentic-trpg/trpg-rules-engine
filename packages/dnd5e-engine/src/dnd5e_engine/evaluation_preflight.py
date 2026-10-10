@@ -47,7 +47,7 @@ def refused(status: Literal["rejected", "unsupported"], code: str, reason: str) 
 
 
 def snapshot_support_failure(
-    snapshot: CombatSnapshot, *, turn_lifecycle: bool = False
+    snapshot: CombatSnapshot, *, turn_lifecycle: bool = False, movement: bool = False
 ) -> str | None:
     state = snapshot.combat_state
     failure = death_consistency(snapshot, allow_dying=turn_lifecycle)
@@ -93,10 +93,10 @@ def snapshot_support_failure(
         return "every actor requires an explicit combat side"
     grid = snapshot.scene_state.grid
     if (
-        grid.blocked_cells
-        or grid.wall_segments
+        (grid.blocked_cells and not movement)
+        or (grid.wall_segments and not movement)
         or grid.cover_cells
-        or grid.difficult_terrain_cells
+        or (grid.difficult_terrain_cells and not movement)
         or grid.lighting
         or grid.obscurement_cells
         or grid.default_lighting != "bright"

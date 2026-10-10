@@ -8,7 +8,12 @@ class EvaluationInvariantError(RuntimeError):
     """Unexpected mechanical change outside the admitted closed delta vocabulary."""
 
 
-def attack_delta(before: CombatSnapshot, after: CombatSnapshot) -> delta.StateDelta:
+def attack_delta(
+    before: CombatSnapshot,
+    after: CombatSnapshot,
+    *,
+    position_paths: dict[str, tuple[str, ...]] | None = None,
+) -> delta.StateDelta:
     operations: list[delta.StateDeltaOperation] = []
     if (
         before.snapshot_kind != after.snapshot_kind
@@ -103,6 +108,27 @@ def attack_delta(before: CombatSnapshot, after: CombatSnapshot) -> delta.StateDe
         if getattr(old_state, name) != getattr(new_state, name)
     }
     combat = old_state.combat_id
+    paths = position_paths or {}
+    moved = {
+        actor_id
+        for actor_id, cell in old_state.actor_zone.items()
+        if new_state.actor_zone.get(actor_id) != cell
+    }
+    if old_state.actor_zone.keys() != new_state.actor_zone.keys() or set(paths) != moved:
+        raise EvaluationInvariantError("unrepresented combat changes: position/route")
+    for actor_id in sorted(moved):
+        operations.append(
+            delta.PositionUpdate(
+                kind="combat.position_update",
+                combat_id=combat,
+                scene_id=before.scene_state.scene_id,
+                actor_id=actor_id,
+                expected=old_state.actor_zone[actor_id],
+                value=new_state.actor_zone[actor_id],
+                path=paths[actor_id],
+            )
+        )
+    pending.discard("actor_zone")
     fields = tuple(delta.TurnState.model_fields)
     if pending.intersection(fields):
         operations.append(

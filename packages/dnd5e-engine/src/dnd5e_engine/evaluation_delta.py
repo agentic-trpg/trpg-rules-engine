@@ -133,6 +133,32 @@ class MovementLedgerUpdate(EvaluationModel):
     value: MovementLedgerState
 
 
+class PositionUpdate(EvaluationModel):
+    """One computed route, fenced by scene/combat/actor and the old cell."""
+
+    kind: Literal["combat.position_update"]
+    combat_id: Annotated[str, Field(min_length=1)]
+    scene_id: Annotated[str, Field(min_length=1)]
+    actor_id: Annotated[str, Field(min_length=1)]
+    expected: str
+    value: str
+    path: Annotated[tuple[str, ...], Field(min_length=2)]
+
+    @model_validator(mode="after")
+    def route_identity(self) -> Self:
+        from dnd5e_engine.spatial import canonical_cell_id
+
+        if (
+            self.path[0] != self.expected
+            or self.path[-1] != self.value
+            or self.expected == self.value
+        ):
+            raise ValueError("position route endpoints disagree")
+        if any(canonical_cell_id(cell) != cell for cell in self.path):
+            raise ValueError("position route cells must be canonical")
+        return self
+
+
 class DamageSequenceUpdate(EvaluationModel):
     kind: Literal["combat.damage_sequence_update"]
     combat_id: Annotated[str, Field(min_length=1)]
@@ -206,6 +232,7 @@ StateDeltaOperation = Annotated[
     | ActionBudgetUpdate
     | TurnUpdate
     | MovementLedgerUpdate
+    | PositionUpdate
     | DamageSequenceUpdate
     | ProcessedDamageUpdate
     | DeathLedgerUpdate

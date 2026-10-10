@@ -11,10 +11,10 @@ The current local candidate versions are:
 
 | Contract | Current version | Replaces |
 | --- | --- | --- |
-| RuleEvaluationRequest / Result | `engine-evaluation/7` | `/1`–`/6` |
+| RuleEvaluationRequest / Result | `engine-evaluation/8` | `/1`–`/7` |
 | StateSnapshot | `engine-snapshot/5` | `/1`–`/4` |
 | Availability request/result | `engine-availability/4` | `/1`–`/3` |
-| RulesetBinding evaluator | `dnd5e-evaluation/13` | `/12` and earlier |
+| RulesetBinding evaluator | `dnd5e-evaluation/14` | `/13` and earlier |
 
 Old envelopes, snapshots and results are explicitly rejected. There are no compatibility
 aliases for `InventoryCombatSnapshot`, `combat_inventory`, missing equipment or missing
@@ -57,7 +57,7 @@ remain OPEN. SM authenticates/authorizes the caller and approved write scope.
 
 | Operation | Current admitted subset |
 | --- | --- |
-| combat.intent | One ordinary PC/NPC weapon Attack, an exact reviewed stat-block AttackActivity, or explicit plain Pass / End Turn |
+| combat.intent | One ordinary PC/NPC weapon Attack, an exact reviewed stat-block AttackActivity, explicit plain Pass / End Turn, ordinary Walk, Action Dash / Disengage |
 | rules.check | Explicitly adjudicated ordinary noncombat ability/skill check |
 | combat.item | Owned accessible single-use Potion of Healing, living self-drinker with declared free hand |
 | combat.close | Consistent terminal victory / TPK; no loot/effects/flight/forced end |
@@ -65,7 +65,7 @@ remain OPEN. SM authenticates/authorizes the caller and approved write scope.
 Common weapon properties Finesse/Versatile/Two-Handed/Reach/Heavy use the shared resolver
 and explicit held grip. Only untrained Mastery tuples are admitted; trained Masteries,
 Light/Loading/Ammunition/Thrown, effects, classes/features, extended budgets, reactions,
-complex grids, timing, areas, objects, summons/transforms remain unsupported. Stat-block
+complex grids for Attack/Item, timing, areas, objects, summons/transforms remain unsupported. Stat-block
 Multiattack prose, recharge and legendary mechanics are refused. A parsed Activity or
 a retained DTO never proves support. War Pick's missing typed Versatile damage remains
 a data-related refusal. No new Spell, Feat, Monster or Item support was added here.
@@ -233,3 +233,26 @@ and death history; the SM commits it with ordered events and RNG. Natural 1 can 
 two prior failures to four, matching the shared death-save algorithm, so snapshot /5
 explicitly widens that counter and the envelope/availability/binding are versioned.
 This is a local DTO revision; Meta OPEN wire and no-draw version policy remain OPEN.
+
+## R12 bounded movement and position proposals
+
+Ordinary Walk and Action Dash/Disengage use the same PC/NPC rules. The input
+contains explicit canonical actor cells, unique living occupancy, grid dimensions,
+blocked cells, walls, terrain and a complete active walking ledger. Shared
+GridTopology weighted pathfinding, occupancy/size qualifiers, step_cost and
+MovementLedger calculate the route and payment. Move, Dash and Disengage preserve
+the current turn even when the Action or movement is exhausted; explicit Pass closes it.
+
+PositionUpdate carries combat/scene/actor identities, expected old cell, new cell and
+computed canonical route. It commits with guarded MovementLedgerUpdate and
+ActionBudgetUpdate, ordered events, unchanged RNG and the world read fence. SM checks
+these preconditions and commits without recomputing movement or pathfinding.
+
+Before RNG restoration/payment, paths that may leave a hostile reaction weapon reach
+return unsupported; Disengage suppresses that trigger. Conservative threat checks can
+refuse blocked-vision paths too. Bound stat-block reaction templates, non-walk modes,
+forced/granted movement, effects, areas, concentration and complex environment remain
+unsupported. This limited geometry admission does not expand Attack/Item admission.
+Envelope /8 adds the local closed PositionUpdate; binding /14 rejects old evaluators.
+
+Explicit Pass also admits this static wall/terrain geometry, so a bounded terrain Move can end its turn through the same lifecycle. Effects and reactive hooks stay excluded.

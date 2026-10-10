@@ -741,3 +741,10 @@ Snapshot /5 retains the same components and widens death-save failures through f
 for natural 1 at two prior failures. Explicit Pass admits permanent implied unconscious/
 prone only; all other expiry/reaction/concentration dependencies remain unsupported.
 The existing exhaustive Delta projector carries every admitted lifecycle change.
+
+## R12 position closure
+
+The existing Scene grid and complete Combat actor_zone/MovementLedgerState now feed
+bounded ordinary movement. PositionUpdate adds expected cell, computed route and
+combat/scene/actor identity; existing ledger/budget operations remain complete.
+Envelope /8 and binding /14 version this local addition; Snapshot stays /5.

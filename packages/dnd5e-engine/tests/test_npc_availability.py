@@ -116,7 +116,7 @@ def npc_case(*, seed=0, hero_hp=40, hero_max=40, flat=False):
         combat_id="combat:synthetic",
     )
     request = RuleEvaluationRequest(
-        schema_version="engine-evaluation/7",
+        schema_version="engine-evaluation/8",
         session_id=live.session_id,
         command_id="command:npc",
         operation_kind="combat.intent",

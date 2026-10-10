@@ -18,6 +18,7 @@ from dnd5e_engine.evaluation_contracts import (
     RuleEvaluationResult,
 )
 from dnd5e_engine.evaluation_items import evaluate_item
+from dnd5e_engine.evaluation_movement import evaluate_movement
 from dnd5e_engine.evaluation_preflight import prepare_attack
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError, attack_delta
 from dnd5e_engine.evaluation_rng import RNGTransition
@@ -92,6 +93,10 @@ async def evaluate(
     snapshot = request.state_snapshot
     if request.payload.intent_type == "pass":
         result = RuleEvaluationResult(**common, **evaluate_turn(request, assets))
+        result.verify_request(request)
+        return result
+    if request.payload.intent_type in {"move", "dash", "disengage"}:
+        result = RuleEvaluationResult(**common, **evaluate_movement(request, assets))
         result.verify_request(request)
         return result
     with scoped_lib_loader(assets):

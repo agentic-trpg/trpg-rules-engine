@@ -50,9 +50,9 @@ def evaluate_turn(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
         return _refuse("rejected", "not_actor_turn", "actor does not own this turn")
     if request.actor_id in state.dead_ids:
         return _refuse("rejected", "actor_incapacitated", "recorded dead actors have no turn")
-    failure = snapshot_support_failure(snapshot, turn_lifecycle=True) or template_support_failure(
-        snapshot, loader
-    )
+    failure = snapshot_support_failure(
+        snapshot, turn_lifecycle=True, movement=True
+    ) or template_support_failure(snapshot, loader)
     if failure:
         return _refuse("unsupported", "turn.capability", failure)
     rng = request.rng_context.state.restore()

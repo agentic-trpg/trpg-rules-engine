@@ -41,7 +41,7 @@ classification applies only to the stated bounded capability, not its whole fami
 | Result/binding/RNG envelope | Fully migrated local candidate | Yes for envelope | `evaluation_contracts`, `evaluation_ruleset`, `evaluation_rng`; durable commit/receipt is SM work |
 | Combat initialization / Start | Legacy Stateful Only | No | `start_combat/_start_combat`, `build_party`; registration, initiative/hydration, first turn and hooks; no start/create operation |
 | Turn / Action Economy | Bounded explicit Pass and Attack/Item | **Yes, R11** for bounded lifecycle | `evaluation_turn` plus shared `turn_rules` / death saves; complete reset/dead skipping/round wrap/ordinary dying PC. Complex expiry, reactions and extended actions remain Legacy |
-| Movement / positioning | Legacy Stateful Only | No | `live_movement`, `movement`, `spatial`; pure geometry/costs exist, but position Delta and evaluation entry absent; terrain/cover/OA remain Legacy |
+| Movement / positioning | Bounded Walk, Action Dash/Disengage | **Yes, R12** for admitted subset | `evaluation_movement` reuses GridTopology/movement/turn rules and closed PositionUpdate. OA, special modes, stat-block reaction templates, forced movement, effects/areas remain Legacy |
 | Ordinary PC/NPC weapon or explicit stat-block single Attack | Fully migrated bounded subset | **Yes, R9** | `evaluation_preflight` → `evaluation_attack.execute_attack` → Activity Resolver → `evaluation_projection.attack_delta`; no Legacy execution context |
 | Attack / Damage / Death overall | Partially migrated | Partially | Ordinary roll/hit/miss/crit/R-I-V/temp HP/death/payment/turn and attack-induced next-turn death save migrated; riders, trained Masteries, Multiattack/recharge/legendary/effects remain Legacy |
 | Adjudicated noncombat ability/skill check | Fully migrated bounded subset | Yes | `evaluation_checks` → `activities/check_pipeline`; explicit DC/GM flags/proficiency/expertise/Jack/Reliable Talent; no Legacy runtime |
@@ -150,7 +150,7 @@ Read-only observation: SM `4e5cc5ac2765be89f0b4164bc6923083539374c4`, branch
 `feat/sm-b14-npc-persistent-state`; dependency pin remains Engine/Data
 `602dcb8d448e670049427bbb751d6ed226005298`. Request builder uses evaluation `/1`/`/4`,
 Snapshot `/1`/`/2`; manifest accepts evaluator `/4`/`/8`. It cannot consume this branch's
-evaluation `/7`, Snapshot `/5`, availability `/4` and evaluator **`/13`**.
+evaluation `/8`, Snapshot `/5`, availability `/4` and evaluator **`/14`**.
 No SM file was changed and no SM tests/integration result are claimed.
 
 R10 changes only evaluator implementation binding `/11` → `/12`; strict external shapes
@@ -169,7 +169,7 @@ These next batches are a finite foundation plan, not a promise of full conversio
 | --- | --- | --- |
 | R10: Item and Closure | Completed bounded runtime extraction | Independent successful execution, event/RNG and complete-state parity, post-compute fault isolation |
 | R11: standalone Turn | Completed bounded: explicit Pass/End Turn, bounded death saves, reset/round/dead skipping | Independent successful lifecycle and complete Delta, pre-draw hook refusal, rollback and parity |
-| R12: movement and positioning | Medium/large: typed position Delta; ordinary move/Dash/Disengage, existing grid/terrain/LoS/cover/ledger algorithms; refuse reaction-dependent movement pending interrupt migration | Independent path/collision/range/cost parity and expected-value consumer tests; rejected movement no payment/RNG; no Legacy movement runtime |
+| R12: movement and positioning | Completed bounded: typed position Delta; ordinary move/Dash/Disengage, existing grid/terrain/LoS/cover/ledger algorithms; refuse reaction-dependent movement pending interrupt migration | Independent path/collision/range/cost parity and expected-value consumer tests; rejected movement no payment/RNG; no Legacy movement runtime |
 | R13: combat initialization | Planned: bounded NonCombatSnapshot mechanical initialization, local closed creation candidate | Initiative/equipment/first-turn parity without registration; source authority remains OPEN |
 
 Next, migrate general Effect/Condition/Concentration and captured expiry chains, then
@@ -244,3 +244,12 @@ and Legacy event/state/RNG output. Repeated/concurrent evaluations, stale guards
 post-roll failure/cancellation preserve inputs and expose no partial proposals.
 Snapshot /5 allows the real terminal failure counter of four; envelope /7, availability
 /4 and evaluator /13 reject stale schema identities. General expiry remains unmigrated.
+
+## R12 movement verification scope
+
+Full guarded position/budget/ledger proposals match Legacy events/state/RNG for PC/NPC
+Walk, Dash, Disengage, weighted detours, terrain and allied space traversal. Independent
+expectations cover movement cost, Action retention, long Dash movement and turn retention.
+Whole-route OA preflight, actual weapon Reach, walls/occupied/unreachable/oversized targets,
+unsupported dependencies, stale world/position guards, parallel repeats and post-move
+fault/cancellation are tested. No supported path calls live_movement or the registry.

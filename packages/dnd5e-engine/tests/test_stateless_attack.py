@@ -39,7 +39,7 @@ def request_and_live(**kwargs):
         combat_id="combat:synthetic",
     )
     request = RuleEvaluationRequest(
-        schema_version="engine-evaluation/7",
+        schema_version="engine-evaluation/8",
         session_id=live.session_id,
         command_id="command:synthetic",
         operation_kind="combat.intent",
@@ -92,6 +92,13 @@ def apply_delta(snapshot, result):
         elif isinstance(op, delta.MovementLedgerUpdate):
             assert combat["movement_ledgers"][op.actor_id] == op.expected.model_dump()
             combat["movement_ledgers"][op.actor_id] = op.value.model_dump()
+        elif isinstance(op, delta.PositionUpdate):
+            assert combat["combat_id"] == op.combat_id
+            assert value["scene_state"]["scene_id"] == op.scene_id
+            assert combat["actor_zone"][op.actor_id] == op.expected
+            assert op.path[0] == op.expected
+            assert op.path[-1] == op.value
+            combat["actor_zone"][op.actor_id] = op.value
         elif isinstance(op, delta.DamageSequenceUpdate):
             assert combat["damage_instance_sequence"] == op.expected
             combat["damage_instance_sequence"] = op.value

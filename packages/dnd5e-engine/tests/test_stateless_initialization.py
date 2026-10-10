@@ -128,6 +128,7 @@ def init_case(*, fixed=(20, 1), dex=(16, 10), surprised=False, seed=0):
         surprised_ids={HERO} if surprised else set(),
         xp_value_by_entity={FOE: 50},
         opportunity_attack_weapons={HERO: WEAPON},
+        npc_stat_blocks=(),
         timed_activities=TimedActivitiesState(pending=[], next_sequence=0),
         persistent_areas=PersistentAreasState(
             areas=[], next_sequence=0, next_turn_start_effects=()
@@ -135,7 +136,7 @@ def init_case(*, fixed=(20, 1), dex=(16, 10), surprised=False, seed=0):
         combat_objects=ObjectState(objects=[], used_ids=set()),
     )
     snapshot = NonCombatSnapshot(
-        snapshot_schema_version="engine-snapshot/6",
+        snapshot_schema_version="engine-snapshot/7",
         snapshot_kind="non_combat",
         session_id="synthetic-init",
         world_version=7,
@@ -146,7 +147,7 @@ def init_case(*, fixed=(20, 1), dex=(16, 10), surprised=False, seed=0):
         combat_setup=setup,
     )
     request = init.CombatInitializationCandidateRequest(
-        schema_version="engine-evaluation/9",
+        schema_version="engine-evaluation/10",
         payload=init.CombatInitializationCandidatePayload(kind="combat.init.local-candidate"),
         session_id="synthetic-init",
         command_id="cmd:init",

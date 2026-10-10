@@ -11,10 +11,10 @@ The current local candidate versions are:
 
 | Contract | Current version | Replaces |
 | --- | --- | --- |
-| RuleEvaluationRequest / Result | `engine-evaluation/9` | `/1`–`/8` |
-| StateSnapshot | `engine-snapshot/6` | `/1`–`/5` |
-| Availability request/result | `engine-availability/5` | `/1`–`/4` |
-| RulesetBinding evaluator | `dnd5e-evaluation/15` | `/14` and earlier |
+| RuleEvaluationRequest / Result | `engine-evaluation/10` | `/1`–`/9` |
+| StateSnapshot | `engine-snapshot/7` | `/1`–`/6` |
+| Availability request/result | `engine-availability/6` | `/1`–`/5` |
+| RulesetBinding evaluator | `dnd5e-evaluation/16` | `/15` and earlier |
 
 Old envelopes, snapshots and results are explicitly rejected. There are no compatibility
 aliases for `InventoryCombatSnapshot`, `combat_inventory`, missing equipment or missing
@@ -290,3 +290,28 @@ Envelope /9, Snapshot /6, availability /5 and evaluator /15 are local candidates
 approved shared ABI. Existing Legacy start/registry/effect hydration remain Transitional
 for regression and old consumers. The independent initialization core constructs no
 LiveCombat/handle/runtime, stores no map/session and leaves no registry on faults.
+
+
+## R14 explicit NPC stat-block initialization closure
+
+Snapshot /7 requires `CombatSetupState.npc_stat_blocks`, including an explicit empty
+collection for unbound rosters. Each NPCStatBlockBinding carries an approved actor ID,
+canonical monster slug and exact pinned data revision. This is mechanical evidence,
+not a creation permission or an identity inferred from display text. The internal
+candidate verifies template identity, all admitted canonical actor mechanics, senses,
+initiative modifier and ordinary single-attack activities before restoring RNG.
+Complex traits, recharge, legendary, Multiattack and spellcasting remain unsupported.
+
+The shared `monster_rule_facts` projection is extracted from Legacy initialization;
+Legacy and independent admission use the same canonical projection. Complete actor
+facts remain supplied by the caller. Creation preserves their HP, resources and
+inventory, and populates the explicit monster identity and action-use maps. The
+existing R9 resolver then executes an explicitly selected stat-block action without
+calling Legacy initialization, handles, registry or Orchestrator.
+
+Real bundled SRD Bandit initialization, fixed and rolled initiative, ranged attack,
+complete state/events/RNG parity, independent expected rolls, mechanical/binding
+refusal, version/absence guards and post-draw faults cover this chain. Stat-block
+Movement remains unsupported pending complete opportunity-attack threat closure.
+Evaluation /10, snapshot /7, availability /6 and evaluator /16 are local revisions;
+public creation and C-16 source authority remain OPEN.

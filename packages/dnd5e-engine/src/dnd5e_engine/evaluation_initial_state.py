@@ -32,7 +32,7 @@ def initial_combat_state(setup: CombatSetupState, initiative: tuple[str, ...]) -
             for a in initiative
         },
         opportunity_attack_weapons=dict(setup.opportunity_attack_weapons),
-        monster_slug_by_entity={},
+        monster_slug_by_entity={b.actor_id: b.monster_slug for b in setup.npc_stat_blocks},
         xp_value_by_entity=dict(setup.xp_value_by_entity),
         event_log=(),
         deaths_recorded=[],
@@ -55,7 +55,7 @@ def initial_combat_state(setup: CombatSetupState, initiative: tuple[str, ...]) -
         rage_bonus_extensions=set(),
         sap_marks={},
         slow_marks={},
-        monster_action_uses_by_entity={},
+        monster_action_uses_by_entity={b.actor_id: {} for b in setup.npc_stat_blocks},
         monster_turn_start_done=None,
         last_ended_turn=None,
         departed_actor_id=None,

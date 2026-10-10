@@ -40,7 +40,7 @@ classification applies only to the stated bounded capability, not its whole fami
 | Mechanism | Stateless External Contract | Legacy Runtime Dependency Removed | Execution / remaining work |
 | --- | --- | --- | --- |
 | Result/binding/RNG envelope | Fully migrated local candidate | Yes for envelope | `evaluation_contracts`, `evaluation_ruleset`, `evaluation_rng`; durable commit/receipt is SM work |
-| Combat initialization / Start | Complete bounded local candidate; **public ABI blocked C-16** | **Yes, R13** for bounded core | `evaluation_initialization` / shared initiative_rules and turn_rules; explicit NonCombat setup and closed creation candidate. Legacy start, general hydration and consumer cutover remain |
+| Combat initialization / Start | Complete bounded local candidate; **public ABI blocked C-16** | **Yes, R13–R14** for bounded core and explicit ordinary NPC binding | `evaluation_initialization` / shared initiative_rules and turn_rules; explicit NonCombat setup and closed creation candidate. Legacy start, general hydration and consumer cutover remain |
 | Turn / Action Economy | Bounded explicit Pass and Attack/Item | **Yes, R11** for bounded lifecycle | `evaluation_turn` plus shared `turn_rules` / death saves; complete reset/dead skipping/round wrap/ordinary dying PC. Complex expiry, reactions and extended actions remain Legacy |
 | Movement / positioning | Bounded Walk, Action Dash/Disengage | **Yes, R12** for admitted subset | `evaluation_movement` reuses GridTopology/movement/turn rules and closed PositionUpdate. OA, special modes, stat-block reaction templates, forced movement, effects/areas remain Legacy |
 | Ordinary PC/NPC weapon or explicit stat-block single Attack | Fully migrated bounded subset | **Yes, R9** | `evaluation_preflight` → `evaluation_attack.execute_attack` → Activity Resolver → `evaluation_projection.attack_delta`; no Legacy execution context |
@@ -151,7 +151,7 @@ Read-only observation: SM `4e5cc5ac2765be89f0b4164bc6923083539374c4`, branch
 `feat/sm-b14-npc-persistent-state`; dependency pin remains Engine/Data
 `602dcb8d448e670049427bbb751d6ed226005298`. Request builder uses evaluation `/1`/`/4`,
 Snapshot `/1`/`/2`; manifest accepts evaluator `/4`/`/8`. It cannot consume this branch's
-evaluation `/9`, Snapshot `/6`, availability `/5` and evaluator **`/15`**.
+evaluation `/10`, Snapshot `/7`, availability `/6` and evaluator **`/16`**.
 No SM file was changed and no SM tests/integration result are claimed.
 
 R10 changes only evaluator implementation binding `/11` → `/12`; strict external shapes
@@ -170,7 +170,7 @@ These completed bounded batches do not establish full conversion. General mechan
 | --- | --- | --- |
 | R10: Item and Closure | Completed bounded runtime extraction | Independent successful execution, event/RNG and complete-state parity, post-compute fault isolation |
 | R11: standalone Turn | Completed bounded: explicit Pass/End Turn, bounded death saves, reset/round/dead skipping | Independent successful lifecycle and complete Delta, pre-draw hook refusal, rollback and parity |
-| R12: movement and positioning | Completed bounded: typed position Delta; ordinary move/Dash/Disengage, existing grid/terrain/LoS/cover/ledger algorithms; refuse reaction-dependent movement pending interrupt migration | Independent path/collision/range/cost parity and expected-value consumer tests; rejected movement no payment/RNG; no Legacy movement runtime |
+| R12: movement and positioning | Completed bounded: typed position Delta; ordinary move/Dash/Disengage, existing grid/terrain/ledger algorithms; cover remains refused; refuse reaction-dependent movement pending interrupt migration | Independent path/collision/range/cost parity and expected-value consumer tests; rejected movement no payment/RNG; no Legacy movement runtime |
 | R13: combat initialization | Completed local bounded core; public C-16 blocked: bounded NonCombatSnapshot mechanical initialization, local closed creation candidate | Initiative/equipment/first-turn parity without registration; source authority remains OPEN |
 
 Next, migrate general Effect/Condition/Concentration and captured expiry chains, then
@@ -284,3 +284,23 @@ In parallel, review C-16 plus shared wire/binding/Delta/RNG policies, then coord
 SM pin/DTO/atomic consumer upgrade and later Bridge/Demo cutover. Those prerequisites
 are not completed by Engine test coverage. Only after original retained capabilities
 and all consumers migrate can the legacy executor exit.
+
+
+## R14 NPC initialization closure
+
+R14 starts at merged R13 `6dad057f5b988a75f0d6d0102a1dd57033f41f51`.
+The external contract is complete for explicitly approved ordinary NPC template
+bindings; the internal runtime dependency is removed for the successful
+NonCombat initialization → CombatSnapshot → explicit stat-block attack chain.
+Canonical projection is shared with Legacy, not recreated around LiveCombat.
+Binding carries actor/template/data revision and all admitted mechanical facts are
+verified before RNG. Typed creation retains inventory, HP, resources and explicit
+monster identity/use maps. Public creation remains blocked C-16; general hydration,
+complex templates and reaction-dependent movement remain Legacy/unsupported.
+
+New regressions compare real SRD Bandit fixed/rolled initialization and explicit
+Light Crossbow attack with independent values and the separately invoked Legacy API,
+including complete state, event order and RNG. Forbidden Legacy factories/hooks/
+registry/global random, repeated evaluation, malformed bindings/facts, stale creation
+preconditions and post-draw faults test the actual execution boundary. Integration
+and final review outcomes are recorded in the batch delivery evidence.

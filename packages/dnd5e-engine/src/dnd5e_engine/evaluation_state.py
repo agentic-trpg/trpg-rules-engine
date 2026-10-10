@@ -404,7 +404,7 @@ class InventoryState(EvaluationModel):
 
 
 class SnapshotBase(EvaluationModel):
-    snapshot_schema_version: Literal["engine-snapshot/6"]
+    snapshot_schema_version: Literal["engine-snapshot/7"]
     session_id: Annotated[str, Field(min_length=1)]
     world_version: Annotated[int, Field(ge=0)]
     character_states: tuple[CharacterStateV2, ...]
@@ -449,6 +449,14 @@ class CombatSnapshot(SnapshotBase):
         return self
 
 
+class NPCStatBlockBinding(EvaluationModel):
+    """Approved actor-to-template fact, not authority to create an actor."""
+
+    actor_id: Annotated[str, Field(min_length=1)]
+    monster_slug: Annotated[str, Field(min_length=1)]
+    data_revision: Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
+
+
 class CombatSetupState(EvaluationModel):
     """Explicit selected encounter facts; local candidate, not creation permission."""
 
@@ -462,6 +470,7 @@ class CombatSetupState(EvaluationModel):
     surprised_ids: set[str]
     xp_value_by_entity: dict[str, Annotated[int, Field(ge=0)]]
     opportunity_attack_weapons: dict[str, str]
+    npc_stat_blocks: tuple[NPCStatBlockBinding, ...]
     timed_activities: TimedActivitiesState
     persistent_areas: PersistentAreasState
     combat_objects: ObjectState
@@ -483,6 +492,8 @@ class CombatSetupState(EvaluationModel):
             or not self.surprised_ids <= ids
             or set(self.xp_value_by_entity) != set(self.encounter_ids)
             or not set(self.opportunity_attack_weapons) <= ids
+            or len({b.actor_id for b in self.npc_stat_blocks}) != len(self.npc_stat_blocks)
+            or not {b.actor_id for b in self.npc_stat_blocks} <= set(self.encounter_ids)
             or any(canonical_cell_id(c) != c for c in self.actor_zone.values())
         ):
             raise ValueError("incomplete/noncanonical combat setup closure")

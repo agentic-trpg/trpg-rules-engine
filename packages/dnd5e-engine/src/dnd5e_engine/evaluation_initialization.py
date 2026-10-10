@@ -27,6 +27,7 @@ from dnd5e_engine.evaluation_delta import (
     StateDelta,
 )
 from dnd5e_engine.evaluation_initial_state import initial_combat_state
+from dnd5e_engine.evaluation_npc_initialization import npc_initialization_failure
 from dnd5e_engine.evaluation_rng import RNGContext, RNGTransition
 from dnd5e_engine.evaluation_ruleset import RulesetBinding, verify_ruleset
 from dnd5e_engine.evaluation_state import (
@@ -119,6 +120,9 @@ def evaluate_combat_initialization_candidate(
         return refuse("init.scene_mechanics", "precombat timing/areas/objects are not migrated")
     if snapshot.effect_states:
         return refuse("init.effects", "effect hydration is not migrated")
+    failure = npc_initialization_failure(snapshot, request.ruleset_binding.data_revision, loader)
+    if failure:
+        return refuse("init.template", failure)
     actors = {a.entity_id: a for a in snapshot.character_states}
     grid = GridTopology(GridScene.model_validate(snapshot.scene_state.grid.model_dump()))
     if any(not grid.is_valid_cell(c) for c in setup.actor_zone.values()) or len(

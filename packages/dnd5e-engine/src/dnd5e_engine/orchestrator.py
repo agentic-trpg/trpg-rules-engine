@@ -261,6 +261,7 @@ from dnd5e_engine.live_spell_delivery import (
     preflight_delivery,
     spec_from_intent,
 )
+from dnd5e_engine.monster_rules import monster_rule_facts
 from dnd5e_engine.movement import MovementLedger
 from dnd5e_engine.outcome import (
     CombatOutcome,
@@ -6916,46 +6917,7 @@ def _build_foe_combatants(
                     resistances = list(monster.damage_resistances)
                     immunities = list(monster.damage_immunities)
                     nonmagical_only = False
-                sc = monster.ability_scores
-                template_kw = {
-                    "creature_size": monster.creature_size,
-                    "movement_modes": CombatantMovementModes(
-                        climb=monster.movement.climb,
-                        swim=monster.movement.swim,
-                        fly=monster.movement.fly,
-                        burrow=monster.movement.burrow,
-                    ),
-                    "strength": sc.str,
-                    "constitution": sc.con,
-                    "intelligence": sc.int,
-                    "wisdom": sc.wis,
-                    "charisma": sc.cha,
-                    "proficiency_bonus_override": monster.proficiency_bonus,
-                    "save_proficiencies": [
-                        a
-                        for a in ("str", "dex", "con", "int", "wis", "cha")
-                        if getattr(monster.saving_throws, a) is not None
-                    ],
-                    "skill_proficiencies": [
-                        k for k, v in monster.skills.model_dump().items() if v is not None
-                    ],
-                    "skill_expertise": [
-                        k
-                        for k, v in monster.skills.model_dump().items()
-                        if v is not None
-                        and (ability := skill_ability(k)) is not None
-                        and v
-                        == ability_modifier(getattr(sc, ability)) + 2 * monster.proficiency_bonus
-                    ],
-                    "trait_mechanics": [
-                        a.mechanic for a in monster.special_abilities if a.mechanic is not None
-                    ],
-                    # SRD §Spellcasting — the ability a monster's innate/
-                    # prepared spells key off (C18 Task 5). ``None`` for a
-                    # template with no cast-bearing actions (unchanged
-                    # ``Combatant`` default).
-                    "spellcasting_ability": monster.spellcasting_ability,
-                }
+                template_kw = monster_rule_facts(monster)
                 legendary_actions_max = _legendary_action_uses_max(monster)
                 if legendary_actions_max:
                     template_kw["legendary_actions_max"] = legendary_actions_max
@@ -6965,7 +6927,7 @@ def _build_foe_combatants(
                     template_kw["legendary_resistances_max"] = legendary_resistances_max
                     template_kw["legendary_resistances_remaining"] = legendary_resistances_max
                 if "dexterity" not in foe.model_fields_set:
-                    template_kw["dexterity"] = sc.dex
+                    template_kw["dexterity"] = monster.ability_scores.dex
         combatants.append(
             Combatant(
                 entity_id=foe.entity_id,

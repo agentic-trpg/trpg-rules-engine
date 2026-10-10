@@ -22,7 +22,7 @@ version/migration details are in [stateless evaluation](stateless-evaluation.md)
 
 ## Current stabilization additions
 
-Current snapshots are version `/6` only, with precisely CombatSnapshot and
+Current snapshots are version `/7` only, with precisely CombatSnapshot and
 NonCombatSnapshot discriminators. Both require InventoryState(entries=...),
 strict owner/instance closure and complete CharacterStateV2 equipment. Older snapshot
 versions and the third combat_inventory context are rejected explicitly; no empty
@@ -761,3 +761,16 @@ Creation proposes the complete fresh Combat component and guarded Initiative/bud
 updates; equipment/inventory/HP/resource facts stay authoritative unchanged input.
 No Legacy spec, runtime, handle, default hook or registry is an input dependency.
 Public source-authorized creation stays blocked under Meta C-16.
+
+
+## R14 explicit NPC binding addition
+
+CombatSetupState now requires typed NPCStatBlockBinding records (actor ID, canonical
+monster slug, pinned data revision), including explicit empty bindings. Mechanical
+admission checks complete canonical actor facts and bounded action closure before
+initiative RNG. The guarded creation candidate preserves bindings as
+monster_slug_by_entity plus explicit empty per-template action-use records.
+This closes R13 initialization to R9 ordinary NPC attack without constructing Legacy
+runtime. Inventory, HP, resource and actor identity remain caller-supplied facts.
+Stat-block movement and complex templates are still refused. Local snapshot /7 and
+evaluation /10 do not approve public combat.start or Meta C-16 source authority.

@@ -63,6 +63,10 @@ def action_economy_gate_failure(
             )
         return None
     if intent.intent_type == "attack":
+        if not current.is_alive:
+            raise IntentRejectedError(
+                "actor_incapacitated", f"actor_id={current.entity_id!r} is recorded dead"
+            )
         if current.attacks_remaining <= 0 and not current.action_available and not extra_action:
             return AttackFailed(
                 actor_id=current.entity_id,

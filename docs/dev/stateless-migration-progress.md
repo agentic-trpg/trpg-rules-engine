@@ -212,3 +212,10 @@ R9 review also confirmed and repaired a Speed-zero Dodge projection discrepancy.
 The existing loss predicate now lives in shared `attack_rules.dodge_benefit_active`,
 used by both entries. PC/NPC differential tests cover Dodge on/off, Speed zero/30
 and no unspent movement, preserving the distinction between Speed and movement budget.
+
+Final review also reproduced a pre-existing legality hole: a consistent death ledger
+with a stale current-turn pointer admitted an attack by a recorded-dead actor. The
+shared action gate now rejects that ordinary attack before payment or RNG. PC/NPC
+regressions first failed, then passed for both entries, with no proposed changes,
+events or RNG transition. This checks supplied terminal death facts; it does not
+delegate death rules to SM or change attack-induced death-save admission.

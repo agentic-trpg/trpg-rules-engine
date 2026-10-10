@@ -11,6 +11,8 @@ from dnd5e_engine import evaluation_attack, evaluation_context, evaluation_snaps
 from dnd5e_engine import orchestrator as orch
 from dnd5e_engine.evaluation_contracts import CombatIntentPayload
 from dnd5e_engine.evaluation_rng import RNGContext, RNGState
+from dnd5e_engine.intents import IntentRejectedError
+from dnd5e_engine.outcome import DeathRecord
 from tests.evaluation_support import FOE, HERO, synthetic_loader
 from tests.test_evaluation_review_findings import recapture
 from tests.test_npc_availability import npc_case
@@ -219,3 +221,45 @@ def test_dodge_uses_speed_not_unspent_movement_and_matches_legacy(npc, speed, do
     assert result.proposed_events == tuple(live.event_log)
     assert result.rng_transition.next_state == RNGState.capture(live.rng)
     assert apply_delta(request.state_snapshot, result) == recapture(request, live).state_snapshot
+
+
+@pytest.mark.parametrize("npc", [False, True])
+def test_recorded_dead_current_actor_cannot_attack_before_rng_or_payment(monkeypatch, npc):
+    if npc:
+        request, handle, live, loader = npc_case()
+    else:
+        request, handle, live = request_and_live(ac=1)
+        loader = synthetic_loader()
+    index = live.current_turn_index
+    actor = live.initiative[index]
+    live.initiative[index] = actor.model_copy(update={"hp_current": 0, "is_alive": False})
+    live.tracked_hp[actor.entity_id] = 0
+    live.dead_ids.add(actor.entity_id)
+    live.deaths_recorded.append(
+        DeathRecord(
+            target_id=actor.entity_id,
+            target_kind="monster" if npc else "character",
+            location_id=live.scene_location_id,
+            reason="damage" if npc else "instant_kill",
+            killer_id=request.payload.target_id,
+        )
+    )
+    request = recapture(request, live)
+    original_request = deepcopy(request)
+    original_actors = deepcopy(live.initiative)
+    original_rng = live.rng.getstate()
+    with monkeypatch.context() as isolated:
+        prohibit_legacy(isolated)
+        isolated.setattr(RNGState, "restore", forbidden)
+        result = execute(request, loader)
+    assert result.status == "rejected"
+    assert result.error.code == "actor_incapacitated"
+    assert result.state_delta is result.rng_transition is None
+    assert result.proposed_events == ()
+    assert request == original_request
+    with pytest.raises(IntentRejectedError) as refused:
+        asyncio.run(orch.submit_player_intent(handle, actor.entity_id, request.payload))
+    assert refused.value.reason == "actor_incapacitated"
+    assert live.initiative == original_actors
+    assert live.rng.getstate() == original_rng
+    assert live.event_log == []

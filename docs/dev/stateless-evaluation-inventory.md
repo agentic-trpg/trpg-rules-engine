@@ -8,6 +8,18 @@ Accepted ownership semantics govern this migration. Candidate Python names, RNG
 encoding, complex continuation and delta shapes remain local implementation choices;
 this document does not freeze a cross-repository ABI.
 
+## Batch 6 inventory additions
+
+Snapshot `/2` adds four authoritative Actor dependencies: `weapon_in_hands`,
+`weapon_grip`, `other_hand_occupied` and `weapon_mastery_slugs`. SM supplies them
+explicitly for every actor, including null identity, no grip, a false occupancy
+flag and an empty trained tuple. They are equipment/eligibility facts, not values
+inferred from a weapon name or property. Attacks read them without mutation.
+Internal Legacy capture refuses snapshot `/1` when these facts are populated;
+they cannot be discarded by downgrading. Legacy `None` compatibility sentinels
+are permitted only on the older bounded interface. Full weapon capability and
+version/migration details are in [stateless evaluation](stateless-evaluation.md).
+
 ## Ownership and lifetime
 
 A = authoritative mechanical fact or retained rule evidence: preserve until its rule

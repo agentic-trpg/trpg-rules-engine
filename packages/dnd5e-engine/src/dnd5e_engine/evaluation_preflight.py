@@ -6,6 +6,7 @@ from typing import Literal, get_args
 
 from dnd5e_srd_data.loader import AssetLoader
 from dnd5e_srd_data.schema.common import ActivationBlock, AttackActivity, DamageScalingBlock
+from dnd5e_srd_data.schema.item import Weapon, WeaponProperty
 from dnd5e_srd_data.schema.monster import MonsterActionKind
 
 from dnd5e_engine import action_policy
@@ -13,7 +14,7 @@ from dnd5e_engine import orchestrator as orch
 from dnd5e_engine.activities.dice import validate_expression
 from dnd5e_engine.evaluation_context import execution_context
 from dnd5e_engine.evaluation_contracts import CombatIntentPayload, PreflightChoice, RuleError
-from dnd5e_engine.evaluation_state import CombatSnapshot
+from dnd5e_engine.evaluation_state import CharacterStateV2, CombatSnapshot
 from dnd5e_engine.events import AttackFailed, CastFailed, DamageType
 from dnd5e_engine.spatial import parse_cell
 from dnd5e_engine.types.combat import Combatant
@@ -86,6 +87,8 @@ def snapshot_support_failure(snapshot: CombatSnapshot, *, terminal: bool = False
         if cell != f"{col},{row}" or not (0 <= col < grid.width and 0 <= row < grid.height):
             return "actor positions must be canonical cells within the supplied grid"
     for actor in snapshot.character_states:
+        if isinstance(actor, CharacterStateV2) and actor.weapon_mastery_slugs:
+            return "trained weapon mastery execution is not migrated"
         if (
             actor.conditions
             or actor.concentration_effect_id
@@ -114,10 +117,12 @@ def snapshot_support_failure(snapshot: CombatSnapshot, *, terminal: bool = False
     return None
 
 
-def activity_support_failure(activity: AttackActivity, *, stat_block: bool = False) -> str | None:
+def activity_support_failure(
+    activity: AttackActivity, *, stat_block: bool = False, weapon: Weapon | None = None
+) -> str | None:
     basic = AttackActivity(id=activity.id, activation=ActivationBlock(type="action", value=1))
     metadata = {"id", "name", "img", "sort", "description", "activation", "duration", "target"}
-    if stat_block:
+    if stat_block or weapon is not None:
         metadata.update(("attack", "damage", "range"))
     if any(
         getattr(activity, name) != getattr(basic, name)
@@ -140,6 +145,9 @@ def activity_support_failure(activity: AttackActivity, *, stat_block: bool = Fal
     normalized = target.model_copy(
         update={
             "prompt": basic.target.prompt,
+            "template": target.template.model_copy(update={"units": basic.target.template.units})
+            if weapon is not None and target.template.units == "" and not target.template.type
+            else target.template,
             "affects": target.affects.model_copy(
                 update={"count": basic.target.affects.count, "type": basic.target.affects.type}
             ),
@@ -147,7 +155,37 @@ def activity_support_failure(activity: AttackActivity, *, stat_block: bool = Fal
     )
     if normalized != basic.target:
         return "target templates, filters or choices are not migrated"
-    return _stat_activity_failure(activity) if stat_block else None
+    if stat_block:
+        return _stat_activity_failure(activity)
+    return _weapon_activity_failure(activity, weapon) if weapon is not None else None
+
+
+def _weapon_activity_failure(activity: AttackActivity, weapon: Weapon) -> str | None:
+    attack, damage, reach = activity.attack, activity.damage, activity.range
+    category = "ranged" if weapon.weapon_category.endswith("ranged") else "melee"
+    bands = orch._weapon_attack_range_ft(weapon)
+    if (
+        attack.type.value not in ("", category)
+        or attack.type.classification not in ("", "weapon")
+        or attack.ability
+        or attack.bonus
+        or attack.flat
+        or attack.critical.threshold not in (None, 20)
+        or damage.parts
+        or not damage.include_base
+        or damage.critical.bonus
+    ):
+        return "weapon activity must use its ordinary base attack and damage"
+    if (
+        reach.special
+        or reach.override
+        or (
+            (reach.value or reach.units not in ("", "self"))
+            and (bands is None or reach.units != "ft" or reach.value != str(bands[0]))
+        )
+    ):
+        return "weapon activity range must agree with the shared weapon range"
+    return None
 
 
 def _stat_activity_failure(activity: AttackActivity) -> str | None:
@@ -258,14 +296,23 @@ def stat_block_admission(
 
 
 def weapon_admission(
-    current: Combatant, intent: CombatIntentPayload, loader: AssetLoader
+    current: Combatant,
+    intent: CombatIntentPayload,
+    loader: AssetLoader,
+    *,
+    common_weapons: bool = False,
 ) -> AttackAdmission | None:
     if not intent.weapon_id:
         known = tuple(slug for slug in current.carried_item_slugs if loader.get_weapon(slug))
         choices = tuple(
             slug
             for slug in known
-            if weapon_admission(current, intent.model_copy(update={"weapon_id": slug}), loader)
+            if weapon_admission(
+                current,
+                intent.model_copy(update={"weapon_id": slug}),
+                loader,
+                common_weapons=common_weapons,
+            )
             is None
         )
         if choices:
@@ -295,12 +342,55 @@ def weapon_admission(
         return refused(
             "unsupported", "range.capability", "weapon requires an explicit range in feet"
         )
-    if weapon.properties or weapon.mastery or weapon.passive_effects or weapon.uses:
+    admitted_properties = (
+        {
+            WeaponProperty.FINESSE,
+            WeaponProperty.VERSATILE,
+            WeaponProperty.TWO_HANDED,
+            WeaponProperty.REACH,
+            WeaponProperty.HEAVY,
+        }
+        if common_weapons
+        else set()
+    )
+    if (
+        not weapon.properties <= admitted_properties
+        or (weapon.mastery and not common_weapons)
+        or weapon.passive_effects
+        or weapon.uses
+        or weapon.requires_attunement
+    ):
         return refused(
             "unsupported",
             "weapon.capability",
             "weapon properties, mastery, effects or uses need migration",
         )
+    if common_weapons:
+        if (
+            current.weapon_mastery_slugs is None
+            or current.weapon_grip is None
+            or current.other_hand_occupied is None
+        ):
+            return refused(
+                "unsupported",
+                "equipment.capability",
+                "common weapons require snapshot /2 equipment and mastery dependencies",
+            )
+        if current.weapon_in_hands != weapon.slug:
+            return refused(
+                "rejected", "weapon_not_held", "the attack weapon must be the supplied held weapon"
+            )
+        two_handed = current.weapon_grip == "two_handed"
+        if (
+            intent.two_handed != two_handed
+            or (WeaponProperty.TWO_HANDED in weapon.properties and not two_handed)
+            or (two_handed and current.other_hand_occupied)
+        ):
+            return refused(
+                "rejected",
+                "weapon_grip",
+                "intent and required grip disagree with authoritative equipment",
+            )
     activities = weapon.activities or [orch._synthesize_attack_from_weapon(weapon)]
     if len(activities) != 1 or not isinstance(activities[0], AttackActivity):
         return refused(
@@ -308,7 +398,7 @@ def weapon_admission(
             "activity.capability",
             "attack must resolve exactly one typed AttackActivity",
         )
-    support = activity_support_failure(activities[0])
+    support = activity_support_failure(activities[0], weapon=weapon if common_weapons else None)
     if support:
         return refused("unsupported", "activity.capability", support)
     if not weapon.damage_parts or any(
@@ -319,11 +409,26 @@ def weapon_admission(
         )
     for part in weapon.damage_parts:
         validate_expression(part.dice)
+    if WeaponProperty.VERSATILE in weapon.properties:
+        if weapon.versatile_damage is None or weapon.versatile_damage.damage_type not in get_args(
+            DamageType
+        ):
+            return refused(
+                "unsupported",
+                "damage.capability",
+                "Versatile requires explicit typed alternate damage",
+            )
+        validate_expression(weapon.versatile_damage.dice)
     return None
 
 
 def prepare_attack(
-    snapshot: CombatSnapshot, actor_id: str, intent: CombatIntentPayload, loader: AssetLoader
+    snapshot: CombatSnapshot,
+    actor_id: str,
+    intent: CombatIntentPayload,
+    loader: AssetLoader,
+    *,
+    common_weapons: bool = False,
 ) -> AttackAdmission:
     support = snapshot_support_failure(snapshot)
     if support:
@@ -340,6 +445,8 @@ def prepare_attack(
         return refused("rejected", error.reason, str(error))
     basic = CombatIntentPayload(intent_type="attack")
     allowed = {"intent_type", "source_id", "weapon_id", "target_id", "stat_block_action_id"}
+    if common_weapons:
+        allowed.add("two_handed")
     if intent.intent_type != "attack" or any(
         getattr(intent, name) != getattr(basic, name)
         for name in type(intent).model_fields
@@ -352,7 +459,7 @@ def prepare_attack(
         input_admission = stat_block_admission(live, current, intent, loader)
         weapon = None
     else:
-        input_admission = weapon_admission(current, intent, loader)
+        input_admission = weapon_admission(current, intent, loader, common_weapons=common_weapons)
         weapon = loader.get_weapon(intent.weapon_id) if intent.weapon_id else None
     if input_admission is not None:
         return input_admission

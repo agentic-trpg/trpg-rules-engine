@@ -111,7 +111,7 @@ def apply_mastery_on_hit(
     this resolver never re-derives it, keeping the "dealt damage" definition
     (post-resistance/immunity) in exactly one place.
     """
-    mastery = _mastery_of(weapon)
+    mastery = _mastery_of(weapon, ctx.caster)
     if mastery is None:
         return
     if mastery == _TOPPLE:
@@ -157,13 +157,20 @@ def apply_mastery_on_miss(
     mastery is HIT-triggered — nothing to do on a miss. A weapon with no
     mastery is a no-op.
     """
-    if _mastery_of(weapon) == _GRAZE:
+    if _mastery_of(weapon, ctx.caster) == _GRAZE:
         _resolve_graze(weapon, ctx, target, governing_ability)
 
 
-def _mastery_of(weapon: Weapon | None) -> str | None:
+def mastery_available(weapon: Weapon | None, actor: Combatant) -> bool:
+    """Explicit trained identities; None retains pre-migration Stateful behavior."""
+    return weapon is not None and (
+        actor.weapon_mastery_slugs is None or weapon.slug in actor.weapon_mastery_slugs
+    )
+
+
+def _mastery_of(weapon: Weapon | None, actor: Combatant) -> str | None:
     """The weapon's lowercase mastery string, or ``None`` when absent."""
-    if weapon is None:
+    if weapon is None or not mastery_available(weapon, actor):
         return None
     return weapon.mastery
 

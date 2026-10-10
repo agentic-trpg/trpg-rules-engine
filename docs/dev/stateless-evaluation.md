@@ -285,3 +285,57 @@ active-combat recovery across processes remains outside MVP. Tests compare the
 actual Legacy outcome/events, consume closure deltas independently, forbid registry
 and CombatHandle use, check repeated/invalid/versioned inputs and inject projector
 and Host-commit faults.
+
+## Common weapons with explicit equipment (Batch 6)
+
+Wire `engine-evaluation/3`, snapshot `engine-snapshot/2`, availability
+`engine-availability/2` and evaluator `dnd5e-evaluation/7` add the common-weapon
+slice. Old snapshot `/1`, envelope `/1` attacks and `/2` closure remain readable
+and retain their conservative admission. A `/2` snapshot cannot be placed in an
+older request/query envelope. Every actor in the new snapshot must supply all
+`CharacterStateV2` fields: held weapon identity (nullable), grip (`none`,
+`one_handed`, `two_handed`), other-hand occupancy and trained weapon mastery slugs
+(explicit tuple). Mixed actor versions, missing fields, duplicate mastery IDs,
+un-carried held weapons and conflicting hand occupancy fail schema validation.
+An attack must name the supplied held weapon and match its declared grip.
+
+Only empty mastery-training tuples are admitted by this stateless slice. The
+shared mastery resolver and Nick/Cleave budget gates now consult explicit trained
+identities. `Combatant.weapon_mastery_slugs=None` preserves the pre-existing
+Stateful compatibility behavior; the new stateless snapshot never admits that
+sentinel. Empty means untrained: owning a weapon does not activate its mastery.
+Nonempty training or existing mastery marks remain unsupported before RNG. This
+is not an implementation of trained Mastery in the stateless interface.
+
+| Property | Supported behavior and dependency | Executed canonical examples |
+| --- | --- | --- |
+| Finesse | Shared best STR/DEX attack and damage ability | Rapier, Whip |
+| Versatile | Shared base/alternate damage, matching authoritative grip | Longsword in both grips; Quarterstaff |
+| Two-Handed | Supplied two-handed grip and unoccupied other hand | Greatclub, Greatsword, Greataxe |
+| Reach | Shared reach/range preflight and resolver | Glaive, Halberd, Pike, Whip at 10 ft |
+| Heavy | Shared score threshold and disadvantage, explicit grip | Greatsword at STR 12 and 13 |
+| Ammunition, Loading, Thrown, Light, Special, Range | Unsupported; associated inventory, extra swings or other mechanics are not migrated | Dagger, Shortsword, Spear, Shortbow, Light Crossbow refusals |
+| Trained Mastery, attunement, passive effects, charges | Unsupported before execution RNG | Nonempty mastery training and complex item admission |
+
+The actual bundled corpus contains 86 weapons. Admission inventory identifies
+19 canonical ordinary candidates with complete alternate damage: Battleaxe, Flail, Glaive, Greataxe, Greatclub,
+Greatsword, Halberd, Lance, Longsword, Mace, Maul, Morningstar, Pike, Quarterstaff,
+Rapier, Staff, Warhammer, Whip and Wooden Staff. Each is executed against
+the shared Stateful path with PC/NPC actors and hit/miss/critical seeds, comparing
+the entire resulting snapshot, ordered events and RNG. Longsword additionally
+tests both grips with an independent known-dice oracle. Of the remaining 67,
+26 have excluded properties, 37 require attunement/effects/uses, two have non-basic
+attack/damage, one has no single canonical activity, and War Pick declares Versatile
+without a typed alternate damage part. War Pick is explicitly unsupported in all
+six PC/NPC/seed cases, before RNG; the evaluator does not invent its missing dice.
+These counts are a corpus inventory, not support for those rejected mechanisms.
+
+No attack/damage/range/proficiency/action formula is duplicated. Canonical activity
+metadata is accepted only when its explicit weapon classification, base damage
+and range agree with the existing shared rules; alternate bonuses, damage parts,
+resource consumption and target templates still fail closed. The new equipment
+fields are unchanged read dependencies during attacks, so the existing complete
+attack delta vocabulary suffices. Availability uses the exact same preflight and
+versions; it neither equips a weapon nor reserves an action. SM must author the
+new equipment/mastery facts, adopt the schemas and pin, and retain its existing
+atomic expected-value/Delta/Event/RNG transaction.

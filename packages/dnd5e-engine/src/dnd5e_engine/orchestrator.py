@@ -123,6 +123,7 @@ from dnd5e_engine.activities.effects import (
     applicable_effect_statuses,
     is_condition_immune,
 )
+from dnd5e_engine.activities.mastery import mastery_available
 from dnd5e_engine.activities.monster_actions import (
     MonsterActionExecution,
     MonsterActionPlan,
@@ -1462,7 +1463,12 @@ def _cleave_available(
     check keeps a hypothetical thrown use from chaining. ``None`` distance
     (untracked) counts as within reach, mirroring ``_versatile_grip_applies``.
     """
-    if weapon is None or weapon.mastery != "cleave" or current.cleave_spent_this_turn:
+    if (
+        weapon is None
+        or weapon.mastery != "cleave"
+        or not mastery_available(weapon, current)
+        or current.cleave_spent_this_turn
+    ):
         return False
     if weapon.weapon_category in {"simple_ranged", "martial_ranged"}:
         return False
@@ -2052,7 +2058,10 @@ def _loading_weapon_already_fired_failure(
         or not current.loading_weapon_fired_this_action
     ):
         return None
-    if funding == "light_bonus" or (funding == "light_offhand" and weapon.mastery != "nick"):
+    if funding == "light_bonus" or (
+        funding == "light_offhand"
+        and (weapon.mastery != "nick" or not mastery_available(weapon, current))
+    ):
         return None
     if funding == "action" and (
         _action_payment(current, "attack") or intent.action_grant is not None
@@ -10748,7 +10757,9 @@ def _is_offhand_attack_swing(
     if weapon is None or WeaponProperty.LIGHT not in weapon.properties:
         return False
     window_open = _twf_window_open(current) or (
-        weapon.mastery == "nick" and _offhand_window_open(current)
+        weapon.mastery == "nick"
+        and mastery_available(weapon, current)
+        and _offhand_window_open(current)
     )
     return (
         intent.intent_type == "attack"
@@ -10784,7 +10795,12 @@ def _consume_offhand_attack_budget(
     in ``_is_offhand_attack_swing``, the ``offhand_attack_spent``
     once-per-turn cap (the SRD's own "only once per turn"), and the
     positive-ability-mod suppression on the swing's damage."""
-    is_nick = not force_bonus and weapon is not None and weapon.mastery == "nick"
+    is_nick = (
+        not force_bonus
+        and weapon is not None
+        and weapon.mastery == "nick"
+        and mastery_available(weapon, current)
+    )
     update: dict[str, Any] = {"offhand_attack_spent": True}
     if not is_nick:
         update["bonus_action_available"] = False
@@ -12443,7 +12459,10 @@ async def _submit_live_intent(
             and fetched_weapon is not None
             and WeaponProperty.LOADING in fetched_weapon.properties
             and intent.action_grant is None
-            and (funding == "action" or fetched_weapon.mastery == "nick")
+            and (
+                funding == "action"
+                or (fetched_weapon.mastery == "nick" and mastery_available(fetched_weapon, current))
+            )
         ):
             current = _record_loading_weapon_fired(live, actor_id, current)
 

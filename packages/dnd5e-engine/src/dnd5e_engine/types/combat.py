@@ -114,6 +114,12 @@ class Combatant(BaseModel):
     # explicitly, so it stays ``None`` -> always proficient, matching the SRD
     # "a monster is proficient with any weapon in its stat block" rule.
     weapon_proficiencies: list[str] | None = None  # categories + slugs; None = legacy sentinel
+    # Explicit equipment/mastery state for snapshot /2. None preserves the
+    # original Stateful API; stateless common-weapon admission requires values.
+    weapon_in_hands: str | None = None
+    weapon_grip: Literal["none", "one_handed", "two_handed"] | None = None
+    other_hand_occupied: bool | None = None
+    weapon_mastery_slugs: tuple[str, ...] | None = None
     death_saves: dict[str, Any] = Field(default_factory=dict)  # serialized DeathSaveState
     # SRD §Creatures — creature_type (e.g. "humanoid", "undead", "construct",
     # "elf"). Drives type-gated spell semantics (Hold Person targets only

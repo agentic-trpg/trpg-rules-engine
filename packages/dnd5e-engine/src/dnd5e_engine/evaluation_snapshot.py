@@ -1,11 +1,12 @@
 """Internal, read-only DTO capture for parity tests and temporary contexts."""
 
 import copy
-from typing import Any
+from typing import Any, Literal
 
 from dnd5e_engine.evaluation_effects import effect_state
 from dnd5e_engine.evaluation_state import (
     CharacterState,
+    CharacterStateV2,
     CombatSnapshot,
     CombatState,
     ConditionLink,
@@ -25,7 +26,11 @@ from dnd5e_engine.specs import GridScene
 from dnd5e_engine.types.combat import Combatant
 
 
-def character_state(live: _LiveCombat, actor: Combatant) -> CharacterState:
+def character_state(
+    live: _LiveCombat,
+    actor: Combatant,
+    version: Literal["engine-snapshot/1", "engine-snapshot/2"] = "engine-snapshot/1",
+) -> CharacterState:
     value = actor.model_dump(mode="python")
     value["death_saves"] = value["death_saves"] or None
     value.update(
@@ -34,11 +39,30 @@ def character_state(live: _LiveCombat, actor: Combatant) -> CharacterState:
         spells_known=list(live.spells_known_by_entity.get(actor.entity_id, [])),
         custom_counters=copy.deepcopy(live.custom_counters_by_entity.get(actor.entity_id, {})),
     )
-    return CharacterState.model_validate(value)
+    if version == "engine-snapshot/1":
+        equipment = (
+            "weapon_in_hands",
+            "weapon_grip",
+            "other_hand_occupied",
+            "weapon_mastery_slugs",
+        )
+        if any(value[name] is not None for name in equipment):
+            raise ValueError("explicit equipment/mastery state requires snapshot /2")
+        for name in equipment:
+            del value[name]
+        return CharacterState.model_validate(value)
+    return CharacterStateV2.model_validate(value)
 
 
 def capture_combat_snapshot(
-    live: _LiveCombat, *, grid: GridScene, world_version: int, combat_id: str
+    live: _LiveCombat,
+    *,
+    grid: GridScene,
+    world_version: int,
+    combat_id: str,
+    snapshot_schema_version: Literal[
+        "engine-snapshot/1", "engine-snapshot/2"
+    ] = "engine-snapshot/1",
 ) -> CombatSnapshot:
     """Capture a completed boundary; no registry lookup or RNG serialization.
 
@@ -53,7 +77,9 @@ def capture_combat_snapshot(
         or live.character_damage_instances
     ):
         raise ValueError("cannot capture an in-flight execution boundary")
-    actors = tuple(character_state(live, actor) for actor in live.initiative)
+    actors = tuple(
+        character_state(live, actor, snapshot_schema_version) for actor in live.initiative
+    )
     by_id = {actor.entity_id: actor for actor in live.initiative}
     adapted = {
         "combat_id",
@@ -85,7 +111,7 @@ def capture_combat_snapshot(
         }
         transforms[key] = TransformState(
             **metadata,
-            original_actor=character_state(live, original),
+            original_actor=character_state(live, original, snapshot_schema_version),
             replaced_fields=tuple(transform.stash),
         )
     value.update(
@@ -131,7 +157,7 @@ def capture_combat_snapshot(
     )
     return CombatSnapshot(
         snapshot_kind="combat",
-        snapshot_schema_version="engine-snapshot/1",
+        snapshot_schema_version=snapshot_schema_version,
         session_id=live.session_id,
         world_version=world_version,
         character_states=actors,

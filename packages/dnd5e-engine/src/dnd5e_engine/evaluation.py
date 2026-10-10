@@ -43,6 +43,7 @@ def _capture(live: orch._LiveCombat, snapshot: CombatSnapshot, grid: GridScene) 
         grid=grid,
         world_version=snapshot.world_version,
         combat_id=snapshot.combat_state.combat_id,
+        snapshot_schema_version=snapshot.snapshot_schema_version,
     )
     by_id = {actor.entity_id: actor for actor in captured.character_states}
     return captured.model_copy(
@@ -99,7 +100,14 @@ async def evaluate(
         )
     snapshot = request.state_snapshot
     with scoped_lib_loader(assets):
-        admission = prepare_attack(snapshot, request.actor_id, request.payload, assets)
+        admission = prepare_attack(
+            snapshot,
+            request.actor_id,
+            request.payload,
+            assets,
+            common_weapons=request.schema_version == "engine-evaluation/3"
+            and snapshot.snapshot_schema_version == "engine-snapshot/2",
+        )
         if admission.status != "accepted":
             return RuleEvaluationResult(
                 **common,

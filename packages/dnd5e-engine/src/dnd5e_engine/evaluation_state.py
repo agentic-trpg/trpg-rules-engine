@@ -217,6 +217,25 @@ class CharacterState(EvaluationModel):
         return self
 
 
+class CharacterStateV2(CharacterState):
+    weapon_in_hands: Annotated[str, Field(min_length=1)] | None
+    weapon_grip: Literal["none", "one_handed", "two_handed"]
+    other_hand_occupied: bool
+    weapon_mastery_slugs: tuple[Annotated[str, Field(min_length=1)], ...]
+
+    @model_validator(mode="after")
+    def equipment_consistency(self) -> Self:
+        if (self.weapon_in_hands is None) != (self.weapon_grip == "none"):
+            raise ValueError("weapon identity and declared grip disagree")
+        if self.weapon_in_hands is not None and self.weapon_in_hands not in self.carried_item_slugs:
+            raise ValueError("held weapon is absent from supplied equipment")
+        if self.weapon_grip == "two_handed" and self.other_hand_occupied:
+            raise ValueError("two-handed grip conflicts with an occupied other hand")
+        if len(set(self.weapon_mastery_slugs)) != len(self.weapon_mastery_slugs):
+            raise ValueError("duplicate weapon mastery identity")
+        return self
+
+
 class SceneState(EvaluationModel):
     scene_id: Annotated[str, Field(min_length=1)]
     grid: MechanicalGrid
@@ -264,7 +283,7 @@ class TransformState(EvaluationModel):
     source: TransformSource
     effect_id: str
     origin: str
-    original_actor: CharacterState
+    original_actor: CharacterStateV2 | CharacterState
     replaced_fields: tuple[str, ...]
     original_monster_slug: str | None
     original_action_uses: dict[str, MonsterActionUses] | None
@@ -362,15 +381,21 @@ class CombatState(EvaluationModel):
 
 
 class SnapshotBase(EvaluationModel):
-    snapshot_schema_version: Literal["engine-snapshot/1"]
+    snapshot_schema_version: Literal["engine-snapshot/1", "engine-snapshot/2"]
     session_id: Annotated[str, Field(min_length=1)]
     world_version: Annotated[int, Field(ge=0)]
-    character_states: tuple[CharacterState, ...]
+    character_states: tuple[CharacterStateV2 | CharacterState, ...]
     effect_states: tuple[EffectState, ...]
     scene_state: SceneState
 
     @model_validator(mode="after")
     def identities(self) -> Self:
+        if any(
+            isinstance(actor, CharacterStateV2)
+            != (self.snapshot_schema_version == "engine-snapshot/2")
+            for actor in self.character_states
+        ):
+            raise ValueError("actor fields do not match the snapshot schema version")
         ids = [actor.entity_id for actor in self.character_states]
         if len(set(ids)) != len(ids):
             raise ValueError("duplicate snapshot actor identity")

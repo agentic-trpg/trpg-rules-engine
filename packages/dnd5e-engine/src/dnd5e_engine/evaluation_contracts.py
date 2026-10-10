@@ -14,7 +14,7 @@ from dnd5e_engine.orchestrator import PlayerIntent
 from dnd5e_engine.types.checks import CheckRequest
 
 SCHEMA_VERSION = "engine-evaluation/1"
-EvaluationVersion = Literal["engine-evaluation/1", "engine-evaluation/2"]
+EvaluationVersion = Literal["engine-evaluation/1", "engine-evaluation/2", "engine-evaluation/3"]
 
 
 class CombatClosePayload(EvaluationModel):
@@ -46,6 +46,11 @@ class RuleEvaluationRequest(EvaluationModel):
     def operation_payload(self) -> Self:
         if self.session_id != self.state_snapshot.session_id:
             raise ValueError("request and snapshot session identities differ")
+        if (
+            self.state_snapshot.snapshot_schema_version == "engine-snapshot/2"
+            and self.schema_version != "engine-evaluation/3"
+        ):
+            raise ValueError("snapshot /2 requires engine-evaluation/3")
         if self.operation_kind == "combat.intent":
             if not isinstance(self.payload, CombatIntentPayload):
                 raise ValueError("combat.intent requires a typed combat payload")
@@ -54,7 +59,7 @@ class RuleEvaluationRequest(EvaluationModel):
             if self.payload.source_id is not None and self.payload.source_id != self.actor_id:
                 raise ValueError("payload source_id differs from actor_id")
         elif self.operation_kind == "combat.close":
-            if self.schema_version != "engine-evaluation/2":
+            if self.schema_version not in ("engine-evaluation/2", "engine-evaluation/3"):
                 raise ValueError("combat.close requires engine-evaluation/2")
             if not isinstance(self.payload, CombatClosePayload) or not isinstance(
                 self.state_snapshot, CombatSnapshot

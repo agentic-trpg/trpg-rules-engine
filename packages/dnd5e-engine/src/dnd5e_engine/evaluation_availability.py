@@ -20,7 +20,7 @@ from dnd5e_engine.specs import GridScene
 
 
 class ActionAvailabilityRequest(EvaluationModel):
-    schema_version: Literal["engine-availability/1"]
+    schema_version: Literal["engine-availability/1", "engine-availability/2"]
     session_id: Annotated[str, Field(min_length=1)]
     operation_kind: Literal["combat.intent"]
     actor_id: Annotated[str, Field(min_length=1)]
@@ -30,6 +30,11 @@ class ActionAvailabilityRequest(EvaluationModel):
 
     @model_validator(mode="after")
     def identities(self) -> Self:
+        if (
+            self.state_snapshot.snapshot_schema_version == "engine-snapshot/2"
+            and self.schema_version != "engine-availability/2"
+        ):
+            raise ValueError("snapshot /2 requires engine-availability/2")
         if self.session_id != self.state_snapshot.session_id or (
             self.payload.source_id is not None and self.payload.source_id != self.actor_id
         ):
@@ -38,7 +43,7 @@ class ActionAvailabilityRequest(EvaluationModel):
 
 
 class ActionAvailabilityResult(EvaluationModel):
-    schema_version: Literal["engine-availability/1"]
+    schema_version: Literal["engine-availability/1", "engine-availability/2"]
     session_id: str
     actor_id: str
     operation_kind: Literal["combat.intent"]
@@ -61,7 +66,12 @@ def query_action_availability(
     verify_ruleset(request.ruleset_binding, assets)
     with scoped_lib_loader(assets):
         admission = prepare_attack(
-            request.state_snapshot, request.actor_id, request.payload, assets
+            request.state_snapshot,
+            request.actor_id,
+            request.payload,
+            assets,
+            common_weapons=request.schema_version == "engine-availability/2"
+            and request.state_snapshot.snapshot_schema_version == "engine-snapshot/2",
         )
         status: Literal["available", "unavailable", "unknown"]
         if admission.status == "accepted":

@@ -1,7 +1,6 @@
 """Read-only, versioned availability over the exact executable attack preflight."""
 
 import copy
-import random
 from typing import Annotated, Literal, Self
 
 from dnd5e_srd_data import BundledAssetLoader
@@ -13,10 +12,8 @@ from dnd5e_engine.evaluation_contracts import CombatIntentPayload, RuleError
 from dnd5e_engine.evaluation_preflight import prepare_attack
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError
 from dnd5e_engine.evaluation_ruleset import RulesetBinding, verify_ruleset
-from dnd5e_engine.evaluation_snapshot import capture_evaluation_snapshot as _capture
 from dnd5e_engine.evaluation_state import CombatSnapshot
 from dnd5e_engine.lib_loader import scoped_lib_loader
-from dnd5e_engine.specs import GridScene
 
 
 class ActionAvailabilityRequest(EvaluationModel):
@@ -69,19 +66,6 @@ def query_action_availability(
         )
         status: Literal["available", "unavailable", "unknown"]
         if admission.status == "accepted":
-            live = admission.context
-            if live is None:
-                raise EvaluationInvariantError("available preflight lacks context")
-            if (
-                _capture(
-                    live,
-                    request.state_snapshot,
-                    GridScene.model_validate(request.state_snapshot.scene_state.grid.model_dump()),
-                )
-                != request.state_snapshot
-                or live.rng.getstate() != random.Random(0).getstate()
-            ):
-                raise EvaluationInvariantError("availability preflight mutated state or RNG")
             status = "available"
             reason = RuleError(
                 code="attack.available",

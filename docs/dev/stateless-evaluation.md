@@ -14,7 +14,7 @@ The current local candidate versions are:
 | RuleEvaluationRequest / Result | `engine-evaluation/6` | `/1`–`/5` |
 | StateSnapshot | `engine-snapshot/4` | `/1`–`/3` |
 | Availability request/result | `engine-availability/3` | `/1`–`/2` |
-| RulesetBinding evaluator | `dnd5e-evaluation/10` | `/9` and earlier |
+| RulesetBinding evaluator | `dnd5e-evaluation/11` | `/10` and earlier |
 
 Old envelopes, snapshots and results are explicitly rejected. There are no compatibility
 aliases for `InventoryCombatSnapshot`, `combat_inventory`, missing equipment or missing
@@ -140,16 +140,33 @@ Snapshot never admits that sentinel.
 
 RNGContext remains separate from Snapshot. `stdlib-mt19937/1` carries all 624 words,
 index and finite/null Gaussian cache. Restoring uses Random(0) + setstate, never pickle
-or module-global draws. Preflight uses a private fixed sentinel; real request state is
-restored only after admission. No-draw and event-only stream/world version policies
+or module-global draws. Attack preflight constructs no RNG; real request state is
+restored only after admission. Item compatibility preflight still uses its private sentinel. No-draw and event-only stream/world version policies
 remain SM/Meta OPEN decisions. Engine does not advance authoritative versions.
 
-Attack/item reuse `_submit_live_intent`, shared action/cost/funding gates and Activity
-Resolver on a disposable `_LiveCombat`; check reuses the check pipeline and closure
-reuses outcome rules. No duplicated Attack/Damage/Healing formula was introduced.
-All accepted/failed proposals are private until returned. Exceptions discard the context;
-no retained registry, listener, receipt, database or external-state update is required.
-Complex state is still guarded out until its full hydration and Delta contract exist.
+R9 Attack executes `evaluate` → `prepare_attack` → `execute_attack` → shared
+`build_activity_context` / `resolve_activity` → `attack_delta`. Admission/availability
+create no Legacy context. Attack creates neither `_LiveCombat` nor CombatHandle, calls
+neither `execution_context` nor `_submit_live_intent`, and reads no Registry. Its local
+actor updates, immutable combat-record replacements and short typed event buffer are
+one attack computation, with no hooks, listeners, queues or persistent runtime.
+
+Both entries share `attack_rules` (range/grip/proficiency/adjacent-hostile legality,
+stat-block magnitudes and damage defenses), `action_economy_rules` (legality),
+`turn_rules` (payment, attacks, reset, next living initiative slot, budget bookkeeping),
+`damage_rules` (temp HP, zero HP, conditions, death records), the Activity Resolver,
+attack/apply/d20/dice primitives, condition projections and `death_saves`. The existing
+formulas were extracted or reused, rather than implementing another attack algorithm.
+`intents.PlayerIntent` remains the identical class reexported by Legacy Orchestrator.
+
+Item still uses `_submit_live_intent` and a disposable `_LiveCombat`/CombatHandle;
+closure still constructs `_LiveCombat` for the shared outcome projector. Check already
+uses a pure pipeline. Those remaining adapters are migration debt, not the final
+architecture. Exceptions discard private computations; no database/publication or
+external state update occurs. All unsupported dependencies remain guarded out.
+R9 changes the evaluator implementation pin to `/11`; request/result `/6`, Snapshot
+`/4`, availability `/3` and closed Delta shapes are unchanged. Older evaluator pins
+fail binding verification explicitly.
 
 The SM checkout observed during this task pins Engine/Data `602dcb8`, evaluation `/1`/`/4`
 and evaluator `/4`/`/8`, with ongoing work on combat-close/check integration. It must
@@ -176,3 +193,18 @@ fixes. The final task delivery records the executed Full/static/security/docs/wh
 results; this document does not infer CI or cross-repository success from unit tests.
 Windows Full uses the verified adapter executing exact checked-in package Makefile
 recipes through tools/validate.py when GNU make is absent, with original coverage floors.
+
+
+R9 structural regressions explicitly prohibit Legacy factories, `_LiveCombat`, handles,
+registry access, dispatcher, event fold and Legacy resolver entry during **successful**
+PC/NPC attacks, repeated execution, concurrent independent evaluations and injected
+post-damage/cancellation failures. Independent Legacy-entry comparisons include a
+three-attack multi-enemy sequence and natural 1/20 next-turn death saves, including
+Unconscious immunity. Natural-20 recovery exposed and fixed the new path's missing
+movement-budget reprojection on ConditionRemoved. Full validation remains the release
+gate; no State Machine integration or complete conversion is implied.
+
+R9 review also confirmed and repaired a Speed-zero Dodge projection discrepancy.
+The existing loss predicate now lives in shared `attack_rules.dodge_benefit_active`,
+used by both entries. PC/NPC differential tests cover Dodge on/off, Speed zero/30
+and no unspent movement, preserving the distinction between Speed and movement budget.

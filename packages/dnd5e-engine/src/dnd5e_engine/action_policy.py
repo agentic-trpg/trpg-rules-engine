@@ -270,15 +270,16 @@ def record_budget_changes(live: "_LiveCombat", before: "Combatant | None") -> No
     after = orch._find_combatant(live, before.entity_id)
     if after is None:
         return
-    fields = {}
-    if (
-        before.action_available and not after.action_available
-    ) or before.extra_actions_remaining > after.extra_actions_remaining:
-        fields["action_taken_this_turn"] = True
-    if before.bonus_action_available and not after.bonus_action_available:
-        fields["bonus_action_taken_this_turn"] = True
-    if fields:
-        orch._update_combatant(live, before.entity_id, **fields)
+    from dnd5e_engine.turn_rules import record_budget_changes as changed_budget
+
+    updated = changed_budget(before, after)
+    if updated != after:
+        orch._update_combatant(
+            live,
+            before.entity_id,
+            action_taken_this_turn=updated.action_taken_this_turn,
+            bonus_action_taken_this_turn=updated.bonus_action_taken_this_turn,
+        )
 
 
 def somatic_chance(live: "_LiveCombat", actor_id: str, spell: "Spell") -> int:

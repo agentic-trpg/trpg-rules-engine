@@ -1,5 +1,7 @@
 """Conservative admission and shared, read-only legality for basic attacks."""
 
+from __future__ import annotations
+
 import re
 from dataclasses import dataclass
 from typing import Literal, get_args
@@ -9,15 +11,17 @@ from dnd5e_srd_data.schema.common import ActivationBlock, AttackActivity, Damage
 from dnd5e_srd_data.schema.item import Weapon, WeaponProperty
 from dnd5e_srd_data.schema.monster import MonsterActionKind
 
-from dnd5e_engine import action_policy
-from dnd5e_engine import orchestrator as orch
+from dnd5e_engine import attack_rules
+from dnd5e_engine.action_economy_rules import action_economy_gate_failure
 from dnd5e_engine.activities.dice import validate_expression
-from dnd5e_engine.evaluation_context import execution_context
+from dnd5e_engine.evaluation_actor import combatant
 from dnd5e_engine.evaluation_contracts import CombatIntentPayload, PreflightChoice, RuleError
 from dnd5e_engine.evaluation_death import death_consistency
 from dnd5e_engine.evaluation_state import CharacterStateV2, CombatSnapshot
 from dnd5e_engine.events import AttackFailed, CastFailed, DamageType
-from dnd5e_engine.spatial import parse_cell
+from dnd5e_engine.intents import IntentRejectedError
+from dnd5e_engine.spatial import GridTopology, parse_cell
+from dnd5e_engine.specs import GridScene
 from dnd5e_engine.types.combat import Combatant
 
 
@@ -26,7 +30,16 @@ class AttackAdmission:
     status: Literal["accepted", "rejected", "needs_choice", "unsupported"]
     error: RuleError | None = None
     choice: PreflightChoice | None = None
-    context: orch._LiveCombat | None = None
+    plan: AttackPlan | None = None
+
+
+@dataclass(frozen=True)
+class AttackPlan:
+    actor: Combatant
+    target: Combatant
+    weapon: Weapon | None
+    activity: AttackActivity
+    distance_ft: int | None
 
 
 def refused(status: Literal["rejected", "unsupported"], code: str, reason: str) -> AttackAdmission:
@@ -163,7 +176,7 @@ def activity_support_failure(
 def _weapon_activity_failure(activity: AttackActivity, weapon: Weapon) -> str | None:
     attack, damage, reach = activity.attack, activity.damage, activity.range
     category = "ranged" if weapon.weapon_category.endswith("ranged") else "melee"
-    bands = orch._weapon_attack_range_ft(weapon)
+    bands = attack_rules.weapon_attack_range_ft(weapon)
     if (
         attack.type.value not in ("", category)
         or attack.type.classification not in ("", "weapon")
@@ -249,11 +262,11 @@ def template_support_failure(snapshot: CombatSnapshot, loader: AssetLoader) -> s
 
 
 def stat_block_admission(
-    live: orch._LiveCombat, current: Combatant, intent: CombatIntentPayload, loader: AssetLoader
+    snapshot: CombatSnapshot, current: Combatant, intent: CombatIntentPayload, loader: AssetLoader
 ) -> AttackAdmission | None:
     if (
         current.entity_type not in ("Monster", "NPC")
-        or current.entity_id not in live.encounter_ids
+        or current.entity_id not in snapshot.combat_state.encounter_ids
         or intent.weapon_id
     ):
         return refused(
@@ -261,7 +274,7 @@ def stat_block_admission(
             "action_unavailable",
             "stat-block attack requires a bound NPC and one action reference",
         )
-    slug = live.monster_slug_by_entity.get(current.entity_id)
+    slug = snapshot.combat_state.monster_slug_by_entity.get(current.entity_id)
     monster = loader.get_monster(slug) if slug else None
     action = (
         next((a for a in monster.actions if a.slug == intent.stat_block_action_id), None)
@@ -338,7 +351,7 @@ def weapon_admission(
         return refused(
             "rejected", "action_unavailable", "weapon is absent from actor's supplied equipment"
         )
-    if orch._weapon_attack_range_ft(weapon) is None:
+    if attack_rules.weapon_attack_range_ft(weapon) is None:
         return refused(
             "unsupported", "range.capability", "weapon requires an explicit range in feet"
         )
@@ -391,7 +404,7 @@ def weapon_admission(
                 "weapon_grip",
                 "intent and required grip disagree with authoritative equipment",
             )
-    activities = weapon.activities or [orch._synthesize_attack_from_weapon(weapon)]
+    activities = weapon.activities or [attack_rules.synthesize_attack_from_weapon(weapon)]
     if len(activities) != 1 or not isinstance(activities[0], AttackActivity):
         return refused(
             "unsupported",
@@ -436,13 +449,15 @@ def prepare_attack(
     support = template_support_failure(snapshot, loader)
     if support:
         return refused("unsupported", "template.capability", support)
-    live = execution_context(snapshot, loader)
-    try:
-        current = orch._validate_intent_preconditions(
-            live, orch.CombatHandle(live.handle_id), actor_id, intent=intent
-        )
-    except orch.IntentRejectedError as error:
-        return refused("rejected", error.reason, str(error))
+    state = snapshot.combat_state
+    if state.ended:
+        return refused("rejected", "combat_ended", "combat is ended")
+    actors = {a.entity_id: combatant(a) for a in snapshot.character_states}
+    if actor_id not in state.initiative_ids:
+        return refused("rejected", "actor_not_in_initiative", "actor is absent from initiative")
+    if state.initiative_ids[state.current_turn_index] != actor_id:
+        return refused("rejected", "not_actor_turn", "actor does not own this turn")
+    current = actors[actor_id]
     basic = CombatIntentPayload(intent_type="attack")
     allowed = {"intent_type", "source_id", "weapon_id", "target_id", "stat_block_action_id"}
     if common_weapons:
@@ -456,39 +471,62 @@ def prepare_attack(
             "unsupported", "intent.capability", "only a single ordinary Attack is admitted"
         )
     if intent.stat_block_action_id is not None:
-        input_admission = stat_block_admission(live, current, intent, loader)
+        input_admission = stat_block_admission(snapshot, current, intent, loader)
         weapon = None
     else:
         input_admission = weapon_admission(current, intent, loader, common_weapons=common_weapons)
         weapon = loader.get_weapon(intent.weapon_id) if intent.weapon_id else None
     if input_admission is not None:
         return input_admission
-    target = orch._find_combatant(live, intent.target_id or "")
+    target = actors.get(intent.target_id or "")
     if (
         target is None
         or target.entity_id == actor_id
-        or target.entity_id in live.dead_ids
+        or target.entity_id in state.dead_ids
         or not target.is_alive
         or target.hp_current <= 0
-        or not orch._is_enemy(live, actor_id, target.entity_id)
+        or ((actor_id in state.party_ids) == (target.entity_id in state.party_ids))
     ):
         return refused("rejected", "target_invalid", "target must be a present opposing actor")
-    cost = orch._classify_action_cost(intent, None)
-    funding = orch._classify_attack_funding(current, intent, weapon, repeats_construct=False)
     try:
-        action_policy.validate_grant(live, current, intent)
-        funding = action_policy.preflight_intent_policy(
-            live, current, intent, cost, funding, weapon
+        failure = action_economy_gate_failure(
+            current, intent, is_bonus_action=False, is_reaction_cast=False
         )
-    except orch.IntentRejectedError as error:
+    except IntentRejectedError as error:
         return refused("rejected", error.reason, str(error))
-    failure = orch._intent_pre_resolution_failure(
-        live, current, intent, None, weapon, funding, cost
-    )
     if failure is not None:
         if not isinstance(failure, (AttackFailed, CastFailed)):
-            raise RuntimeError("unexpected basic attack refusal event")
-        return refused(
-            "rejected", str(failure.reason), "shared attack preflight refused the intent"
+            raise RuntimeError("unexpected ordinary attack economy refusal")
+        return refused("rejected", str(failure.reason), "shared action economy refused the intent")
+    if intent.stat_block_action_id is not None:
+        slug = state.monster_slug_by_entity[current.entity_id]
+        monster = loader.get_monster(slug)
+        assert monster is not None
+        action = next(a for a in monster.actions if a.slug == intent.stat_block_action_id)
+        activity = action.activities[0]
+        assert isinstance(activity, AttackActivity)
+        maximum = attack_rules.monster_attack_range_ft([activity], current.melee_reach_ft)
+    else:
+        assert weapon is not None
+        activity = (
+            weapon.activities[0]
+            if weapon.activities
+            else attack_rules.synthesize_attack_from_weapon(weapon)
         )
-    return AttackAdmission(status="accepted", context=live)
+        assert isinstance(activity, AttackActivity)
+        bands = attack_rules.weapon_attack_range_ft(weapon)
+        maximum = bands[1] if bands else None
+    topology = GridTopology(GridScene.model_validate(snapshot.scene_state.grid.model_dump()))
+    origin = state.actor_zone.get(actor_id)
+    destination = state.actor_zone.get(target.entity_id)
+    distance = topology.distance_ft(origin, destination) if origin and destination else None
+    if (
+        origin
+        and destination
+        and maximum is not None
+        and not attack_rules.in_range_with_los(topology, origin, destination, maximum)
+    ):
+        return refused("rejected", "out_of_range", "target is beyond the attack reach or range")
+    return AttackAdmission(
+        status="accepted", plan=AttackPlan(current, target, weapon, activity, distance)
+    )

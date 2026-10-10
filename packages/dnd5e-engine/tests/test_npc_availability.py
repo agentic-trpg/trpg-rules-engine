@@ -28,6 +28,7 @@ from dnd5e_srd_data.schema.monster import (
 )
 from pydantic import ValidationError
 
+from dnd5e_engine import evaluation_attack
 from dnd5e_engine import orchestrator as orch
 from dnd5e_engine.evaluation_availability import (
     ActionAvailabilityRequest,
@@ -242,7 +243,7 @@ def test_pc_and_npc_call_same_resolver_without_monster_ai(monkeypatch):
     pc, _, _ = request_and_live()
     npc, _, _, loader = npc_case()
     calls = []
-    original = orch.resolve_activity
+    original = evaluation_attack.resolve_activity
 
     def tracked(activity, ctx, **kwargs):
         calls.append((activity.kind, ctx.caster.entity_id))
@@ -251,7 +252,7 @@ def test_pc_and_npc_call_same_resolver_without_monster_ai(monkeypatch):
     def forbidden(*args, **kwargs):
         raise AssertionError("Monster AI invoked")
 
-    monkeypatch.setattr(orch, "resolve_activity", tracked)
+    monkeypatch.setattr(evaluation_attack, "resolve_activity", tracked)
     monkeypatch.setattr(orch, "advance_monster_turn", forbidden)
     monkeypatch.setattr(orch, "rank_monster_actions", forbidden)
     assert execute(pc).status == "accepted"

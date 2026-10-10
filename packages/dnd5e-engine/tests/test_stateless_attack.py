@@ -8,6 +8,7 @@ from copy import deepcopy
 import pytest
 from pydantic_core import to_json
 
+from dnd5e_engine import evaluation_attack
 from dnd5e_engine import evaluation_delta as delta
 from dnd5e_engine import orchestrator as orch
 from dnd5e_engine.evaluation import evaluate
@@ -213,7 +214,7 @@ def test_complex_sidecars_are_unsupported_before_rng_restore(monkeypatch, field,
 @pytest.mark.parametrize("failure", [RuntimeError, asyncio.CancelledError])
 def test_fault_after_damage_cannot_publish_or_mutate_external_state(monkeypatch, failure):
     request, _, live = request_and_live()
-    original = orch.resolve_activity
+    original = evaluation_attack.resolve_activity
     registry = dict(orch._REGISTRY)
     before = deepcopy(request)
     observed = []
@@ -223,7 +224,7 @@ def test_fault_after_damage_cannot_publish_or_mutate_external_state(monkeypatch,
         original(activity, ctx, **kwargs)
         raise failure("fault after damage")
 
-    monkeypatch.setattr(orch, "resolve_activity", broken)
+    monkeypatch.setattr(evaluation_attack, "resolve_activity", broken)
     with pytest.raises(failure, match="fault after damage"):
         execute(request)
     assert request == before

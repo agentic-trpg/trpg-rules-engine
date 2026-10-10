@@ -941,7 +941,11 @@ _PROBES: dict[str, tuple[Any, str]] = {
     ),
     # C12: massive damage kills outright rather than only decorating the event.
     "Instant death (massive damage)": (
-        lambda: '"instant_kill"' in _src("orchestrator.py"),
+        lambda: (
+            '"instant_kill"' in _src("damage_rules.py")
+            and "zero_hp_damage(" in _src("orchestrator.py")
+            and "zero_hp_damage(" in _src("evaluation_attack.py")
+        ),
         "✅",
     ),
     # F2c: the d20 breakdown is carried on the roll events.

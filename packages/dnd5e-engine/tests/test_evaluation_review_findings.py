@@ -11,6 +11,7 @@ from dnd5e_srd_data.schema.common import DamagePartBlock
 from dnd5e_srd_data.schema.lifecycle import EffectEndFollowUp, EffectLifecycleSpec, RepeatSaveSpec
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
+from dnd5e_engine import evaluation_attack
 from dnd5e_engine import orchestrator as orch
 from dnd5e_engine.activities.apply import _apply_modifiers
 from dnd5e_engine.effect_lifecycle import EffectLifecycleApplication
@@ -33,7 +34,7 @@ def recapture(request, live):
             "state_snapshot": capture_combat_snapshot(
                 live,
                 inventory_state=InventoryState(entries=()),
-                grid=GridScene(width=3, height=3),
+                grid=GridScene.model_validate(request.state_snapshot.scene_state.grid.model_dump()),
                 world_version=7,
                 combat_id="combat:synthetic",
             )
@@ -251,6 +252,14 @@ def test_fault_between_damage_types_rolls_back_private_and_legacy_state(monkeypa
         if event.type == "damage_applied":
             raise failure("interrupted damage packet")
 
+    original_private = evaluation_attack._AttackComputation.emit
+
+    def interrupted_private(context, event):
+        original_private(context, event)
+        if event.type == "damage_applied":
+            raise failure("interrupted damage packet")
+
+    monkeypatch.setattr(evaluation_attack._AttackComputation, "emit", interrupted_private)
     monkeypatch.setattr(orch, "_emit", interrupted)
     with pytest.raises(failure, match="interrupted damage packet"):
         execute(request, loader)

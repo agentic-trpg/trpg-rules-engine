@@ -1,14 +1,12 @@
 """Executable local stateless API. State Machine alone commits the returned proposal."""
 
 import copy
-import random
 from typing import TypedDict
 
 from dnd5e_srd_data import BundledAssetLoader
 from dnd5e_srd_data.loader import AssetLoader
 
-from dnd5e_engine import action_policy
-from dnd5e_engine import orchestrator as orch
+from dnd5e_engine.evaluation_attack import execute_attack
 from dnd5e_engine.evaluation_checks import evaluate_check
 from dnd5e_engine.evaluation_closure import evaluate_closure
 from dnd5e_engine.evaluation_contracts import (
@@ -22,12 +20,10 @@ from dnd5e_engine.evaluation_contracts import (
 from dnd5e_engine.evaluation_items import evaluate_item
 from dnd5e_engine.evaluation_preflight import prepare_attack
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError, attack_delta
-from dnd5e_engine.evaluation_rng import RNGState, RNGTransition
+from dnd5e_engine.evaluation_rng import RNGTransition
 from dnd5e_engine.evaluation_ruleset import RulesetBinding, verify_ruleset
-from dnd5e_engine.evaluation_snapshot import capture_evaluation_snapshot as _capture
 from dnd5e_engine.evaluation_state import CombatSnapshot
 from dnd5e_engine.lib_loader import scoped_lib_loader
-from dnd5e_engine.specs import GridScene
 
 
 class _ResultIdentity(TypedDict):
@@ -111,26 +107,16 @@ async def evaluate(
                 choice=admission.choice,
                 error=admission.error,
             )
-        live = admission.context
-        if live is None:
-            raise EvaluationInvariantError("accepted preflight lacks execution context")
-        grid = GridScene.model_validate(snapshot.scene_state.grid.model_dump())
-        captured = _capture(live, snapshot, grid)
-        if captured != snapshot or RNGState.capture(live.rng) != RNGState.capture(random.Random(0)):
-            raise EvaluationInvariantError("preflight changed mechanical state or RNG")
-        live.rng = request.rng_context.state.restore()
-        before_actor = orch._find_combatant(live, request.actor_id)
-        await orch._submit_live_intent(
-            live, orch.CombatHandle(live.handle_id), request.actor_id, request.payload
-        )
-        action_policy.record_budget_changes(live, before_actor)
-        after = _capture(live, snapshot, grid)
+        if admission.plan is None:
+            raise EvaluationInvariantError("accepted preflight lacks an attack plan")
+        rng = request.rng_context.state.restore()
+        after = execute_attack(snapshot, request.payload, admission.plan, rng)
         result = RuleEvaluationResult(
             **common,
             status="accepted",
             state_delta=attack_delta(snapshot, after),
             proposed_events=after.combat_state.event_log[len(snapshot.combat_state.event_log) :],
-            rng_transition=RNGTransition.between(request.rng_context, live.rng),
+            rng_transition=RNGTransition.between(request.rng_context, rng),
             choice=None,
             error=None,
         )

@@ -17,7 +17,7 @@ from dnd5e_engine.events import (
     CombatEvent,
     RequiredSense,
 )
-from dnd5e_engine.orchestrator import PlayerIntent
+from dnd5e_engine.intents import PlayerIntent
 from dnd5e_engine.rules.skills import Skill
 from dnd5e_engine.types.checks import CheckRequest, GrantedDie
 

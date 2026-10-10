@@ -37,6 +37,22 @@ See [current contracts](stateless-evaluation.md) and
 The field index below is the original Legacy baseline inventory, not a declaration
 that every listed dependency is already admitted by stateless evaluation.
 
+## R9 runtime extraction
+
+R9 starts at `33cb12fb657b8fa511f297ece62e57cdb8c9a46d`. Snapshot `/4` retains
+all fields; no inventory, effect, resource or mechanical fact is synthesized.
+Attack now projects directly from actor facts and explicit RNG through the shared
+Activity Resolver; `evaluation_actor.py` converts only the supplied complete records.
+`evaluation_attack.py` owns only per-call actor updates, immutable combat-field updates,
+typed events and a single-hit damage accumulator. It has no registry, handle, hooks,
+queue, listeners, locks, effect runtime or cross-request lifetime. Unchanged components
+are preserved and `attack_delta` rejects every unrepresented change.
+
+The original field index below still describes Legacy consumers. Attack no longer
+uses its `_LiveCombat` columns as execution dependencies. Item and closure still do;
+[progress](stateless-migration-progress.md) records external protocol coverage separately
+from internal runtime removal. Full conversion has not completed.
+
 ## Ownership and lifetime
 
 A = authoritative mechanical fact or retained rule evidence: preserve until its rule

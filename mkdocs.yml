@@ -45,6 +45,7 @@ nav:
   - Comparison: comparison.md
   - Design notes:
       - Validation and CI: dev/validation.md
+      - Stateless evaluation inventory: dev/stateless-evaluation-inventory.md
       - Reaction queue: dev/reaction-queue.md
       - Passive-stat projection: dev/passive-projection.md
       - Spatial geometry: dev/spatial-geometry.md

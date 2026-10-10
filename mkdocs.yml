@@ -46,6 +46,7 @@ nav:
   - Design notes:
       - Validation and CI: dev/validation.md
       - Stateless evaluation inventory: dev/stateless-evaluation-inventory.md
+      - Stateless evaluation contracts: dev/stateless-evaluation.md
       - Reaction queue: dev/reaction-queue.md
       - Passive-stat projection: dev/passive-projection.md
       - Spatial geometry: dev/spatial-geometry.md

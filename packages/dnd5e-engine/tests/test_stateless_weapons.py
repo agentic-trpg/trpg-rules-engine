@@ -78,7 +78,7 @@ def weapon_case(
     )
     request = request.model_copy(
         update={
-            "schema_version": "engine-evaluation/10",
+            "schema_version": "engine-evaluation/11",
             "actor_id": actor_id,
             "payload": CombatIntentPayload(
                 intent_type="attack", weapon_id=slug, target_id=target_id, two_handed=two_handed
@@ -247,7 +247,7 @@ def test_new_equipment_fields_required_and_versioned(field):
     del wire["state_snapshot"]["character_states"][0][field]
     with pytest.raises(ValidationError):
         RuleEvaluationRequest.model_validate(wire)
-    with pytest.raises(ValidationError, match="engine-evaluation/10"):
+    with pytest.raises(ValidationError, match="engine-evaluation/11"):
         execute(request.model_copy(update={"schema_version": "engine-evaluation/2"}), loader)
 
 

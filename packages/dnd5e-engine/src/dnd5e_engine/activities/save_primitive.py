@@ -100,6 +100,7 @@ def roll_save(
     *,
     target_index: int = 0,
     ignore_cover: bool = False,
+    additional_sources: AdvantageSources | None = None,
 ) -> SaveRoll:
     """Roll ``target``'s ``ability`` save vs ``dc``; return the ``SaveRoll`` envelope.
 
@@ -170,6 +171,7 @@ def roll_save(
         modifier,
         target_index=target_index,
         next_disadvantage=next_disadvantage,
+        additional_sources=additional_sources,
     )
     total = roll.total + _passive_save_bonus(ctx, target)
     return _convert_if_legendary_resistance_armed(
@@ -243,6 +245,7 @@ def _roll_save_d20(
     *,
     target_index: int,
     next_disadvantage: bool = False,
+    additional_sources: AdvantageSources | None = None,
 ) -> D20Result:
     """The save's D20 Test, honoring ``variables["force_save_d20"]`` + adv/dis.
 
@@ -292,6 +295,9 @@ def _roll_save_d20(
     disadvantage: tuple[AdvantageSource, ...] = ("condition:target",) if has_dis else ()
     if next_disadvantage:
         disadvantage = (*disadvantage, "effect")
+    if additional_sources is not None:
+        advantage = (*advantage, *additional_sources.advantage)
+        disadvantage = (*disadvantage, *additional_sources.disadvantage)
     sources = AdvantageSources(advantage=advantage, disadvantage=disadvantage)
     return roll_d20_test(ctx.rng, modifier, sources, forced_natural=forced_natural)
 

@@ -46,7 +46,8 @@ classification applies only to the stated bounded capability, not its whole fami
 | Ordinary PC/NPC weapon or explicit stat-block single Attack | Fully migrated bounded subset | **Yes, R9** | `evaluation_preflight` → `evaluation_attack.execute_attack` → Activity Resolver → `evaluation_projection.attack_delta`; no Legacy execution context |
 | Attack / Damage / Death overall | Partially migrated | Partially | Ordinary roll/hit/miss/crit/R-I-V/temp HP/death/payment/turn and attack-induced next-turn death save migrated; riders, trained Masteries, Multiattack/recharge/legendary/effects remain Legacy |
 | Adjudicated noncombat ability/skill check | Fully migrated bounded subset | Yes | `evaluation_checks` → `activities/check_pipeline`; explicit DC/GM flags/proficiency/expertise/Jack/Reliable Talent; no Legacy runtime |
-| Saves / skill checks overall | Partially migrated | Partially | `check`, `save_primitive`, `live_save_modifiers`; standalone Save envelope, tools/senses/modifier consumption and effect dependencies missing |
+| Standalone saving throws | Fully migrated bounded NonCombat actor subset | **Yes, R15** | Shared actor_stats, condition projection and roll_save; six abilities, explicit DC/flags, permanent session auto-fail; no Legacy hydration |
+| Saves / skill checks overall | Partially migrated | Partially | Tools/senses, combat source/cover, effect and finite modifier consumption remain restricted |
 | Owned single-use self-healing consumable | Fully migrated bounded external contract | **Yes, R10** | `evaluation_items` → shared CombatComputation / HealActivity / item_rules; inventory/HP/budget/turn/events/RNG remain complete |
 | Inventory / resource payment overall | Partially migrated | No for general execution | Mandatory typed InventoryState; complete consume guard. Equip/transfer/recharge/ammunition/general pool/restore operations absent; Legacy slot/counter/rest machinery remains |
 | Conditions / effects / concentration | Legacy Stateful Only for general inputs | No | Complete Snapshot records retained and refused; `effect_lifecycle`, `live_effect_lifecycle`, condition/concentration folds. Attack-produced unconscious/prone/death-save state is a bounded exception |
@@ -61,7 +62,7 @@ classification applies only to the stated bounded capability, not its whole fami
 Original capabilities remain in the canonical spell capability audit, reviewed data
 and original regression suites. Haste, Moonbeam relocation, Darkness/Daylight anchors,
 summons/transforms, rest, saving throws and feature/rider rules have not been deleted;
-their stateless execution has not yet migrated. Potion of Speed and other originally
+their general stateless execution has not yet migrated; R15 admits bounded standalone saves. Potion of Speed and other originally
 Deferred mechanics remain Deferred. Parsed Activities and captured DTOs are not proof
 of executable support. Legacy loot is already empty; arrow stack accounting, transfers
 and durable cross-combat effects must not become fictitious restoration promises.
@@ -151,7 +152,7 @@ Read-only observation: SM `4e5cc5ac2765be89f0b4164bc6923083539374c4`, branch
 `feat/sm-b14-npc-persistent-state`; dependency pin remains Engine/Data
 `602dcb8d448e670049427bbb751d6ed226005298`. Request builder uses evaluation `/1`/`/4`,
 Snapshot `/1`/`/2`; manifest accepts evaluator `/4`/`/8`. It cannot consume this branch's
-evaluation `/10`, Snapshot `/7`, availability `/6` and evaluator **`/16`**.
+evaluation `/11`, Snapshot `/7`, availability `/6` and evaluator **`/17`**.
 No SM file was changed and no SM tests/integration result are claimed.
 
 R10 changes only evaluator implementation binding `/11` → `/12`; strict external shapes
@@ -304,3 +305,21 @@ including complete state, event order and RNG. Forbidden Legacy factories/hooks/
 registry/global random, repeated evaluation, malformed bindings/facts, stale creation
 preconditions and post-draw faults test the actual execution boundary. Integration
 and final review outcomes are recorded in the batch delivery evidence.
+
+
+## R15 saving throw extraction
+
+R15 starts at R14 `a67be96dbce94b5622fbabf0d750e982bf0e1c49`.
+Both dimensions are complete for the bounded standalone NonCombat Actor Save. The
+new execution uses full actor facts → shared modifier/condition projection → roll_save;
+it never constructs Legacy hydration, handles, registry or a Stateful Orchestrator.
+The shared primitive gains only optional explicit source provenance; its existing
+Legacy roll, auto-fail and RNG algorithms remain the single implementation.
+
+Independent expected values and separately invoked Legacy SaveActivity compare six
+abilities, PC/NPC proficiency, natural 1/20, success/failure, advantage cancellation,
+auto-failure and exact RNG successor. Concurrent replay and post-resolution failure/
+cancellation leave inputs untouched. Missing targets, noncanonical clauses, cover,
+features, active effects and finite-use save modifiers refuse before RNG. Snapshot
+/7 and availability /6 are unchanged; local evaluation /11 and evaluator /17 pin the
+new Actor operation. This does not migrate general saves, concentration or C-16.

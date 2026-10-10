@@ -12,6 +12,7 @@ from dnd5e_engine.evaluation_ruleset import RulesetBinding
 from dnd5e_engine.evaluation_state import CombatSnapshot, StateSnapshot
 from dnd5e_engine.events import (
     ALL_COMBAT_EVENT_TYPES,
+    Ability,
     AdvantageSource,
     CheckContext,
     CombatEvent,
@@ -21,8 +22,8 @@ from dnd5e_engine.intents import PlayerIntent
 from dnd5e_engine.rules.skills import Skill
 from dnd5e_engine.types.checks import CheckRequest, GrantedDie
 
-SCHEMA_VERSION = "engine-evaluation/10"
-EvaluationVersion = Literal["engine-evaluation/10"]
+SCHEMA_VERSION = "engine-evaluation/11"
+EvaluationVersion = Literal["engine-evaluation/11"]
 
 
 class ItemUsePayload(EvaluationModel):
@@ -51,6 +52,18 @@ class CheckPayload(CheckRequest):
     redeem_granted_die: GrantedDie | None = Field(...)
 
 
+class SavePayload(EvaluationModel):
+    """Actor makes its own explicitly adjudicated save; no system source ABI."""
+
+    kind: Literal["rules.save"]
+    target_id: Annotated[str, Field(min_length=1)]
+    ability: Ability
+    dc: Annotated[int, Field(ge=0)]
+    advantage: tuple[AdvantageSource, ...]
+    disadvantage: tuple[AdvantageSource, ...]
+    is_magical: bool
+
+
 class CombatClosePayload(EvaluationModel):
     """No caller-supplied end reason, reward or claimed death."""
 
@@ -69,9 +82,11 @@ class RuleEvaluationRequest(EvaluationModel):
     schema_version: EvaluationVersion
     session_id: Annotated[str, Field(min_length=1)]
     command_id: Annotated[str, Field(min_length=1)]
-    operation_kind: Literal["combat.intent", "rules.check", "combat.close", "combat.item"]
+    operation_kind: Literal[
+        "combat.intent", "rules.check", "combat.close", "combat.item", "rules.save"
+    ]
     actor_id: Annotated[str, Field(min_length=1)]
-    payload: CombatIntentPayload | CheckPayload | CombatClosePayload | ItemUsePayload
+    payload: CombatIntentPayload | CheckPayload | CombatClosePayload | ItemUsePayload | SavePayload
     state_snapshot: StateSnapshot
     ruleset_binding: RulesetBinding
     rng_context: RNGContext
@@ -81,6 +96,10 @@ class RuleEvaluationRequest(EvaluationModel):
     def strict_check_payload(cls, value: object, info: ValidationInfo) -> object:
         if info.mode == "json" and info.data.get("operation_kind") == "combat.intent":
             return CombatIntentPayload.model_validate_json(to_json(value))
+        if info.data.get("operation_kind") == "rules.save":
+            if info.mode == "json":
+                return SavePayload.model_validate_json(to_json(value))
+            return SavePayload.model_validate(value)
         if info.data.get("operation_kind") == "rules.check":
             # Preserve strict adjudication types before validating the payload union.
             if info.mode == "json":
@@ -92,6 +111,10 @@ class RuleEvaluationRequest(EvaluationModel):
     def operation_payload(self) -> Self:
         if self.session_id != self.state_snapshot.session_id:
             raise ValueError("request and snapshot session identities differ")
+        if self.operation_kind == "rules.save":
+            if not isinstance(self.payload, SavePayload) or self.payload.target_id != self.actor_id:
+                raise ValueError("rules.save requires the real saving actor as target")
+            return self
         if self.operation_kind == "combat.item":
             if not isinstance(self.payload, ItemUsePayload) or not isinstance(
                 self.state_snapshot, CombatSnapshot

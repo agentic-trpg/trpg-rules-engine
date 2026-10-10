@@ -23,6 +23,7 @@ from dnd5e_engine.evaluation_preflight import prepare_attack
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError, attack_delta
 from dnd5e_engine.evaluation_rng import RNGTransition
 from dnd5e_engine.evaluation_ruleset import RulesetBinding, verify_ruleset
+from dnd5e_engine.evaluation_saves import evaluate_save
 from dnd5e_engine.evaluation_state import CombatSnapshot
 from dnd5e_engine.evaluation_turn import evaluate_turn
 from dnd5e_engine.lib_loader import scoped_lib_loader
@@ -63,6 +64,10 @@ async def evaluate(
     )
     if request.operation_kind == "combat.item":
         result = RuleEvaluationResult(**common, **await evaluate_item(request, assets))
+        result.verify_request(request)
+        return result
+    if request.operation_kind == "rules.save":
+        result = RuleEvaluationResult(**common, **evaluate_save(request, assets))
         result.verify_request(request)
         return result
     if request.operation_kind == "rules.check":

@@ -774,3 +774,15 @@ This closes R13 initialization to R9 ordinary NPC attack without constructing Le
 runtime. Inventory, HP, resource and actor identity remain caller-supplied facts.
 Stat-block movement and complex templates are still refused. Local snapshot /7 and
 evaluation /10 do not approve public combat.start or Meta C-16 source authority.
+
+
+## R15 standalone Save inventory
+
+Save reads the saving actor's six scores, level/PB override, save proficiencies,
+reviewed session conditions and complete equipment/effect/feature exclusions, plus
+explicit DC, flag sources, magical provenance and RNG. It produces SaveRolled and
+an empty StateDelta with the world read fence; auto-failure carries unchanged RNG.
+Canonical clause overrides, time-varying lineage, finite modifiers and resource-
+dependent saves are refused before draw. Shared roll_save and modifier projection
+replace Legacy hydration on this bounded successful path. General live_save_modifiers,
+reaction/concentration/resource save chains remain in the historical inventory.

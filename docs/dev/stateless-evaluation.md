@@ -11,10 +11,10 @@ The current local candidate versions are:
 
 | Contract | Current version | Replaces |
 | --- | --- | --- |
-| RuleEvaluationRequest / Result | `engine-evaluation/10` | `/1`–`/9` |
+| RuleEvaluationRequest / Result | `engine-evaluation/11` | `/1`–`/10` |
 | StateSnapshot | `engine-snapshot/7` | `/1`–`/6` |
 | Availability request/result | `engine-availability/6` | `/1`–`/5` |
-| RulesetBinding evaluator | `dnd5e-evaluation/16` | `/15` and earlier |
+| RulesetBinding evaluator | `dnd5e-evaluation/17` | `/16` and earlier |
 
 Old envelopes, snapshots and results are explicitly rejected. There are no compatibility
 aliases for `InventoryCombatSnapshot`, `combat_inventory`, missing equipment or missing
@@ -59,6 +59,7 @@ remain OPEN. SM authenticates/authorizes the caller and approved write scope.
 | --- | --- |
 | combat.intent | One ordinary PC/NPC weapon Attack, an exact reviewed stat-block AttackActivity, explicit plain Pass / End Turn, ordinary Walk, Action Dash / Disengage |
 | rules.check | Explicitly adjudicated ordinary noncombat ability/skill check |
+| rules.save | Explicit noncombat actor saving throw; six abilities and fixed DC |
 | combat.item | Owned accessible single-use Potion of Healing, living self-drinker with declared free hand |
 | combat.close | Consistent terminal victory / TPK; no loot/effects/flight/forced end |
 
@@ -315,3 +316,30 @@ refusal, version/absence guards and post-draw faults cover this chain. Stat-bloc
 Movement remains unsupported pending complete opportunity-attack threat closure.
 Evaluation /10, snapshot /7, availability /6 and evaluator /16 are local revisions;
 public creation and C-16 source authority remain OPEN.
+
+
+## R15 standalone saving throws
+
+The local `rules.save` Actor branch requires SavePayload: saving target ID (equal to
+real actor_id), ability, nonnegative explicit DC, advantage/disadvantage source tuples
+and magical provenance. It admits a bounded NonCombatSnapshot with no pending setup,
+cover, active effects or save-modifying equipment/features. Only adjudicated `flag`
+sources are supplied externally. Reviewed persistent session conditions use the same
+pinned canonical condition clauses as Legacy; time-varying/effect-linked conditions,
+Exhaustion, Legendary Resistance and consumable modifiers refuse before RNG.
+
+`evaluation_saves.resolve_snapshot_save` shares actor_stats.save_modifier, canonical
+condition projection, save_primitive.roll_save and the original D20 resolver. Explicit
+flag provenance merges with condition sources through an optional per-invocation
+primitive argument; existing Legacy callers retain their behavior. No save formula,
+LiveCombat hydration or resource consumer is copied into the new path.
+
+Success and failure both return accepted, an empty closed Delta, a real SaveRolled
+and explicit RNGTransition. Ordinary saves have no attack-style automatic natural
+1/20 outcome. Condition auto-failure draws no dice; advantage cancellation draws one,
+uncancelled advantage/disadvantage two, in the existing order. SM commits event/RNG/
+receipt with its world fence; no-draw/event-only version policy remains OPEN.
+Standalone combat saves and magical source authorization remain bounded out; no
+system source_ref or rules.effect API is introduced. The shared pure save seam is
+available for separately admitted lifecycle calculations. Evaluation /11 and evaluator
+/17 are local candidates; Snapshot /7 and availability /6 remain unchanged.

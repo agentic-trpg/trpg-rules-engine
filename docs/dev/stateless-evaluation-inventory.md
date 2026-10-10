@@ -22,7 +22,7 @@ version/migration details are in [stateless evaluation](stateless-evaluation.md)
 
 ## Current stabilization additions
 
-Current snapshots are version `/4` only, with precisely CombatSnapshot and
+Current snapshots are version `/5` only, with precisely CombatSnapshot and
 NonCombatSnapshot discriminators. Both require InventoryState(entries=...),
 strict owner/instance closure and complete CharacterStateV2 equipment. Older snapshot
 versions and the third combat_inventory context are rejected explicitly; no empty
@@ -734,3 +734,10 @@ A full-HP use has inventory/budget deltas and real dice, despite zero HP change.
 formal WorldEvent identity is allocated by Engine. The independent scratch consumer tests
 all-operation rollback, stale world/entry/RNG guards and replay rejection. These are local
 consumer proofs, not claims that the current SM branch already admits inventory or healing.
+
+## R11 dying-state closure
+
+Snapshot /5 retains the same components and widens death-save failures through four
+for natural 1 at two prior failures. Explicit Pass admits permanent implied unconscious/
+prone only; all other expiry/reaction/concentration dependencies remain unsupported.
+The existing exhaustive Delta projector carries every admitted lifecycle change.

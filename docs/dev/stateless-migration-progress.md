@@ -40,10 +40,10 @@ classification applies only to the stated bounded capability, not its whole fami
 | --- | --- | --- | --- |
 | Result/binding/RNG envelope | Fully migrated local candidate | Yes for envelope | `evaluation_contracts`, `evaluation_ruleset`, `evaluation_rng`; durable commit/receipt is SM work |
 | Combat initialization / Start | Legacy Stateful Only | No | `start_combat/_start_combat`, `build_party`; registration, initiative/hydration, first turn and hooks; no start/create operation |
-| Turn / Action Economy | Partially migrated through attack/item | Yes for admitted Attack/Item; no for general turn | Shared `turn_rules`, `action_economy_rules`; ordinary payment/reset/dead skipping in Attack. Standalone pass, extra/restricted Actions, general expiry/death-save admission need work |
+| Turn / Action Economy | Bounded explicit Pass and Attack/Item | **Yes, R11** for bounded lifecycle | `evaluation_turn` plus shared `turn_rules` / death saves; complete reset/dead skipping/round wrap/ordinary dying PC. Complex expiry, reactions and extended actions remain Legacy |
 | Movement / positioning | Legacy Stateful Only | No | `live_movement`, `movement`, `spatial`; pure geometry/costs exist, but position Delta and evaluation entry absent; terrain/cover/OA remain Legacy |
 | Ordinary PC/NPC weapon or explicit stat-block single Attack | Fully migrated bounded subset | **Yes, R9** | `evaluation_preflight` → `evaluation_attack.execute_attack` → Activity Resolver → `evaluation_projection.attack_delta`; no Legacy execution context |
-| Attack / Damage / Death overall | Partially migrated | Partially | Ordinary roll/hit/miss/crit/R-I-V/temp HP/death/payment/turn and attack-induced next-turn death save migrated; initial dying states, riders, trained Masteries, Multiattack/recharge/legendary/effects remain Legacy |
+| Attack / Damage / Death overall | Partially migrated | Partially | Ordinary roll/hit/miss/crit/R-I-V/temp HP/death/payment/turn and attack-induced next-turn death save migrated; riders, trained Masteries, Multiattack/recharge/legendary/effects remain Legacy |
 | Adjudicated noncombat ability/skill check | Fully migrated bounded subset | Yes | `evaluation_checks` → `activities/check_pipeline`; explicit DC/GM flags/proficiency/expertise/Jack/Reliable Talent; no Legacy runtime |
 | Saves / skill checks overall | Partially migrated | Partially | `check`, `save_primitive`, `live_save_modifiers`; standalone Save envelope, tools/senses/modifier consumption and effect dependencies missing |
 | Owned single-use self-healing consumable | Fully migrated bounded external contract | **Yes, R10** | `evaluation_items` → shared CombatComputation / HealActivity / item_rules; inventory/HP/budget/turn/events/RNG remain complete |
@@ -150,7 +150,7 @@ Read-only observation: SM `4e5cc5ac2765be89f0b4164bc6923083539374c4`, branch
 `feat/sm-b14-npc-persistent-state`; dependency pin remains Engine/Data
 `602dcb8d448e670049427bbb751d6ed226005298`. Request builder uses evaluation `/1`/`/4`,
 Snapshot `/1`/`/2`; manifest accepts evaluator `/4`/`/8`. It cannot consume this branch's
-evaluation `/6`, Snapshot `/4`, availability `/3` and evaluator **`/12`**.
+evaluation `/7`, Snapshot `/5`, availability `/4` and evaluator **`/13`**.
 No SM file was changed and no SM tests/integration result are claimed.
 
 R10 changes only evaluator implementation binding `/11` → `/12`; strict external shapes
@@ -168,7 +168,7 @@ These next batches are a finite foundation plan, not a promise of full conversio
 | Batch | Scope / workload | Verifiable exit |
 | --- | --- | --- |
 | R10: Item and Closure | Completed bounded runtime extraction | Independent successful execution, event/RNG and complete-state parity, post-compute fault isolation |
-| R11: standalone Turn | Planned: explicit Pass/End Turn, bounded death saves, reset/round/dead skipping | Independent successful lifecycle and complete Delta, pre-draw hook refusal, rollback and parity |
+| R11: standalone Turn | Completed bounded: explicit Pass/End Turn, bounded death saves, reset/round/dead skipping | Independent successful lifecycle and complete Delta, pre-draw hook refusal, rollback and parity |
 | R12: movement and positioning | Medium/large: typed position Delta; ordinary move/Dash/Disengage, existing grid/terrain/LoS/cover/ledger algorithms; refuse reaction-dependent movement pending interrupt migration | Independent path/collision/range/cost parity and expected-value consumer tests; rejected movement no payment/RNG; no Legacy movement runtime |
 | R13: combat initialization | Planned: bounded NonCombatSnapshot mechanical initialization, local closed creation candidate | Initiative/equipment/first-turn parity without registration; source authority remains OPEN |
 
@@ -234,3 +234,13 @@ R10 review also covers active walk/swim/climb ledger projection at an empty-area
 turn boundary and the remaining movement window after a Bonus Action. The projection
 reuses movement.project_speeds/speed_for_mode; it does not create another Speed formula.
 The massive-damage capability probe now follows its shared computation call site.
+
+## R11 turn migration evidence
+
+Explicit Pass shares CombatComputation and the original death-save algorithm; it imports
+no Legacy runtime or hooks. PC/NPC turns, unused/spent Action, dead skipping, two rounds,
+ledger/budget reset, stable PCs and natural 1/20 are checked against independent values
+and Legacy event/state/RNG output. Repeated/concurrent evaluations, stale guards and
+post-roll failure/cancellation preserve inputs and expose no partial proposals.
+Snapshot /5 allows the real terminal failure counter of four; envelope /7, availability
+/4 and evaluator /13 reject stale schema identities. General expiry remains unmigrated.

@@ -16,7 +16,7 @@ from dnd5e_engine.action_economy_rules import action_economy_gate_failure
 from dnd5e_engine.activities.dice import validate_expression
 from dnd5e_engine.evaluation_actor import combatant
 from dnd5e_engine.evaluation_contracts import CombatIntentPayload, PreflightChoice, RuleError
-from dnd5e_engine.evaluation_death import death_consistency
+from dnd5e_engine.evaluation_death import death_consistency, turn_lifecycle_support_failure
 from dnd5e_engine.evaluation_state import CharacterStateV2, CombatSnapshot
 from dnd5e_engine.events import AttackFailed, CastFailed, DamageType
 from dnd5e_engine.intents import IntentRejectedError
@@ -46,9 +46,13 @@ def refused(status: Literal["rejected", "unsupported"], code: str, reason: str) 
     return AttackAdmission(status=status, error=RuleError(code=code, reason=reason))
 
 
-def snapshot_support_failure(snapshot: CombatSnapshot) -> str | None:
+def snapshot_support_failure(
+    snapshot: CombatSnapshot, *, turn_lifecycle: bool = False
+) -> str | None:
     state = snapshot.combat_state
-    failure = death_consistency(snapshot)
+    failure = death_consistency(snapshot, allow_dying=turn_lifecycle)
+    if failure is None and turn_lifecycle:
+        failure = turn_lifecycle_support_failure(snapshot)
     if failure:
         return failure
     # Full dependencies remain in the DTO, even when this slice cannot execute them.
@@ -107,7 +111,7 @@ def snapshot_support_failure(snapshot: CombatSnapshot) -> str | None:
         if isinstance(actor, CharacterStateV2) and actor.weapon_mastery_slugs:
             return "trained weapon mastery execution is not migrated"
         if (
-            actor.conditions
+            (actor.conditions and not turn_lifecycle)
             or actor.concentration_effect_id
             or actor.trait_mechanics
             or actor.class_slug

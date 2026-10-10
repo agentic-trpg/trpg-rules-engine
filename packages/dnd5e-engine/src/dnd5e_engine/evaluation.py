@@ -23,6 +23,7 @@ from dnd5e_engine.evaluation_projection import EvaluationInvariantError, attack_
 from dnd5e_engine.evaluation_rng import RNGTransition
 from dnd5e_engine.evaluation_ruleset import RulesetBinding, verify_ruleset
 from dnd5e_engine.evaluation_state import CombatSnapshot
+from dnd5e_engine.evaluation_turn import evaluate_turn
 from dnd5e_engine.lib_loader import scoped_lib_loader
 
 
@@ -89,6 +90,10 @@ async def evaluate(
             ),
         )
     snapshot = request.state_snapshot
+    if request.payload.intent_type == "pass":
+        result = RuleEvaluationResult(**common, **evaluate_turn(request, assets))
+        result.verify_request(request)
+        return result
     with scoped_lib_loader(assets):
         admission = prepare_attack(
             snapshot,

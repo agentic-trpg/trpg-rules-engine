@@ -32,7 +32,7 @@ from dnd5e_engine.types.objects import CombatObject
 
 class DeathSaveRecord(EvaluationModel):
     successes: Annotated[int, Field(ge=0, le=3)]
-    failures: Annotated[int, Field(ge=0, le=3)]
+    failures: Annotated[int, Field(ge=0, le=4)]
     is_stable: bool
 
 
@@ -404,7 +404,7 @@ class InventoryState(EvaluationModel):
 
 
 class SnapshotBase(EvaluationModel):
-    snapshot_schema_version: Literal["engine-snapshot/4"]
+    snapshot_schema_version: Literal["engine-snapshot/5"]
     session_id: Annotated[str, Field(min_length=1)]
     world_version: Annotated[int, Field(ge=0)]
     character_states: tuple[CharacterStateV2, ...]

@@ -193,10 +193,12 @@ class CombatComputation:
             self.emit(ConditionRemoved(target_id=actor_id, condition="unconscious"))
             self.emit(ConditionApplied(target_id=actor_id, condition="prone"))
 
-    def finish_turn(self, actor_id: str, *, allow_movement: bool = False) -> None:
+    def finish_turn(
+        self, actor_id: str, *, allow_movement: bool = False, force: bool = False
+    ) -> None:
         actor = self.actors[actor_id]
         # All other payment/windows are explicitly excluded by admission.
-        if (
+        if not force and (
             actor.action_available
             or not attack_rules.attack_action_is_spent(actor)
             or (allow_movement and actor.movement_remaining > 0 and self.speed(actor) > 0)

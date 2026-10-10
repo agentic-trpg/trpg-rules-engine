@@ -178,7 +178,7 @@ def test_old_snapshot_versions_are_not_silently_upgraded(old_version):
     value["state_snapshot"]["snapshot_schema_version"] = old_version
     import json
 
-    with pytest.raises(ValidationError, match="engine-snapshot/4"):
+    with pytest.raises(ValidationError, match="engine-snapshot/5"):
         RuleEvaluationRequest.model_validate_json(json.dumps(value))
     value["state_snapshot"]["snapshot_kind"] = "combat_inventory"
     with pytest.raises(ValidationError, match="union_tag_invalid"):

@@ -11,10 +11,10 @@ The current local candidate versions are:
 
 | Contract | Current version | Replaces |
 | --- | --- | --- |
-| RuleEvaluationRequest / Result | `engine-evaluation/6` | `/1`–`/5` |
-| StateSnapshot | `engine-snapshot/4` | `/1`–`/3` |
-| Availability request/result | `engine-availability/3` | `/1`–`/2` |
-| RulesetBinding evaluator | `dnd5e-evaluation/12` | `/11` and earlier |
+| RuleEvaluationRequest / Result | `engine-evaluation/7` | `/1`–`/6` |
+| StateSnapshot | `engine-snapshot/5` | `/1`–`/4` |
+| Availability request/result | `engine-availability/4` | `/1`–`/3` |
+| RulesetBinding evaluator | `dnd5e-evaluation/13` | `/12` and earlier |
 
 Old envelopes, snapshots and results are explicitly rejected. There are no compatibility
 aliases for `InventoryCombatSnapshot`, `combat_inventory`, missing equipment or missing
@@ -57,7 +57,7 @@ remain OPEN. SM authenticates/authorizes the caller and approved write scope.
 
 | Operation | Current admitted subset |
 | --- | --- |
-| combat.intent | One ordinary PC/NPC weapon Attack, or an exact reviewed stat-block AttackActivity |
+| combat.intent | One ordinary PC/NPC weapon Attack, an exact reviewed stat-block AttackActivity, or explicit plain Pass / End Turn |
 | rules.check | Explicitly adjudicated ordinary noncombat ability/skill check |
 | combat.item | Owned accessible single-use Potion of Healing, living self-drinker with declared free hand |
 | combat.close | Consistent terminal victory / TPK; no loot/effects/flight/forced end |
@@ -104,7 +104,7 @@ calculates commit success. Whole-world read fencing is conservative and explicit
 
 The shared terminal Death fold now synchronizes dead_ids, DeathRecord and is_alive=False
 for all creature kinds. Zero-HP Characters still awaiting death saves are distinct;
-their lifecycle is not newly admitted. Shared turn advancement skips recorded dead
+their bounded lifecycle is admitted by explicit Pass (R11); Attack/Item admission remains narrower. Shared turn advancement skips recorded dead
 creatures without their start/end hooks or RNG and bounds the all-dead scan. Dead
 roster entries and history remain available for outcome projection. After killing one
 enemy, remaining live actors can continue legal attacks with the complete committed
@@ -218,3 +218,18 @@ complete turn-boundary ledger projection. Closure uses outcome_rules with explic
 actors, sides, HP, temporary HP, XP, death records and historical expenditure. Legacy
 wrappers call the same kernels. execution_context remains a regression-only adapter;
 no supported evaluation operation calls it. Full-family migration remains incomplete.
+
+## R11 explicit bounded turn lifecycle
+
+A plain `CombatIntentPayload(intent_type="pass")` on `combat.intent` explicitly ends
+the current PC or NPC turn, including an unused Action. It does not infer a command
+from text or select NPC tactics. Shared turn rules skip recorded dead actors, wrap
+rounds, reset the incoming actor budgets and ledger, and perform ordinary Character
+death saves. Only permanent implied unconscious/prone conditions are admitted;
+effects, concentration, pending reactions, expiry and complex hooks refuse before RNG.
+
+The complete existing guarded delta family carries turn, budgets, ledger, HP, conditions
+and death history; the SM commits it with ordered events and RNG. Natural 1 can take
+two prior failures to four, matching the shared death-save algorithm, so snapshot /5
+explicitly widens that counter and the envelope/availability/binding are versioned.
+This is a local DTO revision; Meta OPEN wire and no-draw version policy remain OPEN.

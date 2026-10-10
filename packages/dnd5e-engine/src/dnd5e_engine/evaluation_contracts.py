@@ -2,19 +2,48 @@
 
 from typing import Annotated, Literal, Self
 
-from pydantic import ConfigDict, Field, field_validator, model_validator
+from pydantic import ConfigDict, Field, ValidationInfo, field_validator, model_validator
+from pydantic_core import to_json
 
 from dnd5e_engine.evaluation_base import EvaluationModel
 from dnd5e_engine.evaluation_delta import CombatClose, StateDelta
 from dnd5e_engine.evaluation_rng import RNGContext, RNGTransition
 from dnd5e_engine.evaluation_ruleset import RulesetBinding
 from dnd5e_engine.evaluation_state import CombatSnapshot, StateSnapshot
-from dnd5e_engine.events import ALL_COMBAT_EVENT_TYPES, CombatEvent
+from dnd5e_engine.events import (
+    ALL_COMBAT_EVENT_TYPES,
+    AdvantageSource,
+    CheckContext,
+    CombatEvent,
+    RequiredSense,
+)
 from dnd5e_engine.orchestrator import PlayerIntent
-from dnd5e_engine.types.checks import CheckRequest
+from dnd5e_engine.rules.skills import Skill
+from dnd5e_engine.types.checks import CheckRequest, GrantedDie
 
 SCHEMA_VERSION = "engine-evaluation/1"
-EvaluationVersion = Literal["engine-evaluation/1", "engine-evaluation/2", "engine-evaluation/3"]
+EvaluationVersion = Literal[
+    "engine-evaluation/1", "engine-evaluation/2", "engine-evaluation/3", "engine-evaluation/4"
+]
+
+
+class CheckPayload(CheckRequest):
+    """Every adjudication fact is explicit, including intentional nulls."""
+
+    model_config = ConfigDict(
+        extra="forbid", frozen=True, strict=True, revalidate_instances="always"
+    )
+
+    skill: Skill | None = Field(...)
+    tool: str | None = Field(...)
+    dc: Annotated[int, Field(ge=0)] | None = Field(...)
+    target_id: str | None = Field(...)
+    context: CheckContext = Field(...)
+    required_sense: RequiredSense = Field(...)
+    social_interaction: bool = Field(...)
+    advantage: tuple[AdvantageSource, ...] = Field(...)
+    disadvantage: tuple[AdvantageSource, ...] = Field(...)
+    redeem_granted_die: GrantedDie | None = Field(...)
 
 
 class CombatClosePayload(EvaluationModel):
@@ -37,10 +66,25 @@ class RuleEvaluationRequest(EvaluationModel):
     command_id: Annotated[str, Field(min_length=1)]
     operation_kind: Literal["combat.intent", "rules.check", "combat.close"]
     actor_id: Annotated[str, Field(min_length=1)]
-    payload: CombatIntentPayload | CheckRequest | CombatClosePayload
+    payload: CombatIntentPayload | CheckPayload | CheckRequest | CombatClosePayload
     state_snapshot: StateSnapshot
     ruleset_binding: RulesetBinding
     rng_context: RNGContext
+
+    @field_validator("payload", mode="before")
+    @classmethod
+    def strict_check_payload(cls, value: object, info: ValidationInfo) -> object:
+        if info.mode == "json" and info.data.get("operation_kind") == "combat.intent":
+            return CombatIntentPayload.model_validate_json(to_json(value))
+        if (
+            info.data.get("schema_version") == "engine-evaluation/4"
+            and info.data.get("operation_kind") == "rules.check"
+        ):
+            # Do not let the compatibility union fall back to coercive CheckRequest.
+            if info.mode == "json":
+                return CheckPayload.model_validate_json(to_json(value))
+            return CheckPayload.model_validate(value)
+        return value
 
     @model_validator(mode="after")
     def operation_payload(self) -> Self:
@@ -48,7 +92,7 @@ class RuleEvaluationRequest(EvaluationModel):
             raise ValueError("request and snapshot session identities differ")
         if (
             self.state_snapshot.snapshot_schema_version == "engine-snapshot/2"
-            and self.schema_version != "engine-evaluation/3"
+            and self.schema_version not in ("engine-evaluation/3", "engine-evaluation/4")
         ):
             raise ValueError("snapshot /2 requires engine-evaluation/3")
         if self.operation_kind == "combat.intent":
@@ -59,7 +103,7 @@ class RuleEvaluationRequest(EvaluationModel):
             if self.payload.source_id is not None and self.payload.source_id != self.actor_id:
                 raise ValueError("payload source_id differs from actor_id")
         elif self.operation_kind == "combat.close":
-            if self.schema_version not in ("engine-evaluation/2", "engine-evaluation/3"):
+            if self.schema_version == "engine-evaluation/1":
                 raise ValueError("combat.close requires engine-evaluation/2")
             if not isinstance(self.payload, CombatClosePayload) or not isinstance(
                 self.state_snapshot, CombatSnapshot
@@ -67,6 +111,10 @@ class RuleEvaluationRequest(EvaluationModel):
                 raise ValueError("combat.close requires a closure payload and combat snapshot")
         elif not isinstance(self.payload, CheckRequest) or self.payload.actor_id != self.actor_id:
             raise ValueError("rules.check requires a matching actor and typed check payload")
+        elif self.schema_version == "engine-evaluation/4" and not isinstance(
+            self.payload, CheckPayload
+        ):
+            raise ValueError("rules.check /4 requires every adjudication field explicitly")
         return self
 
 
@@ -98,6 +146,12 @@ class PreflightChoice(EvaluationModel):
 ProposedEvents = tuple[CombatEvent, ...]
 
 
+class CheckAdjudicationChoice(EvaluationModel):
+    kind: Literal["check.adjudication"]
+    actor_id: Annotated[str, Field(min_length=1)]
+    required_fields: tuple[Literal["dc"], ...]
+
+
 class RuleEvaluationResult(EvaluationModel):
     schema_version: EvaluationVersion
     session_id: Annotated[str, Field(min_length=1)]
@@ -109,7 +163,7 @@ class RuleEvaluationResult(EvaluationModel):
     state_delta: StateDelta | None
     proposed_events: ProposedEvents
     rng_transition: RNGTransition | None
-    choice: PreflightChoice | None
+    choice: PreflightChoice | CheckAdjudicationChoice | None
     error: RuleError | None
 
     @field_validator("proposed_events", mode="before")
@@ -128,6 +182,11 @@ class RuleEvaluationResult(EvaluationModel):
 
     @model_validator(mode="after")
     def status_fields(self) -> Self:
+        if (
+            isinstance(self.choice, CheckAdjudicationChoice)
+            and self.schema_version != "engine-evaluation/4"
+        ):
+            raise ValueError("check adjudication choice requires engine-evaluation/4")
         if self.status == "accepted":
             if self.state_delta is None or self.rng_transition is None:
                 raise ValueError("accepted requires delta and RNG transition")

@@ -653,3 +653,17 @@ a name can show a same-named DTO consumer; verify the receiver at the linked loc
 | `flurry_strikes_remaining` | - | `orchestrator.py:10847 (_classify_attack_funding)`; `orchestrator.py:10923 (_consume_intent_budget)`; `orchestrator.py:7980 (_turn_can_continue)` |
 | `extra_actions_remaining` | - | `action_policy.py:201 (preflight_intent_policy)`; `action_policy.py:269 (record_budget_changes)`; `action_policy.py:53 (denial)` |
 | `action_surge_used_this_turn` | - | `orchestrator.py:10950 (_action_surge_failure)`; `orchestrator.py:7954 (_action_surge_opportunity)` |
+
+
+## Batch 7 check dependency boundary
+
+NonCombatSnapshot retains the complete CharacterState (/1) or CharacterStateV2 (/2),
+effects and scene. Check projection uses explicit scores, PB/level, skill proficiency and
+expertise, numeric skill bonuses, Jack of All Trades, Reliable Talent and Stealth armor
+flag. Classes/species/features/conditions/effects and equipment passive effects are refused,
+not dropped. The new CheckPayload explicitly carries ability, skill/tool, DC, target,
+context, required sense, social flag, both advantage sources and granted-die redemption.
+Only generic, no-sense, no-tool, no-redemption adjudications with GM `flag` sources execute.
+The shared check pipeline mutates no admitted state: StateDelta operations are empty, while
+the CheckRolled proposal and RNGTransition form the complete submission unit. A local typed
+check.adjudication choice is versioned in evaluation /4; no new mechanical delta kind is added.

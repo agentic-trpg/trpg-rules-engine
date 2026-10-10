@@ -339,3 +339,36 @@ attack delta vocabulary suffices. Availability uses the exact same preflight and
 versions; it neither equips a weapon nor reserves an action. SM must author the
 new equipment/mastery facts, adopt the schemas and pin, and retain its existing
 atomic expected-value/Delta/Event/RNG transaction.
+
+
+## Batch 7: adjudicated noncombat checks
+
+`engine-evaluation/4` adds executable `rules.check` on `NonCombatSnapshot` /1 or /2;
+`dnd5e-evaluation/8` is the evaluator pin. Earlier wire versions keep their previous
+unimplemented check boundary. Attack (/1 and /2 snapshots) and closure remain compatible.
+The new `CheckPayload` requires **all** inherited CheckRequest fields, including explicit
+nullable fields and empty advantage/disadvantage tuples. Unknown/coerced or omitted fields
+are schema errors; legacy CheckRequest remains unchanged. JSON arrays retain strict element
+validation. An explicit `dc=None` returns `needs_choice` with a typed `check.adjudication`
+choice requiring `dc`; no difficulty or ability is inferred from prose.
+
+Supported: all six abilities and 18 SRD skills; explicit governing ability (including GM
+variants); proficiency, expertise, Jack of All Trades, Reliable Talent, reviewed numeric
+skill bonuses, declared armor Stealth disadvantage, and explicit GM advantage/disadvantage
+(`flag`). Resolution calls the existing `resolve_check_request`, shared `check_modifier`
+and D20 primitive with a restored per-request RNG. The old `check.resolve_check` API is
+unchanged and supplies differential evidence for canonical ability/skill adjudications.
+Checks use internal cost ownership: they do not implement free Search/Study/Influence Actions.
+
+A failed DC is `accepted`, carrying one real `CheckRolled`, an empty StateDelta with the
+world fence, and the actual RNGTransition. Nonaccepted results carry no mechanical proposal.
+Unknown/dead/dying actors and absent targets are rejected. Tools, granted-die redemption,
+non-generic action contexts, sensory checks, derived advantage sources, effects/conditions,
+class/species/feature sources and passive equipment effects remain unsupported before RNG.
+All supplied actors and effects remain in the snapshot; unmigrated dependencies are refused.
+
+State Machine must accept event-only mechanical results, atomically commit CheckRolled and
+RNG advancement with the request fingerprint/OCC guards, and decide its own event-only
+world_version and RNG stream-version policy. Neither OPEN policy is frozen here. It must
+supply the explicit adjudication payload and matching evaluator/data binding, route noncombat
+requests separately from combat intents, and handle `check.adjudication` before committing.

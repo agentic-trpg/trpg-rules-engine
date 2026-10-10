@@ -9,6 +9,7 @@ from dnd5e_srd_data.loader import AssetLoader
 
 from dnd5e_engine import action_policy
 from dnd5e_engine import orchestrator as orch
+from dnd5e_engine.evaluation_checks import evaluate_check
 from dnd5e_engine.evaluation_closure import evaluate_closure
 from dnd5e_engine.evaluation_contracts import (
     CombatIntentPayload,
@@ -77,6 +78,10 @@ async def evaluate(
             ),
         ),
     )
+    if request.operation_kind == "rules.check" and request.schema_version == "engine-evaluation/4":
+        result = RuleEvaluationResult(**common, **evaluate_check(request, assets))
+        result.verify_request(request)
+        return result
     if request.operation_kind == "combat.close":
         closure = evaluate_closure(request, assets)
         result = RuleEvaluationResult(**common, **closure)
@@ -105,7 +110,7 @@ async def evaluate(
             request.actor_id,
             request.payload,
             assets,
-            common_weapons=request.schema_version == "engine-evaluation/3"
+            common_weapons=request.schema_version in ("engine-evaluation/3", "engine-evaluation/4")
             and snapshot.snapshot_schema_version == "engine-snapshot/2",
         )
         if admission.status != "accepted":

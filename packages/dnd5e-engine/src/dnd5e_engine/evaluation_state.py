@@ -31,12 +31,13 @@ from dnd5e_engine.evaluation_effects import (
     RepeatSaveState,
     explicit_effect_fields,
 )
+from dnd5e_engine.evaluation_reaction_state import PendingReactionState
 from dnd5e_engine.evaluation_resources import FeatureResource, ResourceState, SlotResource
 from dnd5e_engine.events import CombatEvent, DamageType
 from dnd5e_engine.movement import MovementLedger
 from dnd5e_engine.outcome import DeathRecord
 from dnd5e_engine.persistent_areas import PersistentArea
-from dnd5e_engine.reactions import ActiveReactionResponse, PendingReaction
+from dnd5e_engine.reactions import ActiveReactionResponse
 from dnd5e_engine.specs import LightLevel, Obscurement, WallSegment
 from dnd5e_engine.timed_activities import PendingTimedActivity
 from dnd5e_engine.types.checks import HelpCheckGrant
@@ -375,12 +376,12 @@ class CombatState(EvaluationModel):
     event_log: tuple[CombatEvent, ...]
     deaths_recorded: list[DeathRecord]
     dead_ids: set[str]
-    expended_resources: dict[str, dict[str, int]]
+    expended_resources: dict[str, dict[str, Annotated[int, Field(ge=0)]]]
     concentration_chain: dict[str, list[tuple[str, str, str]]]
     concentration_rounds_remaining: dict[str, int]
     conditions_by_effect: tuple[ConditionLink, ...]
     effect_lifecycles: tuple[LifecycleRecord, ...]
-    pending_reactions: list[PendingReaction]
+    pending_reactions: list[PendingReactionState]
     active_reaction_responses: list[ActiveReactionResponse]
     damage_instance_sequence: int
     rider_uses: set[tuple[str, str, int]]
@@ -456,7 +457,7 @@ class InventoryState(EvaluationModel):
 
 
 class SnapshotBase(EvaluationModel):
-    snapshot_schema_version: Literal["engine-snapshot/11"]
+    snapshot_schema_version: Literal["engine-snapshot/12"]
     session_id: Annotated[str, Field(min_length=1)]
     world_version: Annotated[int, Field(ge=0)]
     character_states: tuple[CharacterStateV2, ...]
@@ -529,6 +530,10 @@ class CombatSnapshot(SnapshotBase):
     def dependency_closure(self) -> Self:
         ids = {actor.entity_id for actor in self.character_states}
         state = self.combat_state
+        if any(p.owner_id not in ids for p in state.pending_reactions) or len(
+            {p.owner_id for p in state.pending_reactions}
+        ) != len(state.pending_reactions):
+            raise ValueError("duplicate or absent predeclared reaction owner")
         if set(state.initiative_ids) != ids or set(state.actor_zone) != ids:
             raise ValueError("snapshot roster/position closure is incomplete")
         if not (state.party_ids | state.encounter_ids | set(state.summons)) <= ids:

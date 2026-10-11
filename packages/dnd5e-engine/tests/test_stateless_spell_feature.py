@@ -13,7 +13,11 @@ from dnd5e_engine import evaluation_spells
 from dnd5e_engine import orchestrator as orch
 from dnd5e_engine.evaluation_casting import ActorCastingState, CastingState, ClassSpellSource
 from dnd5e_engine.evaluation_contracts import CombatIntentPayload, RuleEvaluationResult
-from dnd5e_engine.evaluation_delta import ResourceUpdate, SlotSpendLedgerUpdate
+from dnd5e_engine.evaluation_delta import (
+    PendingReactionUpdate,
+    ResourceUpdate,
+    SlotSpendLedgerUpdate,
+)
 from dnd5e_engine.evaluation_resources import FeatureResource, ResourceState, SlotResource
 from dnd5e_engine.evaluation_rng import RNGState
 from dnd5e_engine.evaluation_ruleset import ruleset_binding
@@ -156,6 +160,10 @@ def apply_healing(snapshot, result, *, world_version=None):
     assert result.state_delta.expected_world_version == (
         snapshot.world_version if world_version is None else world_version
     )
+    pending = [o for o in result.state_delta.operations if isinstance(o, PendingReactionUpdate)]
+    for op in pending:
+        assert snapshot.combat_state.combat_id == op.combat_id
+        assert tuple(snapshot.combat_state.pending_reactions) == op.expected
     payments = [o for o in result.state_delta.operations if isinstance(o, ResourceUpdate)]
     ledgers = [o for o in result.state_delta.operations if isinstance(o, SlotSpendLedgerUpdate)]
     pools = {(p.owner_id, p.pool_id): p for p in snapshot.resource_state.pools}
@@ -171,7 +179,9 @@ def apply_healing(snapshot, result, *, world_version=None):
                     "operations": tuple(
                         o
                         for o in result.state_delta.operations
-                        if not isinstance(o, (ResourceUpdate, SlotSpendLedgerUpdate))
+                        if not isinstance(
+                            o, (PendingReactionUpdate, ResourceUpdate, SlotSpendLedgerUpdate)
+                        )
                     ),
                 }
             )
@@ -191,6 +201,8 @@ def apply_healing(snapshot, result, *, world_version=None):
             }
     for op in ledgers:
         value["combat_state"]["expended_resources"][op.owner_id] = op.value
+    for op in pending:
+        value["combat_state"]["pending_reactions"] = [p.model_dump(mode="python") for p in op.value]
     value["resource_state"] = ResourceState(pools=tuple(pools.values())).model_dump(mode="python")
     return CombatSnapshot.model_validate(value)
 
@@ -521,6 +533,7 @@ def test_full_hp_still_draws_and_pays_and_source_data_drift_refuses(feature, mon
 
 
 def test_pending_reaction_and_missing_casting_component_refuse_before_rng(monkeypatch):
+    from dnd5e_engine.evaluation_reaction_state import reaction_state
     from dnd5e_engine.reactions import PendingReaction
 
     request, loader, _, _ = healing_case()
@@ -541,7 +554,11 @@ def test_pending_reaction_and_missing_casting_component_refuse_before_rng(monkey
         snapshot.model_copy(
             update={
                 "combat_state": snapshot.combat_state.model_copy(
-                    update={"pending_reactions": [pending]}
+                    update={
+                        "pending_reactions": [
+                            reaction_state(pending, spell_source_id="class:wizard")
+                        ]
+                    }
                 ),
             }
         ),

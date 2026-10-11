@@ -85,10 +85,13 @@ def concentration_support_failure(
     caster = actors.get(target_id)
     if (
         caster is None
+        or not caster.is_alive
+        or caster.hp_current <= 0
+        or target_id in state.dead_ids
         or set(state.concentration_chain) != {target_id}
         or set(state.concentration_rounds_remaining) != {target_id}
     ):
-        return "exactly one complete concentration source is required"
+        return "exactly one living conscious complete concentration source is required"
     chain = state.concentration_chain[target_id]
     if (
         not chain

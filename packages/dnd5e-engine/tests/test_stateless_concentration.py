@@ -552,3 +552,39 @@ def test_modified_condition_binding_cannot_use_compiled_projection(monkeypatch):
     request = request.model_copy(update={"ruleset_binding": ruleset_binding(loader)})
     monkeypatch.setattr(RNGState, "restore", lambda *a: pytest.fail("restored RNG"))
     assert evaluate_concentration_candidate(request, loader=loader).status == "unsupported"
+
+
+def test_recorded_dead_source_cannot_keep_existing_concentration_or_roll(monkeypatch):
+    from dnd5e_engine.damage_rules import death_record
+    from dnd5e_engine.evaluation_actor import combatant
+    from dnd5e_engine.events import Death
+
+    request, _, _, loader = concentration_case(seed=0, amount=1)
+    snapshot = request.state_snapshot
+    actors = list(snapshot.character_states)
+    index = next(i for i, a in enumerate(actors) if a.entity_id == request.payload.target_id)
+    actors[index] = actors[index].model_copy(update={"hp_current": 0, "is_alive": False})
+    record = death_record(
+        combatant(actors[index]),
+        Death(target_id=request.payload.target_id, reason="damage"),
+        location_id=snapshot.scene_state.scene_id,
+        killer_id=request.payload.source_id,
+    )
+    state = snapshot.combat_state.model_copy(
+        update={"dead_ids": {request.payload.target_id}, "deaths_recorded": [record]}
+    )
+    snapshot = snapshot.model_copy(
+        update={"character_states": tuple(actors), "combat_state": state}
+    )
+    original = deepcopy(snapshot)
+    monkeypatch.setattr(
+        RNGState, "restore", lambda *a: pytest.fail("dead concentration source restored RNG")
+    )
+    result = evaluate_concentration_candidate(
+        request.model_copy(update={"state_snapshot": snapshot}), loader=loader
+    )
+    assert result.status == "unsupported"
+    assert result.state_delta is None
+    assert result.rng_transition is None
+    assert not result.proposed_events
+    assert snapshot == original

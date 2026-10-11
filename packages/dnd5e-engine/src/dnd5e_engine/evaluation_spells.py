@@ -17,13 +17,18 @@ from dnd5e_engine.evaluation_actor import combatant
 from dnd5e_engine.evaluation_computation import CombatComputation
 from dnd5e_engine.evaluation_contracts import CombatIntentPayload, RuleEvaluationRequest
 from dnd5e_engine.evaluation_delta import ResourceUpdate
-from dnd5e_engine.evaluation_paid_projection import paid_delta, payment_post_state, slot_ledger
+from dnd5e_engine.evaluation_paid_projection import payment_post_state, slot_ledger
 from dnd5e_engine.evaluation_payments import feature_payments, spell_payment
+from dnd5e_engine.evaluation_reactions import (
+    prepare_counterspell,
+    reaction_paid_delta,
+    resolve_counterspell,
+)
 from dnd5e_engine.evaluation_rng import RNGTransition
 from dnd5e_engine.evaluation_spell_dependencies import healing_dependencies
 from dnd5e_engine.evaluation_state import CombatSnapshot
 from dnd5e_engine.evaluation_turn import TurnEvaluation, _refuse
-from dnd5e_engine.events import IntentSubmitted, SpellCast
+from dnd5e_engine.events import CastFailed, IntentSubmitted, SpellCast
 from dnd5e_engine.feature_runtime import DrawFreeRandom, FeatureInvocation, preflight_feature
 from dnd5e_engine.lib_loader import scoped_lib_loader
 from dnd5e_engine.spatial import GridTopology
@@ -290,6 +295,12 @@ def evaluate_healing(request: RuleEvaluationRequest, loader: AssetLoader) -> Tur
             "target_invalid",
             "living positive-HP target is required; revival is not migrated",
         )
+    if state.pending_reactions and intent.intent_type != "cast_spell":
+        return _refuse(
+            "unsupported",
+            "reaction.trigger",
+            "only the reviewed spell-cast opportunity is migrated",
+        )
     if failure := healing_dependencies(snapshot, loader, intent.target_id):
         return _refuse("unsupported", "healing.dependencies", failure)
     actor = combatant(current)
@@ -300,6 +311,11 @@ def evaluate_healing(request: RuleEvaluationRequest, loader: AssetLoader) -> Tur
         plan = feature_plan(request, loader) if bonus else spell_plan(request, loader)
         if not isinstance(plan, HealingPlan):
             return plan
+        reaction = (
+            prepare_counterspell(snapshot, request.actor_id, plan.spell, loader)
+            if plan.spell
+            else None
+        )
         rng = request.rng_context.state.restore()
         computation = CombatComputation(snapshot, rng)
         computation.emit(
@@ -314,36 +330,41 @@ def evaluate_healing(request: RuleEvaluationRequest, loader: AssetLoader) -> Tur
         computation.actors[request.actor_id] = actor.model_copy(
             update=bonus_action_payment() if bonus else ordinary_action_payment(actor)
         )
-        if plan.spell is not None:
-            computation.emit(spell_event(request.actor_id, plan.spell, 1))
-        resolve_activity(
-            plan.activity, healing_context(computation, plan, loader, request.actor_id, rng)
-        )
+        cancelled = resolve_counterspell(computation, reaction, rng) if reaction else False
+        payments: tuple[ResourceUpdate, ...] = (reaction.payment,) if reaction else ()
+        if cancelled:
+            computation.emit(
+                CastFailed(actor_id=request.actor_id, spell_id=intent.spell_id, reason="countered")
+            )
+        else:
+            payments += plan.payment
+            if plan.spell is not None:
+                computation.emit(spell_event(request.actor_id, plan.spell, 1))
+            resolve_activity(
+                plan.activity, healing_context(computation, plan, loader, request.actor_id, rng)
+            )
         computation.finish_turn(request.actor_id, allow_movement=bonus)
         computation.actors[request.actor_id] = record_budget_changes(
             actor, computation.actors[request.actor_id]
         )
-        after = payment_post_state(computation.result(), plan.payment)
-        ledgers = (slot_ledger(snapshot, plan.payment[0]),) if plan.spell else ()
+        ledgers = tuple(
+            slot_ledger(snapshot, payment)
+            for payment in payments
+            if payment.value.kind in ("spell_slot", "pact_slot")
+        )
         if ledgers:
             computation.state = computation.state.model_copy(
                 update={
                     "expended_resources": {
                         **state.expended_resources,
-                        request.actor_id: ledgers[0].value,
+                        **{ledger.owner_id: ledger.value for ledger in ledgers},
                     }
                 }
             )
-            after = after.model_copy(
-                update={
-                    "combat_state": computation.state.model_copy(
-                        update={"event_log": after.combat_state.event_log}
-                    )
-                }
-            )
+        after = payment_post_state(computation.result(), payments)
         return dict(
             status="accepted",
-            state_delta=paid_delta(snapshot, after, plan.payment, ledgers),
+            state_delta=reaction_paid_delta(snapshot, after, payments, ledgers),
             proposed_events=tuple(computation.events),
             rng_transition=RNGTransition.between(request.rng_context, rng),
             choice=None,

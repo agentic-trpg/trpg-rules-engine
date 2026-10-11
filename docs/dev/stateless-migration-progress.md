@@ -55,7 +55,8 @@ classification applies only to the stated bounded capability, not its whole fami
 | Conditions / effects / concentration overall | Partially migrated | Partially | R17 Poison and attack-produced dying conditions migrated; general multi-effect, concentration, creation, areas and child cascades remain Legacy |
 | Bounded Cure Wounds / Second Wind | Complete bounded local contract | **Yes, R20** | Explicit class/source/preparation/components, shared Delivery/Feature pricing/HealActivity/Turn, atomic pool/mirror/spend/HP/budget/events/RNG |
 | Spellcasting / Features overall | Partially migrated | Partially | R20 removes the existing direct heal and self Feature executor dependencies for the admitted profiles; general repertoire/costs/timing/grants/riders/delegated casts remain Legacy |
-| Reaction / pending choice | Partially migrated choices only | Yes for draw-free choices; no for reactions | Weapon/missing-DC choices typed; `reactions`, `live_reactions`, `timed_activities` execution/windows/continuation remain Legacy; complex ABI OPEN |
+| One predeclared Counterspell / Cure Wounds trigger | Complete bounded local contract | **Yes, R21** | Real Wizard 5 Evoker; pure matching/targeting and SaveActivity, one atomic trigger/Reaction/payment/delta/events/RNG; no Live dispatcher |
+| Reaction / pending choice overall | Partially migrated | Partially | Draw-free weapon/missing-DC choices and R21 bounded predeclaration; other reactions, priorities, nested chains, durable windows and interactive continuation remain Legacy/OPEN |
 | Areas / environment / objects | Legacy Stateful Only | No | `persistent_areas`, `environment`, `combat_objects`, `ongoing_spell_activation`; state captured then refused; source/lifetime/geometry/history Delta missing |
 | Bounded victory / TPK closure | Fully migrated bounded external contract | **Yes, R10** | `evaluation_closure` → shared outcome_rules on explicit values; XP/history/events and unchanged RNG |
 | Closure / outcome overall | Partially migrated | No | Flight/forced end/effect handoff missing; loot generation and durable cross-combat effects were already Host/deferred gaps |
@@ -375,7 +376,7 @@ Local versions: evaluation /13, Snapshot /9, availability /8, evaluator /19.
 Lifecycle clock/application/spec/repeat wire fields are required and serialize fully;
 missing dependencies cannot be repaired with Legacy authoring defaults.
 
-## Next four migration priorities after R17
+## Historical next four migration priorities after R17
 
 | Batch candidate | Existing execution dependency to remove | Required exit |
 | --- | --- | --- |
@@ -496,3 +497,44 @@ classless/template compatibility behavior remains separate. Independent expected
 value tests and full Legacy differentials verify the corrected shared path.
 The initial gate was stopped before this correction; only the subsequent final
 gate is completion evidence.
+
+
+## R21 — bounded predeclared Counterspell extraction
+
+Starts at R20 `3a1676156eb2ac586c79802ae80e8036cef8694d`, branch
+`refactor/r21-predeclared-reactions`. Both progress dimensions are complete only
+for one existing Counterspell declaration during the admitted Cure Wounds cast.
+The full Wizard 5 Evoker class/subclass grants and explicit known/prepared source
+remain present. Shared pure reaction matching/targeting, Slot pricing, actor save
+modifiers and SaveActivity Resolver replace Live reaction eligibility/dispatcher,
+Slot containers, hydration/hook callbacks and pending queues for this slice.
+
+Action/Reaction costs, declaration consumption, owner-specific Slot/mirror/ledger,
+CON Save, possible cast cancellation, healing/turn/events and RNG form one proposal.
+Countered Cure Wounds costs Action but preserves its Slot. Eligible Reaction pays
+once even when the CON save succeeds; no healing dice are drawn on failure. The
+canonical S-only Counterspell does not require Verbal availability. Same mechanics
+serve PCs/NPCs; strategy, authorization and final commit remain outside Engine.
+
+Tests use real canonical class/subclass grants and original Legacy execution for
+full snapshot/event/RNG comparison, plus independent DC/save/cost/draw-order values.
+They cover retained ineligible declarations, malformed sources/typed responses,
+last Slot, complete death records, unsupported incapacity, replay/concurrency,
+world/reapply guards, nested required fields and post-Reaction failure/cancellation.
+Only a private local candidate is computed; failures cannot publish partial costs.
+
+Current versions: envelope `/17`, Snapshot `/12`, Availability `/11`, evaluator
+`/23`. C-04 complex interactive continuation, C-15 publication and C-16 creation/
+source authority remain OPEN. General Shield/OA, multiple predeclarations, chains,
+spell/effect combinations and production Bridge/Demo integration remain unmigrated.
+R18 remains an internal Concentration candidate, not composed with R20/R21 casts.
+The earlier R17 next-batch table is historical planning, not an ABI requirement;
+R21 deliberately needs no external decision or continuation.
+
+
+R21 pre-commit cumulative review reproduced an R18 malformed-state defect:
+a complete recorded-dead source could still retain Concentration and enter a
+CON draw. A failing-before-fix regression now proves that dead/zero-HP sources
+fail closed before RNG. The correction is included in R21; no live graph is
+silently repaired. The initial R21 Integration was stopped before this edit and
+is not passing evidence; the subsequent final gate covers the correction.

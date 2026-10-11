@@ -22,7 +22,7 @@ version/migration details are in [stateless evaluation](stateless-evaluation.md)
 
 ## Current stabilization additions
 
-Current snapshots are version `/10` only, with precisely CombatSnapshot and
+Current snapshots are version `/12` only, with precisely CombatSnapshot and
 NonCombatSnapshot discriminators. Both require InventoryState(entries=...),
 strict owner/instance closure and complete CharacterStateV2 equipment. Older snapshot
 versions and the third combat_inventory context are rejected explicitly; no empty
@@ -857,3 +857,22 @@ spend ledger and permits exactly one rule-priced Slot increment. It carries
 attribution, not independently spendable resources. R20 private projections check
 complete pool/mirror/ledger agreement before allowing ordinary HP/Budget/Turn
 projection. No events must be replayed to derive resource or HP writes.
+
+
+### R21 predeclared reaction closure
+
+CombatState.pending_reactions now contains strict local PendingReactionState records,
+not permissive Legacy dataclass defaults. Owner/spell/activity/Slot/source_kind and
+spell_source_id are explicit; every nested condition and response field and nullable
+expiry is required. Owners exist in the roster and are unique. Current execution
+accepts exactly one canonical Counterspell declaration from the reviewed complete
+Wizard 5 Evoker profile; other reaction graphs remain unsupported before payment/RNG.
+
+PendingReactionUpdate guards the full old declaration list and consumes exactly one
+owner's declaration. The same StateDelta carries that owner's Reaction/Slot/mirror/
+spend-ledger changes and the triggering Action's complete result. No queue, callback,
+hidden suspended cast or retained handle is stored. Ineligible legal declarations
+remain unchanged; a countered cast consumes Action but preserves its Slot. RNG draws
+are CON save first, then healing only after success. The existing Resolver and pure
+actor_stats/matching/targeting rules perform calculation. All new records are local
+C-15 candidates; C-04/C-16 remain OPEN. No new Snapshot scene discriminator is added.

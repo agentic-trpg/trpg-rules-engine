@@ -5,6 +5,7 @@ from typing import Any, Literal
 
 from dnd5e_engine.evaluation_casting import CastingState
 from dnd5e_engine.evaluation_effects import effect_state
+from dnd5e_engine.evaluation_reaction_state import reaction_state
 from dnd5e_engine.evaluation_resources import ResourceState
 from dnd5e_engine.evaluation_state import (
     CharacterStateV2,
@@ -31,7 +32,7 @@ from dnd5e_engine.types.combat import Combatant
 def character_state(
     live: _LiveCombat,
     actor: Combatant,
-    version: Literal["engine-snapshot/11"] = "engine-snapshot/11",
+    version: Literal["engine-snapshot/12"] = "engine-snapshot/12",
 ) -> CharacterStateV2:
     value = actor.model_dump(mode="python")
     value["death_saves"] = value["death_saves"] or None
@@ -53,7 +54,8 @@ def capture_combat_snapshot(
     inventory_state: InventoryState,
     resource_state: ResourceState | None,
     casting_state: CastingState | None,
-    snapshot_schema_version: Literal["engine-snapshot/11"] = "engine-snapshot/11",
+    reaction_sources: dict[str, str] | None = None,
+    snapshot_schema_version: Literal["engine-snapshot/12"] = "engine-snapshot/12",
 ) -> CombatSnapshot:
     """Capture a completed boundary; no registry lookup or RNG serialization.
 
@@ -73,6 +75,7 @@ def capture_combat_snapshot(
     )
     by_id = {actor.entity_id: actor for actor in live.initiative}
     adapted = {
+        "pending_reactions",
         "combat_id",
         "initiative_ids",
         "persistent_areas",
@@ -105,7 +108,16 @@ def capture_combat_snapshot(
             original_actor=character_state(live, original, snapshot_schema_version),
             replaced_fields=tuple(transform.stash),
         )
+    if live.pending_reactions and (
+        reaction_sources is None
+        or any(p.owner_id not in reaction_sources for p in live.pending_reactions)
+    ):
+        raise ValueError("predeclared capture requires explicit approved casting source IDs")
     value.update(
+        pending_reactions=[
+            reaction_state(p, spell_source_id=(reaction_sources or {})[p.owner_id])
+            for p in live.pending_reactions
+        ],
         combat_id=combat_id,
         xp_value_by_entity={key: live.xp_value_by_entity.get(key, 0) for key in live.encounter_ids},
         initiative_ids=tuple(actor.entity_id for actor in actors),
@@ -173,6 +185,9 @@ def capture_evaluation_snapshot(
         live,
         resource_state=snapshot.resource_state,
         casting_state=snapshot.casting_state,
+        reaction_sources={
+            p.owner_id: p.spell_source_id for p in snapshot.combat_state.pending_reactions
+        },
         grid=grid,
         world_version=snapshot.world_version,
         combat_id=snapshot.combat_state.combat_id,

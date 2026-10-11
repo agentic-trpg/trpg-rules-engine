@@ -6,6 +6,7 @@ from pydantic import Field, model_validator
 
 from dnd5e_engine.evaluation_base import EvaluationModel
 from dnd5e_engine.evaluation_effects import EffectState
+from dnd5e_engine.evaluation_reaction_state import PendingReactionState
 from dnd5e_engine.evaluation_resources import ResourcePool
 from dnd5e_engine.evaluation_state import (
     ClosureDeath,
@@ -381,6 +382,22 @@ class SlotSpendLedgerUpdate(EvaluationModel):
         return self
 
 
+class PendingReactionUpdate(EvaluationModel):
+    """Consume one complete existing declaration, never create a new policy."""
+
+    kind: Literal["combat.pending_reaction_update"]
+    combat_id: Annotated[str, Field(min_length=1)]
+    owner_id: Annotated[str, Field(min_length=1)]
+    expected: tuple[PendingReactionState, ...]
+    value: tuple[PendingReactionState, ...]
+
+    @model_validator(mode="after")
+    def one_existing_declaration(self) -> Self:
+        if len(self.expected) != 1 or self.expected[0].owner_id != self.owner_id or self.value:
+            raise ValueError("bounded reaction update consumes exactly one guarded declaration")
+        return self
+
+
 StateDeltaOperation = Annotated[
     HPDelta
     | TempHPSet
@@ -400,7 +417,8 @@ StateDeltaOperation = Annotated[
     | ResourceUpdate
     | EffectLifecycleUpdate
     | ConcentrationUpdate
-    | SlotSpendLedgerUpdate,
+    | SlotSpendLedgerUpdate
+    | PendingReactionUpdate,
     Field(discriminator="kind"),
 ]
 

@@ -11,10 +11,10 @@ The current local candidate versions are:
 
 | Contract | Current version | Replaces |
 | --- | --- | --- |
-| RuleEvaluationRequest / Result | `engine-evaluation/16` | `/1`–`/15` |
-| StateSnapshot | `engine-snapshot/11` | `/1`–`/10` |
-| Availability request/result | `engine-availability/10` | `/1`–`/9` |
-| RulesetBinding evaluator | `dnd5e-evaluation/22` | `/21` and earlier |
+| RuleEvaluationRequest / Result | `engine-evaluation/17` | `/1`–`/16` |
+| StateSnapshot | `engine-snapshot/12` | `/1`–`/11` |
+| Availability request/result | `engine-availability/11` | `/1`–`/10` |
+| RulesetBinding evaluator | `dnd5e-evaluation/23` | `/22` and earlier |
 
 Old envelopes, snapshots and results are explicitly rejected. There are no compatibility
 aliases for `InventoryCombatSnapshot`, `combat_inventory`, missing equipment or missing
@@ -57,7 +57,7 @@ remain OPEN. SM authenticates/authorizes the caller and approved write scope.
 
 | Operation | Current admitted subset |
 | --- | --- |
-| combat.intent | One ordinary PC/NPC weapon Attack, an exact reviewed stat-block AttackActivity, explicit plain Pass / End Turn (including the bounded R17 Poison lifecycle), ordinary Walk, Action Dash / Disengage; R20 bounded Cure Wounds / Second Wind |
+| combat.intent | One ordinary PC/NPC weapon Attack, an exact reviewed stat-block AttackActivity, explicit plain Pass / End Turn (including the bounded R17 Poison lifecycle), ordinary Walk, Action Dash / Disengage; R20 bounded Cure Wounds / Second Wind; R21 one predeclared Counterspell during Cure Wounds |
 | rules.check | Explicitly adjudicated ordinary noncombat ability/skill check |
 | rules.save | Explicit noncombat actor saving throw; six abilities and fixed DC |
 | rules.rest | Bounded noncombat Short/Long Rest: explicit HP/Hit Dice/Slots and reviewed Feature recovery |
@@ -447,8 +447,8 @@ Pact Slot and reviewed Feature recovery. World time/permission/interruption rema
 and Second Wind for an explicit Fighter 1. The complete class grants remain in
 computation/results. Reviewed Divine Order, Defense and mastery grant identities
 are neutral to the admitted unarmored healing and plain turn boundary. Unknown
-class levels, subclass/species, effects, conditions, equipment, extended budgets,
-Reaction/timing state and healing modifiers remain unsupported before RNG/payment.
+class levels, general subclass/species, effects, conditions, equipment, extended budgets,
+general Reaction/timing state and healing modifiers remain unsupported before RNG/payment.
 This does not make all existing spells or all class profiles stateless.
 
 Both snapshot contexts require `casting_state: CastingState | None`. Each explicit
@@ -483,3 +483,42 @@ SM commit/receipt and Bridge/Demo caller cutover remain unimplemented.
 Rule selection was checked against the packaged capability audits and
 [SRD 5.2.1](https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf)
 (Cleric list, Cure Wounds, Second Wind, spell components and per-turn Slot rule).
+
+
+## R21: one predeclared Counterspell inside the triggering cast
+
+This extends the existing `combat.intent` evaluation; it adds no new public operation,
+registration API, pending handle or externally suspended continuation. SM supplies a
+previously authorized complete declaration in CombatSnapshot. Strict local
+`PendingReactionState` requires owner, canonical spell/activity, Slot level, casting
+source ID, all typed trigger/response fields (including explicit nulls) and source kind.
+The capture adapter requires supplied source IDs and is used only for regression.
+
+Only one canonical level-3 Counterspell from a real Wizard 5 Evoker is admitted,
+with complete base/subclass grants, known/prepared source, real Intelligence/PB,
+free Somatic hand, complete ordinary Slots and Arcane Recovery pool. The canonical
+Evoker grants are reviewed as irrelevant to this Abjuration save; original facts
+remain in computation/results. Generic subclass/species, effects, active responses,
+multiple declarations, nested counters and interactive choices remain unsupported.
+
+The actual Cure Wounds intent generates the existing typed SEES_SPELL_CAST
+opportunity. Shared matching/targeting, range/sight and Slot pricing determine
+eligibility before RNG. Legal unavailable Reaction/Slot, out-of-range and recorded-dead
+reactors leave the declaration armed and consume nothing. Incomplete death closure,
+conditions or unreviewed dependencies reject the operation before any draw/payment.
+NPCs and PCs use the same rules; their decision to declare is outside the evaluator.
+
+Action pays before the interrupt. If eligible, the reactor consumes its declaration,
+Reaction and Slot, emits ReactionTriggered / Counterspell SpellCast, then uses the
+original SaveActivity Resolver and shared actor save-modifier projection for the
+triggering caster's CON save. Failure emits CastFailed(countered), keeps the main
+Slot and skips healing dice; success pays the main Slot and resolves Cure Wounds.
+One result includes guarded PendingReactionUpdate, ResourceUpdate/mirrors, each
+payer's SlotSpendLedgerUpdate, HP/budgets/turn, ordered events, RNG and read fence.
+Exceptions/cancellation publish no partial candidate. Accepted still is not committed.
+
+These are local C-15 candidates. C-04 persistence/windows/information visibility,
+C-16 source authorization and production caller migration remain OPEN/unimplemented.
+The new nested required facts and nonnegative spend ledger pin Snapshot `/12`,
+evaluation `/17`, availability `/11`, evaluator `/23`; older shapes fail explicitly.
+No existing SRD content support is newly claimed beyond its migrated executor.

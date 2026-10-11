@@ -30,6 +30,11 @@ and combat.start/create source authority (C-16). Local versioned DTOs do not set
 these decisions. First Blush remains private MVP acceptance, separate from public
 synthetic regressions. No Meta decision or other repository was modified.
 
+Final R30–R33 review also checks Meta MODULE_CONTRACTS v0.10 / State Machine
+Architecture v0.12 (2026-10-12). C-19 event-stage Evidence Capture/binding remains
+OPEN: final Snapshot/Delta and ordered mechanical events do not establish complete
+event-time perception evidence. Real SM/RE stage integration is not delivered here.
+
 Two independent dimensions are mandatory:
 
 - **Stateless External Contract**: the bounded operation has complete input facts,
@@ -166,12 +171,21 @@ a migration constraint, not justification to preserve Legacy indefinitely.
 
 ## Cross-repository ABI checkpoint
 
-Read-only observation: SM `4e5cc5ac2765be89f0b4164bc6923083539374c4`, branch
+Historical R17 read-only observation: SM `4e5cc5ac2765be89f0b4164bc6923083539374c4`, branch
 `feat/sm-b14-npc-persistent-state`; dependency pin remains Engine/Data
 `602dcb8d448e670049427bbb751d6ed226005298`. Request builder uses evaluation `/1`/`/4`,
-Snapshot `/1`/`/2`; manifest accepts evaluator `/4`/`/8`. It cannot consume this branch's
+Snapshot `/1`/`/2`; manifest accepts evaluator `/4`/`/8`. It could not consume that checkpoint's
 evaluation `/12`, Snapshot `/8`, availability `/7` and evaluator **`/18`**.
 No SM file was changed and no SM tests/integration result are claimed.
+
+R30–R33 independent review refresh (2026-10-12): SM HEAD
+`e23cde5497d53957068b967e36e527a1574b9c7f`, branch
+`feat/sm-b19-b22-gameplay-domain-bridge`. Engine/Data still pin `602dcb8`; request,
+Snapshot and manifest bindings still use the old versions above. The current local
+Rule Engine envelope `/22`, Snapshot `/16`, Availability `/12`, evaluator `/35` and
+new closed Delta operations therefore remain incompatible. The old checkpoint was
+not current SM HEAD. This is read-only source evidence, not executed SM integration.
+C-19 trusted event-stage Evidence Capture/binding also remains OPEN in current Meta.
 
 R10 changes only evaluator implementation binding `/11` → `/12`; strict external shapes
 remain unchanged from stabilization. Old evaluator bindings fail visibly. A coordinated
@@ -1357,3 +1371,21 @@ paths conservatively broadened the gate. This is local Integration evidence;
 native Linux Full and independent review follow this source delivery. Original
 tests, assertions and coverage floors remain intact. Evidence-only documentation
 receives a strict build.
+
+Final R30–R33 native Linux Python 3.12 Full **PASSED in 698.26 s** on exact R33
+source `cf667f7ef337a783b9c5ec187346d0ef213d0bc1`,
+[run 38172298121](https://github.com/agentic-trpg/trpg-rules-engine/actions/runs/38172298121).
+Original coverage floors are retained: Data **97.62% / 96%** (631 passed / 41
+existing conditional skips), Engine **95.47% / 90%** (8,819 passed), Bridge
+**97.06% / 85%** (139 passed); Demo **54 passed**. Bandit, static/tooling checks,
+examples, strict docs and isolated three-wheel/Bridge HTTP smoke passed. R33 push
+CI [38172284937](https://github.com/agentic-trpg/trpg-rules-engine/actions/runs/38172284937)
+also passed on this exact source; local Integration and native CI remain separate.
+
+Independent read-only Global Review found no confirmed P0/P1/P2 in admitted paths.
+Additional 128 Shield and 56 Hold Person evaluations proved complete cross-turn
+state/events/RNG parity and natural cleanup. The historical SM checkpoint evidence
+was corrected; current dependency/ABI mismatch and newer C-19 stage-evidence OPEN
+remain explicit. See [R30–R33 review](stateless-r30-r33-review.md) for the two-axis
+matrix, retained original capabilities, actual validation and next four proposals.
+No merge, production caller cutover or complete conversion is claimed.

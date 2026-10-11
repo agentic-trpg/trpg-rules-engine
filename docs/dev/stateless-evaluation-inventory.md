@@ -1028,3 +1028,8 @@ stale/duplicate guards and concurrent replay. Live reaction runtime and expiry h
 are prohibited during successful execution. Mixed graphs, other profiles, Magic
 Missile casting, competing/nested choices and interactive continuation remain
 Deferred; retained Legacy capabilities and C-04/C-15/C-16 OPEN are unchanged.
+
+Final review includes current Meta v0.10 / SM Architecture v0.12: C-19 event-stage
+Evidence Capture/binding is OPEN. Mechanical roll evidence and final Snapshot/Delta
+do not establish full event-time perception support or reconstruct all intermediate
+stages. That trusted cross-module protocol remains separate acceptance work.

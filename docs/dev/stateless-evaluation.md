@@ -179,7 +179,7 @@ R9 changes the evaluator implementation pin to `/11`; request/result `/6`, Snaps
 `/4`, availability `/3` and closed Delta shapes are unchanged. Older evaluator pins
 fail binding verification explicitly.
 
-The SM checkout observed during this task pins Engine/Data `602dcb8`, evaluation `/1`/`/4`
+The historical pre-R30 SM observation pins Engine/Data `602dcb8`, evaluation `/1`/`/4`
 and evaluator `/4`/`/8`, with ongoing work on combat-close/check integration. It must
 explicitly upgrade versions, snapshot facts and consumers; in particular closure must
 read the new historical report and write only the new consequences. It does not yet
@@ -767,3 +767,8 @@ The response retains original Magic Missile negation metadata; stateless Magic
 Missile casting is still Deferred. Multiple policies, nested/interactive reactions,
 mixed Sap/Hold Person/other effect graphs and other equipment profiles fail closed.
 Formal C-04/C-15/C-16 and production State Machine/Bridge/Demo cutover remain OPEN.
+
+Current Meta v0.10 also leaves C-19 event-stage Evidence Capture/binding OPEN.
+This local result does not claim to supply all event-time perception evidence;
+final Snapshot/Delta cannot stand in for every intermediate event stage. Formal
+trusted SM/RE stage integration and atomic Evidence/Outbox acceptance remain pending.

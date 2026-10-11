@@ -96,7 +96,12 @@ def paid_delta(
             ),
         }
     )
-    mechanical = attack_delta(before, normalized)
+    if before.effect_states:
+        from dnd5e_engine.evaluation_concentration import concentration_delta
+
+        mechanical = concentration_delta(before, normalized)
+    else:
+        mechanical = attack_delta(before, normalized)
     return StateDelta(
         expected_world_version=before.world_version,
         operations=(*payments, *ledgers, *mechanical.operations),

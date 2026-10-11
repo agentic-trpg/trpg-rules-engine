@@ -10,6 +10,29 @@ from dnd5e_engine.evaluation_reactions import reaction_dependencies
 from dnd5e_engine.evaluation_state import CharacterStateV2, CombatSnapshot
 
 
+def invocation_dependencies(
+    snapshot: CombatSnapshot, loader: AssetLoader, target_id: str, *, damaging: bool
+) -> str | None:
+    if not damaging:
+        return healing_dependencies(snapshot, loader, target_id)
+    if snapshot.combat_state.pending_reactions:
+        return "instant damage spell reactions are not migrated"
+    if snapshot.effect_states or snapshot.combat_state.concentration_chain:
+        from dnd5e_engine.evaluation_concentration import concentration_support_failure
+
+        return concentration_support_failure(snapshot, target_id, loader, composed=True)
+    if any(a.trait_mechanics for a in snapshot.character_states):
+        return "unreviewed spell damage/save trait"
+    from dnd5e_engine.evaluation_saves import save_actor_failure
+
+    for actor in snapshot.character_states:
+        if actor.granted_features is None:
+            return "complete explicit feature repertoire is required for spell damage/saves"
+        if failure := save_actor_failure(actor, loader, reviewed_identity=True):
+            return failure
+    return healing_dependencies(snapshot, loader, target_id)
+
+
 def healing_dependencies(
     snapshot: CombatSnapshot, loader: AssetLoader, target_id: str
 ) -> str | None:

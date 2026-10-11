@@ -1,14 +1,16 @@
-"""Bounded real Cure Wounds and Second Wind, without a Stateful executor."""
+"""Bounded real instant spells and Second Wind, without a Stateful executor."""
 
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from dnd5e_srd_data import BundledAssetLoader
 from dnd5e_srd_data.loader import AssetLoader
-from dnd5e_srd_data.schema.common import HealActivity
+from dnd5e_srd_data.schema.common import HealActivity, SaveActivity
 from dnd5e_srd_data.schema.spell import Spell
 
+from dnd5e_engine import attack_rules
 from dnd5e_engine.action_economy_rules import action_economy_gate_failure
+from dnd5e_engine.activities.actor_stats import ABILITY_CODES, save_modifier
 from dnd5e_engine.activities.build_context import build_activity_context
 from dnd5e_engine.activities.context import ActivityResolutionContext
 from dnd5e_engine.activities.resolver import resolve_activity
@@ -25,12 +27,17 @@ from dnd5e_engine.evaluation_reactions import (
     resolve_counterspell,
 )
 from dnd5e_engine.evaluation_rng import RNGTransition
-from dnd5e_engine.evaluation_spell_dependencies import healing_dependencies
+from dnd5e_engine.evaluation_spell_dependencies import invocation_dependencies
 from dnd5e_engine.evaluation_state import CombatSnapshot
 from dnd5e_engine.evaluation_turn import TurnEvaluation, _refuse
 from dnd5e_engine.events import CastFailed, IntentSubmitted, SpellCast
 from dnd5e_engine.feature_runtime import DrawFreeRandom, FeatureInvocation, preflight_feature
 from dnd5e_engine.lib_loader import scoped_lib_loader
+from dnd5e_engine.rules.conditions import (
+    active_condition_names,
+    conditions_block_actions,
+    project_passive_save_modifiers,
+)
 from dnd5e_engine.spatial import GridTopology
 from dnd5e_engine.specs import GridScene
 from dnd5e_engine.spell_delivery import DeliveryPlanningError, SpellDeliverySpec, plan_delivery
@@ -44,8 +51,8 @@ from dnd5e_engine.turn_rules import (
 
 
 @dataclass(frozen=True)
-class HealingPlan:
-    activity: HealActivity
+class InvocationPlan:
+    activity: HealActivity | SaveActivity
     target_id: str
     ability: str | None
     payment: tuple[ResourceUpdate, ...]
@@ -53,9 +60,9 @@ class HealingPlan:
     slot_level: int | None
 
 
-def healing_context(
+def invocation_context(
     computation: CombatComputation,
-    plan: HealingPlan,
+    plan: InvocationPlan,
     loader: AssetLoader,
     actor_id: str,
     rng: random.Random,
@@ -64,7 +71,11 @@ def healing_context(
     levels = actor.classes or (
         {actor.class_slug: actor.character_level} if actor.class_slug else {}
     )
-    return build_activity_context(
+    target = computation.actors[plan.target_id]
+    save_projection = project_passive_save_modifiers(active_condition_names(target.conditions))
+    if attack_rules.dodge_benefit_active(target, effective_speed=computation.speed(target)):
+        save_projection["passive_save_adv"].append("DEX")
+    context = build_activity_context(
         actor,
         [computation.actors[plan.target_id]],
         rng=rng,
@@ -75,8 +86,20 @@ def healing_context(
         concentration=False,
         source_passive_effects=[],
         spell_book={},
-        passive_damage_modifiers={},
-        save_modifiers={},
+        passive_damage_modifiers=attack_rules.damage_modifiers(computation.actors.values()),
+        save_modifiers={
+            target.entity_id: {
+                "saves": {ab: save_modifier(target, ab).total for ab in ABILITY_CODES},
+                **save_projection,
+            }
+        },
+        target_dodging={
+            target.entity_id: attack_rules.dodge_benefit_active(
+                target, effective_speed=computation.speed(target)
+            )
+        },
+        damage_instance_id_provider=computation.next_damage_id,
+        damage_instance_resolved=computation.damage_completed,
         class_levels=levels,
         scale_values=build_scale_values(
             class_slug=actor.class_slug,
@@ -86,6 +109,11 @@ def healing_context(
             classes=levels,
             loader=loader,
         ),
+    )
+    return replace(
+        context,
+        save_is_magical=plan.spell is not None,
+        activity_source_id=f"spell:{plan.spell.slug}:{plan.activity.id}" if plan.spell else None,
     )
 
 
@@ -98,7 +126,7 @@ def source_failure(
         next((a for a in component.actors if a.actor_id == actor_id), None) if component else None
     )
     source = next((s for s in entry.sources if s.source_id == source_id), None) if entry else None
-    # The canonical Cleric list includes Cure Wounds (SRD 5.2.1 p38).
+    # The reviewed canonical Cleric list includes Cure Wounds and Sacred Flame.
     if entry is None or source is None or source.class_slug != "cleric" or source.ability != "wis":
         return "explicit reviewed Cleric casting source is required"
     levels = actor.classes or (
@@ -106,14 +134,16 @@ def source_failure(
     )
     if levels != {"cleric": 1} or actor.spellcasting_ability != source.ability:
         return "casting source contradicts class/ability facts"
-    if spell.slug not in source.known_spells or spell.slug not in source.prepared_spells:
+    if spell.slug not in source.known_spells or (
+        spell.level > 0 and spell.slug not in source.prepared_spells
+    ):
         return "spell is not known and prepared from the selected source"
     if not entry.verbal_available or actor.weapon_in_hands is not None:
         return "Verbal and free Somatic components are unavailable"
     return None
 
 
-def spell_event(actor_id: str, spell: Spell, slot_level: int) -> SpellCast:
+def spell_event(actor_id: str, spell: Spell, slot_level: int | None) -> SpellCast:
     components, material, consumed, cost = spell_component_metadata(spell)
     review = spell_review(spell)
     return SpellCast(
@@ -129,13 +159,17 @@ def spell_event(actor_id: str, spell: Spell, slot_level: int) -> SpellCast:
     )
 
 
-def spell_plan(request: RuleEvaluationRequest, loader: AssetLoader) -> HealingPlan | TurnEvaluation:
+def spell_plan(
+    request: RuleEvaluationRequest, loader: AssetLoader
+) -> InvocationPlan | TurnEvaluation:
     snapshot, intent = request.state_snapshot, request.payload
     assert isinstance(snapshot, CombatSnapshot)
     assert isinstance(intent, CombatIntentPayload)
-    if intent.spell_id != "cure-wounds":
+    if intent.spell_id not in {"cure-wounds", "sacred-flame"}:
         return _refuse(
-            "unsupported", "spell.capability", "only reviewed immediate Cure Wounds is migrated"
+            "unsupported",
+            "spell.capability",
+            "only reviewed immediate Cure Wounds and Sacred Flame are migrated",
         )
     basic = CombatIntentPayload(
         intent_type="cast_spell",
@@ -148,26 +182,26 @@ def spell_plan(request: RuleEvaluationRequest, loader: AssetLoader) -> HealingPl
     if intent != basic:
         return _refuse("unsupported", "spell.inputs", "additional casting choices are not migrated")
     spell = loader.get_spell(intent.spell_id)
-    if spell is None or spell != BundledAssetLoader().get_spell("cure-wounds"):
+    if spell is None or spell != BundledAssetLoader().get_spell(intent.spell_id):
         return _refuse(
             "unsupported", "spell.binding", "spell definition differs from reviewed canonical data"
         )
     if (
         admission_failure(spell, spell.activities)
         or len(spell.activities) != 1
-        or not isinstance(spell.activities[0], HealActivity)
+        or not isinstance(spell.activities[0], (HealActivity, SaveActivity))
     ):
         return _refuse(
-            "unsupported", "spell.activity", "spell lacks reviewed complete healing payload"
+            "unsupported", "spell.activity", "spell lacks reviewed complete instant payload"
         )
-    if intent.slot_level != 1:
+    if intent.slot_level not in ((None, 0) if spell.level == 0 else (1,)):
         return _refuse(
-            "rejected", "no_slot", "this Cleric 1 profile requires an explicit level 1 slot"
+            "rejected", "no_slot", "Cantrip requires no slot; Cure Wounds requires explicit level 1"
         )
     if failure := source_failure(snapshot, request.actor_id, intent.spell_source_id, spell):
         return _refuse("rejected", "spell.source", failure)
     actor = next(a for a in snapshot.character_states if a.entity_id == request.actor_id)
-    if (
+    if spell.level > 0 and (
         actor.action_taken_this_turn
         or actor.bonus_action_taken_this_turn
         or not actor.reaction_available
@@ -195,26 +229,30 @@ def spell_plan(request: RuleEvaluationRequest, loader: AssetLoader) -> HealingPl
             range_ft=spell_range_ft(spell),
             default_target_ids=(intent.target_id,) if intent.target_id else (),
             execution=True,
-            cast_level=1,
-            base_level=1,
+            cast_level=spell.level,
+            base_level=spell.level,
         )
         if len(delivery.activities) != 1 or delivery.activities[0].target_ids != (
             intent.target_id,
         ):
             return _refuse("rejected", "target_invalid", "one in-range creature is required")
         assert snapshot.resource_state is not None
-        payment = spell_payment(snapshot.resource_state, request.actor_id, 1)
+        payments = (
+            (spell_payment(snapshot.resource_state, request.actor_id, 1),) if spell.level else ()
+        )
     except DeliveryPlanningError as exc:
         return _refuse("rejected", exc.reason, str(exc))
     except ValueError:
         return _refuse("rejected", "no_slot", "no owned slot remains")
     assert intent.target_id is not None
-    return HealingPlan(spell.activities[0], intent.target_id, "wis", (payment,), spell, 1)
+    return InvocationPlan(
+        spell.activities[0], intent.target_id, "wis", payments, spell, spell.level
+    )
 
 
 def feature_plan(
     request: RuleEvaluationRequest, loader: AssetLoader
-) -> HealingPlan | TurnEvaluation:
+) -> InvocationPlan | TurnEvaluation:
     snapshot, intent = request.state_snapshot, request.payload
     assert isinstance(snapshot, CombatSnapshot)
     assert isinstance(intent, CombatIntentPayload)
@@ -246,8 +284,8 @@ def feature_plan(
         return _refuse(
             "rejected", "feature.activity", "explicit canonical healing activity is required"
         )
-    stub = HealingPlan(activity, request.actor_id, None, (), None, None)
-    context = healing_context(
+    stub = InvocationPlan(activity, request.actor_id, None, (), None, None)
+    context = invocation_context(
         CombatComputation(snapshot, DrawFreeRandom(0)),
         stub,
         loader,
@@ -269,10 +307,10 @@ def feature_plan(
         payments = feature_payments(snapshot.resource_state, request.actor_id, invocation.payments)
     except ValueError as exc:
         return _refuse("rejected", "feature.exhausted", str(exc))
-    return HealingPlan(activity, request.actor_id, None, payments, None, None)
+    return InvocationPlan(activity, request.actor_id, None, payments, None, None)
 
 
-def evaluate_healing(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEvaluation:
+def evaluate_invocation(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEvaluation:
     snapshot, intent = request.state_snapshot, request.payload
     assert isinstance(snapshot, CombatSnapshot)
     assert isinstance(intent, CombatIntentPayload)
@@ -282,7 +320,12 @@ def evaluate_healing(request: RuleEvaluationRequest, loader: AssetLoader) -> Tur
     if request.actor_id != state.initiative_ids[state.current_turn_index]:
         return _refuse("rejected", "not_actor_turn", "actor does not own this turn")
     current = next(a for a in snapshot.character_states if a.entity_id == request.actor_id)
-    if not current.is_alive or current.hp_current <= 0 or request.actor_id in state.dead_ids:
+    if (
+        not current.is_alive
+        or current.hp_current <= 0
+        or request.actor_id in state.dead_ids
+        or conditions_block_actions([c.condition for c in current.conditions])
+    ):
         return _refuse("rejected", "actor_incapacitated", "caster must be alive and conscious")
     targets = {a.entity_id: a for a in snapshot.character_states}
     if (
@@ -301,7 +344,9 @@ def evaluate_healing(request: RuleEvaluationRequest, loader: AssetLoader) -> Tur
             "reaction.trigger",
             "only the reviewed spell-cast opportunity is migrated",
         )
-    if failure := healing_dependencies(snapshot, loader, intent.target_id):
+    if failure := invocation_dependencies(
+        snapshot, loader, intent.target_id, damaging=intent.spell_id == "sacred-flame"
+    ):
         return _refuse("unsupported", "healing.dependencies", failure)
     actor = combatant(current)
     bonus = intent.intent_type == "use_feature"
@@ -309,7 +354,7 @@ def evaluate_healing(request: RuleEvaluationRequest, loader: AssetLoader) -> Tur
         return _refuse("rejected", "no_action_economy", "required action budget is unavailable")
     with scoped_lib_loader(loader):
         plan = feature_plan(request, loader) if bonus else spell_plan(request, loader)
-        if not isinstance(plan, HealingPlan):
+        if not isinstance(plan, InvocationPlan):
             return plan
         reaction = (
             prepare_counterspell(snapshot, request.actor_id, plan.spell, loader)
@@ -317,7 +362,12 @@ def evaluate_healing(request: RuleEvaluationRequest, loader: AssetLoader) -> Tur
             else None
         )
         rng = request.rng_context.state.restore()
-        computation = CombatComputation(snapshot, rng)
+        if snapshot.effect_states:
+            from dnd5e_engine.evaluation_concentration import ConcentrationComputation
+
+            computation: CombatComputation = ConcentrationComputation(snapshot, rng)
+        else:
+            computation = CombatComputation(snapshot, rng)
         computation.emit(
             IntentSubmitted(
                 actor_id=request.actor_id,
@@ -339,9 +389,9 @@ def evaluate_healing(request: RuleEvaluationRequest, loader: AssetLoader) -> Tur
         else:
             payments += plan.payment
             if plan.spell is not None:
-                computation.emit(spell_event(request.actor_id, plan.spell, 1))
+                computation.emit(spell_event(request.actor_id, plan.spell, plan.slot_level or None))
             resolve_activity(
-                plan.activity, healing_context(computation, plan, loader, request.actor_id, rng)
+                plan.activity, invocation_context(computation, plan, loader, request.actor_id, rng)
             )
         computation.finish_turn(request.actor_id, allow_movement=bonus)
         computation.actors[request.actor_id] = record_budget_changes(
@@ -361,6 +411,8 @@ def evaluate_healing(request: RuleEvaluationRequest, loader: AssetLoader) -> Tur
                     }
                 }
             )
+        if computation.damage:
+            raise RuntimeError("invocation left an incomplete damage instance")
         after = payment_post_state(computation.result(), payments)
         return dict(
             status="accepted",

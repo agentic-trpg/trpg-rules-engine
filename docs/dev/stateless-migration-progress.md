@@ -763,3 +763,50 @@ they are not passing-gate evidence. The final docs-only edit corrects a reported
 and records results, followed by another strict docs build. Existing untracked
 `.evaluation-worktree/` broadened selection and remains unstaged. This is local
 Integration evidence; coverage/security/wheel checks await the requested final Full.
+
+## R24 existing instant Save / Damage spell
+
+Base: `0fb706bfaee29436c7548b93196d1d0a1f862c77`; branch:
+`refactor/r24-instant-damage-spells`. Evaluator binding `/26`; no DTO/schema change.
+
+The canonical Sacred Flame review is already Executable, with one instant SaveActivity,
+one creature, Action, 60 ft, V/S, DEX save, radiant Cantrip damage and no damage on save.
+Its typed `ignore_cover` and Cantrip scaling remain in the original Resolver; this
+bounded admission still excludes non-plain geometry and unreviewed class levels.
+The exact canonical payload and packaged capability review are checked before payment.
+No canonical content or capability classification is changed.
+
+Stateless External Contract: full Cleric 1 PC/NPC, explicit class source and complete
+known/prepared facts -> Delivery legality -> Action -> shared Save/Damage -> complete
+HP/Temp HP/life/turn/damage ledger delta, events and RNG. A known Cantrip need not be
+prepared and costs no Slot, including with all Slots spent. Save success is accepted.
+DEX proficiency and Dodge use shared modifier/condition projections. Incoming damage
+to the R23 Hold Person source also resolves its CON save and complete lineage cleanup.
+Unknown traits, equipment, class mechanics, target/source/component failures and any
+predeclared reaction for the new spell refuse before RNG. Cure Wounds/Second Wind and
+their existing Counterspell path retain their admission and payment behavior.
+
+Legacy Runtime Dependency Removed: one `InvocationPlan`/context/executor extends the
+R20 healing path; it reuses R19 payments, Delivery, Activity Save/Damage and R23 completed
+instance/cleanup. The new path does not call live spell hydration, delivery, damage or
+reaction hooks. Production Bridge/Demo still use Legacy; none of their live functions
+are deleted or callers switched. C-04/C-15/C-16 and the R17 publication blocker stay OPEN.
+
+Development evidence: **169 focused tests passed in 13.86s**, including 34 new real
+spell cases and the existing R20/R21/R22/R23 suites. Checks cover independent DC 13,
+DEX modifier +4, damage-before-save RNG order, success/failure, immunity/resistance/
+vulnerability, Temp HP, PC/NPC zero HP, Concentration success/failure, source/repertoire,
+components, range, budget, no Slot, stale/duplicate application, concurrency and faults.
+A further full Cleric Cantrip -> opposing Pass/reset -> Cantrip workflow checks the
+complete final state and RNG against Legacy with Slots exhausted.
+
+Final R24 gate: `python tools/validate.py fast --plan --base
+0fb706bfaee29436c7548b93196d1d0a1f862c77` inspected, then `python tools/validate.py
+integration --base 0fb706bfaee29436c7548b93196d1d0a1f862c77` passed in **903.14s**.
+Data **671 passed / 1 skipped** (148.46s), Engine **8,312 passed** (653.14s), Bridge
+**139** (12.30s), Demo **54** (26.61s), tooling **24**, static checks, examples and strict
+MkDocs passed. The final **36 new cases passed in 6.24s**, including explicit refusal
+when the target's feature repertoire is unknown. An earlier gate was interrupted for
+that closure check; only the completed run is reported as passing. The pre-existing
+untracked directory remains unstaged. Results are local Integration evidence; the
+requested cumulative Full still follows R25. This evidence-only edit gets strict docs.

@@ -549,3 +549,13 @@ damage types, including Temp HP absorption. The same result carries attack costs
 HP/Temp HP, damage bookkeeping, full concentration lineage cleanup, events and RNG.
 See [the R23 boundary and evidence](stateless-migration-progress.md#r23-actual-attack-concentration-composition).
 Evaluator `/25` adds no public resolved-damage command or formal cross-repository ABI.
+
+## R24 instant Save / Damage invocation
+
+Canonical Sacred Flame joins the existing immediate invocation executor for complete
+Cleric 1 class sources. Shared Delivery/Save/Damage resolves its one target and Action;
+known Cantrips cost no Slot and need no prepared entry. Save success is accepted with
+no damage. Reviewed existing Concentration composes through R23 in that same result.
+The [R24 boundary](stateless-migration-progress.md#r24-existing-instant-save-damage-spell)
+keeps new-spell reactions, unknown modifiers and wider geometry unsupported before RNG.
+Evaluator `/26` changes no formal source/continuation/commit contract.

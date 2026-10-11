@@ -801,7 +801,8 @@ Bounded Short Rest reuses resolve_short_rest, recover_feature_uses and healing_b
 ResourceUpdate preserves identity/capacity and guards full old/new values plus signed
 amount; slot/feature mirror and HP writes commit together with typed RestResolved,
 HealingApplied and RNG proposals. Real Second Wind, HD consumption and Pact recovery
-execute without live resource containers. Long Rest, general item/feature recovery,
+execute without live resource containers. At R16, Long Rest (bounded migration in
+R19 below), general item/feature recovery,
 rest-modifying effects and world time remain unmigrated or upper-layer responsibilities.
 
 

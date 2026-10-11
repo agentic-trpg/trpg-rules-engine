@@ -66,7 +66,8 @@ remain OPEN. SM authenticates/authorizes the caller and approved write scope.
 
 Common weapon properties Finesse/Versatile/Two-Handed/Reach/Heavy use the shared resolver
 and explicit held grip. Only untrained Mastery tuples are admitted; trained Masteries,
-Light/Loading/Ammunition/Thrown, general effects, classes/features, extended budgets, reactions,
+Light/Loading/Ammunition/Thrown, general effects, classes/features, extended budgets, reactions
+for ordinary Attack/Item,
 complex grids for Attack/Item, timing, areas, objects, summons/transforms remain unsupported. Stat-block
 Multiattack prose, recharge and legendary mechanics are refused. A parsed Activity or
 a retained DTO never proves support. War Pick's missing typed Versatile damage remains
@@ -375,8 +376,8 @@ preserves ordinary spell slots, inventory and action budgets. Reviewed Second Wi
 uses its pinned Short Rest recovery declaration and recover_feature_uses; its explicit
 maximum/current/spent facts are never inferred from a slug or default cap.
 
-Other feature/item recharge, rest-modifying effects/species/subclasses and Long Rest
-remain unsupported before draw. Engine decides no authorization, elapsed world time,
+At R16, other feature/item recharge, rest-modifying effects/species/subclasses and
+Long Rest remained unsupported before draw; R19 below adds bounded Long Rest. Engine decides no authorization, elapsed world time,
 scene/quest change or interruption. SM validates those conditions and atomically
 commits expected resource/HP writes, events, RNG and receipt. Repeated evaluation is
 deterministic; expected-value/version checks prevent a second application of old writes.
@@ -522,3 +523,9 @@ C-16 source authorization and production caller migration remain OPEN/unimplemen
 The new nested required facts and nonnegative spend ledger pin Snapshot `/12`,
 evaluation `/17`, availability `/11`, evaluator `/23`; older shapes fail explicitly.
 No existing SRD content support is newly claimed beyond its migrated executor.
+
+
+See the [R18–R21 Global Review](stateless-migration-progress.md#global-review-r18r21)
+for exact commits, executed gates, confirmed findings, two-dimensional progress and
+unsupported cross-operation class workflows. The admitted Spell/Feature/Reaction
+invocations do not yet provide a fully stateless class encounter/rest loop.

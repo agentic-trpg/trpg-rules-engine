@@ -41,7 +41,7 @@ classification applies only to the stated bounded capability, not its whole fami
 | --- | --- | --- | --- |
 | Result/binding/RNG envelope | Fully migrated local candidate | Yes for envelope | `evaluation_contracts`, `evaluation_ruleset`, `evaluation_rng`; durable commit/receipt is SM work |
 | Combat initialization / Start | Complete bounded local candidate; **public ABI blocked C-16** | **Yes, R13–R14** for bounded core and explicit ordinary NPC binding | `evaluation_initialization` / shared initiative_rules and turn_rules; explicit NonCombat setup and closed creation candidate. Legacy start, general hydration and consumer cutover remain |
-| Turn / Action Economy | Bounded explicit Pass and Attack/Item | **Yes, R11** for bounded lifecycle | `evaluation_turn` plus shared `turn_rules` / death saves; complete reset/dead skipping/round wrap/ordinary dying PC. General expiry, reactions and extended actions remain Legacy; R17 adds bounded Poison |
+| Turn / Action Economy | Bounded explicit Pass and Attack/Item; R20/R21 invocation turn completion | **Yes, R11** for bounded lifecycle | `evaluation_turn` plus shared `turn_rules` / death saves; complete reset/dead skipping/round wrap/ordinary dying PC. General class-aware Pass, expiry, reactions and extended actions remain incomplete; R17 adds bounded Poison |
 | Movement / positioning | Bounded Walk, Action Dash/Disengage | **Yes, R12** for admitted subset | `evaluation_movement` reuses GridTopology/movement/turn rules and closed PositionUpdate. OA, special modes, stat-block reaction templates, forced movement, effects/areas remain Legacy |
 | Ordinary PC/NPC weapon or explicit stat-block single Attack | Fully migrated bounded subset | **Yes, R9** | `evaluation_preflight` → `evaluation_attack.execute_attack` → Activity Resolver → `evaluation_projection.attack_delta`; no Legacy execution context |
 | Attack / Damage / Death overall | Partially migrated | Partially | Ordinary roll/hit/miss/crit/R-I-V/temp HP/death/payment/turn and attack-induced next-turn death save migrated; riders, trained Masteries, Multiattack/recharge/legendary/effects remain Legacy |
@@ -348,7 +348,8 @@ mixed pool draw order, per-die minimum-one healing, HP caps, last units, actual 
 Fighter Second Wind recovery, Pact versus ordinary slots, replay/concurrency and
 pre-draw unsupported dependencies. Expected-value consumers, stale versions and
 post-roll/post-projection faults prove HP/resources/RNG remain atomic proposals.
-Explicit item-instance and action-budget ownership remain separate. Long Rest and
+At R16 (historical; see R19 for bounded Long Rest), explicit item-instance and
+action-budget ownership remain separate. Long Rest and
 general feature/item/effect recovery are restricted; world time and rest permission
 remain SM work. Local versions are evaluation /12, Snapshot /8, availability /7,
 evaluator /18; shared encodings and complex Delta ABI remain OPEN.
@@ -538,3 +539,130 @@ CON draw. A failing-before-fix regression now proves that dead/zero-HP sources
 fail closed before RNG. The correction is included in R21; no live graph is
 silently repaired. The initial R21 Integration was stopped before this edit and
 is not passing evidence; the subsequent final gate covers the correction.
+
+
+## Global Review R18–R21
+
+Review baseline: `main@4f320a2e752826297fc78bf53cbac439934a9461`.
+All batch source, tests, development docs, commits and pushes belong to
+`agentic-trpg/trpg-rules-engine`. The separate `agentic-trpg/agentic-trpg`
+architecture documents were read as constraints; that repository was not modified.
+Reviewed actual commit ancestry, cumulative source/test diff, calculation/projection
+modules, canonical data and acceptance assertions separately from batch summaries.
+The four branches are stacked in this order, without merge/rebase/force push:
+
+| Batch | Branch | Actual commit |
+| --- | --- | --- |
+| R18 | `refactor/r18-concentration-lineage` | `7a12853f04ec3d11f550f6db167ffa1e9313c83d` |
+| R19 | `refactor/r19-resource-payment-long-rest` | `0f09be00ad1f48d80ff5c3c3883d8ee3110c9d9a` |
+| R20 | `refactor/r20-stateless-spell-feature` | `3a1676156eb2ac586c79802ae80e8036cef8694d` |
+| R21 | `refactor/r21-predeclared-reactions` | `f9200283d490ff094d2e112778a7c0a199ee0e37` |
+
+### Architecture and actual dependency removal
+
+The mechanism matrix above separates the two required dimensions. R18's existing
+Hold Person damage/CON-save/full-lineage cleanup is an **internal candidate**, not
+public damage source authorization. R19 removes live resource/recovery containers
+from bounded Long Rest and original rule-priced payment. R20 removes the actual
+Cure Wounds / Second Wind live executor dependencies for full reviewed Cleric 1 /
+Fighter 1 profiles. R21 removes live Counterspell selection/queue/dispatcher/hooks
+for one authorized predeclaration inside its triggering cast. None constructs a
+LiveCombat, resolves a Handle/Registry or retains cross-request execution state.
+Isolation tests prohibit those calls during successful real rule execution.
+
+Existing Resolver/dice/healing/save/Rest/Feature/Scale/Slot/Turn rules are reused.
+Only ordinary Slot selection, Touch range conversion and concentration DC were
+extracted for shared Legacy/new use; no second D&D formula implementation or new
+SRD content was introduced. Per-call actor copies, graph selection and projections
+produce proposals; they are not an authoritative commit engine or a rebuilt live
+runtime. Typed deltas, complete owner-specific mirrors/spend attribution, ordered
+events, RNG and a conservative whole-world read fence are returned atomically.
+Independent consumers guard all expected values before publishing; production SM
+persistence/authorization/idempotency/commit integration is still unimplemented.
+
+Meta MODULE_CONTRACTS remains highest authority. Exactly two Snapshot contexts,
+State Machine ownership, four-state results and accepted-versus-committed remain
+unchanged. C-04 durable interactive continuation, C-15 complex DTO publication,
+C-16 creation/source authority and other OPEN choices remain OPEN. Local version
+`engine-evaluation/17`, Snapshot `/12`, Availability `/11`, evaluator `/23` do not
+approve those cross-module ABIs. Legacy APIs remain transitional regression and
+production-caller debt, never the final engine architecture.
+
+### Confirmed findings versus unsupported work
+
+| Severity / category | Finding and disposition |
+| --- | --- |
+| P0 | None confirmed in reviewed bounded execution. |
+| P1, resolved in R20 | Shared Context Builder used artificial NPC ability magnitudes for explicit class actors: identical Cleric healed 17 as PC and 19 as Monster. Full class NPCs now use real ability/level; independent values and full Legacy/event/RNG regressions cover the correction. |
+| P2, resolved in R21 | R18 accepted a recorded-dead source still carrying Concentration, drawing CON RNG and retaining the stale graph on success. A regression failed before the fix; positive-HP/alive/dead-ledger admission now refuses before RNG and publishes nothing. |
+| P2, unresolved publication debt inherited from R17 | Generated OngoingEffectLifecycle JSON Schema lists `expires_round`, `expiry_actor_id`, `last_repeat_turn_serial`, `remaining_one_use_modifiers` as optional, while LifecycleRecord runtime requires every field. Actual missing-field requests fail closed. Align published schema before external ABI release; this does not make missing facts executable. |
+| Unsupported composition | R18 Concentration is not wired into public Attack/Spell. General effects/conditions, mixed lineage, multi-type damage, nested/interactive reactions and other spell/feature/equipment profiles remain unsupported. |
+| Unsupported workflow, executed review probes | After actual R20 Cure Wounds / Second Wind, complete-class Long Rest returns `unsupported: rest.dependencies`; next ordinary Pass with the full class roster returns `unsupported: turn.capability`. No delta/events/RNG publish. Thus these are complete bounded invocations, **not** a fully stateless class-character encounter/rest loop. |
+| Architecture debt | General class-aware dependency profiles, spell/feature Availability, production Bridge/Demo caller cutover, durable SM integration, broad Runtime retirement and the private First Blush acceptance remain incomplete. No unsupported/Deferred content is promoted by these tests. |
+
+No unresolved confirmed P0/P1 remains in these bounded paths. The schema debt is
+visible and blocks ABI publication, not local candidate execution. Coverage and
+Legacy parity do not imply all supported production mechanics are migrated.
+
+### Executed evidence
+
+Each batch ran its final Integration gate against the exact preceding commit.
+The preserved pre-existing untracked `.evaluation-worktree/` caused conservative
+all-package fallback; it was neither hidden, deleted nor staged. No tests were
+deleted or coverage thresholds lowered. Interrupted gates are not green evidence.
+
+| Final gate | Data | Engine | Bridge | Demo | Total gate time |
+| --- | --- | --- | --- | --- | --- |
+| R18 Integration | 671 passed, 1 skipped | 8101 passed | 139 passed | 54 passed | 700.87 s |
+| R19 Integration | 671 passed, 1 skipped | 8139 passed | 139 passed | 54 passed | 710.20 s |
+| R20 Integration | 671 passed, 1 skipped | 8192 passed | 139 passed | 54 passed | 692.11 s |
+| R21 Integration | 671 passed, 1 skipped | 8237 passed | 139 passed | 54 passed | 730.14 s |
+
+Final combined focused tests: `test_stateless_concentration.py`,
+`test_stateless_long_rest_payments.py`, `test_stateless_spell_feature.py`,
+`test_stateless_reactions.py`: **177 passed in 7.61 s**. Full snapshot/event/RNG
+Legacy differential is combined with independent DC/formula/cost/draw-order
+expectations, full-HP/costly-no-heal, last unit, owner/capacity/mirror refusal,
+complete death/unsupported incapacity, replay/concurrency, JSON, world/reapply
+guards, exceptions/cancellation and structural isolation. The independent review
+also executed the four unsupported class workflow probes described above and
+inspected the actual Lifecycle JSON Schema/runtime mismatch.
+
+Full Validation **PASSED in 833.89 s** on reviewed R21 source
+`f9200283d490ff094d2e112778a7c0a199ee0e37`.
+Command: `python tools/validate.py full --base 4f320a2e752826297fc78bf53cbac439934a9461`.
+
+| Full package gate | Actual tests | Actual coverage | Original threshold |
+| --- | --- | --- | --- |
+| Data | 671 passed, 1 skipped | 97.56% | 96% |
+| Engine | 8237 passed | 95.37% | 90% |
+| Bridge | 139 passed | 97.05% | 85% |
+| Demo | 54 passed | Not configured | Unchanged |
+
+Ruff, format checks, Mypy, all 24 tooling tests, Bandit, examples and strict
+MkDocs passed. All three wheels built and imported in an isolated clean
+installation; installed corpus/grid/Haste/Moonbeam and Bridge HTTP smoke passed.
+On Windows the verified temporary Makefile adapter reads each original package
+recipe, executes its commands and fails on errors; no coverage/security/build/
+wheel step is replaced by a success stub. The complete log is retained locally
+as `R18-R21-full.log` in the temporary `agentic-trpg-make-r10-r13` directory.
+This is local Windows evidence, not a claim that native GitHub Actions or private
+MVP end-to-end acceptance ran. Subsequent review-status edits affect docs only
+and receive a separate strict documentation gate.
+
+### Next four batches that reduce remaining migration work
+
+| Proposed batch | Existing dependency to remove | Completion evidence |
+| --- | --- | --- |
+| R22: shared operation-specific class dependency profiles | Broad global class/grant refusal in Pass/Attack/Move/Rest prevents full R20/R21 actor workflows | Retain real complete grants and support reviewed no-extra-effect combinations across heal → turn → rest → heal; refuse unknown modifiers before costs/RNG; remove corresponding live eligibility/turn/recovery calls. |
+| R23: compose concentration with actual Attack/damage | R18 still needs separately resolved internal damage rather than the public executor | Produce real damage instances through the shared Resolver, run CON saves and full graph cleanup in the same guarded result, with source closure and multi-packet aggregation; obtain needed C-15/C-16 decisions before publishing ABI. |
+| R24: existing instant Save/Damage Spell family | Live spell hydration/damage/save orchestration for a reviewed existing spell | Reuse R19 payments, original Delivery/Save/Damage Resolver and composed R23 effects; prove actual class PC/NPC costs, per-target outcomes, event/RNG order and rollback without live hooks. |
+| R25: existing Shield / opportunity-attack predeclaration | Live Attack/Movement reaction hooks and effect/turn expiry | One complete no-new-choice trigger/response, payment, effect lifetime and follow-up action in one evaluation; no hidden handle; general interactive C-04 stays OPEN. |
+
+Priority is removing remaining real Stateful execution dependencies and closing
+workflows, not adding spells, DTOs, adapters or files. With the final Full gate
+passing and no unresolved confirmed P0/P1, merging these **bounded cumulative
+extractions** is recommended as migration progress, with the P2 publication debt
+and unsupported workflow gaps explicit. Do not label the full Rule Engine
+migration/MVP/ABI complete. No merge is executed by this task; no other repository
+is modified.

@@ -23,8 +23,8 @@ from dnd5e_engine.intents import PlayerIntent
 from dnd5e_engine.rules.skills import Skill
 from dnd5e_engine.types.checks import CheckRequest, GrantedDie
 
-SCHEMA_VERSION = "engine-evaluation/15"
-EvaluationVersion = Literal["engine-evaluation/15"]
+SCHEMA_VERSION = "engine-evaluation/16"
+EvaluationVersion = Literal["engine-evaluation/16"]
 
 
 class ItemUsePayload(EvaluationModel):
@@ -90,6 +90,7 @@ class CombatIntentPayload(PlayerIntent):
     model_config = ConfigDict(extra="forbid", strict=True, revalidate_instances="always")
 
     stat_block_action_id: Annotated[str, Field(strict=True, min_length=1)] | None = None
+    spell_source_id: Annotated[str, Field(strict=True, min_length=1)] | None = None
 
 
 class RuleEvaluationRequest(EvaluationModel):

@@ -3,6 +3,7 @@
 import copy
 from typing import Any, Literal
 
+from dnd5e_engine.evaluation_casting import CastingState
 from dnd5e_engine.evaluation_effects import effect_state
 from dnd5e_engine.evaluation_resources import ResourceState
 from dnd5e_engine.evaluation_state import (
@@ -30,7 +31,7 @@ from dnd5e_engine.types.combat import Combatant
 def character_state(
     live: _LiveCombat,
     actor: Combatant,
-    version: Literal["engine-snapshot/10"] = "engine-snapshot/10",
+    version: Literal["engine-snapshot/11"] = "engine-snapshot/11",
 ) -> CharacterStateV2:
     value = actor.model_dump(mode="python")
     value["death_saves"] = value["death_saves"] or None
@@ -51,7 +52,8 @@ def capture_combat_snapshot(
     combat_id: str,
     inventory_state: InventoryState,
     resource_state: ResourceState | None,
-    snapshot_schema_version: Literal["engine-snapshot/10"] = "engine-snapshot/10",
+    casting_state: CastingState | None,
+    snapshot_schema_version: Literal["engine-snapshot/11"] = "engine-snapshot/11",
 ) -> CombatSnapshot:
     """Capture a completed boundary; no registry lookup or RNG serialization.
 
@@ -152,6 +154,7 @@ def capture_combat_snapshot(
         character_states=actors,
         inventory_state=inventory_state,
         resource_state=resource_state,
+        casting_state=casting_state,
         effect_states=tuple(
             effect_state(effect) for effects in live.active_effects.values() for effect in effects
         ),
@@ -169,6 +172,7 @@ def capture_evaluation_snapshot(
     captured = capture_combat_snapshot(
         live,
         resource_state=snapshot.resource_state,
+        casting_state=snapshot.casting_state,
         grid=grid,
         world_version=snapshot.world_version,
         combat_id=snapshot.combat_state.combat_id,

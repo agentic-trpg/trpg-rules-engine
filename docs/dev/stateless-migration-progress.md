@@ -53,7 +53,8 @@ classification applies only to the stated bounded capability, not its whole fami
 | Inventory / resource payment overall | Partially migrated: owned consumable, bounded rests and rule-priced owned payments | **Yes, R10/R16/R19** for those slices | Inventory/resource mirror guards; shared Slot selection and Feature pricing. General equip/transfer/item recharge/ammunition and production caller migration remain |
 | Bounded existing Poison lifecycle | Fully migrated local subset | **Yes, R17** | Authorized single Cunning Strike Poison → shared Save/repeat/expiry/lineage kernels → closed Effect/Condition/Turn proposals; no Apply API |
 | Conditions / effects / concentration overall | Partially migrated | Partially | R17 Poison and attack-produced dying conditions migrated; general multi-effect, concentration, creation, areas and child cascades remain Legacy |
-| Spellcasting / Features | Legacy Stateful Only | No | `spell_execution`, `feature_runtime`, `live_features`, `live_spell_delivery`, `activities/cast`; existing repertoire/costs/timing/grants/riders remain, no evaluation entry |
+| Bounded Cure Wounds / Second Wind | Complete bounded local contract | **Yes, R20** | Explicit class/source/preparation/components, shared Delivery/Feature pricing/HealActivity/Turn, atomic pool/mirror/spend/HP/budget/events/RNG |
+| Spellcasting / Features overall | Partially migrated | Partially | R20 removes the existing direct heal and self Feature executor dependencies for the admitted profiles; general repertoire/costs/timing/grants/riders/delegated casts remain Legacy |
 | Reaction / pending choice | Partially migrated choices only | Yes for draw-free choices; no for reactions | Weapon/missing-DC choices typed; `reactions`, `live_reactions`, `timed_activities` execution/windows/continuation remain Legacy; complex ABI OPEN |
 | Areas / environment / objects | Legacy Stateful Only | No | `persistent_areas`, `environment`, `combat_objects`, `ongoing_spell_activation`; state captured then refused; source/lifetime/geometry/history Delta missing |
 | Bounded victory / TPK closure | Fully migrated bounded external contract | **Yes, R10** | `evaluation_closure` → shared outcome_rules on explicit values; XP/history/events and unchanged RNG |
@@ -459,3 +460,39 @@ malformed capacities, replay/conflicts and post-recovery/proposal faults cover t
 real paths. Versions: evaluation `/15`, Snapshot `/10`, availability `/9`, evaluator
 `/21`; Snapshot changes pin the expanded closed Rest event history shape. These
 local encodings do not approve C-15 or change the six public operation kinds.
+
+
+## R20 — actual immediate Spell and Feature extraction
+
+Starts at R19 `0f09be00ad1f48d80ff5c3c3883d8ee3110c9d9a`, on
+`refactor/r20-stateless-spell-feature`. Local versions advance to envelope `/16`,
+Snapshot `/11`, Availability `/10`, evaluator `/22`; old shapes fail explicitly.
+
+- **External contract:** real Cleric 1 Cure Wounds (known/prepared reviewed source,
+  explicit Verbal/free Somatic, one live Touch target, first ordinary casting
+  window, Action and owned level-1 Slot) and real Fighter 1 Second Wind (canonical
+  full grants, shared class scale, Bonus Action, owned Feature Uses) return complete
+  atomic candidates. Bounded PC/NPC mechanics are identical. No arbitrary spend or
+  source-authority API is added.
+- **Dependency removal:** admitted execution uses Delivery/Activity Resolver,
+  feature_runtime and R19 payments directly. It does not instantiate a live combat,
+  call the Legacy spell/feature orchestrator, fold live hooks or use a handle/registry.
+  Only regression setup/capture invokes Legacy. Touch conversion is shared with the
+  old executor rather than implementing another distance rule.
+- **Evidence:** new tests compare entire Legacy post-snapshots, proposal ordering,
+  RNG and independently known 2d8+Wis / 1d10+Fighter-level outcomes; include legal
+  costly no-heal Swarm, full HP, final owned unit, refusal before draws/payment,
+  replay/concurrency, version/reapply guards, exceptions/cancellation and AST isolation.
+- **Remaining:** only these exact profiles/mechanisms are admitted. General spell
+  history, material components/equipment, other class levels/sources/modifiers,
+  Reaction, Concentration, multi-Activity and ongoing/delegated execution stay
+  unsupported. R18 Concentration is still an internal candidate, not composed with
+  R20 healing. C-04/C-15/C-16 and production integration stay OPEN/unimplemented.
+
+R20 review also found the shared Context Builder's old class-NPC approximation:
+identical Cleric attributes healed 17 for a PC and 19 for a Monster-controlled
+class actor. Explicit class NPCs now use the same real ability/PB branch as PCs;
+classless/template compatibility behavior remains separate. Independent expected
+value tests and full Legacy differentials verify the corrected shared path.
+The initial gate was stopped before this correction; only the subsequent final
+gate is completion evidence.

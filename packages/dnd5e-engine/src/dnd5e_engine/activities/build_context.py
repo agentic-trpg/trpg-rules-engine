@@ -326,8 +326,9 @@ def build_activity_context(
         # Spell attacks/DCs retain their separate spellcasting ability.
         caster_abilities = dict(stat_block_magnitudes.ability_scores)
         caster_proficiency_bonus = stat_block_magnitudes.proficiency_bonus
-    elif caster.entity_type == "Character":
-        # PCs carry real six-ability scores + character_level (piece 3), so the
+    elif caster.entity_type == "Character" or caster.class_slug or caster.classes:
+        # PCs and explicitly class-based NPCs carry real six-ability scores and
+        # level. Control/identity must not select a different rule formula. The
         # `@mod`/`@prof`/`@abilities.<ab>.mod` tokens resolve to honest values.
         caster_abilities = {
             "str": caster.strength,

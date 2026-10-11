@@ -23,6 +23,7 @@ from pydantic import (
 from dnd5e_engine.activities.conjuration import StatBlockMagnitudes, TransformSource
 from dnd5e_engine.effect_lifecycle import OngoingEffectLifecycle
 from dnd5e_engine.evaluation_base import EvaluationModel
+from dnd5e_engine.evaluation_casting import CastingState
 from dnd5e_engine.evaluation_effects import (
     EffectLifecycleApplicationState,
     EffectLifecycleSpecState,
@@ -455,11 +456,12 @@ class InventoryState(EvaluationModel):
 
 
 class SnapshotBase(EvaluationModel):
-    snapshot_schema_version: Literal["engine-snapshot/10"]
+    snapshot_schema_version: Literal["engine-snapshot/11"]
     session_id: Annotated[str, Field(min_length=1)]
     world_version: Annotated[int, Field(ge=0)]
     character_states: tuple[CharacterStateV2, ...]
     resource_state: ResourceState | None
+    casting_state: CastingState | None
     effect_states: tuple[EffectState, ...]
     inventory_state: InventoryState
     scene_state: SceneState
@@ -474,6 +476,18 @@ class SnapshotBase(EvaluationModel):
             raise ValueError("duplicate effect identity or absent effect target")
         if any(entry.owner_id not in ids for entry in self.inventory_state.entries):
             raise ValueError("inventory owner is absent from snapshot")
+        return self
+
+    @model_validator(mode="after")
+    def casting_closure(self) -> Self:
+        if self.casting_state is not None:
+            actors = {a.entity_id: a for a in self.character_states}
+            if any(a.actor_id not in actors for a in self.casting_state.actors):
+                raise ValueError("casting source owner is absent")
+            for entry in self.casting_state.actors:
+                known = {s for source in entry.sources for s in source.known_spells}
+                if known != set(actors[entry.actor_id].spells_known):
+                    raise ValueError("casting repertoire contradicts actor mirror")
         return self
 
     @model_validator(mode="after")

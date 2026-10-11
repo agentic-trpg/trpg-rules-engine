@@ -71,15 +71,16 @@ def weapon_case(
     snapshot = capture_combat_snapshot(
         live,
         resource_state=None,
+        casting_state=None,
         inventory_state=InventoryState(entries=()),
         grid=GridScene(width=4, height=3),
         world_version=7,
         combat_id="combat:synthetic",
-        snapshot_schema_version="engine-snapshot/10",
+        snapshot_schema_version="engine-snapshot/11",
     )
     request = request.model_copy(
         update={
-            "schema_version": "engine-evaluation/15",
+            "schema_version": "engine-evaluation/16",
             "actor_id": actor_id,
             "payload": CombatIntentPayload(
                 intent_type="attack", weapon_id=slug, target_id=target_id, two_handed=two_handed
@@ -93,7 +94,7 @@ def weapon_case(
 
 def availability(request, loader):
     query = ActionAvailabilityRequest(
-        schema_version="engine-availability/9",
+        schema_version="engine-availability/10",
         session_id=request.session_id,
         operation_kind="combat.intent",
         actor_id=request.actor_id,
@@ -161,11 +162,12 @@ def test_real_weapons_match_legacy_full_state_rng_events_and_budgets(
     expected = capture_combat_snapshot(
         live,
         resource_state=None,
+        casting_state=None,
         inventory_state=InventoryState(entries=()),
         grid=GridScene(width=4, height=3),
         world_version=7,
         combat_id="combat:synthetic",
-        snapshot_schema_version="engine-snapshot/10",
+        snapshot_schema_version="engine-snapshot/11",
     )
     assert apply_delta(request.state_snapshot, result) == expected
     assert not expected.combat_state.vex_grants
@@ -249,7 +251,7 @@ def test_new_equipment_fields_required_and_versioned(field):
     del wire["state_snapshot"]["character_states"][0][field]
     with pytest.raises(ValidationError):
         RuleEvaluationRequest.model_validate(wire)
-    with pytest.raises(ValidationError, match="engine-evaluation/15"):
+    with pytest.raises(ValidationError, match="engine-evaluation/16"):
         execute(request.model_copy(update={"schema_version": "engine-evaluation/2"}), loader)
 
 
@@ -267,6 +269,7 @@ def test_capture_cannot_discard_explicit_equipment_dependencies():
         capture_combat_snapshot(
             live,
             resource_state=None,
+            casting_state=None,
             inventory_state=InventoryState(entries=()),
             grid=GridScene(width=4, height=3),
             world_version=7,

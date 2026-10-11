@@ -36,13 +36,14 @@ def input_request():
     snapshot = capture_combat_snapshot(
         live,
         resource_state=None,
+        casting_state=None,
         inventory_state=InventoryState(entries=()),
         grid=GridScene(width=3, height=3),
         world_version=7,
         combat_id="combat:synthetic",
     )
     return RuleEvaluationRequest(
-        schema_version="engine-evaluation/15",
+        schema_version="engine-evaluation/16",
         session_id=live.session_id,
         command_id="command:synthetic",
         operation_kind="combat.intent",
@@ -56,7 +57,7 @@ def input_request():
 
 def result_for(request, status="accepted"):
     return RuleEvaluationResult(
-        schema_version="engine-evaluation/15",
+        schema_version="engine-evaluation/16",
         session_id=request.session_id,
         command_id=request.command_id,
         input_world_version=request.state_snapshot.world_version,

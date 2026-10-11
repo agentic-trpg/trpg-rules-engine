@@ -34,13 +34,14 @@ def request_and_live(**kwargs):
     snapshot = capture_combat_snapshot(
         live,
         resource_state=None,
+        casting_state=None,
         inventory_state=InventoryState(entries=()),
         grid=GridScene(width=3, height=3),
         world_version=7,
         combat_id="combat:synthetic",
     )
     request = RuleEvaluationRequest(
-        schema_version="engine-evaluation/15",
+        schema_version="engine-evaluation/16",
         session_id=live.session_id,
         command_id="command:synthetic",
         operation_kind="combat.intent",
@@ -140,6 +141,7 @@ def test_legacy_stateless_complete_delta_events_and_rng(seed, ac, hp, temp_hp, d
                 "state_snapshot": capture_combat_snapshot(
                     live,
                     resource_state=None,
+                    casting_state=None,
                     inventory_state=InventoryState(entries=()),
                     grid=GridScene(width=3, height=3),
                     world_version=7,
@@ -152,6 +154,7 @@ def test_legacy_stateless_complete_delta_events_and_rng(seed, ac, hp, temp_hp, d
     legacy = capture_combat_snapshot(
         live,
         resource_state=None,
+        casting_state=None,
         inventory_state=InventoryState(entries=()),
         grid=GridScene(width=3, height=3),
         world_version=7,

@@ -11,10 +11,10 @@ The current local candidate versions are:
 
 | Contract | Current version | Replaces |
 | --- | --- | --- |
-| RuleEvaluationRequest / Result | `engine-evaluation/15` | `/1`–`/14` |
-| StateSnapshot | `engine-snapshot/10` | `/1`–`/9` |
-| Availability request/result | `engine-availability/9` | `/1`–`/8` |
-| RulesetBinding evaluator | `dnd5e-evaluation/21` | `/20` and earlier |
+| RuleEvaluationRequest / Result | `engine-evaluation/16` | `/1`–`/15` |
+| StateSnapshot | `engine-snapshot/11` | `/1`–`/10` |
+| Availability request/result | `engine-availability/10` | `/1`–`/9` |
+| RulesetBinding evaluator | `dnd5e-evaluation/22` | `/21` and earlier |
 
 Old envelopes, snapshots and results are explicitly rejected. There are no compatibility
 aliases for `InventoryCombatSnapshot`, `combat_inventory`, missing equipment or missing
@@ -57,10 +57,10 @@ remain OPEN. SM authenticates/authorizes the caller and approved write scope.
 
 | Operation | Current admitted subset |
 | --- | --- |
-| combat.intent | One ordinary PC/NPC weapon Attack, an exact reviewed stat-block AttackActivity, explicit plain Pass / End Turn (including the bounded R17 Poison lifecycle), ordinary Walk, Action Dash / Disengage |
+| combat.intent | One ordinary PC/NPC weapon Attack, an exact reviewed stat-block AttackActivity, explicit plain Pass / End Turn (including the bounded R17 Poison lifecycle), ordinary Walk, Action Dash / Disengage; R20 bounded Cure Wounds / Second Wind |
 | rules.check | Explicitly adjudicated ordinary noncombat ability/skill check |
 | rules.save | Explicit noncombat actor saving throw; six abilities and fixed DC |
-| rules.rest | Bounded noncombat Short Rest: explicit Hit Dice, Pact Slots and reviewed Second Wind recovery |
+| rules.rest | Bounded noncombat Short/Long Rest: explicit HP/Hit Dice/Slots and reviewed Feature recovery |
 | combat.item | Owned accessible single-use Potion of Healing, living self-drinker with declared free hand |
 | combat.close | Consistent terminal victory / TPK; no loot/effects/flight/forced end |
 
@@ -439,3 +439,47 @@ rule-priced [payment and Long Rest progress](stateless-migration-progress.md#r19
 uses the original Slot preference, Feature preflight and Rest resolvers. There is
 no generic spend command. RestResolved explicitly reports Hit Dice, ordinary Slot,
 Pact Slot and reviewed Feature recovery. World time/permission/interruption remains SM.
+
+
+## R20: bounded immediate Spell / Feature execution
+
+`combat.intent` now executes actual canonical Cure Wounds for an explicit Cleric 1
+and Second Wind for an explicit Fighter 1. The complete class grants remain in
+computation/results. Reviewed Divine Order, Defense and mastery grant identities
+are neutral to the admitted unarmored healing and plain turn boundary. Unknown
+class levels, subclass/species, effects, conditions, equipment, extended budgets,
+Reaction/timing state and healing modifiers remain unsupported before RNG/payment.
+This does not make all existing spells or all class profiles stateless.
+
+Both snapshot contexts require `casting_state: CastingState | None`. Each explicit
+actor entry carries Verbal availability and complete class-source identities,
+abilities, known spells and prepared spells; prepared is a subset of known, with
+unique references and an exact actor-repertoire mirror. Missing is a schema error;
+null means unavailable closure. `spell_source_id` selects that supplied source,
+not caller authority. SM still authorizes the snapshot/source and request; the
+engine checks reviewed canonical class, actual grant, source/ability, prepared
+repertoire, living target, shared Touch range/line of effect, casting time,
+Action budget, Slot capacity/payment and components. Only the first ordinary
+casting window is admitted: no earlier Action/Bonus Action or spent Reaction;
+with no alternate/free/triggered casting mechanism this proves the per-turn Slot
+limit. General per-turn casting histories and multiclass sources remain unported.
+
+Cure Wounds reuses `plan_delivery`, `spell_execution.admission_failure`,
+`resolve_activity`, healing and Turn cores. Second Wind reuses the original
+`preflight_feature` / class Scale / priced ResourcePayment and HealActivity.
+No stateful spell/feature dispatcher is called. A Swarm target cannot regain HP:
+the legal cast spends Action/Slot but draws no healing dice, matching Legacy.
+Full HP still costs the resource and draws the actual healing dice.
+
+One `ResourceUpdate` atomically denotes the authoritative pool and its validated
+Actor mirror. A closed `SlotSpendLedgerUpdate` records that same priced spend;
+it is not a second balance or a generic spend command. Private post-state
+projection verifies every resource/mirror/ledger change, then retains the
+exhaustive ordinary mechanical-delta guard. HP, budget/turn, attribution, ordered
+proposals and RNG return in one result; exceptions/cancellation publish nothing.
+These are local versioned candidates, not approval of Meta C-15/C-16. Production
+SM commit/receipt and Bridge/Demo caller cutover remain unimplemented.
+
+Rule selection was checked against the packaged capability audits and
+[SRD 5.2.1](https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf)
+(Cleric list, Cure Wounds, Second Wind, spell components and per-turn Slot rule).

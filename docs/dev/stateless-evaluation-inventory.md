@@ -839,3 +839,21 @@ reviewed Feature maxima through the existing Scale/formula kernel. It rejects
 unknown owned item recovery, effects, conditions, species and custom counters.
 Resource mirrors, no-draw RNG and closed recovery events are covered by
 [migration progress](stateless-migration-progress.md#r19-resource-payment-and-long-rest).
+
+
+### R20 casting and paid invocation closure
+
+Both scene discriminators carry the required nullable `casting_state` component.
+`CastingState.actors` -> `ActorCastingState(actor_id, verbal_available, sources)` ->
+`ClassSpellSource(source_id, class_slug, ability, known_spells, prepared_spells)`
+contains only explicit mechanical facts; all fields are required and checked for
+identity/subset/mirror closure. It is not a new scene discriminator or source
+creation permission. The engine requires this component for Cure Wounds and
+keeps unrelated source capabilities unsupported.
+
+Slot/Feature payment uses the R19 ResourceState authority and checked Actor
+mirrors. `SlotSpendLedgerUpdate` additionally guards the complete previous owner
+spend ledger and permits exactly one rule-priced Slot increment. It carries
+attribution, not independently spendable resources. R20 private projections check
+complete pool/mirror/ledger agreement before allowing ordinary HP/Budget/Turn
+projection. No events must be replayed to derive resource or HP writes.

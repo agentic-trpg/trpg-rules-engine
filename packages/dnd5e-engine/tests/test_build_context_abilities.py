@@ -4,7 +4,8 @@ Piece 3 landed real per-ability scores + ``character_level`` on ``Combatant``.
 For PC casters (``entity_type == "Character"``) the context must now expose the
 real ability mods and a level-derived proficiency bonus, instead of the
 Avrae-era uniform fake (``10 + 2*mod`` from ``attack_bonus``, ``PB == 2``).
-Monsters keep the ``attack_bonus``-derived uniform path.
+Classless monsters keep the ``attack_bonus``-derived uniform path. Explicit
+class-based NPC profiles use the same real abilities and PB as PCs.
 """
 
 from __future__ import annotations
@@ -71,3 +72,27 @@ def test_monster_caster_keeps_attack_bonus_derived_path():
     assert ctx.caster_proficiency_bonus == 2
     for ability in ("str", "dex", "con", "int", "wis", "cha"):
         assert ctx.ability_mod(ability) == 4
+
+
+def test_explicit_class_npc_uses_real_abilities_and_level_pb():
+    npc = Combatant(
+        entity_id="npc:aaaaaaaaaaaa",
+        entity_type="NPC",
+        name="Class NPC",
+        initiative=10,
+        hp_current=30,
+        attack_bonus=9,
+        character_level=5,
+        class_slug="wizard",
+        classes={"wizard": 5},
+        intelligence=18,
+        wisdom=12,
+        constitution=14,
+    )
+    pc = npc.model_copy(update={"entity_type": "Character"})
+    for actor in (pc, npc):
+        context = _build(actor, [actor])
+        assert context.ability_mod("int") == 4
+        assert context.ability_mod("wis") == 1
+        assert context.ability_mod("con") == 2
+        assert context.caster_proficiency_bonus == 3

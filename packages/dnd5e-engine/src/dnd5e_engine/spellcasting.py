@@ -223,6 +223,17 @@ def _eval_int(node: ast.AST) -> int:
 _COMPONENT_ORDER: Final[tuple[Literal["V", "S", "M"], ...]] = ("V", "S", "M")
 
 
+def spell_range_ft(spell: Spell) -> int | None:
+    """Shared metric range: Touch uses one 5-foot grid reach; Self/Special none."""
+    from dnd5e_srd_data.schema.spell import SpellRangeUnits
+
+    if spell.range.units == SpellRangeUnits.FEET:
+        return spell.range.value
+    if spell.range.units == SpellRangeUnits.TOUCH:
+        return 5
+    return None
+
+
 def spell_component_metadata(
     spell: Spell,
 ) -> tuple[tuple[Literal["V", "S", "M"], ...], str | None, bool, int]:

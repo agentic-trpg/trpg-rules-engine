@@ -111,13 +111,14 @@ def npc_case(*, seed=0, hero_hp=40, hero_max=40, flat=False):
     snapshot = capture_combat_snapshot(
         live,
         resource_state=None,
+        casting_state=None,
         inventory_state=InventoryState(entries=()),
         grid=GridScene(width=3, height=3),
         world_version=7,
         combat_id="combat:synthetic",
     )
     request = RuleEvaluationRequest(
-        schema_version="engine-evaluation/15",
+        schema_version="engine-evaluation/16",
         session_id=live.session_id,
         command_id="command:npc",
         operation_kind="combat.intent",
@@ -134,7 +135,7 @@ def npc_case(*, seed=0, hero_hp=40, hero_max=40, flat=False):
 
 def query_for(request):
     return ActionAvailabilityRequest(
-        schema_version="engine-availability/9",
+        schema_version="engine-availability/10",
         session_id=request.session_id,
         operation_kind="combat.intent",
         actor_id=request.actor_id,
@@ -170,6 +171,7 @@ def test_explicit_npc_matches_legacy_complete_delta_events_rng_and_host_xp(
     after = capture_combat_snapshot(
         live,
         resource_state=None,
+        casting_state=None,
         inventory_state=InventoryState(entries=()),
         grid=GridScene(width=3, height=3),
         world_version=7,
@@ -433,6 +435,7 @@ def test_canonical_bandit_explicit_attack_is_executable_and_matches_legacy(actio
             "state_snapshot": capture_combat_snapshot(
                 live,
                 resource_state=None,
+                casting_state=None,
                 inventory_state=InventoryState(entries=()),
                 grid=GridScene(width=3, height=3),
                 world_version=7,
@@ -450,6 +453,7 @@ def test_canonical_bandit_explicit_attack_is_executable_and_matches_legacy(actio
     assert apply_delta(request.state_snapshot, result) == capture_combat_snapshot(
         live,
         resource_state=None,
+        casting_state=None,
         inventory_state=InventoryState(entries=()),
         grid=GridScene(width=3, height=3),
         world_version=7,

@@ -9841,13 +9841,9 @@ def _spell_out_of_range(
         )
     ):
         return False
-    spell_range = cast_spell_for_timing.range
-    if spell_range.units == SpellRangeUnits.FEET:
-        range_ft: int | None = spell_range.value
-    elif spell_range.units == SpellRangeUnits.TOUCH:
-        range_ft = 5
-    else:
-        range_ft = None
+    from dnd5e_engine.spellcasting import spell_range_ft
+
+    range_ft = spell_range_ft(cast_spell_for_timing)
     if isinstance(range_ft, int) and range_ft > 0:
         caster_zone = live.actor_zone.get(actor_id)
         target_zone = live.actor_zone.get(intent.target_id)

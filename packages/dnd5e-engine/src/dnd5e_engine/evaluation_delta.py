@@ -360,6 +360,27 @@ class ConcentrationUpdate(EvaluationModel):
         return self
 
 
+class SlotSpendLedgerUpdate(EvaluationModel):
+    """One rule-priced slot spend, with complete existing owner ledger guard."""
+
+    kind: Literal["combat.slot_spend_update"]
+    combat_id: Annotated[str, Field(min_length=1)]
+    owner_id: Annotated[str, Field(min_length=1)]
+    slot_kind: Literal["spell_slot", "pact_slot"]
+    level: Annotated[int, Field(ge=1, le=9)]
+    expected: dict[str, Annotated[int, Field(ge=0)]] | None
+    value: dict[str, Annotated[int, Field(ge=0)]]
+
+    @model_validator(mode="after")
+    def one_spend(self) -> Self:
+        prior = dict(self.expected or {})
+        key = f"{self.slot_kind}:{self.level}"
+        prior[key] = prior.get(key, 0) + 1
+        if self.value != prior:
+            raise ValueError("slot ledger must record exactly one owned slot")
+        return self
+
+
 StateDeltaOperation = Annotated[
     HPDelta
     | TempHPSet
@@ -378,7 +399,8 @@ StateDeltaOperation = Annotated[
     | CombatCreationCandidate
     | ResourceUpdate
     | EffectLifecycleUpdate
-    | ConcentrationUpdate,
+    | ConcentrationUpdate
+    | SlotSpendLedgerUpdate,
     Field(discriminator="kind"),
 ]
 

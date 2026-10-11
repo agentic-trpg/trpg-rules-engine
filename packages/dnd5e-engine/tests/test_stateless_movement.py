@@ -322,6 +322,7 @@ def test_allied_pass_through_uses_same_occupancy_and_cost_as_legacy(monkeypatch)
     snapshot = capture_combat_snapshot(
         live,
         resource_state=None,
+        casting_state=None,
         grid=GridScene(width=12, height=1),
         inventory_state=request.state_snapshot.inventory_state,
         world_version=request.state_snapshot.world_version,

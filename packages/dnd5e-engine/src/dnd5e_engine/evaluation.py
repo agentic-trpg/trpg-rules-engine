@@ -25,6 +25,7 @@ from dnd5e_engine.evaluation_rest import evaluate_rest
 from dnd5e_engine.evaluation_rng import RNGTransition
 from dnd5e_engine.evaluation_ruleset import RulesetBinding, verify_ruleset
 from dnd5e_engine.evaluation_saves import evaluate_save
+from dnd5e_engine.evaluation_spells import evaluate_healing
 from dnd5e_engine.evaluation_state import CombatSnapshot
 from dnd5e_engine.evaluation_turn import evaluate_turn
 from dnd5e_engine.lib_loader import scoped_lib_loader
@@ -100,6 +101,10 @@ async def evaluate(
                 code="operation.capability", reason="operation execution is not migrated"
             ),
         )
+    if request.payload.intent_type in {"cast_spell", "use_feature"}:
+        result = RuleEvaluationResult(**common, **evaluate_healing(request, assets))
+        result.verify_request(request)
+        return result
     snapshot = request.state_snapshot
     if request.payload.intent_type == "pass":
         result = RuleEvaluationResult(**common, **evaluate_turn(request, assets))

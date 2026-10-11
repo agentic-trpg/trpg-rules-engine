@@ -48,6 +48,7 @@ nav:
       - Stateless evaluation inventory: dev/stateless-evaluation-inventory.md
       - Stateless evaluation contracts: dev/stateless-evaluation.md
       - Stateless migration progress: dev/stateless-migration-progress.md
+      - R26-R29 migration review: dev/stateless-r26-r29-review.md
       - Reaction queue: dev/reaction-queue.md
       - Passive-stat projection: dev/passive-projection.md
       - Spatial geometry: dev/spatial-geometry.md

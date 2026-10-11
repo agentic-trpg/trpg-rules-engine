@@ -1175,5 +1175,20 @@ Final inspected plan and executed gate:
 **PASSED in 967.58 s** on Windows Python 3.14.7. Data **671 passed / 1 skipped**
 (172.88 s), Engine **8,632 passed** (705.58 s), Bridge **139** (12.37 s), Demo **54**
 (25.12 s), **24 tooling tests**, Ruff/format/Mypy, examples and strict MkDocs passed.
-Evidence-only documentation edits receive another strict docs build. Native Linux
-Full is dispatched after this source commit is pushed; it is not yet claimed green.
+Evidence-only documentation edits receive another strict docs build.
+
+Native Linux Python 3.12 Full **PASSED in 664.58 s** on source commit
+`117f4ec1294bf1ca3b0ae36b293b22f465446c46`,
+[run 38154957469](https://github.com/agentic-trpg/trpg-rules-engine/actions/runs/38154957469).
+The original package recipes retained their coverage floors: Data **97.62% / 96%**
+(631 passed / 41 skipped), Engine **95.49% / 90%** (8,632 passed), Bridge
+**97.06% / 85%** (139 passed); Demo **54 passed**. Bandit, tooling, examples,
+strict docs and isolated three-wheel/Bridge HTTP smoke passed. Existing conditional
+maintainer-source skips remain visible; no local Windows Full is claimed.
+
+Independent Global Review confirmed no P0/P1/P2 findings and recommends merge as
+bounded migration. Its additional isolated probes covered complete two-target
+Hold Person duration and equipped Cleric PC/NPC + Ogre OA/Attack/reset composition.
+See the [R26–R29 review](stateless-r26-r29-review.md) for the two progress dimensions,
+original-capability classification, remaining OPEN contracts and next four batches.
+Production SM/Bridge cutover and full Stateful conversion remain incomplete.

@@ -4,9 +4,10 @@ from itertools import pairwise
 
 from dnd5e_srd_data.loader import AssetLoader
 
+from dnd5e_engine.evaluation_class_dependencies import operation_dependencies
 from dnd5e_engine.evaluation_computation import CombatComputation
 from dnd5e_engine.evaluation_contracts import CombatIntentPayload, RuleEvaluationRequest
-from dnd5e_engine.evaluation_preflight import snapshot_support_failure, template_support_failure
+from dnd5e_engine.evaluation_preflight import template_support_failure
 from dnd5e_engine.evaluation_projection import attack_delta
 from dnd5e_engine.evaluation_rng import RNGTransition
 from dnd5e_engine.evaluation_state import CharacterStateV2, CombatSnapshot, MovementLedgerState
@@ -48,7 +49,7 @@ def evaluate_movement(request: RuleEvaluationRequest, loader: AssetLoader) -> Tu
         )
     if state.movement_ledgers[actor_id].active_mode != "walk":
         return _refuse("unsupported", "movement.mode", "only an active walking ledger is admitted")
-    failure = snapshot_support_failure(snapshot, movement=True) or template_support_failure(
+    failure = operation_dependencies(snapshot, loader, movement=True) or template_support_failure(
         snapshot, loader
     )
     if failure:

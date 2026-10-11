@@ -4,10 +4,11 @@ from typing import Literal, TypedDict
 
 from dnd5e_srd_data.loader import AssetLoader
 
+from dnd5e_engine.evaluation_class_dependencies import operation_dependencies
 from dnd5e_engine.evaluation_computation import CombatComputation
 from dnd5e_engine.evaluation_contracts import CombatIntentPayload, RuleError, RuleEvaluationRequest
 from dnd5e_engine.evaluation_delta import StateDelta
-from dnd5e_engine.evaluation_preflight import snapshot_support_failure, template_support_failure
+from dnd5e_engine.evaluation_preflight import template_support_failure
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError, attack_delta
 from dnd5e_engine.evaluation_rng import RNGTransition
 from dnd5e_engine.evaluation_state import CombatSnapshot
@@ -61,7 +62,7 @@ def evaluate_turn(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
     failure = (
         effect_turn_support_failure(snapshot, loader)
         if has_effect
-        else snapshot_support_failure(snapshot, turn_lifecycle=True, movement=True)
+        else operation_dependencies(snapshot, loader, turn_lifecycle=True, movement=True)
         or template_support_failure(snapshot, loader)
     )
     if failure:

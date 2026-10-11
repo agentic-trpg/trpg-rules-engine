@@ -666,3 +666,56 @@ extractions** is recommended as migration progress, with the P2 publication debt
 and unsupported workflow gaps explicit. Do not label the full Rule Engine
 migration/MVP/ABI complete. No merge is executed by this task; no other repository
 is modified.
+
+
+## R22 operation-specific complete class admission
+
+Base: `ac0fe93060b7377eb08662f12afc6230b1d33f45`; branch:
+`refactor/r22-class-operation-dependencies`. Evaluator binding `/24`; no wire DTO change.
+
+| Operation | Reviewed neutral dependencies | Remaining mechanical blockers |
+| --- | --- | --- |
+| Cure Wounds / Second Wind | Complete canonical Cleric 1 / Fighter 1 grants and capacities; Defense without armor | Unknown grants, modifiers, equipment; R21 alone admits Counterspell |
+| Pass / full turn reset | Same profiles plus complete Wizard 5 Evoker; activated features do not run on plain boundaries | Effects use separate R17 admission; Reaction, species, class hooks outside reviewed levels |
+| Walk / Action Dash / Disengage | Canonical complete class grants; no speed-granting feature at these levels | Potential OA, effects, template reach, special movement remain restricted |
+| Ordinary Attack with reviewed class roster | Unarmored actors have no passive AC/damage hooks; no trained mastery execution | Trained mastery, armor, class equipment, traits, riders and effects still fail closed |
+| Combat Close / local Start candidate | Complete class/pool facts remain; ordinary outcome and initiative/reset rules | General source creation C-16, effects, unknown initiative hooks |
+| Long Rest | Canonical full base/subclass grants and all finite pools; shared feature/Slot/HD recovery | Species/items/effects and unreviewed recovery remain blocked |
+| Short Rest | Full Cleric 1 / Fighter 1 use existing HD/Second Wind recovery | Wizard's optional Arcane Recovery invocation is not inferred |
+
+`evaluation_class_dependencies` validates original class, subclass, feature, equipment,
+custom-counter and pool facts. `snapshot_support_failure` calls the operation's reviewed
+actor checker directly; Healing no longer erases class/feature/trait fields in a copied
+Snapshot. Unknown features and actual attack modifiers cannot be waived as neutral.
+Previously admitted R16/R19 recovery-only profiles retain their existing checks.
+
+Stateless External Contract: complete Cleric/Fighter invocation -> Pass/reset -> bounded
+Walk -> ally's lethal Attack -> Combat Close -> Long Rest -> local Start -> invocation
+again. Tests consume guarded typed operations; the Host scopes actors after closure and
+supplies a distinct new enemy, preserving every retained actor field. Wizard Evoker
+Counterspell -> multiple Pass/reset -> Long Rest is also exercised. Full combat state,
+resource mirrors, effects/reactions, event order and RNG match Legacy on the shared
+encounter sequence; repeated evaluation and stale payment guards are checked.
+
+Legacy Runtime Dependency Removed: admitted operations execute with Legacy runtime
+entrypoints disabled. Existing turn/movement/rest/initialization/outcome kernels remain
+shared. No production Bridge/Demo caller was switched or Legacy function deleted:
+remaining callers still require it. C-04/C-15/C-16 and formal cross-repository ABI remain
+OPEN. R17's required-field/schema discrepancy is still a publication blocker.
+
+Development evidence: 98 existing Rest/Initialization/Attack regressions passed in
+5.94s; eight new complete-class workflow/refusal cases passed in 2.10s. The first wider
+run exposed admission regressions in existing recovery-only and classless initialization
+profiles; these were fixed without modifying those tests. Windows uses the root
+Makefile's exact `tools/validate.py` entrypoint because GNU Make is absent.
+
+
+R22 final gate: `python tools/validate.py fast --plan --base ac0fe93...` inspected
+(the full SHA above was used), then `python tools/validate.py integration --base
+ac0fe93060b7377eb08662f12afc6230b1d33f45` passed in **827.96s**. The existing untracked
+`.evaluation-worktree/` conservatively broadened selection; it was preserved and not
+staged. Local Python 3.14.7: Data **671 passed / 1 skipped** (134.73s), Engine
+**8,245 passed** (610.05s), Bridge **139** (8.96s), Demo **54** (16.69s), tooling **24**;
+all selected Ruff/format/Mypy, examples and strict MkDocs passed. Integration does not
+run Full's coverage/security/wheel gates; the requested final R25 Full must run them.
+This is local evidence, not a GitHub Actions result.

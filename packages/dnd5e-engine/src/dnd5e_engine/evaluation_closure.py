@@ -5,10 +5,11 @@ from typing import Literal, TypedDict
 from dnd5e_srd_data.loader import AssetLoader
 
 from dnd5e_engine.evaluation_actor import combatant
+from dnd5e_engine.evaluation_class_dependencies import operation_dependencies
 from dnd5e_engine.evaluation_contracts import RuleError, RuleEvaluationRequest
 from dnd5e_engine.evaluation_death import death_consistency
 from dnd5e_engine.evaluation_delta import CombatClose, HistoricalCombatOutcome, StateDelta
-from dnd5e_engine.evaluation_preflight import snapshot_support_failure, template_support_failure
+from dnd5e_engine.evaluation_preflight import template_support_failure
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError
 from dnd5e_engine.evaluation_rng import RNGTransition
 from dnd5e_engine.evaluation_state import ClosureDeath, CombatSnapshot
@@ -48,7 +49,7 @@ def evaluate_closure(request: RuleEvaluationRequest, loader: AssetLoader) -> Clo
         return _refuse("rejected", "actor_invalid", "closure actor is absent from the roster")
     if state.ended or any(isinstance(event, CombatEnded) for event in state.event_log):
         return _refuse("rejected", "combat_ended", "combat has already ended")
-    failure = snapshot_support_failure(snapshot) or template_support_failure(snapshot, loader)
+    failure = operation_dependencies(snapshot, loader) or template_support_failure(snapshot, loader)
     if failure:
         return _refuse("unsupported", "closure.capability", failure)
     failure = death_consistency(snapshot)

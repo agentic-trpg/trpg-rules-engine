@@ -529,3 +529,14 @@ See the [R18–R21 Global Review](stateless-migration-progress.md#global-review-
 for exact commits, executed gates, confirmed findings, two-dimensional progress and
 unsupported cross-operation class workflows. The admitted Spell/Feature/Reaction
 invocations do not yet provide a fully stateless class encounter/rest loop.
+
+
+## R22 complete class workflows
+
+[Operation-level admission](stateless-migration-progress.md#r22-operation-specific-complete-class-admission)
+validates the intact reviewed Cleric 1, Fighter 1 and Wizard 5 Evoker facts. Plain
+Pass/reset, bounded walking, closure and local initialization no longer reject merely
+because these classes exist. Long Rest recovers their complete owned finite resources.
+Attack still excludes trained mastery and class equipment; effects/reactions keep
+separate closure checks. The evaluator binding is `/24`; no new public source API,
+continuation or authoritative commit is introduced.

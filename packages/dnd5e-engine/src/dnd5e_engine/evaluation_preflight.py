@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal, get_args
 
@@ -47,7 +48,12 @@ def refused(status: Literal["rejected", "unsupported"], code: str, reason: str) 
 
 
 def snapshot_support_failure(
-    snapshot: CombatSnapshot, *, turn_lifecycle: bool = False, movement: bool = False
+    snapshot: CombatSnapshot,
+    *,
+    turn_lifecycle: bool = False,
+    movement: bool = False,
+    actor_dependencies: Callable[[CharacterStateV2], str | None] | None = None,
+    reviewed_reactions: bool = False,
 ) -> str | None:
     state = snapshot.combat_state
     failure = death_consistency(snapshot, allow_dying=turn_lifecycle)
@@ -66,7 +72,7 @@ def snapshot_support_failure(
         state.concentration_rounds_remaining,
         state.conditions_by_effect,
         state.effect_lifecycles,
-        state.pending_reactions,
+        state.pending_reactions if not reviewed_reactions else (),
         state.active_reaction_responses,
         state.rider_uses,
         state.reaction_effects_pending_expiry,
@@ -108,18 +114,25 @@ def snapshot_support_failure(
         if cell != f"{col},{row}" or not (0 <= col < grid.width and 0 <= row < grid.height):
             return "actor positions must be canonical cells within the supplied grid"
     for actor in snapshot.character_states:
-        if isinstance(actor, CharacterStateV2) and actor.weapon_mastery_slugs:
+        if actor_dependencies and (failure := actor_dependencies(actor)):
+            return failure
+        if actor_dependencies is None and actor.weapon_mastery_slugs:
             return "trained weapon mastery execution is not migrated"
         if (
             (actor.conditions and not turn_lifecycle)
             or actor.concentration_effect_id
-            or actor.trait_mechanics
-            or actor.class_slug
-            or actor.classes
-            or actor.subclass_slug
-            or actor.species_slug
-            or actor.granted_features
-            or actor.fighting_styles
+            or (
+                actor_dependencies is None
+                and (
+                    actor.trait_mechanics
+                    or actor.class_slug
+                    or actor.classes
+                    or actor.subclass_slug
+                    or actor.species_slug
+                    or actor.granted_features
+                    or actor.fighting_styles
+                )
+            )
             or actor.legendary_actions_max
             or actor.legendary_resistances_max
             or actor.extra_actions_remaining
@@ -447,7 +460,9 @@ def prepare_attack(
     *,
     common_weapons: bool = False,
 ) -> AttackAdmission:
-    support = snapshot_support_failure(snapshot)
+    from dnd5e_engine.evaluation_class_dependencies import operation_dependencies
+
+    support = operation_dependencies(snapshot, loader, attack=True)
     if support:
         return refused("unsupported", "snapshot.capability", support)
     support = template_support_failure(snapshot, loader)

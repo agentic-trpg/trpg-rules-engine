@@ -5,6 +5,7 @@ from dnd5e_srd_data.loader import AssetLoader
 from dnd5e_srd_data.schema.feature import RecoveryRule
 
 from dnd5e_engine.damage_rules import healing_balance
+from dnd5e_engine.evaluation_class_dependencies import class_dependencies, evoker_grants
 from dnd5e_engine.evaluation_contracts import RestPayload, RuleEvaluationRequest
 from dnd5e_engine.evaluation_delta import HPDelta, ResourceUpdate, StateDelta, StateDeltaOperation
 from dnd5e_engine.evaluation_resources import (
@@ -42,27 +43,45 @@ def evaluate_rest(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
         return _refuse(
             "unsupported", "rest.resources", "explicit owned resource capacities are required"
         )
+    levels = actor.classes or (
+        {actor.class_slug: actor.character_level} if actor.class_slug else {}
+    )
+    # Retain R16/R19's previously admitted explicit recovery-only profiles.
+    # Complete R20/R21 builds use the stricter canonical grant/pool closure.
+    reviewed = levels in ({"cleric": 1}, {"fighter": 1}, {"wizard": 5}) and bool(
+        set(actor.granted_features or ())
+        - {"second-wind", "spellcasting", "ritual-adept", "arcane-recovery"}
+        or actor.subclass_slug
+        or actor.fighting_styles
+    )
+    failure = (
+        class_dependencies(actor, snapshot, loader, BundledAssetLoader()) if reviewed else None
+    )
     if (
-        snapshot.effect_states
+        failure
+        or snapshot.effect_states
         or actor.conditions
         or actor.concentration_effect_id
         or actor.trait_mechanics
         or actor.species_slug
-        or actor.subclass_slug
+        or (actor.subclass_slug and not reviewed)
         or actor.granted_features is None
-        or set(actor.granted_features or ())
-        - (
-            {"second-wind", "spellcasting", "ritual-adept", "arcane-recovery"}
-            if payload.rest_type == "long"
-            else {"second-wind"}
+        or (
+            not reviewed
+            and set(actor.granted_features or ())
+            - (
+                {"second-wind", "spellcasting", "ritual-adept", "arcane-recovery"}
+                if payload.rest_type == "long"
+                else {"second-wind"}
+            )
         )
-        or actor.fighting_styles
+        or (actor.fighting_styles and not reviewed)
         or any(k.startswith("item_use:") for k in actor.custom_counters)
     ):
         return _refuse(
             "unsupported",
             "rest.dependencies",
-            "feature/item/effect recovery needs its own complete lifecycle",
+            failure or "feature/item/effect recovery needs its own complete lifecycle",
         )
     if not 1 <= actor.constitution <= 30 or not 1 <= actor.character_level <= 20:
         return _refuse("unsupported", "rest.constitution", "invalid Constitution fact")
@@ -79,7 +98,7 @@ def evaluate_rest(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
         for slug in actor.granted_features or ()
         if (f := loader.get_feature(slug)) is not None and f.uses is not None and f.uses.max
     }
-    if payload.rest_type == "short":
+    if payload.rest_type == "short" and not reviewed:
         finite = set(actor.granted_features or ())
     if {p.feature_slug for p in feature_pools} != finite:
         return _refuse(
@@ -421,6 +440,11 @@ def _long_rest_failure(
         return "primary class contradicts complete class levels"
     if any(not k.startswith("feature_use:") for k in actor.custom_counters):
         return "unreviewed rest counter dependency"
+    if actor.subclass_slug:
+        additional = evoker_grants(loader, canonical, actor.character_level)
+        if additional is None:
+            return "unreviewed subclass recovery definition"
+        granted |= additional
     for slug in actor.granted_features or ():
         feature = loader.get_feature(slug)
         if feature is None or feature != canonical.get_feature(slug):

@@ -7,12 +7,14 @@ It must not be connected to untrusted callers until Meta C-16 is decided.
 import copy
 from typing import Literal, Self, TypedDict
 
+from dnd5e_srd_data import BundledAssetLoader
 from dnd5e_srd_data.loader import AssetLoader
 from pydantic import Field, model_validator
 
 from dnd5e_engine.activities.d20 import AdvantageSources
 from dnd5e_engine.evaluation_actor import actor_state, combatant
 from dnd5e_engine.evaluation_base import EvaluationModel
+from dnd5e_engine.evaluation_class_dependencies import class_dependencies
 from dnd5e_engine.evaluation_contracts import (
     EvaluationVersion,
     ReadVersion,
@@ -131,24 +133,28 @@ def evaluate_combat_initialization_candidate(
         return refuse("init.position", "opening cells must be legal and uniquely occupied")
     for actor in actors.values():
         if (
+            actor.class_slug
+            or actor.classes
+            or actor.granted_features
+            or actor.subclass_slug
+            or actor.species_slug
+            or actor.fighting_styles
+            or actor.weapon_mastery_slugs
+        ) and (failure := class_dependencies(actor, snapshot, loader, BundledAssetLoader())):
+            return refuse("init.class_dependencies", failure)
+        if (
             not actor.is_alive
             or actor.hp_current <= 0
             or actor.conditions
             or actor.concentration_effect_id
             or actor.trait_mechanics
-            or actor.class_slug
-            or actor.classes
-            or actor.subclass_slug
             or actor.jack_of_all_trades
             or actor.reliable_talent
             or actor.species_slug
-            or actor.granted_features
-            or actor.fighting_styles
             or actor.legendary_actions_max
             or actor.legendary_resistances_max
             or actor.has_fled
             or actor.last_damaged_by
-            or actor.weapon_mastery_slugs
             or actor.base_speed < 0
             or not 1 <= actor.dexterity <= 30
             or (

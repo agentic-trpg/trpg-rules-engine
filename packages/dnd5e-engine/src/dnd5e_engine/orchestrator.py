@@ -4706,7 +4706,9 @@ def _emit_apply_damage(live: _LiveCombat, event: DamageApplied) -> None:
     # still surface the cascade before the Death event.
     caster_chain = live.concentration_chain.get(event.target_id)
     if caster_chain:
-        dc = min(30, max(10, event.amount // 2))
+        from dnd5e_engine.damage_rules import concentration_dc
+
+        dc = concentration_dc(event.amount) if event.amount > 0 else 10
         concentrator = _find_combatant(live, event.target_id)
         # The ``else 0`` cannot fire in practice: ``concentration_chain`` is
         # only ever keyed by an entity that is in ``live.initiative``, and the

@@ -335,6 +335,31 @@ class EffectLifecycleUpdate(EvaluationModel):
         return self
 
 
+class ConcentrationUpdate(EvaluationModel):
+    """Internal C-15 candidate, removes one fully guarded concentration source."""
+
+    kind: Literal["combat.concentration_update"]
+    combat_id: Annotated[str, Field(min_length=1)]
+    source_id: Annotated[str, Field(min_length=1)]
+    expected_effect_id: Annotated[str, Field(min_length=1)]
+    expected_chain: tuple[tuple[str, str, str], ...]
+    expected_rounds: Annotated[int, Field(gt=0)]
+    effect_id: None
+    chain: tuple[tuple[str, str, str], ...]
+    rounds: None
+
+    @model_validator(mode="after")
+    def removal_only(self) -> Self:
+        if (
+            not self.expected_chain
+            or self.chain
+            or len(set(self.expected_chain)) != len(self.expected_chain)
+            or any(i[1] != self.expected_effect_id for i in self.expected_chain)
+        ):
+            raise ValueError("concentration removal requires the complete unique source chain")
+        return self
+
+
 StateDeltaOperation = Annotated[
     HPDelta
     | TempHPSet
@@ -352,7 +377,8 @@ StateDeltaOperation = Annotated[
     | InventoryConsume
     | CombatCreationCandidate
     | ResourceUpdate
-    | EffectLifecycleUpdate,
+    | EffectLifecycleUpdate
+    | ConcentrationUpdate,
     Field(discriminator="kind"),
 ]
 

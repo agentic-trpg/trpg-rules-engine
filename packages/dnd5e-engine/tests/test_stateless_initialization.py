@@ -149,7 +149,7 @@ def init_case(*, fixed=(20, 1), dex=(16, 10), surprised=False, seed=0):
         combat_setup=setup,
     )
     request = init.CombatInitializationCandidateRequest(
-        schema_version="engine-evaluation/13",
+        schema_version="engine-evaluation/14",
         payload=init.CombatInitializationCandidatePayload(kind="combat.init.local-candidate"),
         session_id="synthetic-init",
         command_id="cmd:init",

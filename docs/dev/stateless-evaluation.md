@@ -11,10 +11,10 @@ The current local candidate versions are:
 
 | Contract | Current version | Replaces |
 | --- | --- | --- |
-| RuleEvaluationRequest / Result | `engine-evaluation/13` | `/1`–`/12` |
+| RuleEvaluationRequest / Result | `engine-evaluation/14` | `/1`–`/13` |
 | StateSnapshot | `engine-snapshot/9` | `/1`–`/8` |
 | Availability request/result | `engine-availability/8` | `/1`–`/7` |
-| RulesetBinding evaluator | `dnd5e-evaluation/19` | `/18` and earlier |
+| RulesetBinding evaluator | `dnd5e-evaluation/20` | `/19` and earlier |
 
 Old envelopes, snapshots and results are explicitly rejected. There are no compatibility
 aliases for `InventoryCombatSnapshot`, `combat_inventory`, missing equipment or missing
@@ -421,3 +421,10 @@ condition origins, multi-effect interactions, areas and interrupts remain unmigr
 Evaluation /13, Snapshot /9, availability /8 and evaluator /19 version this local
 C-15 candidate. Lifecycle clock/application/spec/repeat fields serialize explicitly;
 wire requests missing any of them are rejected rather than filled from Legacy defaults. This does not freeze a cross-repository ABI.
+
+
+## R18 concentration dependency closure
+
+The bounded internal Hold Person damage/save/lineage execution and local versions
+are described in [migration progress](stateless-migration-progress.md#r18-concentration-and-effect-lineage-candidate).
+C-15/C-16 remain OPEN; no public damage-source operation or cross-module ABI is added.

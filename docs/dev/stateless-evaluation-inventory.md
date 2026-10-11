@@ -823,3 +823,10 @@ No Apply operation, concentration state mutation or new Snapshot context is admi
 
 Snapshot /9 requires all lifecycle clock/application/spec/repeat wire fields explicitly;
 authoring defaults never repair admitted runtime dependencies.
+
+
+## R18 concentration dependency closure
+
+The bounded internal Hold Person damage/save/lineage execution and local versions
+are described in [migration progress](stateless-migration-progress.md#r18-concentration-and-effect-lineage-candidate).
+C-15/C-16 remain OPEN; no public damage-source operation or cross-module ABI is added.

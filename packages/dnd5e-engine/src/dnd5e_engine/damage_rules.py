@@ -124,3 +124,10 @@ def with_event_condition(
 def healing_balance(current_hp: int, maximum_hp: int, amount: int) -> int:
     """Original capped healing fold; revival/conditions belong to the calling lifecycle."""
     return min(maximum_hp, current_hp + amount)
+
+
+def concentration_dc(damage: int) -> int:
+    """Existing 2024 concentration damage DC, capped at 30."""
+    if damage <= 0:
+        raise ValueError("concentration damage must be positive")
+    return min(30, max(10, damage // 2))

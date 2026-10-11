@@ -47,6 +47,7 @@ classification applies only to the stated bounded capability, not its whole fami
 | Attack / Damage / Death overall | Partially migrated | Partially | Ordinary roll/hit/miss/crit/R-I-V/temp HP/death/payment/turn and attack-induced next-turn death save migrated; riders, trained Masteries, Multiattack/recharge/legendary/effects remain Legacy |
 | Adjudicated noncombat ability/skill check | Fully migrated bounded subset | Yes | `evaluation_checks` → `activities/check_pipeline`; explicit DC/GM flags/proficiency/expertise/Jack/Reliable Talent; no Legacy runtime |
 | Standalone saving throws | Fully migrated bounded NonCombat actor subset | **Yes, R15** | Shared actor_stats, condition projection and roll_save; six abilities, explicit DC/flags, permanent session auto-fail; no Legacy hydration |
+| Concentration damage / lineage | Complete bounded internal candidate; production source ABI C-16 OPEN | **Yes, R18** for existing Hold Person and resolved single-packet instances | Shared damage/DC/save/lineage, closed full graph cleanup; public source, mixed effects and multi-type instances remain restricted |
 | Saves / skill checks overall | Partially migrated | Partially | Tools/senses, combat source/cover, effect and finite modifier consumption remain restricted |
 | Owned single-use self-healing consumable | Fully migrated bounded external contract | **Yes, R10** | `evaluation_items` → shared CombatComputation / HealActivity / item_rules; inventory/HP/budget/turn/events/RNG remain complete |
 | Inventory / resource payment overall | Partially migrated: owned consumable plus typed HD/Pact/Second Wind rest recovery | **Yes, R10/R16** for those slices; no for general execution | Mandatory typed InventoryState; complete consume guard. Equip/transfer/recharge/ammunition/general pool/restore operations absent; Legacy slot/counter/rest machinery remains |
@@ -386,3 +387,40 @@ complex monsters, general derivation, authoritative SM consumer integration and 
 Bridge/Demo production cutover still follow. Public creation and C-16, complex Delta
 C-15, shared wire/RNG/commit policies stay OPEN. Migration completion is measured by
 removed original execution chains and migrated existing rules, not DTO/file counts.
+
+
+## R18 concentration and effect lineage candidate
+
+R18 starts at merged R17 `4f320a2e752826297fc78bf53cbac439934a9461`.
+The **internal** `evaluate_concentration_candidate` accepts complete CombatSnapshot,
+pinned binding, explicit RNG and already authorized/resolved positive single-packet
+damage instances. This is not a public `rules.effect`, attack or source-authorization
+API; C-16 remains OPEN. One canonical existing Hold Person source may link several
+explicit distinct targets. Full source/target, immutable apply-time save metadata,
+clock, condition provenance and concentration countdown are verified before RNG.
+Unknown/mixed/overlapping effect graphs and additional mechanics refuse atomically.
+
+The chain uses shared damage balances/zero-HP/death, the R15 Save primitive, the
+extracted original 2024 concentration DC formula and shared lineage filtering. It
+removes the successful slice's dependency on live Save hooks, concentration folds,
+Registry, effect hooks and Snapshot recapture. Each positive instance checks the
+actual CON modifier/proficiency; later instances after loss make no extra save.
+Temp HP still counts toward damage taken. Terminal death/incapacitation ends the
+complete graph even after a successful save. Resolved multi-type packets within one
+instance remain unsupported; this candidate cannot hide unresolved damage rules.
+
+Canonical Wizard/Fighter/Cleric/Warlock class identity and canonical reviewed
+Spellcasting, Arcane Recovery and Second Wind may be retained when they have no
+passive damage/CON-save dependency. Complete explicit grants remain required;
+modified/unknown grants, subclass/species dependencies, traits and other effects
+are refused. Only the admission copy strips facts already proved irrelevant;
+actual computation, preserved snapshot and returned deltas keep the original facts.
+
+Local concentration removal plus existing EffectLifecycleUpdate/Condition/HP/death/
+attribution/sequence writes form one StateDelta with ordered proposals, RNG and a
+whole-world read fence. They are local **C-15 candidates**, not approved permanent
+cross-module ABI. Public operations remain the existing six. Evaluation `/14` and
+evaluator `/20` pin the local Delta addition; Snapshot `/9` is unchanged. The R17
+generated Lifecycle JSON Schema required-field mismatch remains a publication debt.
+Two dimensions: external production integration is **not complete** (C-15/C-16),
+while runtime dependency is removed for this tested internal damage/lineage slice.

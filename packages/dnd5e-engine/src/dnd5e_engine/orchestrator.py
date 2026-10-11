@@ -10379,17 +10379,20 @@ def _slot_available(live: _LiveCombat, entity_id: str, slot_level: int) -> bool:
 def _take_spell_slot(live: _LiveCombat, entity_id: str, slot_level: int) -> bool:
     """Expend one slot at ``slot_level`` — Spellcasting pool first, then Pact (R3).
     Returns ``False`` and mutates nothing when neither pool has one."""
-    for identity, pool in (
-        ("spell_slot", live.spell_slots_by_entity.get(entity_id)),
-        ("pact_slot", live.pact_slots_by_entity.get(entity_id)),
-    ):
-        if pool is not None and int(pool.get(slot_level, 0)) > 0:
-            pool[slot_level] = int(pool[slot_level]) - 1
-            bucket = live.expended_resources.setdefault(entity_id, {})
-            resource = f"{identity}:{slot_level}"
-            bucket[resource] = bucket.get(resource, 0) + 1
-            return True
-    return False
+    from dnd5e_engine.resource_rules import choose_spell_slot
+
+    spell = live.spell_slots_by_entity.get(entity_id, {})
+    pact = live.pact_slots_by_entity.get(entity_id, {})
+    payment = choose_spell_slot(spell, pact, slot_level)
+    if payment is None:
+        return False
+    identity, remaining = payment
+    pool = spell if identity == "spell_slot" else pact
+    pool[slot_level] = remaining
+    bucket = live.expended_resources.setdefault(entity_id, {})
+    resource = f"{identity}:{slot_level}"
+    bucket[resource] = bucket.get(resource, 0) + 1
+    return True
 
 
 def _reject_over_count_targets(

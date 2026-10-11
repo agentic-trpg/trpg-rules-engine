@@ -11,10 +11,10 @@ The current local candidate versions are:
 
 | Contract | Current version | Replaces |
 | --- | --- | --- |
-| RuleEvaluationRequest / Result | `engine-evaluation/14` | `/1`–`/13` |
-| StateSnapshot | `engine-snapshot/9` | `/1`–`/8` |
-| Availability request/result | `engine-availability/8` | `/1`–`/7` |
-| RulesetBinding evaluator | `dnd5e-evaluation/20` | `/19` and earlier |
+| RuleEvaluationRequest / Result | `engine-evaluation/15` | `/1`–`/14` |
+| StateSnapshot | `engine-snapshot/10` | `/1`–`/9` |
+| Availability request/result | `engine-availability/9` | `/1`–`/8` |
+| RulesetBinding evaluator | `dnd5e-evaluation/21` | `/20` and earlier |
 
 Old envelopes, snapshots and results are explicitly rejected. There are no compatibility
 aliases for `InventoryCombatSnapshot`, `combat_inventory`, missing equipment or missing
@@ -428,3 +428,14 @@ wire requests missing any of them are rejected rather than filled from Legacy de
 The bounded internal Hold Person damage/save/lineage execution and local versions
 are described in [migration progress](stateless-migration-progress.md#r18-concentration-and-effect-lineage-candidate).
 C-15/C-16 remain OPEN; no public damage-source operation or cross-module ABI is added.
+
+
+## R19 owned payment and Long Rest
+
+ResourceState is the mechanical balance authority. Slot and `feature_use:*` actor
+maps are validated mirrors. One ResourceUpdate atomically writes the pool and its
+mirror; they must never be submitted as independently payable balances. Internal
+rule-priced [payment and Long Rest progress](stateless-migration-progress.md#r19-resource-payment-and-long-rest)
+uses the original Slot preference, Feature preflight and Rest resolvers. There is
+no generic spend command. RestResolved explicitly reports Hit Dice, ordinary Slot,
+Pact Slot and reviewed Feature recovery. World time/permission/interruption remains SM.

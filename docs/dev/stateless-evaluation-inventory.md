@@ -22,7 +22,7 @@ version/migration details are in [stateless evaluation](stateless-evaluation.md)
 
 ## Current stabilization additions
 
-Current snapshots are version `/9` only, with precisely CombatSnapshot and
+Current snapshots are version `/10` only, with precisely CombatSnapshot and
 NonCombatSnapshot discriminators. Both require InventoryState(entries=...),
 strict owner/instance closure and complete CharacterStateV2 equipment. Older snapshot
 versions and the third combat_inventory context are rejected explicitly; no empty
@@ -830,3 +830,12 @@ authoring defaults never repair admitted runtime dependencies.
 The bounded internal Hold Person damage/save/lineage execution and local versions
 are described in [migration progress](stateless-migration-progress.md#r18-concentration-and-effect-lineage-candidate).
 C-15/C-16 remain OPEN; no public damage-source operation or cross-module ABI is added.
+
+
+## R19 resource closure
+
+Long Rest validates complete class Hit Dice, canonical class Slot capacities and
+reviewed Feature maxima through the existing Scale/formula kernel. It rejects
+unknown owned item recovery, effects, conditions, species and custom counters.
+Resource mirrors, no-draw RNG and closed recovery events are covered by
+[migration progress](stateless-migration-progress.md#r19-resource-payment-and-long-rest).

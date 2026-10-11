@@ -50,7 +50,7 @@ classification applies only to the stated bounded capability, not its whole fami
 | Concentration damage / lineage | Complete bounded internal candidate; production source ABI C-16 OPEN | **Yes, R18** for existing Hold Person and resolved single-packet instances | Shared damage/DC/save/lineage, closed full graph cleanup; public source, mixed effects and multi-type instances remain restricted |
 | Saves / skill checks overall | Partially migrated | Partially | Tools/senses, combat source/cover, effect and finite modifier consumption remain restricted |
 | Owned single-use self-healing consumable | Fully migrated bounded external contract | **Yes, R10** | `evaluation_items` → shared CombatComputation / HealActivity / item_rules; inventory/HP/budget/turn/events/RNG remain complete |
-| Inventory / resource payment overall | Partially migrated: owned consumable plus typed HD/Pact/Second Wind rest recovery | **Yes, R10/R16** for those slices; no for general execution | Mandatory typed InventoryState; complete consume guard. Equip/transfer/recharge/ammunition/general pool/restore operations absent; Legacy slot/counter/rest machinery remains |
+| Inventory / resource payment overall | Partially migrated: owned consumable, bounded rests and rule-priced owned payments | **Yes, R10/R16/R19** for those slices | Inventory/resource mirror guards; shared Slot selection and Feature pricing. General equip/transfer/item recharge/ammunition and production caller migration remain |
 | Bounded existing Poison lifecycle | Fully migrated local subset | **Yes, R17** | Authorized single Cunning Strike Poison → shared Save/repeat/expiry/lineage kernels → closed Effect/Condition/Turn proposals; no Apply API |
 | Conditions / effects / concentration overall | Partially migrated | Partially | R17 Poison and attack-produced dying conditions migrated; general multi-effect, concentration, creation, areas and child cascades remain Legacy |
 | Spellcasting / Features | Legacy Stateful Only | No | `spell_execution`, `feature_runtime`, `live_features`, `live_spell_delivery`, `activities/cast`; existing repertoire/costs/timing/grants/riders remain, no evaluation entry |
@@ -59,7 +59,8 @@ classification applies only to the stated bounded capability, not its whole fami
 | Bounded victory / TPK closure | Fully migrated bounded external contract | **Yes, R10** | `evaluation_closure` → shared outcome_rules on explicit values; XP/history/events and unchanged RNG |
 | Closure / outcome overall | Partially migrated | No | Flight/forced end/effect handoff missing; loot generation and durable cross-combat effects were already Host/deferred gaps |
 | Bounded Short Rest | Fully migrated local subset | **Yes, R16** | Explicit HD/Pact/Second Wind ownership and capacities → shared rest kernels → closed resource/HP/events/RNG proposals |
-| Rest / derivation overall | Partially migrated | Pure algorithms retained; consumer/general recovery migration incomplete | Long Rest, other feature/item recovery, derivation and rest-modifying effects remain outside the admitted path |
+| Bounded Long Rest / payment | Complete bounded local contract | **Yes, R19** | Shared recovery/Slot/Scale/Feature pricing; atomic resource mirrors, HP/events and unchanged RNG |
+| Rest / derivation overall | Partially migrated | Pure algorithms retained; consumer/general recovery migration incomplete | Other feature/item/species recovery, drain/exhaustion effects and general derivation remain outside the admitted path |
 | General 3D / arbitrary narrative / precise interrupted resume | Unsupported / Post-MVP | Not applicable | Preserve original Host/Deferred boundaries and Meta MVP scope |
 
 Original capabilities remain in the canonical spell capability audit, reviewed data
@@ -424,3 +425,37 @@ evaluator `/20` pin the local Delta addition; Snapshot `/9` is unchanged. The R1
 generated Lifecycle JSON Schema required-field mismatch remains a publication debt.
 Two dimensions: external production integration is **not complete** (C-15/C-16),
 while runtime dependency is removed for this tested internal damage/lineage slice.
+
+
+## R19 resource payment and Long Rest
+
+R19 starts at R18 `7a12853f04ec3d11f550f6db167ffa1e9313c83d`.
+Both dimensions are complete for bounded Actor Long Rest and the rule-priced
+internal payment core. The original `resolve_long_rest` / recovery and Scale/
+Slot derivation algorithms are reused, not rewritten. Slot selection/arithmetic
+is extracted from Legacy `_take_spell_slot`; Legacy keeps only its transitional
+container writeback. New payments consume explicit owned ResourceState and original
+FeatureInvocation payments with verified maximum/cost. No Live runtime is read.
+
+A pool and its actor balance are one mechanical fact: ResourceUpdate's consumer
+checks expected pool, snapshot mirror closure and world version, then writes all
+mirrors atomically with HP/events/RNG. Multiple owners cannot fund one another.
+Long Rest restores all HP/Hit Dice and actual ordinary/Pact maxima. Only canonical
+Second Wind and Arcane Recovery finite-feature recovery are admitted, with canonical
+class/grant ownership and shared formula/Scale capacity checks. Spellcasting and
+Ritual Adept do not independently recover resources. Existing Short Rest behavior
+and its Pact/Hit Dice/Second Wind rules are retained; Long Rest with Hit Dice spends
+is now explicitly rejected as an illegal input, rather than an absent capability.
+
+No world clock, permission, interruption, Scene or Quest is calculated. Exhaustion,
+HP/ability-drain effects, species/feat recovery, other counters and owned items with
+unmigrated recovery/passives are unsupported. Uncharged single-use nonrecovering
+inventory remains unchanged, never regenerated. Long Rest is no-draw, including
+full-HP/no-change results; event-only version policy remains Meta OPEN.
+
+Independent full-pool/HP/mirror expectations, original resolver comparisons,
+actual Second Wind preflight, Legacy Slot order/ledger, last unit, foreign owner,
+malformed capacities, replay/conflicts and post-recovery/proposal faults cover the
+real paths. Versions: evaluation `/15`, Snapshot `/10`, availability `/9`, evaluator
+`/21`; Snapshot changes pin the expanded closed Rest event history shape. These
+local encodings do not approve C-15 or change the six public operation kinds.

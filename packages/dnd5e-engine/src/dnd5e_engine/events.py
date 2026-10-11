@@ -942,8 +942,10 @@ class RestResolved(BaseModel):
     model_config = {"extra": "forbid", "frozen": True}
     type: Literal["rest_resolved"] = "rest_resolved"
     actor_id: str
-    rest_type: Literal["short"]
+    rest_type: Literal["short", "long"]
     hit_dice: tuple[RestSpend, ...]
+    hit_dice_restored: dict[Annotated[str, Field(min_length=1)], Annotated[int, Field(ge=0)]]
+    spell_slots_restored: dict[Annotated[int, Field(ge=1, le=9)], Annotated[int, Field(ge=0)]]
     pact_slots_restored: dict[Annotated[int, Field(ge=1, le=9)], Annotated[int, Field(ge=0)]]
     feature_uses_restored: dict[Annotated[str, Field(min_length=1)], Annotated[int, Field(ge=0)]]
     hp_regained: int = Field(ge=0)

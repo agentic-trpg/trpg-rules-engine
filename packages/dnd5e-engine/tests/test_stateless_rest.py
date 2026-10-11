@@ -84,7 +84,7 @@ def rest_case(*, hp=10, con=14, seed=0, spends=None):
     )
     return request.model_copy(
         update={
-            "schema_version": "engine-evaluation/14",
+            "schema_version": "engine-evaluation/15",
             "operation_kind": "rules.rest",
             "state_snapshot": snapshot,
             "ruleset_binding": ruleset_binding(loader),
@@ -267,7 +267,9 @@ def test_incomplete_dependencies_refuse_before_rng(monkeypatch, bad):
     request = request.model_copy(update={"state_snapshot": snapshot})
     monkeypatch.setattr(RNGState, "restore", lambda *a: pytest.fail("refusal restored RNG"))
     result = execute(request, loader)
-    assert result.status == ("rejected" if bad in {"overspend", "foreign"} else "unsupported")
+    assert result.status == (
+        "rejected" if bad in {"long", "overspend", "foreign"} else "unsupported"
+    )
     assert result.state_delta is None
     assert result.proposed_events == ()
     assert result.rng_transition is None

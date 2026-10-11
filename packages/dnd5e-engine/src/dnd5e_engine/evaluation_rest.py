@@ -1,17 +1,28 @@
 """Bounded Short Rest: existing resolver, typed owned pools and no world mutation."""
 
+from dnd5e_srd_data import BundledAssetLoader
 from dnd5e_srd_data.loader import AssetLoader
 from dnd5e_srd_data.schema.feature import RecoveryRule
 
 from dnd5e_engine.damage_rules import healing_balance
 from dnd5e_engine.evaluation_contracts import RestPayload, RuleEvaluationRequest
 from dnd5e_engine.evaluation_delta import HPDelta, ResourceUpdate, StateDelta, StateDeltaOperation
-from dnd5e_engine.evaluation_resources import FeatureResource, HitDiceResource, SlotResource
+from dnd5e_engine.evaluation_resources import (
+    FeatureResource,
+    HitDiceResource,
+    ResourceState,
+    SlotResource,
+)
 from dnd5e_engine.evaluation_rng import RNGTransition
-from dnd5e_engine.evaluation_state import CharacterStateV2, NonCombatSnapshot
+from dnd5e_engine.evaluation_state import CharacterStateV2, InventoryState, NonCombatSnapshot
 from dnd5e_engine.evaluation_turn import TurnEvaluation, _refuse
 from dnd5e_engine.events import CombatEvent, HealingApplied, RestResolved, RestSpend
-from dnd5e_engine.rest import HitDicePool, recover_feature_uses, resolve_short_rest
+from dnd5e_engine.rest import (
+    HitDicePool,
+    recover_feature_uses,
+    resolve_long_rest,
+    resolve_short_rest,
+)
 from dnd5e_engine.rules.dice import ability_modifier
 
 
@@ -23,10 +34,6 @@ def evaluate_rest(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
             "unsupported",
             "rest.snapshot",
             "rest requires a noncombat snapshot without pending creation",
-        )
-    if payload.rest_type != "short":
-        return _refuse(
-            "unsupported", "rest.type", "Long Rest recovery dependency closure is not migrated"
         )
     actor = next((a for a in snapshot.character_states if a.entity_id == request.actor_id), None)
     if actor is None or not actor.is_alive or actor.hp_current <= 0:
@@ -43,7 +50,12 @@ def evaluate_rest(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
         or actor.species_slug
         or actor.subclass_slug
         or actor.granted_features is None
-        or set(actor.granted_features or ()) - {"second-wind"}
+        or set(actor.granted_features or ())
+        - (
+            {"second-wind", "spellcasting", "ritual-adept", "arcane-recovery"}
+            if payload.rest_type == "long"
+            else {"second-wind"}
+        )
         or actor.fighting_styles
         or any(k.startswith("item_use:") for k in actor.custom_counters)
     ):
@@ -62,19 +74,44 @@ def evaluate_rest(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
             )
     pools = [p for p in snapshot.resource_state.pools if p.owner_id == actor.entity_id]
     feature_pools = [p for p in pools if isinstance(p, FeatureResource)]
-    if {p.feature_slug for p in feature_pools} != set(actor.granted_features or ()):
+    finite = {
+        slug
+        for slug in actor.granted_features or ()
+        if (f := loader.get_feature(slug)) is not None and f.uses is not None and f.uses.max
+    }
+    if payload.rest_type == "short":
+        finite = set(actor.granted_features or ())
+    if {p.feature_slug for p in feature_pools} != finite:
         return _refuse(
             "unsupported", "rest.features", "owned feature recovery closure is incomplete"
         )
     feature_recovery = {}
     for feature_pool in feature_pools:
         feature = loader.get_feature(feature_pool.feature_slug)
-        if feature_pool.feature_slug != "second-wind" or feature is None or feature.uses is None:
+        if (
+            feature_pool.feature_slug
+            not in (
+                {"second-wind", "arcane-recovery"}
+                if payload.rest_type == "long"
+                else {"second-wind"}
+            )
+            or feature is None
+            or feature.uses is None
+        ):
             return _refuse(
                 "unsupported", "rest.features", "only reviewed Second Wind recovery is migrated"
             )
-        short = [r for r in feature.uses.recovery if r.period == "sr"]
-        if len(short) != 1 or short[0].type != "formula" or short[0].formula != "1":
+        short = [
+            r
+            for r in feature.uses.recovery
+            if r.period == ("lr" if payload.rest_type == "long" else "sr")
+        ]
+        rule_ok = len(short) == 1 and (
+            (short[0].type == "recoverAll" and short[0].formula == "")
+            if payload.rest_type == "long"
+            else (short[0].type == "formula" and short[0].formula == "1")
+        )
+        if not rule_ok:
             return _refuse(
                 "unsupported",
                 "rest.feature_rule",
@@ -101,7 +138,10 @@ def evaluate_rest(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
         return _refuse(
             "unsupported", "rest.classes", "class levels do not close over character level"
         )
-    if feature_pools and classes.get("fighter", 0) <= 0:
+    if (
+        any(p.feature_slug == "second-wind" for p in feature_pools)
+        and classes.get("fighter", 0) <= 0
+    ):
         return _refuse(
             "unsupported", "rest.feature_owner", "Second Wind requires its explicit Fighter owner"
         )
@@ -112,6 +152,15 @@ def evaluate_rest(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
                 "rejected", "rest.insufficient", "requested Hit Dice are absent or exhausted"
             )
     pact = [p for p in pools if isinstance(p, SlotResource) and p.kind == "pact_slot"]
+    if payload.rest_type == "long":
+        if payload.hit_dice:
+            return _refuse("rejected", "rest.long_spend", "Long Rest does not spend Hit Dice")
+        failure = _long_rest_failure(
+            actor, snapshot.resource_state, classes, loader, snapshot.inventory_state
+        )
+        if failure:
+            return _refuse("unsupported", "rest.long_dependencies", failure)
+        return _compute_long_rest(request, actor, hit_dice, pact, feature_pools, feature_recovery)
     return _compute_rest(request, actor, hit_dice, pact, feature_pools, feature_recovery)
 
 
@@ -213,6 +262,8 @@ def _compute_rest(
             actor_id=actor.entity_id,
             rest_type="short",
             hit_dice=tuple(spent),
+            hit_dice_restored={},
+            spell_slots_restored={},
             pact_slots_restored={p.level: restored[p.level] - p.current for p in pact},
             hp_regained=healed,
             feature_uses_restored=feature_restored,
@@ -230,3 +281,183 @@ def _compute_rest(
         choice=None,
         error=None,
     )
+
+
+def _compute_long_rest(
+    request: RuleEvaluationRequest,
+    actor: CharacterStateV2,
+    hit_dice: dict[str, HitDiceResource],
+    pact: list[SlotResource],
+    feature_pools: list[FeatureResource],
+    feature_recovery: dict[str, list[RecoveryRule]],
+) -> TurnEvaluation:
+    snapshot = request.state_snapshot
+    assert snapshot.resource_state is not None
+    spell = [
+        p
+        for p in snapshot.resource_state.pools
+        if isinstance(p, SlotResource) and p.owner_id == actor.entity_id and p.kind == "spell_slot"
+    ]
+    outcomes = {
+        pid: resolve_long_rest(
+            HitDicePool(hit_die_size=p.die_size, dice_remaining=p.current, dice_total=p.maximum),
+            actor.hp_current,
+            actor.hp_max,
+            spell_slots={s.level: s.current for s in spell},
+            spell_slot_max={s.level: s.maximum for s in spell},
+            pact_slots={s.level: s.current for s in pact},
+            pact_slot_max={s.level: s.maximum for s in pact},
+        )
+        for pid, p in hit_dice.items()
+    }
+    first = next(iter(outcomes.values()))
+    recovered = recover_feature_uses(actor.custom_counters, "lr", feature_recovery)
+    operations: list[StateDeltaOperation] = []
+    for pool in snapshot.resource_state.pools:
+        if pool.owner_id != actor.entity_id:
+            continue
+        if isinstance(pool, HitDiceResource):
+            current = outcomes[pool.pool_id].dice_remaining
+        elif isinstance(pool, SlotResource):
+            slots = first.spell_slots if pool.kind == "spell_slot" else first.pact_slots
+            assert slots is not None
+            current = slots[pool.level]
+        else:
+            current = pool.maximum - recovered[pool.feature_slug]
+        if current != pool.current:
+            operations.append(
+                ResourceUpdate(
+                    kind="resource.update",
+                    owner_id=actor.entity_id,
+                    pool_id=pool.pool_id,
+                    expected=pool,
+                    value=pool.model_copy(update={"current": current}),
+                    amount=current - pool.current,
+                )
+            )
+    healed = first.healed
+    if healed:
+        assert first.hp_current is not None
+        operations.append(
+            HPDelta(
+                kind="actor.hp_delta",
+                target_id=actor.entity_id,
+                expected_hp=actor.hp_current,
+                amount=healed,
+                resulting_hp=first.hp_current,
+            )
+        )
+    events: list[CombatEvent] = [
+        RestResolved(
+            actor_id=actor.entity_id,
+            rest_type="long",
+            hit_dice=(),
+            hit_dice_restored={
+                p.pool_id: outcomes[p.pool_id].dice_remaining - p.current for p in hit_dice.values()
+            },
+            spell_slots_restored={p.level: p.maximum - p.current for p in spell},
+            pact_slots_restored={p.level: p.maximum - p.current for p in pact},
+            feature_uses_restored={
+                p.feature_slug: p.maximum - recovered[p.feature_slug] - p.current
+                for p in feature_pools
+            },
+            hp_regained=healed,
+        )
+    ]
+    if healed:
+        events.append(HealingApplied(target_id=actor.entity_id, amount=healed))
+    # This reviewed recovery subset draws no dice and does not restore an execution RNG.
+    context = request.rng_context
+    return dict(
+        status="accepted",
+        state_delta=StateDelta(
+            expected_world_version=snapshot.world_version, operations=tuple(operations)
+        ),
+        proposed_events=tuple(events),
+        rng_transition=RNGTransition(
+            stream_id=context.stream_id,
+            input_version=context.version,
+            input_state=context.state,
+            next_state=context.state,
+            state_changed=False,
+        ),
+        choice=None,
+        error=None,
+    )
+
+
+def _long_rest_failure(
+    actor: CharacterStateV2,
+    resources: ResourceState,
+    classes: dict[str, int],
+    loader: AssetLoader,
+    inventory: InventoryState,
+) -> str | None:
+    from dnd5e_engine.activities.actor_stats import _SCORE_ATTR
+    from dnd5e_engine.activities.context import ActivityResolutionContext
+    from dnd5e_engine.activities.scale import build_scale_values
+    from dnd5e_engine.build_spec import derive_multiclass_pact_slots, derive_multiclass_slots
+    from dnd5e_engine.evaluation_actor import combatant
+    from dnd5e_engine.feature_runtime import DrawFreeRandom, scalar_formula
+
+    for entry in inventory.entries:
+        if entry.owner_id == actor.entity_id:
+            item = loader.get_item(entry.item_slug)
+            if (
+                item is None
+                or item.passive_effects
+                or item.requires_attunement
+                or (item.uses is not None and item.uses.recovery)
+            ):
+                return "owned item recovery/passive closure is not migrated"
+    canonical = BundledAssetLoader()
+    granted: set[str] = set()
+    for slug, level in classes.items():
+        definition = loader.get_class(slug)
+        if definition is None or definition != canonical.get_class(slug) or not 1 <= level <= 20:
+            return "unreviewed class recovery definition"
+        granted.update(g.slug for g in definition.granted_features if g.level <= level)
+    if actor.class_slug and actor.class_slug not in classes:
+        return "primary class contradicts complete class levels"
+    if any(not k.startswith("feature_use:") for k in actor.custom_counters):
+        return "unreviewed rest counter dependency"
+    for slug in actor.granted_features or ():
+        feature = loader.get_feature(slug)
+        if feature is None or feature != canonical.get_feature(slug):
+            return "unreviewed rest feature definition"
+        if slug not in granted:
+            return "feature is not granted by the explicit class levels"
+    owned = [p for p in resources.pools if p.owner_id == actor.entity_id]
+    for kind, maximum in (
+        ("spell_slot", derive_multiclass_slots(classes, loader=loader)),
+        ("pact_slot", derive_multiclass_pact_slots(classes, loader=loader)),
+    ):
+        actual = {
+            p.level: p.maximum for p in owned if isinstance(p, SlotResource) and p.kind == kind
+        }
+        if actual != maximum:
+            return "slot capacity closure differs from pinned class progression"
+    context = ActivityResolutionContext(
+        caster=combatant(actor),
+        caster_abilities={ab: getattr(actor, field) for ab, field in _SCORE_ATTR.items()},
+        targets=[],
+        rng=DrawFreeRandom(0),
+        event_emitter=lambda _: None,
+        class_levels=classes,
+        scale_values=build_scale_values(
+            class_slug=actor.class_slug,
+            subclass_slug=None,
+            species_slug=None,
+            level=actor.character_level,
+            classes=classes,
+            loader=loader,
+        ),
+    )
+    for pool in owned:
+        if isinstance(pool, FeatureResource):
+            feature = loader.get_feature(pool.feature_slug)
+            assert feature is not None
+            assert feature.uses is not None
+            if scalar_formula(feature.uses.max, context) != pool.maximum:
+                return "feature maximum contradicts pinned class Scale/formula"
+    return None

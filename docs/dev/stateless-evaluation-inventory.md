@@ -917,3 +917,20 @@ Orchestrator, registry, CombatHandle or live hooks. Existing shared weapon,
 versatile, proficiency, armor, damage/zero-HP and turn algorithms are reused.
 Species, other classes/gear, trained Mastery and equipped casting/rest remain
 Deferred rather than erased from the input. No formal ABI/SM integration claim.
+
+### R28 linked Hold Person turn closure
+
+Stateless External Contract: one existing complete canonical Hold Person graph,
+including every target, captured Save/DC, condition provenance, repeat serial,
+source duration and concentration chain. Envelope `/18` adds guarded ordered-subset
+retention and one source-turn duration tick to ConcentrationUpdate; complete removal
+still clears every source field atomically. Every affected lifecycle operation guards
+its prior effect, clock and lineage. No source is created by this operation.
+
+Legacy Runtime Dependency Removed: source/target/free-actor Pass, target repeat Save,
+partial multi-target release, natural expiry and subsequent legal actions execute
+without Orchestrator, live scheduler/hooks, registry or handles. The R17 snapshot
+boundary scheduler and original shared Save, duration and cleanup rules are reused.
+Attack/concentration loss and source death compose through the existing R23 fold.
+Positive-HP turn graphs only; dying/equipped graphs, other effects and new source
+admission remain Deferred. C-04/C-15/C-16 and formal wire ABI remain OPEN.

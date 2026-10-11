@@ -7,7 +7,11 @@ from typing import TYPE_CHECKING, Literal, cast, get_args
 
 from dnd5e_engine.activities.build_context import build_activity_context
 from dnd5e_engine.activities.save_primitive import SaveRoll, roll_save
-from dnd5e_engine.effect_lifecycle import EffectIdentity, OngoingEffectLifecycle
+from dnd5e_engine.effect_lifecycle import (
+    EffectIdentity,
+    OngoingEffectLifecycle,
+    concentration_chain_after_expiry,
+)
 from dnd5e_engine.events import (
     CombatEvent,
     EffectExpired,
@@ -71,7 +75,7 @@ def forget_effect(live: _LiveCombat, identity: EffectIdentity) -> bool:
     for source_id, chain in list(live.concentration_chain.items()):
         if identity not in chain:
             continue
-        remaining = [entry for entry in chain if entry != identity]
+        remaining = list(concentration_chain_after_expiry(chain, identity))
         if remaining:
             live.concentration_chain[source_id] = remaining
         else:

@@ -159,7 +159,11 @@ from dnd5e_engine.attack_rules import weapon_attack_range_ft as _weapon_attack_r
 from dnd5e_engine.attack_rules import weapon_melee_reach_ft as _weapon_melee_reach_ft
 from dnd5e_engine.combat_objects import CombatObjectState
 from dnd5e_engine.death_saves import roll_death_save
-from dnd5e_engine.effect_lifecycle import EffectIdentity, OngoingEffectLifecycle
+from dnd5e_engine.effect_lifecycle import (
+    EffectIdentity,
+    OngoingEffectLifecycle,
+    concentration_rounds_after_turn_end,
+)
 from dnd5e_engine.events import (
     Ability,
     AttackFailed,
@@ -6267,8 +6271,9 @@ def _hook_concentration_expiry(live: _LiveCombat, actor_id: str | None) -> None:
     remaining = live.concentration_rounds_remaining.get(actor_id)
     if remaining is None:
         return
-    if remaining > 1:
-        live.concentration_rounds_remaining[actor_id] = remaining - 1
+    next_rounds = concentration_rounds_after_turn_end(remaining)
+    if next_rounds is not None:
+        live.concentration_rounds_remaining[actor_id] = next_rounds
         return
     _drop_concentration(live, actor_id, reason="duration")
 

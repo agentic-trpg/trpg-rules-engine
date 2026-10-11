@@ -1,5 +1,6 @@
 """One reviewed, already-authorized Poison lifecycle; no creation or live hooks."""
 
+from collections.abc import Callable
 from dataclasses import replace
 from typing import Literal
 
@@ -7,7 +8,11 @@ from dnd5e_srd_data.loader import AssetLoader
 from dnd5e_srd_data.schema.lifecycle import EffectLifecycleSpec
 
 from dnd5e_engine.activities.effects import bind_effect_lifecycle, passive_effect_to_active_effect
-from dnd5e_engine.effect_lifecycle import OngoingEffectLifecycle, conditions_after_effect_expiry
+from dnd5e_engine.effect_lifecycle import (
+    EffectIdentity,
+    OngoingEffectLifecycle,
+    conditions_after_effect_expiry,
+)
 from dnd5e_engine.evaluation_actor import actor_state
 from dnd5e_engine.evaluation_computation import CombatComputation
 from dnd5e_engine.evaluation_contracts import SavePayload
@@ -165,6 +170,56 @@ def effect_turn_support_failure(snapshot: CombatSnapshot, loader: AssetLoader) -
     ) or template_support_failure(plain, loader)
 
 
+def run_snapshot_effect_boundary(
+    computation: CombatComputation,
+    actor_id: str,
+    expire: Callable[[EffectIdentity, Literal["duration", "save_succeeded"]], None],
+) -> None:
+    """R17's repeat/expiry scheduler over reviewed clocks, shared by both slices."""
+    if actor_id in computation.state.dead_ids:
+        return
+    for record in tuple(computation.state.effect_lifecycles):
+        clock = record.state
+        if not clock.repeats_at(actor_id, computation.state.turn_serial):
+            continue
+        clock = clock.repeated(computation.state.turn_serial)
+        computation.state = computation.state.model_copy(
+            update={
+                "effect_lifecycles": tuple(
+                    LifecycleRecord(identity=clock.identity, state=clock)
+                    if r.identity == clock.identity
+                    else r
+                    for r in computation.state.effect_lifecycles
+                )
+            }
+        )
+        app = clock.application
+        assert app.save_ability is not None
+        assert app.save_dc is not None
+        original = next(a for a in computation.snapshot.character_states if a.entity_id == actor_id)
+        event = resolve_snapshot_save(
+            actor_state(computation.actors[actor_id], original),
+            SavePayload(
+                kind="rules.save",
+                target_id=actor_id,
+                ability=app.save_ability,
+                dc=app.save_dc,
+                advantage=(),
+                disadvantage=(),
+                is_magical=app.is_magical,
+            ),
+            computation.rng,
+        )
+        computation.emit(event)
+        if event.succeeded:
+            expire(clock.identity, "save_succeeded")
+    for record in tuple(computation.state.effect_lifecycles):
+        if record.state.expires_at(
+            actor_id, "end", computation.state.turn_serial, computation.state.round_number
+        ):
+            expire(record.identity, "duration")
+
+
 class EffectTurnComputation(CombatComputation):
     """Per-call selected effect record; all other turn calculations are R11's core."""
 
@@ -175,44 +230,14 @@ class EffectTurnComputation(CombatComputation):
             self.effect_boundary(event.actor_id)
 
     def effect_boundary(self, actor_id: str) -> None:
-        if not self.state.effect_lifecycles:
-            return
-        clock = self.state.effect_lifecycles[0].state
-        if clock.repeats_at(actor_id, self.state.turn_serial):
-            clock = clock.repeated(self.state.turn_serial)
-            self.state = self.state.model_copy(
-                update={
-                    "effect_lifecycles": (LifecycleRecord(identity=clock.identity, state=clock),)
-                }
-            )
-            app = clock.application
-            assert app.save_ability is not None
-            assert app.save_dc is not None
-            original = next(a for a in self.snapshot.character_states if a.entity_id == actor_id)
-            event = resolve_snapshot_save(
-                actor_state(self.actors[actor_id], original),
-                SavePayload(
-                    kind="rules.save",
-                    target_id=actor_id,
-                    ability=app.save_ability,
-                    dc=app.save_dc,
-                    advantage=(),
-                    disadvantage=(),
-                    is_magical=app.is_magical,
-                ),
-                self.rng,
-            )
-            self.emit(event)
-            if event.succeeded:
-                self.expire_effect("save_succeeded")
-        if self.state.effect_lifecycles and clock.expires_at(
-            actor_id, "end", self.state.turn_serial, self.state.round_number
-        ):
-            self.expire_effect("duration")
+        run_snapshot_effect_boundary(self, actor_id, self.expire_effect)
 
-    def expire_effect(self, reason: Literal["duration", "save_succeeded"]) -> None:
+    def expire_effect(
+        self, identity: EffectIdentity, reason: Literal["duration", "save_succeeded"]
+    ) -> None:
 
         effect = self.snapshot.effect_states[0]
+        assert identity == (effect.target_id, effect.id, effect.origin)
         self.events.append(
             EffectExpired(
                 target_id=effect.target_id,

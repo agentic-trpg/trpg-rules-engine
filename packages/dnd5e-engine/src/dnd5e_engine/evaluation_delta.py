@@ -337,7 +337,7 @@ class EffectLifecycleUpdate(EvaluationModel):
 
 
 class ConcentrationUpdate(EvaluationModel):
-    """Internal C-15 candidate, removes one fully guarded concentration source."""
+    """Local C-15 candidate: guarded subset retention, one duration tick or removal."""
 
     kind: Literal["combat.concentration_update"]
     combat_id: Annotated[str, Field(min_length=1)]
@@ -345,19 +345,31 @@ class ConcentrationUpdate(EvaluationModel):
     expected_effect_id: Annotated[str, Field(min_length=1)]
     expected_chain: tuple[tuple[str, str, str], ...]
     expected_rounds: Annotated[int, Field(gt=0)]
-    effect_id: None
+    effect_id: Annotated[str, Field(min_length=1)] | None
     chain: tuple[tuple[str, str, str], ...]
-    rounds: None
+    rounds: Annotated[int, Field(gt=0)] | None
 
     @model_validator(mode="after")
-    def removal_only(self) -> Self:
+    def closed_transition(self) -> Self:
         if (
             not self.expected_chain
-            or self.chain
             or len(set(self.expected_chain)) != len(self.expected_chain)
             or any(i[1] != self.expected_effect_id for i in self.expected_chain)
         ):
-            raise ValueError("concentration removal requires the complete unique source chain")
+            raise ValueError("concentration transition requires the complete unique source chain")
+        if not self.chain:
+            if self.effect_id is not None or self.rounds is not None:
+                raise ValueError("final concentration removal must clear all source facts")
+        elif (
+            self.effect_id != self.expected_effect_id
+            or self.rounds not in (self.expected_rounds, self.expected_rounds - 1)
+            or len(set(self.chain)) != len(self.chain)
+            or self.chain != tuple(i for i in self.expected_chain if i in self.chain)
+            or (self.chain == self.expected_chain and self.rounds == self.expected_rounds)
+        ):
+            raise ValueError(
+                "retained concentration may only remove targets or tick one source turn"
+            )
         return self
 
 

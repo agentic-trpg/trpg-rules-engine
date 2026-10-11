@@ -11,6 +11,9 @@ blocked C-16. This extracts existing rules rather than adding content support.
 R26 supersedes the historical R17 lifecycle-schema defect recorded below with local
 schema/runtime agreement. Formal ABI and C-04/C-15/C-16 remain unapproved/OPEN.
 
+Current local versions after R28: envelope `/18`, Snapshot `/13`, Availability `/11`,
+evaluator `/30`. Historical batch versions below describe their original deliveries.
+
 ## Architecture decisions and progress dimensions
 
 Latest Meta MODULE_CONTRACTS §4–6/14.1, STATE_MACHINE_ARCHITECTURE and MVP_SCOPE
@@ -1079,3 +1082,47 @@ Ruff/format/Mypy, examples and strict MkDocs. Windows Python 3.14.7; this is loc
 Integration evidence, not Full/coverage/security/wheel or GitHub evidence. The final
 evidence-only documentation edit receives a strict MkDocs build. The preserved
 unknown worktree directory broadened the plan; it is not part of this batch.
+
+## R28 existing Hold Person turn lifecycle
+
+Start `eb8e5e37cfd2593f146ac101df57a572dc3f9bda`, branch
+`refactor/r28-hold-person-turn-lifecycle`; evaluator `/30`, envelope `/18`,
+Snapshot `/13`, Availability `/11`. The envelope bump reflects the expanded guarded
+ConcentrationUpdate subset/tick transition, with explicit old-envelope refusal.
+
+Stateless External Contract: the existing complete SM-authorized canonical graph
+supports caster/free-actor/target Pass, target-end repeated WIS Save, retained clocks,
+partial multi-target release, final cleanup and source-turn duration expiry. The
+result contains complete guarded Budget/Turn/Condition/effect/clock/lineage/source
+changes, ordered events and explicit RNG. Only living positive-HP turn graphs are
+admitted; dying or unrelated effect graphs fail closed before restoring RNG.
+
+Legacy Runtime Dependency Removed: successful turns use the extracted R17 snapshot
+boundary scheduler, original shared Save primitive, source-duration decrement and
+full-identity chain cleanup. Legacy consumes the same extracted duration/chain rules.
+Tests disable Orchestrator/registry/handles, live repeat/expiry/save/cleanup hooks and
+Legacy concentration expiry. Real complete Wizard source turns and one/two-target
+chains compose through repeated failures, partial/final success, duration expiry,
+Attack/concentration source death and subsequent legal actions. Full snapshot,
+ordered event and RNG parity is checked against Legacy alongside independent DC,
+modifier, duration and seeded roll expectations.
+
+The new actual Paralyzed Attack regression exposed a missing shared Action Gate
+condition check: it reached RNG despite action prohibition. The gate now uses the
+existing shared conditions_block_actions rule before payment/RNG. Paralyzed casting
+already refused. Tests retain both guards and verify rollback, concurrent replay,
+stale/double application and strict closed concentration transitions.
+
+R28 focused validation: **496 passed in 17.06 s**, including **30 new execution and
+contract cases**. Ruff check/format and Mypy passed. Integration evidence follows
+below. C-04/C-15/C-16 and formal ABI remain OPEN; no new rules.effect
+source admission or authoritative state service is claimed.
+
+Final inspected plan and executed gate:
+`python tools/validate.py integration --base eb8e5e37cfd2593f146ac101df57a572dc3f9bda`
+**PASSED in 791.71 s** on Windows Python 3.14.7. Data **671 passed / 1 skipped**
+(134.14 s), Engine **8,536 passed** (577.48 s), Bridge **139** (9.84 s), Demo **54**
+(18.50 s), **24 tooling tests**, Ruff/format/Mypy, examples and strict MkDocs passed.
+This is local Integration evidence; Full/coverage/security/wheels are reserved for
+the requested final native Linux gate after R29. Evidence-only documentation edits
+receive a strict docs build. The unrelated untracked worktree remains preserved.

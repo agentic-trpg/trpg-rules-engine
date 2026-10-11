@@ -2,6 +2,7 @@
 
 from dnd5e_engine.events import AttackFailed, CastFailed, CombatEvent
 from dnd5e_engine.intents import IntentRejectedError, PlayerIntent
+from dnd5e_engine.rules.conditions import conditions_block_actions
 from dnd5e_engine.types.combat import Combatant
 
 
@@ -46,6 +47,10 @@ def action_economy_gate_failure(
     """
     if intent.intent_type == "pass":
         return None
+    if conditions_block_actions([condition.condition for condition in current.conditions]):
+        raise IntentRejectedError(
+            "actor_incapacitated", f"actor_id={current.entity_id!r} cannot take actions"
+        )
     if is_bonus_action:
         if not current.bonus_action_available:
             return CastFailed(

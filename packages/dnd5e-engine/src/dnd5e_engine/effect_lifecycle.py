@@ -37,6 +37,18 @@ EffectIdentity = tuple[str, str, str]
 EffectSourceKind = Literal["spell", "feature", "item", "monster"]
 
 
+def concentration_rounds_after_turn_end(remaining: int) -> int | None:
+    """Original caster-turn cap: the cast turn counts, with no RNG."""
+    return remaining - 1 if remaining > 1 else None
+
+
+def concentration_chain_after_expiry(
+    chain: Sequence[EffectIdentity], identity: EffectIdentity
+) -> tuple[EffectIdentity, ...]:
+    """Original full-identity lineage filter; only the final removal ends the source."""
+    return tuple(entry for entry in chain if entry != identity)
+
+
 class EffectLifecycleApplication(BaseModel):
     """Apply-time capture, carried by the authoritative EffectApplied event."""
 

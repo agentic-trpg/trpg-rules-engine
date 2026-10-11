@@ -52,19 +52,24 @@ def evaluate_turn(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
     if request.actor_id in state.dead_ids:
         return _refuse("rejected", "actor_incapacitated", "recorded dead actors have no turn")
     # Lazy import keeps the shared R15 Save core independent of turn dispatch.
+    from dnd5e_engine.evaluation_concentration import concentration_delta
     from dnd5e_engine.evaluation_effect_turn import (
         EffectTurnComputation,
         effect_turn_delta,
         effect_turn_support_failure,
     )
+    from dnd5e_engine.evaluation_hold_turn import HoldTurnComputation, hold_turn_support_failure
     from dnd5e_engine.evaluation_opportunity import opportunity_dependencies
 
     _, reaction_failure = opportunity_dependencies(snapshot, loader)
     if reaction_failure:
         return _refuse("unsupported", "turn.reaction", reaction_failure)
     has_effect = bool(snapshot.effect_states)
+    has_concentration = bool(state.concentration_chain)
     failure = (
-        effect_turn_support_failure(snapshot, loader)
+        hold_turn_support_failure(snapshot, loader)
+        if has_concentration
+        else effect_turn_support_failure(snapshot, loader)
         if has_effect
         else operation_dependencies(
             snapshot,
@@ -80,14 +85,27 @@ def evaluate_turn(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
     if failure:
         return _refuse("unsupported", "turn.capability", failure)
     rng = request.rng_context.state.restore()
-    computation = (EffectTurnComputation if has_effect else CombatComputation)(snapshot, rng)
+    computation_type = (
+        HoldTurnComputation
+        if has_concentration
+        else EffectTurnComputation
+        if has_effect
+        else CombatComputation
+    )
+    computation = computation_type(snapshot, rng)
     computation.emit(IntentSubmitted(actor_id=request.actor_id, intent_type="pass"))
     # Pass pays no Action; it closes the turn even with unused budgets.
     computation.finish_turn(request.actor_id, force=True)
     after = computation.result()
     return dict(
         status="accepted",
-        state_delta=(effect_turn_delta if has_effect else attack_delta)(snapshot, after),
+        state_delta=(
+            concentration_delta
+            if has_concentration
+            else effect_turn_delta
+            if has_effect
+            else attack_delta
+        )(snapshot, after),
         proposed_events=tuple(computation.events),
         rng_transition=RNGTransition.between(request.rng_context, rng),
         choice=None,

@@ -19,7 +19,12 @@ from pydantic import Field
 from dnd5e_engine.activities.context import DamageInstanceContext
 from dnd5e_engine.activities.effects import bind_effect_lifecycle, passive_effect_to_active_effect
 from dnd5e_engine.damage_rules import concentration_dc
-from dnd5e_engine.effect_lifecycle import OngoingEffectLifecycle, conditions_after_effect_expiry
+from dnd5e_engine.effect_lifecycle import (
+    EffectIdentity,
+    OngoingEffectLifecycle,
+    concentration_chain_after_expiry,
+    conditions_after_effect_expiry,
+)
 from dnd5e_engine.evaluation_actor import actor_state
 from dnd5e_engine.evaluation_base import EvaluationModel
 from dnd5e_engine.evaluation_computation import CombatComputation
@@ -49,6 +54,7 @@ from dnd5e_engine.events import (
     DamageType,
     Death,
     EffectExpired,
+    EffectExpiryReason,
 )
 from dnd5e_engine.rules.conditions import conditions_break_concentration
 
@@ -80,10 +86,19 @@ class ConcentrationDamageRequest(EvaluationModel):
 
 
 def concentration_support_failure(
-    snapshot: CombatSnapshot, target_id: str, loader: AssetLoader, *, composed: bool = False
+    snapshot: CombatSnapshot,
+    target_id: str,
+    loader: AssetLoader,
+    *,
+    composed: bool = False,
+    turn_lifecycle: bool = False,
 ) -> str | None:
     state = snapshot.combat_state
-    if composed and state.initiative_ids[state.current_turn_index] == target_id:
+    if (
+        composed
+        and not turn_lifecycle
+        and state.initiative_ids[state.current_turn_index] == target_id
+    ):
         return "self-damage with source turn-end concentration expiry is not migrated"
     actors = {a.entity_id: a for a in snapshot.character_states}
     caster = actors.get(target_id)
@@ -219,7 +234,13 @@ def concentration_support_failure(
         if failure:
             return failure
     return snapshot_support_failure(
-        snapshot, actor_dependencies=identity_failure, reviewed_effects=True
+        snapshot,
+        actor_dependencies=identity_failure,
+        reviewed_effects=True,
+        # The exact linked Paralyzed conditions were validated above. R11's
+        # separate dying-condition profile is not this positive-HP turn slice.
+        turn_lifecycle=False,
+        movement=turn_lifecycle,
     )
 
 
@@ -284,44 +305,55 @@ class ConcentrationComputation(CombatComputation):
                 self.drop(damage.target_id)
         super().damage_completed(damage)
 
-    def drop(self, source_id: str) -> None:
-        for identity in self.state.concentration_chain[source_id]:
-            target, effect_id, origin = identity
-            self.events.extend(
-                (
-                    ConcentrationDropped(target_id=source_id, effect_name=effect_id),
-                    EffectExpired(
-                        target_id=target,
-                        effect_id=effect_id,
-                        origin=origin,
-                        reason="concentration_drop",
-                    ),
-                )
-            )
-            self.effects = [e for e in self.effects if (e.target_id, e.id, e.origin) != identity]
-            actor = self.actors[target]
-            self.actors[target] = actor.model_copy(
-                update={
-                    "conditions": conditions_after_effect_expiry(
-                        actor.conditions, effect_id, ["paralyzed"], []
-                    )
-                }
-            )
-            actor = self.actors[target]
-            ledger = self.state.movement_ledgers[target]
-            self.actors[target] = actor.model_copy(
-                update={"movement_remaining": ledger.remaining(self.speed(actor))}
-            )
-            self.events.append(ConditionRemoved(target_id=target, condition="paralyzed"))
-        self.actors[source_id] = self.actors[source_id].model_copy(
-            update={"concentration_effect_id": None}
+    def drop(self, source_id: str, *, reason: EffectExpiryReason = "concentration_drop") -> None:
+        for identity in tuple(self.state.concentration_chain[source_id]):
+            self.events.append(ConcentrationDropped(target_id=source_id, effect_name=identity[1]))
+            self.expire_linked_effect(identity, reason)
+
+    def expire_linked_effect(self, identity: EffectIdentity, reason: EffectExpiryReason) -> None:
+        target, effect_id, origin = identity
+        effect = next(e for e in self.effects if (e.target_id, e.id, e.origin) == identity)
+        assert effect.lifecycle is not None
+        source_id = effect.lifecycle.source_id
+        self.events.append(
+            EffectExpired(target_id=target, effect_id=effect_id, origin=origin, reason=reason)
         )
+        self.effects = [e for e in self.effects if (e.target_id, e.id, e.origin) != identity]
+        actor = self.actors[target]
+        actor = actor.model_copy(
+            update={
+                "conditions": conditions_after_effect_expiry(
+                    actor.conditions, effect_id, ["paralyzed"], []
+                )
+            }
+        )
+        ledger = self.state.movement_ledgers[target]
+        self.actors[target] = actor.model_copy(
+            update={"movement_remaining": ledger.remaining(self.speed(actor))}
+        )
+        self.events.append(ConditionRemoved(target_id=target, condition="paralyzed"))
+        remaining = concentration_chain_after_expiry(
+            self.state.concentration_chain[source_id], identity
+        )
+        chains = {k: v for k, v in self.state.concentration_chain.items() if k != source_id}
+        rounds = dict(self.state.concentration_rounds_remaining)
+        if remaining:
+            chains[source_id] = list(remaining)
+        else:
+            rounds.pop(source_id)
+            self.actors[source_id] = self.actors[source_id].model_copy(
+                update={"concentration_effect_id": None}
+            )
         self.state = self.state.model_copy(
             update={
-                "concentration_chain": {},
-                "concentration_rounds_remaining": {},
-                "effect_lifecycles": (),
-                "conditions_by_effect": (),
+                "concentration_chain": chains,
+                "concentration_rounds_remaining": rounds,
+                "effect_lifecycles": tuple(
+                    r for r in self.state.effect_lifecycles if r.identity != identity
+                ),
+                "conditions_by_effect": tuple(
+                    r for r in self.state.conditions_by_effect if r.identity != identity
+                ),
             }
         )
 
@@ -330,20 +362,28 @@ class ConcentrationComputation(CombatComputation):
 
 
 def concentration_delta(before: CombatSnapshot, after: CombatSnapshot) -> StateDelta:
-    if before.effect_states == after.effect_states:
-        return attack_delta(before, after)
     state, new = before.combat_state, after.combat_state
-    if (
-        after.effect_states
-        or new.concentration_chain
-        or new.concentration_rounds_remaining
-        or new.effect_lifecycles
-        or new.conditions_by_effect
-    ):
-        raise EvaluationInvariantError("incomplete concentration graph cleanup")
     source = next(iter(state.concentration_chain))
+    identities = {(e.target_id, e.id, e.origin) for e in after.effect_states}
+    original_ids = {(e.target_id, e.id, e.origin) for e in before.effect_states}
+    chain = tuple(new.concentration_chain.get(source, ()))
+    if (
+        not identities <= original_ids
+        or len(identities) != len(after.effect_states)
+        or set(chain) != identities
+        or len(chain) != len(identities)
+        or {r.identity for r in new.effect_lifecycles} != identities
+        or len(new.effect_lifecycles) != len(identities)
+        or {r.identity for r in new.conditions_by_effect} != identities
+        or len(new.conditions_by_effect) != len(identities)
+        or set(new.concentration_chain) != ({source} if chain else set())
+        or set(new.concentration_rounds_remaining) != ({source} if chain else set())
+    ):
+        raise EvaluationInvariantError("incomplete concentration graph transition")
     for old, new_actor in zip(before.character_states, after.character_states, strict=True):
-        expected_concentration = None if old.entity_id == source else old.concentration_effect_id
+        expected_concentration = (
+            None if old.entity_id == source and not chain else old.concentration_effect_id
+        )
         if new_actor.concentration_effect_id != expected_concentration:
             raise EvaluationInvariantError("unrepresented concentration source change")
     normalized = after.model_copy(
@@ -366,37 +406,49 @@ def concentration_delta(before: CombatSnapshot, after: CombatSnapshot) -> StateD
     base = attack_delta(before, normalized)
     actor = next(a for a in before.character_states if a.entity_id == source)
     assert actor.concentration_effect_id is not None
-    ops = [
-        *base.operations,
-        ConcentrationUpdate(
-            kind="combat.concentration_update",
-            combat_id=state.combat_id,
-            source_id=source,
-            expected_effect_id=actor.concentration_effect_id,
-            expected_chain=tuple(state.concentration_chain[source]),
-            expected_rounds=state.concentration_rounds_remaining[source],
-            effect_id=None,
-            chain=(),
-            rounds=None,
-        ),
-    ]
+    ops = list(base.operations)
+    next_id = actor.concentration_effect_id if chain else None
+    next_rounds = new.concentration_rounds_remaining.get(source)
+    if (next_id, chain, next_rounds) != (
+        actor.concentration_effect_id,
+        tuple(state.concentration_chain[source]),
+        state.concentration_rounds_remaining[source],
+    ):
+        ops.append(
+            ConcentrationUpdate(
+                kind="combat.concentration_update",
+                combat_id=state.combat_id,
+                source_id=source,
+                expected_effect_id=actor.concentration_effect_id,
+                expected_chain=tuple(state.concentration_chain[source]),
+                expected_rounds=state.concentration_rounds_remaining[source],
+                effect_id=next_id,
+                chain=chain,
+                rounds=next_rounds,
+            )
+        )
     for effect in before.effect_states:
         identity = (effect.target_id, effect.id, effect.origin)
+        old_clock = next(r for r in state.effect_lifecycles if r.identity == identity)
+        old_link = next(r for r in state.conditions_by_effect if r.identity == identity)
+        new_effect = next(
+            (e for e in after.effect_states if (e.target_id, e.id, e.origin) == identity), None
+        )
+        new_clock = next((r for r in new.effect_lifecycles if r.identity == identity), None)
+        new_link = next((r for r in new.conditions_by_effect if r.identity == identity), None)
+        if (effect, old_clock, old_link) == (new_effect, new_clock, new_link):
+            continue
         ops.append(
             EffectLifecycleUpdate(
                 kind="combat.effect_lifecycle_update",
                 combat_id=state.combat_id,
                 identity=identity,
                 expected_effect=effect,
-                effect=None,
-                expected_lifecycle=next(
-                    r for r in state.effect_lifecycles if r.identity == identity
-                ),
-                lifecycle=None,
-                expected_lineage=next(
-                    r for r in state.conditions_by_effect if r.identity == identity
-                ),
-                lineage=None,
+                effect=new_effect,
+                expected_lifecycle=old_clock,
+                lifecycle=new_clock,
+                expected_lineage=old_link,
+                lineage=new_link,
             )
         )
     return StateDelta(expected_world_version=before.world_version, operations=tuple(ops))

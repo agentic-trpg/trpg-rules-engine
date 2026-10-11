@@ -11,10 +11,10 @@ The current local candidate versions are:
 
 | Contract | Current version | Replaces |
 | --- | --- | --- |
-| RuleEvaluationRequest / Result | `engine-evaluation/17` | `/1`–`/16` |
+| RuleEvaluationRequest / Result | `engine-evaluation/18` | `/1`–`/17` |
 | StateSnapshot | `engine-snapshot/13` | `/1`–`/12` |
 | Availability request/result | `engine-availability/11` | `/1`–`/10` |
-| RulesetBinding evaluator | `dnd5e-evaluation/29` | `/28` and earlier |
+| RulesetBinding evaluator | `dnd5e-evaluation/30` | `/29` and earlier |
 
 Old envelopes, snapshots and results are explicitly rejected. There are no compatibility
 aliases for `InventoryCombatSnapshot`, `combat_inventory`, missing equipment or missing
@@ -623,3 +623,24 @@ instances and unexplained bonuses remain unsupported before execution. This does
 not open equipped spellcasting or rest. An equipped actor or target uses the same
 closure; no real class or equipment facts are stripped to pass an operation gate.
 C-04/C-15/C-16 and production SM authorization/commit remain OPEN.
+
+## R28 existing Hold Person across turns
+
+One complete SM-authorized canonical Hold Person source can Pass while its linked
+targets remain Paralyzed. The shared snapshot boundary scheduler performs each
+target's captured WIS repeat Save at that target's turn end, once per turn serial.
+A failed Save advances only its clock; success removes that target's Effect,
+Condition and lineage, preserving other targets and their common concentration.
+The shared source-turn duration rule ticks only at the caster's turn end and
+expires the whole remaining chain at zero. Damage/concentration loss and source
+death use the same cleanup. Complete events, explicit RNG and guarded Turn,
+Budget, Condition, lifecycle and concentration transitions are returned together.
+
+The bounded turn graph requires living positive-HP actors and the reviewed complete
+Wizard source, canonical effect/clock/lineage bijection and supported actor facts.
+Dying graphs, new effect creation, other spells and unrelated effects remain Deferred.
+The shared Action Gate rejects Paralyzed attacks before RNG; casting already uses
+the shared condition prohibition. Released actors can subsequently act and Pass.
+Envelope `/18` versions the expanded guarded concentration subset/tick delta;
+Snapshot `/13` and Availability `/11` remain unchanged. These are local C-15/C-16
+candidates, with no trusted-source ABI or authoritative commit service.

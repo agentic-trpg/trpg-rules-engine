@@ -250,6 +250,20 @@ def record_damage(live: _LiveCombat, target_id: str, instance_id: str | None, am
 def damage_instance_completed(live: _LiveCombat, damage: DamageInstanceContext) -> None:
     from dnd5e_engine import orchestrator as orch
 
+    orch._resolve_damage_concentration(live, damage.target_id, damage.amount)
+    target = orch._find_combatant(live, damage.target_id)
+    if (
+        target is not None
+        and target.hp_current <= 0
+        and damage.target_id not in live.party_ids
+        and damage.target_id not in live.dead_ids
+    ):
+        from dnd5e_engine.events import Death
+
+        death = Death(target_id=damage.target_id, reason="damage")
+        orch._record_death(live, death, killer_id=damage.source_actor_id)
+        live.event_log.append(death)
+        live.event_queue.put_nowait(death)
     amount = live.lifecycle_damage.pop((damage.target_id, damage.damage_instance_id), 0)
     orch._complete_character_damage_instance(
         live, damage.target_id, damage.damage_instance_id, amount

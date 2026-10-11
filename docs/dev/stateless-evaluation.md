@@ -540,3 +540,12 @@ because these classes exist. Long Rest recovers their complete owned finite reso
 Attack still excludes trained mastery and class equipment; effects/reactions keep
 separate closure checks. The evaluator binding is `/24`; no new public source API,
 continuation or authoritative commit is introduced.
+
+## R23 composed Attack and Concentration
+
+The reviewed ordinary Attack can target an existing canonical Hold Person caster.
+Its typed completed damage instance drives one shared CON save after all post-defense
+damage types, including Temp HP absorption. The same result carries attack costs,
+HP/Temp HP, damage bookkeeping, full concentration lineage cleanup, events and RNG.
+See [the R23 boundary and evidence](stateless-migration-progress.md#r23-actual-attack-concentration-composition).
+Evaluator `/25` adds no public resolved-damage command or formal cross-repository ABI.

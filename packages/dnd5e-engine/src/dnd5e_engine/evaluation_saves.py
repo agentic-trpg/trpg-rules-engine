@@ -65,7 +65,13 @@ def resolve_snapshot_save(
     )
 
 
-def save_actor_failure(state: CharacterStateV2, loader: AssetLoader) -> str | None:
+def save_actor_failure(
+    state: CharacterStateV2,
+    loader: AssetLoader,
+    *,
+    reviewed_identity: bool = False,
+    reviewed_concentration: bool = False,
+) -> str | None:
     if (
         any(not 1 <= getattr(state, field) <= 30 for field in _SCORE_ATTR.values())
         or not 1 <= state.character_level <= 20
@@ -76,14 +82,19 @@ def save_actor_failure(state: CharacterStateV2, loader: AssetLoader) -> str | No
     if (
         state.worn_armor
         or state.shield_equipped
-        or state.concentration_effect_id
+        or (state.concentration_effect_id and not reviewed_concentration)
         or state.trait_mechanics
-        or state.classes
-        or state.class_slug
-        or state.subclass_slug
-        or state.species_slug
-        or state.granted_features
-        or state.fighting_styles
+        or (
+            not reviewed_identity
+            and (
+                state.classes
+                or state.class_slug
+                or state.subclass_slug
+                or state.species_slug
+                or state.granted_features
+                or state.fighting_styles
+            )
+        )
         or state.legendary_resistances_max
         or state.legendary_resistances_remaining
     ):

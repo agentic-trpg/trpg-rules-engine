@@ -1,13 +1,14 @@
 """Internal damage/lineage candidate, NOT a public rules.effect or source authority API.
 
-Only already resolved, authorized positive single-packet damage instances and
-canonical existing Hold Person are admitted. No source is created here. C-15/C-16
-remain OPEN; callers cannot submit this through evaluate or the Bridge.
+Actual Attack damage and the internal resolved-damage candidate share the completed
+instance fold for canonical existing Hold Person. No source is created here. C-15/C-16
+remain OPEN; the resolved-damage candidate is not exposed through evaluate or Bridge.
 """
 
 import random
 from copy import deepcopy
 from dataclasses import replace
+from functools import partial
 from typing import Annotated, Literal, TypedDict
 
 from dnd5e_srd_data import BundledAssetLoader
@@ -37,18 +38,19 @@ from dnd5e_engine.evaluation_projection import EvaluationInvariantError, attack_
 from dnd5e_engine.evaluation_rng import RNGContext, RNGTransition
 from dnd5e_engine.evaluation_ruleset import RulesetBinding, _canonical, verify_ruleset
 from dnd5e_engine.evaluation_saves import resolve_snapshot_save, save_actor_failure
-from dnd5e_engine.evaluation_state import CombatSnapshot
+from dnd5e_engine.evaluation_state import CharacterStateV2, CombatSnapshot
 from dnd5e_engine.events import (
     CombatEvent,
     ConcentrationCheck,
     ConcentrationDropped,
+    ConditionApplied,
     ConditionRemoved,
     DamageApplied,
     DamageType,
     Death,
     EffectExpired,
-    Unconscious,
 )
+from dnd5e_engine.rules.conditions import conditions_break_concentration
 
 
 class ResolvedDamageInstance(EvaluationModel):
@@ -78,9 +80,11 @@ class ConcentrationDamageRequest(EvaluationModel):
 
 
 def concentration_support_failure(
-    snapshot: CombatSnapshot, target_id: str, loader: AssetLoader
+    snapshot: CombatSnapshot, target_id: str, loader: AssetLoader, *, composed: bool = False
 ) -> str | None:
     state = snapshot.combat_state
+    if composed and state.initiative_ids[state.current_turn_index] == target_id:
+        return "self-damage with source turn-end concentration expiry is not migrated"
     actors = {a.entity_id: a for a in snapshot.character_states}
     caster = actors.get(target_id)
     if (
@@ -179,9 +183,12 @@ def concentration_support_failure(
         )
         if clock != replace(expected_clock, last_repeat_turn_serial=last):
             return "lifecycle expiry contradicts captured rule"
-    clean_actors = []
+
+    identity_failure = partial(
+        concentration_identity_failure, snapshot=snapshot, loader=loader, composed=composed
+    )
     for actor in actors.values():
-        failure = damage_save_identity_failure(actor, loader)
+        failure = identity_failure(actor)
         if failure:
             return failure
         expected_ids = [i[1] for i in chain if i[0] == actor.entity_id]
@@ -206,34 +213,28 @@ def concentration_support_failure(
             return "unreviewed condition dependency"
         if actor.entity_id != target_id and actor.concentration_effect_id is not None:
             return "unlinked concentration source"
-        plain = actor.model_copy(
-            update={
-                "conditions": [],
-                "concentration_effect_id": None,
-                "class_slug": None,
-                "classes": {},
-                "granted_features": (),
-            }
+        failure = save_actor_failure(
+            actor, loader, reviewed_identity=True, reviewed_concentration=True
         )
-        failure = save_actor_failure(plain, loader)
         if failure:
             return failure
-        clean_actors.append(plain)
-    plain_snapshot = snapshot.model_copy(
-        update={
-            "effect_states": (),
-            "character_states": tuple(clean_actors),
-            "combat_state": state.model_copy(
-                update={
-                    "concentration_chain": {},
-                    "concentration_rounds_remaining": {},
-                    "effect_lifecycles": (),
-                    "conditions_by_effect": (),
-                }
-            ),
-        }
+    return snapshot_support_failure(
+        snapshot, actor_dependencies=identity_failure, reviewed_effects=True
     )
-    return snapshot_support_failure(plain_snapshot)
+
+
+def concentration_identity_failure(
+    actor: CharacterStateV2, *, snapshot: CombatSnapshot, loader: AssetLoader, composed: bool
+) -> str | None:
+    if actor.weapon_mastery_slugs:
+        return "trained weapon mastery execution is not migrated"
+    if composed and (actor.class_slug or actor.classes):
+        from dnd5e_engine.evaluation_class_dependencies import class_dependencies
+
+        return class_dependencies(actor, snapshot, loader, BundledAssetLoader())
+    if actor.fighting_styles:
+        return "fighting style dependencies require a reviewed class profile"
+    return damage_save_identity_failure(actor, loader)
 
 
 class ConcentrationComputation(CombatComputation):
@@ -244,46 +245,44 @@ class ConcentrationComputation(CombatComputation):
         self.effects = list(snapshot.effect_states)
 
     def emit(self, event: CombatEvent) -> None:
-        # Original ordering checks concentration before terminal NPC death.
-        if isinstance(event, DamageApplied):
-            start = len(self.events)
-            super().emit(event)
-            terminal = [e for e in self.events[start:] if isinstance(e, Death)]
-            self.events[start:] = [e for e in self.events[start:] if not isinstance(e, Death)]
-            if event.target_id in self.state.concentration_chain:
-                original = next(
-                    a for a in self.snapshot.character_states if a.entity_id == event.target_id
-                )
-                save = resolve_snapshot_save(
-                    actor_state(self.actors[event.target_id], original),
-                    SavePayload(
-                        kind="rules.save",
-                        target_id=event.target_id,
-                        ability="con",
-                        dc=concentration_dc(event.amount),
-                        advantage=(),
-                        disadvantage=(),
-                        is_magical=False,
-                    ),
-                    self.rng,
-                )
-                self.events.append(
-                    ConcentrationCheck(**save.model_dump(exclude={"type", "ability"}))
-                )
-                if not save.succeeded:
-                    self.drop(event.target_id)
-            for death in terminal:
-                assert isinstance(death, Death)
-                if death.target_id in self.state.concentration_chain:
-                    self.drop(death.target_id)
-            self.events.extend(terminal)
-            return
         super().emit(event)
         if (
-            isinstance(event, (Death, Unconscious))
+            isinstance(event, ConditionApplied)
+            and conditions_break_concentration([event.condition])
+            and any(c.condition == event.condition for c in self.actors[event.target_id].conditions)
             and event.target_id in self.state.concentration_chain
         ):
             self.drop(event.target_id)
+
+    def record_death(self, event: Death, killer: str | None) -> None:
+        if event.target_id in self.state.concentration_chain:
+            self.drop(event.target_id)
+        super().record_death(event, killer)
+
+    def damage_completed(self, damage: DamageInstanceContext) -> None:
+        # Typed completed facts include all post-defense types, even damage
+        # absorbed by temporary HP. Zero damage does not trigger a save.
+        if damage.amount > 0 and damage.target_id in self.state.concentration_chain:
+            original = next(
+                a for a in self.snapshot.character_states if a.entity_id == damage.target_id
+            )
+            save = resolve_snapshot_save(
+                actor_state(self.actors[damage.target_id], original),
+                SavePayload(
+                    kind="rules.save",
+                    target_id=damage.target_id,
+                    ability="con",
+                    dc=concentration_dc(damage.amount),
+                    advantage=(),
+                    disadvantage=(),
+                    is_magical=False,
+                ),
+                self.rng,
+            )
+            self.events.append(ConcentrationCheck(**save.model_dump(exclude={"type", "ability"})))
+            if not save.succeeded:
+                self.drop(damage.target_id)
+        super().damage_completed(damage)
 
     def drop(self, source_id: str) -> None:
         for identity in self.state.concentration_chain[source_id]:

@@ -4691,25 +4691,47 @@ def _emit_apply_damage(live: _LiveCombat, event: DamageApplied) -> None:
             live.initiative[idx] = c.model_copy(update=update_payload)
             break
     live_effect_lifecycle.record_damage(live, event.target_id, event.damage_instance_id, remaining)
-    # SRD §Concentration on Damage — *"You must make a Constitution
-    # saving throw … DC = 10 or half the damage taken, whichever is
-    # higher. On a failed save, the spell ends."* If the damaged
-    # combatant is concentrating on an effect (tracked in
-    # ``concentration_chain``), roll the CON save and cascade on
-    # failure. The save applies the concentrating creature's real CON
-    # modifier + proficiency bonus (F1c, via ``actor_stats``) and goes
-    # through the shared ``roll_d20_test`` primitive (F2c) with no
-    # advantage source, so it is still a single draw.
-    # Capped at 30 — SRD 5.2 "up to a maximum DC of 30" (2024-specific; the 2014
-    # formula has no cap).
-    # Done BEFORE death synthesis so a dropped-conc + slain caster
-    # still surface the cascade before the Death event.
-    caster_chain = live.concentration_chain.get(event.target_id)
+    # Identified packets complete through the original typed Resolver callback.
+    # A direct, ungrouped damage event is itself one complete instance.
+    if event.damage_instance_id is None:
+        _resolve_damage_concentration(live, event.target_id, event.amount)
+    if new_hp <= 0 and event.target_id not in live.dead_ids:
+        if event.target_id in live.summons:
+            # SRD 5.2 Summon Dragon: "The creature disappears when it drops to
+            # 0 Hit Points" — no death, death save or XP. Its caster keeps
+            # concentrating (the SRD is silent; a host can drop it).
+            _leave_roster(live, event.target_id, "zero_hp")
+        elif event.target_id in live.party_ids:
+            if event.damage_instance_id is None:
+                _apply_zero_hp_to_character(
+                    live, event, hp_before=tracked, damage_after_temp=remaining
+                )
+        else:
+            if event.damage_instance_id is not None and live.concentration_chain.get(
+                event.target_id
+            ):
+                return  # complete the whole instance/save before terminal cleanup
+            # SRD 5.2 "Monster Death" — a monster dies the instant it drops to
+            # 0 HP. Recursion guard: _emit re-enters here for the Death, but
+            # the dead_ids set blocks double-recording, and Death's only
+            # running-state effect is to record the death.
+            killer = event.source_actor_id
+            death_event = Death(target_id=event.target_id, reason="damage")
+            _record_death(live, death_event, killer_id=killer)
+            live.event_log.append(death_event)
+            live.event_queue.put_nowait(death_event)
+
+
+def _resolve_damage_concentration(live: _LiveCombat, target_id: str, amount: int) -> None:
+    """One completed post-defense instance, including temporary HP absorption."""
+    if amount <= 0:
+        return
+    caster_chain = live.concentration_chain.get(target_id)
     if caster_chain:
         from dnd5e_engine.damage_rules import concentration_dc
 
-        dc = concentration_dc(event.amount) if event.amount > 0 else 10
-        concentrator = _find_combatant(live, event.target_id)
+        dc = concentration_dc(amount)
+        concentrator = _find_combatant(live, target_id)
         # The ``else 0`` cannot fire in practice: ``concentration_chain`` is
         # only ever keyed by an entity that is in ``live.initiative``, and the
         # damage that got us here was applied to that same combatant. It stays
@@ -4725,7 +4747,7 @@ def _emit_apply_damage(live: _LiveCombat, event: DamageApplied) -> None:
         _emit(
             live,
             ConcentrationCheck(
-                target_id=event.target_id,
+                target_id=target_id,
                 dc=dc,
                 roll_total=roll_total,
                 succeeded=succeeded,
@@ -4736,33 +4758,10 @@ def _emit_apply_damage(live: _LiveCombat, event: DamageApplied) -> None:
             ),
         )
         if lr_remaining is not None:
-            _emit(
-                live, LegendaryResistanceUsed(actor_id=event.target_id, uses_remaining=lr_remaining)
-            )
+            _emit(live, LegendaryResistanceUsed(actor_id=target_id, uses_remaining=lr_remaining))
             _sync_legendary_resistance(live, len(live.event_log) - 1)
         if not succeeded:
-            _drop_concentration(live, event.target_id)
-    if new_hp <= 0 and event.target_id not in live.dead_ids:
-        if event.target_id in live.summons:
-            # SRD 5.2 Summon Dragon: "The creature disappears when it drops to
-            # 0 Hit Points" — no death, death save or XP. Its caster keeps
-            # concentrating (the SRD is silent; a host can drop it).
-            _leave_roster(live, event.target_id, "zero_hp")
-        elif event.target_id in live.party_ids:
-            if event.damage_instance_id is None:
-                _apply_zero_hp_to_character(
-                    live, event, hp_before=tracked, damage_after_temp=remaining
-                )
-        else:
-            # SRD 5.2 "Monster Death" — a monster dies the instant it drops to
-            # 0 HP. Recursion guard: _emit re-enters here for the Death, but
-            # the dead_ids set blocks double-recording, and Death's only
-            # running-state effect is to record the death.
-            killer = event.source_actor_id
-            death_event = Death(target_id=event.target_id, reason="damage")
-            _record_death(live, death_event, killer_id=killer)
-            live.event_log.append(death_event)
-            live.event_queue.put_nowait(death_event)
+            _drop_concentration(live, target_id)
 
 
 def _complete_character_damage_instance(

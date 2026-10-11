@@ -54,6 +54,7 @@ def snapshot_support_failure(
     movement: bool = False,
     actor_dependencies: Callable[[CharacterStateV2], str | None] | None = None,
     reviewed_reactions: bool = False,
+    reviewed_effects: bool = False,
 ) -> str | None:
     state = snapshot.combat_state
     failure = death_consistency(snapshot, allow_dying=turn_lifecycle)
@@ -63,15 +64,15 @@ def snapshot_support_failure(
         return failure
     # Full dependencies remain in the DTO, even when this slice cannot execute them.
     unsupported = (
-        snapshot.effect_states,
+        snapshot.effect_states if not reviewed_effects else (),
         state.timed_activities.pending,
         state.persistent_areas.areas,
         state.persistent_areas.next_turn_start_effects,
         state.combat_objects.objects,
-        state.concentration_chain,
-        state.concentration_rounds_remaining,
-        state.conditions_by_effect,
-        state.effect_lifecycles,
+        state.concentration_chain if not reviewed_effects else (),
+        state.concentration_rounds_remaining if not reviewed_effects else (),
+        state.conditions_by_effect if not reviewed_effects else (),
+        state.effect_lifecycles if not reviewed_effects else (),
         state.pending_reactions if not reviewed_reactions else (),
         state.active_reaction_responses,
         state.rider_uses,
@@ -119,8 +120,8 @@ def snapshot_support_failure(
         if actor_dependencies is None and actor.weapon_mastery_slugs:
             return "trained weapon mastery execution is not migrated"
         if (
-            (actor.conditions and not turn_lifecycle)
-            or actor.concentration_effect_id
+            (actor.conditions and not turn_lifecycle and not reviewed_effects)
+            or (actor.concentration_effect_id and not reviewed_effects)
             or (
                 actor_dependencies is None
                 and (
@@ -462,7 +463,14 @@ def prepare_attack(
 ) -> AttackAdmission:
     from dnd5e_engine.evaluation_class_dependencies import operation_dependencies
 
-    support = operation_dependencies(snapshot, loader, attack=True)
+    if snapshot.effect_states or snapshot.combat_state.concentration_chain:
+        from dnd5e_engine.evaluation_concentration import concentration_support_failure
+
+        support = concentration_support_failure(
+            snapshot, intent.target_id or "", loader, composed=True
+        )
+    else:
+        support = operation_dependencies(snapshot, loader, attack=True)
     if support:
         return refused("unsupported", "snapshot.capability", support)
     support = template_support_failure(snapshot, loader)

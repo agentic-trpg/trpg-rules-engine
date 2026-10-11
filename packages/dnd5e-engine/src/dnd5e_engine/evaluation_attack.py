@@ -30,7 +30,12 @@ def execute_attack(
     snapshot: CombatSnapshot, intent: CombatIntentPayload, plan: AttackPlan, rng: random.Random
 ) -> CombatSnapshot:
     """Compute a private post-state for closed delta projection, never publication."""
-    computation = _AttackComputation(snapshot, rng)
+    if snapshot.effect_states:
+        from dnd5e_engine.evaluation_concentration import ConcentrationComputation
+
+        computation: _AttackComputation = ConcentrationComputation(snapshot, rng)
+    else:
+        computation = _AttackComputation(snapshot, rng)
     before = plan.actor
     computation.emit(
         IntentSubmitted(

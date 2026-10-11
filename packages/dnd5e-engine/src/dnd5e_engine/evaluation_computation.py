@@ -81,7 +81,10 @@ class CombatComputation:
             if event.source_actor_id and event.source_actor_id != event.target_id:
                 update["last_damaged_by"] = event.source_actor_id
             self.actors[target.entity_id] = target.model_copy(update=update)
-            if target.entity_id in self.state.party_ids and event.damage_instance_id is not None:
+            if event.damage_instance_id is not None and (
+                target.entity_id in self.state.party_ids
+                or target.entity_id in self.state.concentration_chain
+            ):
                 key = (target.entity_id, event.damage_instance_id)
                 before, first, total = self.damage.get(key, (target.hp_current, event, 0))
                 self.damage[key] = (before, first, total + amount)
@@ -159,6 +162,11 @@ class CombatComputation:
         if actor.hp_current > 0:
             return
         hp_before, event, amount = pending
+        if actor.entity_id not in self.state.party_ids:
+            self.record_death(
+                Death(target_id=actor.entity_id, reason="damage"), event.source_actor_id
+            )
+            return
         result = zero_hp_damage(
             actor,
             event,

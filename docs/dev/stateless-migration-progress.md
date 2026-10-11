@@ -719,3 +719,47 @@ staged. Local Python 3.14.7: Data **671 passed / 1 skipped** (134.73s), Engine
 all selected Ruff/format/Mypy, examples and strict MkDocs passed. Integration does not
 run Full's coverage/security/wheel gates; the requested final R25 Full must run them.
 This is local evidence, not a GitHub Actions result.
+
+## R23 actual Attack / Concentration composition
+
+Base: `b503f4e89c68a5d6f124735d29609680e7792dea`; branch:
+`refactor/r23-attack-concentration-composition`. Evaluator binding `/25`.
+
+Stateless External Contract: an ordinary legal weapon Attack against the one reviewed
+Hold Person source now resolves hit, all damage types, a CON save and complete linked
+effect cleanup in one guarded result. Full Wizard 5 Evoker facts remain in the snapshot.
+The graph admits multiple distinct held targets with captured canonical effects,
+condition provenance and lifecycle clocks; unrelated/overlapping effects, unknown save
+hooks, missing sources, reactions and dead concentration sources refuse before RNG.
+Successful saves retain the graph. Failure, death or the actual Unconscious condition
+removes source, chain, effects, conditions and clocks together. No public `rules.damage`
+or `rules.effect` operation, source authorization or ABI freeze is introduced.
+
+Legacy Runtime Dependency Removed: the admitted Attack uses the shared Activity/Damage
+Resolver and R18's private concentration fold, without live damage/concentration hooks.
+The intact graph replaces R18's stripped validation view. DC and saving throws use the
+existing shared kernels. The completed typed DamageInstanceContext carries post-defense
+damage across types, including damage absorbed by Temp HP; zero damage skips the save.
+A confirmed Legacy defect made two CON checks for one mixed-type attack. Its hook now
+uses that same completed-instance boundary (one 24-damage instance -> one DC 12 save).
+Legacy remains for other callers and wider effects/reactions; no production caller is
+cut over and no live function is deleted.
+
+Development evidence: the original mixed-type regression failed with two DC 10 checks.
+After repair, **124 tests passed in 5.36s**, including real PC/NPC attacks, independent
+damage/DC expectations, full Legacy state/event/RNG parity, miss, resistance, immunity,
+Temp HP, lethal damage, multiple held targets, replay/concurrency, guarded stale/duplicate
+application and injected cancellation/fault after the CON roll. R18's separate candidate
+and existing concentration/lifecycle/class workflow suites passed. C-04/C-15/C-16 and
+R17's formal lifecycle-schema publication blocker remain OPEN.
+
+R23 final local gate: the exact root Makefile entrypoint `python tools/validate.py
+integration --base b503f4e89c68a5d6f124735d29609680e7792dea` passed in **717.88s** after
+the plan was inspected. Data **671 passed / 1 skipped** (105.63s), Engine **8,276 passed**
+(537.28s), Bridge **139**, Demo **54**, tooling **24**, static checks, examples and strict
+MkDocs passed. Final expanded focused regression: **129 passed in 6.12s**. Earlier
+attempts were interrupted for admission/immunity repairs or failed Ruff complexity;
+they are not passing-gate evidence. The final docs-only edit corrects a reported anchor
+and records results, followed by another strict docs build. Existing untracked
+`.evaluation-worktree/` broadened selection and remains unstaged. This is local
+Integration evidence; coverage/security/wheel checks await the requested final Full.

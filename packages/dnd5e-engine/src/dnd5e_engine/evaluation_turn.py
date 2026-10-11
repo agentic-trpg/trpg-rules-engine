@@ -60,6 +60,31 @@ def evaluate_turn(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
     )
     from dnd5e_engine.evaluation_hold_turn import HoldTurnComputation, hold_turn_support_failure
     from dnd5e_engine.evaluation_opportunity import opportunity_dependencies
+    from dnd5e_engine.evaluation_shield import (
+        ShieldComputation,
+        has_shield,
+        shield_delta,
+        shield_support_failure,
+    )
+
+    if has_shield(snapshot):
+        failure = shield_support_failure(snapshot, loader, turn=True) or template_support_failure(
+            snapshot, loader
+        )
+        if failure:
+            return _refuse("unsupported", "turn.shield", failure)
+        rng = request.rng_context.state.restore()
+        shield = ShieldComputation(snapshot, rng, loader)
+        shield.emit(IntentSubmitted(actor_id=request.actor_id, intent_type="pass"))
+        shield.finish_turn(request.actor_id, force=True)
+        return dict(
+            status="accepted",
+            state_delta=shield_delta(snapshot, shield.result()),
+            proposed_events=tuple(shield.events),
+            rng_transition=RNGTransition.between(request.rng_context, rng),
+            choice=None,
+            error=None,
+        )
 
     _, reaction_failure = opportunity_dependencies(snapshot, loader)
     if reaction_failure:

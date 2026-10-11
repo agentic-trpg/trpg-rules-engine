@@ -469,8 +469,11 @@ def prepare_attack(
     common_weapons: bool = False,
 ) -> AttackAdmission:
     from dnd5e_engine.evaluation_class_dependencies import operation_dependencies
+    from dnd5e_engine.evaluation_shield import has_shield, shield_support_failure
 
-    if snapshot.effect_states or snapshot.combat_state.concentration_chain:
+    if has_shield(snapshot):
+        support = shield_support_failure(snapshot, loader)
+    elif snapshot.effect_states or snapshot.combat_state.concentration_chain:
         from dnd5e_engine.evaluation_concentration import concentration_support_failure
 
         support = concentration_support_failure(

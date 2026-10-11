@@ -15,7 +15,7 @@ from typing import Annotated, Literal
 
 from dnd5e_srd_data.schema.common import ReactionTriggerKind
 from dnd5e_srd_data.schema.environment import EnvironmentalSpec
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from dnd5e_engine.movement import MovementMode
 from dnd5e_engine.spell_execution import ExecutionClass, ExecutionFailure
@@ -826,6 +826,21 @@ class SpellCast(BaseModel):
     execution_class: ExecutionClass | None = Field(default=None, exclude_if=lambda v: v is None)
 
 
+class ProvisionalAttackEvidence(BaseModel):
+    """The already-rolled hit before its authorized reaction; never a second roll."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
+    attacker_id: str
+    target_id: str
+    source_activity_id: str
+    natural: Annotated[int, Field(ge=1, le=20)]
+    roll_total: int
+    effective_ac: int
+    is_crit: bool
+    is_opportunity_attack: bool
+    provisional_hit: Literal[True]
+
+
 class ReactionTriggered(BaseModel):
     type: Literal["reaction_triggered"] = "reaction_triggered"
     actor_id: str
@@ -837,6 +852,9 @@ class ReactionTriggered(BaseModel):
     source_spell_id: str | None = None
     source_activity_id: str | None = None
     damage_instance_id: str | None = None
+    provisional_attack: ProvisionalAttackEvidence | None = Field(
+        default=None, exclude_if=lambda v: v is None
+    )
 
 
 # ── roster ──────────────────────────────────────────────────────────────────

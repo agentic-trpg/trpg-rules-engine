@@ -9,6 +9,7 @@ from dnd5e_engine.evaluation_effects import EffectState
 from dnd5e_engine.evaluation_hold_delta import HoldPersonGraphCreate
 from dnd5e_engine.evaluation_reaction_state import PredeclaredReactionState
 from dnd5e_engine.evaluation_resources import ResourcePool
+from dnd5e_engine.evaluation_shield_delta import ShieldStateTransition
 from dnd5e_engine.evaluation_state import (
     ClosureDeath,
     CombatSetupState,
@@ -485,7 +486,8 @@ StateDeltaOperation = Annotated[
     | SlotSpendLedgerUpdate
     | PendingReactionUpdate
     | SapMarksUpdate
-    | HoldPersonGraphCreate,
+    | HoldPersonGraphCreate
+    | ShieldStateTransition,
     Field(discriminator="kind"),
 ]
 

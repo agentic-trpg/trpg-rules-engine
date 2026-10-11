@@ -11,8 +11,8 @@ blocked C-16. This extracts existing rules rather than adding content support.
 R26 supersedes the historical R17 lifecycle-schema defect recorded below with local
 schema/runtime agreement. Formal ABI and C-04/C-15/C-16 remain unapproved/OPEN.
 
-Current local versions after R32: envelope `/21`, Snapshot `/15`, Availability `/12`,
-evaluator `/34`. Historical batch versions below describe their original deliveries.
+Current local versions after R33: envelope `/22`, Snapshot `/16`, Availability `/12`,
+evaluator `/35`. Historical batch versions below describe their original deliveries.
 
 ## Architecture decisions and progress dimensions
 
@@ -66,7 +66,8 @@ classification applies only to the stated bounded capability, not its whole fami
 | One authorized weapon Opportunity Attack / Walk | Complete bounded local contract | **Yes, R25** | Explicit Snapshot consent, shared reach/LOS and Attack/Damage, full path-prefix/death/budget/consumption/expiry delta; no Live hooks |
 | Fighter Sap mastery | Complete bounded local contract | **Yes, R31** | Canonical Fighter 1/Defense, mace/chain shirt/optional shield, full three-Sap-weapon training; original AttackActivity proc, nonstacking mark, next Attack Disadvantage/consumption and source-next-start expiry. Other masteries and mixed effect/reaction graphs remain Deferred |
 | Wizard Hold Person initial cast and lifecycle | Complete bounded local candidate; shared C-15/C-16 OPEN | **Yes, R32** | Full Wizard 5 Evoker, prepared/known source, owned component pouch and explicit iron attestation, slots 2/3, named Humanoids, original Delivery/Save/Effect Binding; atomic closed graph initialization into R28 repeat/partial/full cleanup and actual attack concentration checks. Existing graphs/recast and other spell families remain Deferred |
-| Reaction / pending choice overall | Partially migrated | Partially | Draw-free weapon/missing-DC choices, R21 Counterspell, R25 weapon OA and R29 canonical Ogre OA; other reactions, priorities, nested chains, durable windows and interactive continuation remain Legacy/OPEN |
+| Predeclared Wizard Shield lifecycle | Complete bounded local candidate; shared C-04/C-15 OPEN | **Yes, R33** | SM-authorized single canonical declaration, original attack roll and AC reclassification, Slot/Reaction payment, persisted effect/response/owner-next-start expiry. Later Attack and Pass restore the full graph independently; no Live reaction hooks. Magic Missile casting, competing/nested choices and mixed graphs remain Deferred |
+| Reaction / pending choice overall | Partially migrated | Partially | Draw-free weapon/missing-DC choices, R21 Counterspell, R25 weapon OA, R29 canonical Ogre OA and R33 Shield; other reactions, priorities, nested chains, durable windows and interactive continuation remain Legacy/OPEN |
 | Areas / environment / objects | Legacy Stateful Only | No | `persistent_areas`, `environment`, `combat_objects`, `ongoing_spell_activation`; state captured then refused; source/lifetime/geometry/history Delta missing |
 | Bounded victory / TPK closure | Fully migrated bounded external contract | **Yes, R10** | `evaluation_closure` → shared outcome_rules on explicit values; XP/history/events and unchanged RNG |
 | Closure / outcome overall | Partially migrated | No | Flight/forced end/effect handoff missing; loot generation and durable cross-combat effects were already Host/deferred gaps |
@@ -1312,3 +1313,47 @@ lint/format/types, examples and strict MkDocs passed. This is local Integration;
 Full follows R33. Evidence-only docs receive a strict build.
 R31 pushed CI [38167496041](https://github.com/agentic-trpg/trpg-rules-engine/actions/runs/38167496041)
 passed on exact source `4af6aa9`; this is separate from local Integration.
+
+## R33 predeclared Shield full bounded lifecycle
+
+Start `eba5d51c71e7d3419e8a548f8fd0e08189adfa8b`, branch
+`refactor/r33-predeclared-shield-lifecycle`. R32 pushed CI
+[38169558344](https://github.com/agentic-trpg/trpg-rules-engine/actions/runs/38169558344)
+passed on exact source `eba5d51`; it is separate from local Integration.
+
+Stateless External Contract: envelope `/22`, Snapshot `/16`, evaluator `/35`;
+Availability outer `/12` requires the current nested Snapshot. One explicitly
+SM-authorized canonical Shield policy supplies complete real Wizard 5 Evoker source,
+prepared/known repertoire, class/equipment/resource closure, Reaction and V/S facts.
+Original provisional attack evidence is typed and retained before reaction effects;
+the same roll determines the final hit after shared scalar AC adjustment. Closed
+ShieldStateTransition guards full old/new effect, AC/duration/source, empty lineage,
+response and owner-next-start expiry identity. Costs, HP, budgets, turn, events and
+RNG remain an indivisible uncommitted result.
+
+Legacy Runtime Dependency Removed: original AttackActivity and UtilityActivity,
+shared AC fold and retained-response helpers replace Live reaction dispatch/folds/
+hooks. Subsequent requests restore +5 AC from the complete supplied graph; Attack
+and Pass clean it after the owner's turn-start marker in original event order.
+Natural 1/20, hit-to-miss, unprevented hits, death/dying, unavailable resources,
+same-call creation/expiry and later attacks retain complete Legacy parity, with
+separate independent roll/AC/slot/HP/RNG expectations. Fault/cancellation, eight
+concurrent replays, guarded stale/double application and graph tampering are tested.
+
+Magic Missile casting, competing/nested/interactive reactions, mixed Sap/Hold Person
+graphs and other equipment profiles remain Deferred. The retained Magic Missile
+response metadata does not establish a stateless casting path. C-04/C-15/C-16 and
+full production caller cutover remain OPEN. Validation evidence follows below.
+
+Final focused regression: **644 passed in 46.68 s**, including **44 new Shield
+cases** and original reaction/e2e suites. Ruff/format and Mypy (148 source files)
+passed. Inspected final plan and executed
+`python tools/validate.py integration --base
+eba5d51c71e7d3419e8a548f8fd0e08189adfa8b`: **PASSED in 866.36 s** on Windows
+Python 3.14.7. Data **671 passed / 1 skipped** (118.69 s), Engine **8,819**,
+Bridge **139** (9.93 s), Demo **54** (18.31 s), 24 tooling tests, package static
+checks, all three examples and strict MkDocs passed. Unknown preserved worktree
+paths conservatively broadened the gate. This is local Integration evidence;
+native Linux Full and independent review follow this source delivery. Original
+tests, assertions and coverage floors remain intact. Evidence-only documentation
+receives a strict build.

@@ -7,6 +7,8 @@ that this vertical slice cannot yet execute; this is not a general combat runtim
 
 import random
 
+from dnd5e_srd_data.loader import AssetLoader
+
 from dnd5e_engine import attack_rules
 from dnd5e_engine.activities.build_context import build_activity_context
 from dnd5e_engine.activities.resolver import resolve_activity
@@ -28,13 +30,24 @@ from dnd5e_engine.turn_rules import (
 
 
 def execute_attack(
-    snapshot: CombatSnapshot, intent: CombatIntentPayload, plan: AttackPlan, rng: random.Random
+    snapshot: CombatSnapshot,
+    intent: CombatIntentPayload,
+    plan: AttackPlan,
+    rng: random.Random,
+    *,
+    loader: AssetLoader | None = None,
 ) -> CombatSnapshot:
     """Compute a private post-state for closed delta projection, never publication."""
-    if snapshot.effect_states:
+    from dnd5e_engine.evaluation_shield import ShieldComputation, has_shield
+
+    if has_shield(snapshot):
+        if loader is None:
+            raise RuntimeError("Shield computation requires the explicit verified loader")
+        computation: _AttackComputation = ShieldComputation(snapshot, rng, loader)
+    elif snapshot.effect_states:
         from dnd5e_engine.evaluation_concentration import ConcentrationComputation
 
-        computation: _AttackComputation = ConcentrationComputation(snapshot, rng)
+        computation = ConcentrationComputation(snapshot, rng)
     else:
         computation = _AttackComputation(snapshot, rng)
     before = plan.actor
@@ -73,7 +86,6 @@ def execute_attack(
         concentration=False,
         source_passive_effects=[],
         spell_book={},
-        save_modifiers={},
         passive_damage_modifiers=attack_rules.damage_modifiers(computation.actors.values()),
         target_distance_ft={plan.target.entity_id: plan.distance_ft}
         if plan.distance_ft is not None
@@ -100,6 +112,16 @@ def execute_attack(
         turn_serial=snapshot.combat_state.turn_serial,
         damage_instance_id_provider=computation.next_damage_id,
         damage_instance_resolved=computation.damage_completed,
+        attack_hit_reaction=computation.hit_reaction
+        if isinstance(computation, ShieldComputation)
+        else None,
+        save_modifiers={
+            plan.target.entity_id: {
+                "passive_ac_bonus": str(computation.ac_bonus(plan.target.entity_id))
+            }
+        }
+        if isinstance(computation, ShieldComputation)
+        else {},
     )
     resolve_activity(plan.activity, ctx, weapon=plan.weapon)
     marks = consume_sap(computation.state.sap_marks, actor.entity_id, computation.events)

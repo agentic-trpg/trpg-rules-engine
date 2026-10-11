@@ -22,7 +22,7 @@ version/migration details are in [stateless evaluation](stateless-evaluation.md)
 
 ## Current stabilization additions
 
-Current snapshots are version `/14` only, with precisely CombatSnapshot and
+Current snapshots are version `/16` only, with precisely CombatSnapshot and
 NonCombatSnapshot discriminators. Both require InventoryState(entries=...),
 strict owner/instance closure and complete CharacterStateV2 equipment. Older snapshot
 versions and the third combat_inventory context are rejected explicitly; no empty
@@ -1009,3 +1009,22 @@ covered by full state/events/RNG differential plus independent rule expectations
 Legacy creation helpers/hooks/registry/handles are forbidden in successful tests.
 General effect creation, recast/mixed graphs and source authorization ABI remain
 Deferred/OPEN; Bridge/Demo production cutover is still incomplete.
+
+### R33 canonical Shield graph
+
+Stateless External Contract: envelope `/22`, Snapshot `/16`, evaluator `/35`;
+Availability `/12` requires the current nested Snapshot. One complete authorized
+Wizard 5 Evoker declaration supplies canonical trigger/response/activity, prepared
+source, Reaction, owned slot and V/S facts. A closed ShieldStateTransition guards
+the full effect/AC/duration/source, empty lineage, retained response and owner expiry
+identity before creating/removing the graph. No arbitrary effect patch is exposed.
+
+Legacy Runtime Dependency Removed: original AttackActivity rolls once, preserves
+typed provisional evidence and reads the shared AC fold; original UtilityActivity
+creates Shield. Later Attack independently restores +5 and Attack/Pass expires at
+owner next start. Full Legacy state/events/RNG parity is accompanied by independent
+roll/AC/slot/HP assertions, illegal graph rejection before RNG, fault/cancellation,
+stale/duplicate guards and concurrent replay. Live reaction runtime and expiry hooks
+are prohibited during successful execution. Mixed graphs, other profiles, Magic
+Missile casting, competing/nested choices and interactive continuation remain
+Deferred; retained Legacy capabilities and C-04/C-15/C-16 OPEN are unchanged.

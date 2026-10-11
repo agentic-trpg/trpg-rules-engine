@@ -76,11 +76,11 @@ def weapon_case(
         grid=GridScene(width=4, height=3),
         world_version=7,
         combat_id="combat:synthetic",
-        snapshot_schema_version="engine-snapshot/15",
+        snapshot_schema_version="engine-snapshot/16",
     )
     request = request.model_copy(
         update={
-            "schema_version": "engine-evaluation/21",
+            "schema_version": "engine-evaluation/22",
             "actor_id": actor_id,
             "payload": CombatIntentPayload(
                 intent_type="attack", weapon_id=slug, target_id=target_id, two_handed=two_handed
@@ -167,7 +167,7 @@ def test_real_weapons_match_legacy_full_state_rng_events_and_budgets(
         grid=GridScene(width=4, height=3),
         world_version=7,
         combat_id="combat:synthetic",
-        snapshot_schema_version="engine-snapshot/15",
+        snapshot_schema_version="engine-snapshot/16",
     )
     assert apply_delta(request.state_snapshot, result) == expected
     assert not expected.combat_state.vex_grants
@@ -251,7 +251,7 @@ def test_new_equipment_fields_required_and_versioned(field):
     del wire["state_snapshot"]["character_states"][0][field]
     with pytest.raises(ValidationError):
         RuleEvaluationRequest.model_validate(wire)
-    with pytest.raises(ValidationError, match="engine-evaluation/21"):
+    with pytest.raises(ValidationError, match="engine-evaluation/22"):
         execute(request.model_copy(update={"schema_version": "engine-evaluation/2"}), loader)
 
 

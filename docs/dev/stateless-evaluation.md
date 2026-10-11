@@ -11,10 +11,10 @@ The current local candidate versions are:
 
 | Contract | Current version | Replaces |
 | --- | --- | --- |
-| RuleEvaluationRequest / Result | `engine-evaluation/21` | `/1`–`/20` |
-| StateSnapshot | `engine-snapshot/15` | `/1`–`/14` |
+| RuleEvaluationRequest / Result | `engine-evaluation/22` | `/1`–`/21` |
+| StateSnapshot | `engine-snapshot/16` | `/1`–`/15` |
 | Availability request/result | `engine-availability/12` | `/1`–`/11` |
-| RulesetBinding evaluator | `dnd5e-evaluation/34` | `/33` and earlier |
+| RulesetBinding evaluator | `dnd5e-evaluation/35` | `/34` and earlier |
 
 Old envelopes, snapshots and results are explicitly rejected. There are no compatibility
 aliases for `InventoryCombatSnapshot`, `combat_inventory`, missing equipment or missing
@@ -740,3 +740,30 @@ movement/conditions, events and RNG are one uncommitted candidate result.
 Envelope `/21`, evaluator `/34` reject prior shapes/bindings. The graph vocabulary
 is an internal local C-15/C-16 candidate, not a generic rules.effect API or a frozen
 shared ABI. Recast, mixed graphs and other spell initializations remain unsupported.
+
+## R33 predeclared Shield across requests
+
+Envelope `/22`, Snapshot `/16` and evaluator `/35` admit one SM-authorized canonical
+Shield declaration for a complete Wizard 5 Evoker, prepared/known source, owned
+level-one slot and explicit Reaction/V/S facts. Availability `/12` retains its outer
+version and requires the current nested Snapshot. Older versions are rejected.
+The evaluator consumes the supplied declaration; State Machine owns authorization
+and persistence. No NPC/Player consent decision is inferred during evaluation.
+
+The original AttackActivity first rolls once and establishes a provisional hit.
+ReactionTriggered retains typed original natural/total/AC/critical/source evidence;
+the shared scalar AC change kernel reclassifies that same roll after Shield. The
+original UtilityActivity applies its canonical +5 effect; slot/Reaction/spend/HP,
+ordered events, RNG and turn changes are one atomic uncommitted candidate.
+
+Closed ShieldStateTransition carries complete expected/new canonical effect, empty
+condition lineage, retained response and exact owner-next-turn-start expiry ledger,
+with owner/source/roster invariants. Subsequent Attack restores +5 from the Snapshot;
+Attack or Pass removes the graph at the owner's next turn-start event, preserving
+the original event order. Death removes the owner's response as in Legacy. No live
+queue, hook, handle, registry or retained evaluation instance executes this path.
+
+The response retains original Magic Missile negation metadata; stateless Magic
+Missile casting is still Deferred. Multiple policies, nested/interactive reactions,
+mixed Sap/Hold Person/other effect graphs and other equipment profiles fail closed.
+Formal C-04/C-15/C-16 and production State Machine/Bridge/Demo cutover remain OPEN.

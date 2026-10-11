@@ -27,8 +27,13 @@ from dnd5e_engine.events import (
 )
 from dnd5e_engine.feature_runtime import DrawFreeRandom
 from dnd5e_engine.lib_loader import get_lib_loader
+from dnd5e_engine.reaction_effect_rules import (
+    effect_ac_changes,
+    provisional_attack_evidence,
+    retained_reaction_response,
+    scalar_ac_change_delta,
+)
 from dnd5e_engine.reactions import (
-    ActiveReactionResponse,
     PendingReaction,
     ReactionOpportunity,
     ReactionResult,
@@ -369,6 +374,7 @@ def fire_reaction(live: _LiveCombat, opportunity: ReactionOpportunity) -> Reacti
                 source_spell_id=spell.slug,
                 source_activity_id=activity.id,
                 damage_instance_id=opportunity.damage_instance_id,
+                provisional_attack=provisional_attack_evidence(opportunity.attack),
             ),
         )
         orch._emit_spell_cast(live, reactor.entity_id, spell, pending.slot_level)
@@ -467,14 +473,7 @@ def record_reaction_effects(
         if semantics.responses and not any(
             response.effect_identity == identity for response in live.active_reaction_responses
         ):
-            live.active_reaction_responses.append(
-                ActiveReactionResponse(
-                    effect.target_id,
-                    identity,
-                    tuple(activity.activation.reaction_conditions),
-                    tuple(semantics.responses),
-                )
-            )
+            live.active_reaction_responses.append(retained_reaction_response(activity, identity))
         if semantics.effect_expiry == "owner_next_turn_start":
             pending = live.reaction_effects_pending_expiry.setdefault(caster_id, [])
             if identity not in pending:
@@ -560,12 +559,7 @@ def can_continue_resolution(live: _LiveCombat, actor_id: str) -> bool:
 
 
 def _ac_changes(effects: list[ActiveEffect]) -> Counter[str]:
-    return Counter(
-        str(change.value)
-        for effect in effects
-        for change in effect.changes
-        if change.key in ("ac.bonus", "system.attributes.ac.bonus") and change.mode == "add"
-    )
+    return effect_ac_changes(effects)
 
 
 def _attack_opportunity(
@@ -585,15 +579,7 @@ def _attack_opportunity(
     after = _ac_changes(live.active_effects.get(attack.target_id, []))
     # Existing AC dice were already evaluated for this attack. Only newly
     # applied scalar changes adjust its AC; they never repeat those draws.
-    delta = sum(
-        scalar(parse_expression(value, allow_dice=False)) * count
-        for value, count in (after - before).items()
-    )
-    delta -= sum(
-        scalar(parse_expression(value, allow_dice=False)) * count
-        for value, count in (before - after).items()
-    )
-    return attack.effective_ac + delta
+    return attack.effective_ac + scalar_ac_change_delta(before, after)
 
 
 def _damage_opportunity(live: _LiveCombat, damage: DamageInstanceContext) -> None:

@@ -133,7 +133,7 @@ def legacy_parity(request, handle, live, result):
     expected = capture_evaluation_snapshot(
         live, request.state_snapshot, GridScene(width=12, height=4)
     )
-    # Legacy has no consent DTO. Preserve this explicit Host fact only when it
+    # Legacy has no consent DTO. Preserve this explicit SM-validated fact only when it
     # neither fired nor expired; compare every actual mechanical state otherwise.
     after = apply_opportunity(request.state_snapshot, result)
     expected = expected.model_copy(

@@ -14,7 +14,7 @@ The current local candidate versions are:
 | RuleEvaluationRequest / Result | `engine-evaluation/17` | `/1`–`/16` |
 | StateSnapshot | `engine-snapshot/13` | `/1`–`/12` |
 | Availability request/result | `engine-availability/11` | `/1`–`/10` |
-| RulesetBinding evaluator | `dnd5e-evaluation/27` | `/26` and earlier |
+| RulesetBinding evaluator | `dnd5e-evaluation/28` | `/27` and earlier |
 
 Old envelopes, snapshots and results are explicitly rejected. There are no compatibility
 aliases for `InventoryCombatSnapshot`, `combat_inventory`, missing equipment or missing
@@ -45,6 +45,15 @@ The three-field RulesetBinding still pins ruleset_id, effective data_revision an
 evaluator_version. SHA-256 includes all enumerated effective typed assets and overlays,
 checks accessor/enumeration identity, and has no stale cache. Loaders must remain immutable
 during evaluation. Final shared fingerprint/wire formats remain OPEN in Meta.
+
+R26 corrects lifecycle wire schemas without changing Snapshot `/13`'s field shape.
+`OngoingEffectLifecycleState` defines every clock field and nests the explicit
+application/spec/repeat DTOs. Validation and serialization JSON Schemas require
+every field, including explicit nulls and empty tuples/JSON arrays. Runtime retains
+the original immutable clock and shared algorithms; strict wire validation rejects
+omission, extra fields and coercible wrong types. The existing full-field validator
+remains. Local schema/runtime agreement removes the inherited R17 schema discrepancy;
+it does not approve cross-repository ABI, source authority or C-15/C-16.
 
 ## Operation and result semantics
 
@@ -567,11 +576,13 @@ Evaluator `/26` changes no formal source/continuation/commit contract.
 `engine-snapshot/13` changes the existing pending declaration component to a closed
 source_kind-discriminated spell / opportunity_attack union. The latter requires
 owner_id, mover_id, weapon_id, two_handed, voluntary_leave_reach trigger and
-owner_next_turn_start expiry. It is an explicit Host-authorized one-shot choice,
+owner_next_turn_start expiry. It is an explicit SM-validated one-shot choice,
 not permission inferred from opportunity_attack_weapons and not an Engine decision.
 The existing guarded PendingReactionUpdate consumes it on firing or expiry; no new
 queue, handle, public operation or authoritative commit is introduced. C-04/C-15/C-16
 remain OPEN, and these local records do not establish a trusted cross-repository ABI.
+An Agent/Host may propose a strategy; State Machine validates trusted identity,
+source and final authorization before including the declaration in Snapshot.
 
 Only one ordinary held melee Character weapon is admitted, on either combat side,
 with an accessible owned positive-quantity instance and reviewed complete grants,

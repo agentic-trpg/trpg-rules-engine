@@ -1,6 +1,6 @@
 """Explicit effect snapshot DTOs; Legacy authoring defaults stay internal."""
 
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from dnd5e_srd_data.schema.action_policy import ActionPolicy, RestrictedActionGrant
 from dnd5e_srd_data.schema.lifecycle import (
@@ -10,11 +10,26 @@ from dnd5e_srd_data.schema.lifecycle import (
     OneUseModifier,
     RepeatSaveSpec,
 )
-from pydantic import Field, SerializerFunctionWrapHandler, field_serializer, model_serializer
+from pydantic import (
+    Field,
+    GetJsonSchemaHandler,
+    SerializerFunctionWrapHandler,
+    field_serializer,
+    model_serializer,
+)
+from pydantic.json_schema import JsonSchemaValue
+from pydantic_core import CoreSchema
 
-from dnd5e_engine.effect_lifecycle import EffectLifecycleApplication
+from dnd5e_engine.effect_lifecycle import EffectLifecycleApplication, OngoingEffectLifecycle
 from dnd5e_engine.evaluation_base import EvaluationModel
 from dnd5e_engine.types.effects import ActiveEffect, ActiveEffectChange, ChangeMode
+
+
+def _model_field_schema(schema: CoreSchema) -> CoreSchema:
+    value = {key: item for key, item in schema.items() if key != "serialization"}
+    if value.get("type") in {"function-after", "function-before", "function-wrap"}:
+        value["schema"] = _model_field_schema(value["schema"])
+    return cast(CoreSchema, value)
 
 
 class EffectDurationState(EvaluationModel):
@@ -79,6 +94,15 @@ class EffectLifecycleSpecState(EffectLifecycleSpec):
         data: dict[str, Any] = handler(self)
         return data
 
+    @classmethod
+    def __get_pydantic_json_schema__(
+        cls, schema: CoreSchema, handler: GetJsonSchemaHandler
+    ) -> JsonSchemaValue:
+        # The wrap serializer preserves exactly these model fields. Its dict
+        # return annotation must not erase their serialization schema. Copy the
+        # schema metadata only; runtime validation/serialization remain intact.
+        return handler(_model_field_schema(schema))
+
 
 class EffectLifecycleApplicationState(EffectLifecycleApplication):
     model_config = EvaluationModel.model_config
@@ -86,6 +110,28 @@ class EffectLifecycleApplicationState(EffectLifecycleApplication):
     save_ability: Literal["str", "dex", "con", "int", "wis", "cha"] | None = Field(...)
     save_dc: int | None = Field(...)
     is_magical: bool = Field(...)
+
+
+class OngoingEffectLifecycleState(EvaluationModel):
+    """Complete wire clock; authoring defaults never become runtime input defaults.
+
+    The original immutable clock remains the shared rule algorithm's value object.
+    This DTO supplies both validation and serialization schemas at that boundary.
+    """
+
+    identity: tuple[str, str, str]
+    application: EffectLifecycleApplicationState
+    applied_turn_serial: int
+    applied_round: int
+    expires_round: int | None
+    expiry_actor_id: str | None
+    last_repeat_turn_serial: int | None
+    remaining_one_use_modifiers: tuple[OneUseModifier, ...]
+
+    def clock(self) -> OngoingEffectLifecycle:
+        return OngoingEffectLifecycle(
+            **{name: getattr(self, name) for name in type(self).model_fields}
+        )
 
 
 class EffectState(EvaluationModel):

@@ -825,6 +825,12 @@ No Apply operation, concentration state mutation or new Snapshot context is admi
 Snapshot /9 requires all lifecycle clock/application/spec/repeat wire fields explicitly;
 authoring defaults never repair admitted runtime dependencies.
 
+R26 fixes their generated wire schema while retaining the same complete fields.
+Both schema modes use an explicit clock DTO and recursively required application,
+spec and repeat-save DTOs; the original immutable runtime clock remains the rules
+value object. Explicit null/empty values round-trip and missing/extra/wrong-type
+inputs fail. This is local correctness, not approval of the external ABI.
+
 
 ## R18 concentration dependency closure
 

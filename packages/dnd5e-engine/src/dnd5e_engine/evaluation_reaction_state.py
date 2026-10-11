@@ -65,11 +65,12 @@ class PendingReactionState(EvaluationModel):
 
 
 class OpportunityAttackState(EvaluationModel):
-    """Host-authorized one-shot choice; expires at owner's next turn start.
+    """SM-validated one-shot choice; expires at owner's next turn start.
 
     Weapon selection alone is not consent. This fact authorizes exactly this
     owner to attack this mover if voluntary movement leaves the weapon's reach.
-    Trust/source authorization remains the Host's responsibility (C-16 OPEN).
+    An Agent/Host may propose the choice. State Machine alone validates trusted
+    identity, source and authorization before supplying this fact (C-16 OPEN).
     """
 
     source_kind: Literal["opportunity_attack"]

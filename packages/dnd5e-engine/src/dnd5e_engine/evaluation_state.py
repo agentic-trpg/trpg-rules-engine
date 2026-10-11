@@ -19,6 +19,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+from pydantic_core import to_json
 
 from dnd5e_engine.activities.conjuration import StatBlockMagnitudes, TransformSource
 from dnd5e_engine.effect_lifecycle import OngoingEffectLifecycle
@@ -28,6 +29,7 @@ from dnd5e_engine.evaluation_effects import (
     EffectLifecycleApplicationState,
     EffectLifecycleSpecState,
     EffectState,
+    OngoingEffectLifecycleState,
     RepeatSaveState,
     explicit_effect_fields,
 )
@@ -267,9 +269,14 @@ class LifecycleRecord(EvaluationModel):
     identity: tuple[str, str, str]
     state: OngoingEffectLifecycle
 
-    @field_validator("state", mode="before")
+    @field_validator("state", mode="before", json_schema_input_type=OngoingEffectLifecycleState)
     @classmethod
     def complete_clock(cls, value: Any, info: ValidationInfo) -> Any:
+        if isinstance(value, OngoingEffectLifecycle):
+            value = {
+                field.name: explicit_effect_fields(getattr(value, field.name))
+                for field in fields(OngoingEffectLifecycle)
+            }
         if isinstance(value, dict):
             if set(value) != {field.name for field in fields(OngoingEffectLifecycle)}:
                 raise ValueError("all lifecycle clock fields must be explicit")
@@ -288,20 +295,24 @@ class LifecycleRecord(EvaluationModel):
                 not isinstance(repeat, dict) or set(repeat) != set(RepeatSaveState.model_fields)
             ):
                 raise ValueError("all repeat-save fields must be explicit")
-            if info.mode == "json":
-                # Preserve strict dataclass tuple fields across the before-validator.
-                value = dict(value)
-                for name in ("identity", "remaining_one_use_modifiers"):
-                    if isinstance(value[name], list):
-                        value[name] = tuple(value[name])
+            # Preserve JSON's array semantics without enabling Python coercion or
+            # the authoring models' default/lax nested validation.
+            wire = (
+                OngoingEffectLifecycleState.model_validate_json(to_json(value))
+                if info.mode == "json"
+                else OngoingEffectLifecycleState.model_validate(value)
+            )
+            return wire.clock()
         return value
 
     @field_serializer("state")
-    def explicit_clock(self, value: OngoingEffectLifecycle) -> dict[str, Any]:
-        return {
-            field.name: explicit_effect_fields(getattr(value, field.name))
-            for field in fields(value)
-        }
+    def explicit_clock(self, value: OngoingEffectLifecycle) -> OngoingEffectLifecycleState:
+        return OngoingEffectLifecycleState.model_validate(
+            {
+                field.name: explicit_effect_fields(getattr(value, field.name))
+                for field in fields(value)
+            }
+        )
 
 
 class EffectTurnRecord(EvaluationModel):

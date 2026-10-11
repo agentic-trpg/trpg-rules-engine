@@ -8,6 +8,9 @@ runtime dependencies. R11–R13 add bounded explicit Turn, Movement and a local
 initialization core. All admitted slices execute independently; public creation remains
 blocked C-16. This extracts existing rules rather than adding content support.
 
+R26 supersedes the historical R17 lifecycle-schema defect recorded below with local
+schema/runtime agreement. Formal ABI and C-04/C-15/C-16 remain unapproved/OPEN.
+
 ## Architecture decisions and progress dimensions
 
 Latest Meta MODULE_CONTRACTS §4–6/14.1, STATE_MACHINE_ARCHITECTURE and MVP_SCOPE
@@ -824,7 +827,7 @@ Starts at R24 `5d97d0bf1098d325b2de130a2f222d33b532cdfc`, branch
 | Opportunity Attack | Voluntary step leaves selected melee reach; visible enemy; living eligible owner; explicit owner/mover/held weapon consent | Reaction once, before leaving the old cell; shared Attack/Damage, death/conditions and actual movement-prefix ledger | Consume on firing, retain on non-trigger, expire at owner next turn start; selected |
 | Shield | Hit-by-attack or Magic Missile opportunity; explicit canonical spell/source/slot/target/semantics | Reaction + Slot + AC response must alter hit determination; retain AC effect for subsequent attacks | Numeric AC effect and owner-next-turn expiry must compose with every later operation; deferred to a separate effect/reaction closure |
 
-Stateless External Contract: the complete Snapshot holds one typed Host-authorized
+Stateless External Contract: the complete Snapshot holds one typed SM-validated
 weapon declaration; it never treats weapon selection as consent. Owner and target,
 owned available held melee weapon, complete grant/counter/equipment dependencies,
 reaction budget, actual reach/LOS, entire route and ordinary movement costs are checked.
@@ -847,7 +850,7 @@ Reaction, dead owner/mover, missing consent/equipment/resources, explicit expiry
 replay/concurrency/stale/duplicate commits and failure/cancellation after actual damage.
 A full Cleric 1 with zero Slots completes Move -> OA -> Sacred Flame -> foe Pass/reset
 -> Sacred Flame, retaining all class/grant/source/resource facts. Legacy has no OA
-consent DTO; comparisons explicitly assert this new Host fact's consumption/retention
+consent DTO; comparisons explicitly assert this SM-validated fact's consumption/retention
 and compare all existing mechanical fields independently.
 
 Remaining scope: one Character weapon reactor, template-less movers, plain visibility
@@ -921,7 +924,7 @@ No existing test was deleted or weakened; existing test edits only update Snapsh
 version literals. Canonical data, spell reviews and the Legacy capability inventory
 are unchanged: **339 spells / 464 Activities; 30 executable / 48 bounded / 26 Host /
 235 Deferred**. This is the existing capability inventory, not stateless coverage.
-Current local versions are Snapshot `/13`, evaluator `/27`, envelope `/17`; C-04,
+At the R25 review, local versions were Snapshot `/13`, evaluator `/27`, envelope `/17`; C-04,
 C-15, C-16, production SM integration and formal cross-repository ABI remain OPEN.
 
 ### Findings and publication status
@@ -996,3 +999,44 @@ After those contracts are approved, prove actual SM atomic commit/retry/idempote
 and switch production consumers before retiring the remaining Legacy runtime. These
 four bounded extractions and green gates do not complete full Engine migration, MVP
 or formal ABI. The user retains the merge decision; this task performs no merge.
+
+## R26 lifecycle wire schema correctness
+
+Base: `0f27035003395695cb4d1b896a1c4004f4e189c8`; branch
+`fix/r26-lifecycle-wire-schema`. Evaluator `/28`; Snapshot `/13` and envelope `/17`
+retain their complete field shape. Latest Meta documents were reread as constraints;
+only this repository is modified. Final trusted identity/source/Reaction authorization
+belongs to State Machine. Agent/Host proposals are not authorization; R25 docs and
+comments now say SM-validated explicitly. C-04/C-15/C-16 remain OPEN.
+
+Stateless External Contract: a complete `OngoingEffectLifecycleState` wire DTO supplies
+validation and serialization schemas, recursively nesting the already explicit
+application/spec/repeat DTOs. All fields are required, including nullable/empty values;
+extra fields and wrong types are rejected. The spec serializer preserves the same model
+fields, so its schema describes those fields instead of an unconstrained dictionary.
+The full-field Runtime validator is retained and validates through the strict wire DTO
+before producing the original immutable clock. No authoring defaults repair input gaps.
+
+Legacy Runtime Dependency Removed: no new execution migration is claimed for a schema
+correction. Existing isolated lifecycle/concentration/reaction paths remain independent
+and use the original clock, expiry, repeat/save and cleanup algorithms. D&D semantics,
+event order and RNG remain unchanged. Local schema agreement resolves the inherited
+R17 schema discrepancy; it does not freeze or approve the cross-repository ABI.
+
+Pre-fix regressions reproduced missing clock Required entries, an unconstrained
+serialization schema and JSON `is_magical="true"` coercion. Final focused execution:
+**312 passed in 12.45 s**, including **88 new schema/wire cases** plus existing actual
+Poison, Hold Person, Attack/concentration, Counterspell and OA tests. Checks cover each
+field omission recursively for Python/JSON, both schema modes, explicit null/empty
+round trips, nested extra fields, strict types, Python tuple versus JSON array semantics,
+Snapshot schema reachability and rejected old Snapshot versions. Ruff and Mypy passed
+during development.
+
+Final plan was inspected against the full base SHA above, then
+`python tools/validate.py integration --base 0f27035003395695cb4d1b896a1c4004f4e189c8`
+**PASSED in 1084.12 s** on Windows Python 3.14.7. Data **671 passed / 1 skipped**
+(189.27 s), Engine **8,446 passed** (782.61 s), Bridge **139** (14.09 s), Demo **54**
+(28.73 s), all **24 tooling tests**, selected static checks, examples and strict
+MkDocs passed. The existing unknown worktree path conservatively broadened selection;
+it remains unstaged. These are local Integration results, not Full/coverage/security/
+wheel evidence or GitHub results. The final evidence-only edit gets strict MkDocs.

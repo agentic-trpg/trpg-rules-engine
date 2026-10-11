@@ -22,7 +22,7 @@ version/migration details are in [stateless evaluation](stateless-evaluation.md)
 
 ## Current stabilization additions
 
-Current snapshots are version `/12` only, with precisely CombatSnapshot and
+Current snapshots are version `/13` only, with precisely CombatSnapshot and
 NonCombatSnapshot discriminators. Both require InventoryState(entries=...),
 strict owner/instance closure and complete CharacterStateV2 equipment. Older snapshot
 versions and the third combat_inventory context are rejected explicitly; no empty

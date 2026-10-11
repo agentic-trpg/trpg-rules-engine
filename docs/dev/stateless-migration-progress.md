@@ -868,3 +868,131 @@ rerun. No failing/interrupted run is counted as green. The original unknown work
 path still broadens the planner and remains unstaged. Cumulative Full follows the
 four pushed batches; these are local Integration results only. This evidence/current
 inventory edit receives a separate strict documentation build.
+
+## Global Review R22–R25
+
+Baseline: `main@ac0fe93060b7377eb08662f12afc6230b1d33f45`. All four batches were
+developed serially from the preceding pushed HEAD. The branches and implementation
+commits below were verified against `origin`; no merge, rebase or force push occurred.
+Only this Rule Engine repository was modified. The adjacent architecture repository
+was read as a contract source. The original untracked `.evaluation-worktree/` remains
+preserved and unstaged.
+
+| Batch | Branch | Implementation commit | Final local Integration |
+| --- | --- | --- | --- |
+| R22 | `refactor/r22-class-operation-dependencies` | `b503f4e89c68a5d6f124735d29609680e7792dea` | 827.96 s |
+| R23 | `refactor/r23-attack-concentration-composition` | `0fb706bfaee29436c7548b93196d1d0a1f862c77` | 717.88 s |
+| R24 | `refactor/r24-instant-damage-spells` | `5d97d0bf1098d325b2de130a2f222d33b532cdfc` | 903.14 s |
+| R25 | `refactor/r25-predeclared-attack-reactions` | `78c6bdffb2c249c15d6dab78adb1b994f78c69b0` | 881.73 s |
+
+### Independent review and actual scope
+
+A separate read-only reviewer inspected the original request, current contracts,
+commit ancestry, cumulative code/test diff, calculation and exhaustive projection
+paths, actual canonical data/capability inventory and acceptance assertions. It
+checked all four Integration log tails and the native Full checkout SHA/results,
+and independently reproduced the lifecycle Schema/runtime omission failures below.
+It did not edit, stage, commit, push or rerun the completed broad validation gates.
+
+Stateless External Contract: R22 retains intact reviewed class/grant/resource facts
+across invocation, turn/reset, bounded movement, closure, Long Rest and local encounter
+initialization. The Cleric/Fighter loop uses a synthetic ally's lethal Attack to close
+the encounter; Wizard covers Counterspell, turn/reset and Rest. These are bounded
+multi-actor rules workflows, not proof of a standalone single-PC adventure or production
+SM submission. R23 composes real Attack damage, one completed-instance CON save and
+full existing Hold Person lineage cleanup. R24 adds canonical Sacred Flame through
+the same Invocation/Delivery/Activity path, including no-Slot Cantrip follow-up turns.
+R25 composes authorized melee weapon OA and the actual movement prefix, and exercises
+full Cleric Move -> OA -> Sacred Flame -> foe Pass/reset -> Sacred Flame with zero Slots.
+All return uncommitted guarded deltas, ordered proposals, explicit RNG and a read fence.
+
+Legacy Runtime Dependency Removed: the admitted paths execute without LiveCombat,
+Handle, Registry or live orchestrator/hooks. Shared Activity/attack/damage/save,
+class/scale, resource, movement/turn and lineage kernels remain the actual algorithms;
+Legacy reuses the completed damage-instance and reach predicates extracted here.
+Regression setup/capture retains isolated Legacy adapters. No production Bridge/Demo
+caller was switched and no still-used live function was deleted. BridgeState still
+holds Handles; routes_combat and combat_execution still create/drive/read Legacy
+combats. General effects/spells/features, areas/objects, broader class/equipment,
+stat-block OA, Shield, competing/nested reactions and interactive continuation remain
+Legacy/unsupported. State Machine alone owns and commits authoritative state.
+
+No existing test was deleted or weakened; existing test edits only update Snapshot
+version literals. Canonical data, spell reviews and the Legacy capability inventory
+are unchanged: **339 spells / 464 Activities; 30 executable / 48 bounded / 26 Host /
+235 Deferred**. This is the existing capability inventory, not stateless coverage.
+Current local versions are Snapshot `/13`, evaluator `/27`, envelope `/17`; C-04,
+C-15, C-16, production SM integration and formal cross-repository ABI remain OPEN.
+
+### Findings and publication status
+
+| Severity / category | Confirmed result and disposition |
+| --- | --- |
+| P0 | No new confirmed issue in the reviewed bounded paths. |
+| P1 | No new unresolved confirmed issue in the reviewed bounded paths. |
+| P2, inherited R17 publication blocker | `LifecycleRecord.complete_clock` requires every clock/application/spec/repeat field explicitly, while generated JSON Schema preserves authoring defaults and marks some optional. Formal ABI publication remains blocked until recursive schema/runtime agreement is verified. |
+| Minor documentation correction | The inventory's current-version sentence still said Snapshot `/12`; this audit follow-up corrects it to `/13`. |
+| Unsupported scope / architecture debt | Broader workflows and production caller/SM cutover above remain incomplete; they are not newly confirmed runtime bugs or promoted capabilities. |
+
+The independent R17 repro reads
+`LifecycleRecord.model_json_schema()["$defs"]["OngoingEffectLifecycle"]["required"]`:
+only `identity`, `application`, `applied_turn_serial`, `applied_round` are required.
+Removing any of `expires_round`, `expiry_actor_id`, `last_repeat_turn_serial` or
+`remaining_one_use_modifiers` from a valid current Hold Person clock nevertheless
+raises `all lifecycle clock fields must be explicit`. The same discrepancy occurs
+in application (`is_magical`, `save_ability`, `save_dc`), ten defaulted spec fields,
+and repeat-save (`on_success`, `phase`, `save_source`). Individual omissions of
+`is_magical`, `spec.expire_on_positive_damage` and `repeat_save.on_success` were also
+executed and rejected. Evidence is generated required arrays plus actual Pydantic
+validation, not a claimed external JSON Schema-validator run. Missing facts still
+fail closed; schema-generated clients can construct messages Runtime rejects.
+Fix an explicit wire schema/DTO and add recursive omission regressions before release.
+
+The reviewer also investigated lethal damage/concentration ordering. Both paths
+currently roll the completed-instance CON save before the shared zero-HP fold;
+final death/incapacity graph cleanup is correct. Canonical condition data alone does
+not establish an independent simultaneous-resolution order, so no confirmed defect
+or severity is assigned to that observation. Legacy parity alone is not independent
+proof of every rule ordering.
+
+### Cumulative Full evidence
+
+Both Full gates ran the unchanged implementation HEAD
+`78c6bdffb2c249c15d6dab78adb1b994f78c69b0` after all four branches were pushed.
+
+| Full package | Windows Python 3.14.7 tests / coverage | Native Linux Python 3.12 tests / coverage | Original floor |
+| --- | --- | --- | --- |
+| Data | 671 passed, 1 skipped / 97.56% | 631 passed, 41 skipped / 97.62% | 96% |
+| Engine | 8,358 passed / 95.38% | 8,358 passed / 95.48% | 90% |
+| Bridge | 139 passed / 97.05% | 139 passed / 97.06% | 85% |
+| Demo | 54 passed / not configured | 54 passed / not configured | Unchanged |
+| Total Full time | **976.54 s, PASSED** | **354.77 s, PASSED** | Unchanged |
+
+Local command: `python tools/validate.py full --base
+ac0fe93060b7377eb08662f12afc6230b1d33f45`, after inspecting the corresponding plan.
+On Windows the verified temporary Make adapter executes the current original package
+recipes and propagates failures. Native CI ran real GNU `make check`, with actionlint;
+the successful [Full run](https://github.com/agentic-trpg/trpg-rules-engine/actions/runs/38137494987)
+checks out the exact SHA above. Both ran 24 tooling tests, Ruff/format/Mypy, original
+coverage thresholds, Bandit, examples, strict MkDocs, isolated three-wheel installation
+and installed-package/Bridge HTTP smoke. The additional clean-CI Data skips correspond
+to existing maintainer-only upstream/raw-source conditions; they are not executed
+upstream-source assertions. Counts from the two environments are reported separately.
+Local logs: `r22-r25-full.log` and `r22-r25-native-full.log` in the user's temporary
+directory. This final audit/version correction changes docs only and receives a
+separate strict MkDocs build; no runtime or schema fix is included in that follow-up.
+
+### Proposed next batches
+
+| Priority | Existing dependency / blocker | Required evidence |
+| --- | --- | --- |
+| 1 | R17 lifecycle wire Schema drift | Recursive required-field agreement for clock/application/spec/repeat; missing facts reject before RNG/payment; keep ABI blocked until fixed. |
+| 2 | Equipped complete-class ordinary Attack | Preserve real class/grant/weapon/armor facts; close actual offense/AC/mastery dependencies through shared kernels and full follow-up turns. |
+| 3 | Hold Person normal turn lifecycle | Compose intact-source Pass, repeat saves, duration/expiry and later actions; full graph/event/RNG parity without live lifecycle hooks. |
+| 4 | Shield or stat-block OA | One fully typed trigger/payment/effect-or-attack/lifetime workflow, with later actions and independent expectations; general interactive C-04 stays OPEN. |
+
+Source authority and complex Delta decisions require separate cross-repository review.
+After those contracts are approved, prove actual SM atomic commit/retry/idempotency
+and switch production consumers before retiring the remaining Legacy runtime. These
+four bounded extractions and green gates do not complete full Engine migration, MVP
+or formal ABI. The user retains the merge decision; this task performs no merge.

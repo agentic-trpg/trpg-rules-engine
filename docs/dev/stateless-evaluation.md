@@ -11,10 +11,10 @@ The current local candidate versions are:
 
 | Contract | Current version | Replaces |
 | --- | --- | --- |
-| RuleEvaluationRequest / Result | `engine-evaluation/18` | `/1`–`/17` |
-| StateSnapshot | `engine-snapshot/13` | `/1`–`/12` |
-| Availability request/result | `engine-availability/11` | `/1`–`/10` |
-| RulesetBinding evaluator | `dnd5e-evaluation/30` | `/29` and earlier |
+| RuleEvaluationRequest / Result | `engine-evaluation/19` | `/1`–`/18` |
+| StateSnapshot | `engine-snapshot/14` | `/1`–`/13` |
+| Availability request/result | `engine-availability/12` | `/1`–`/11` |
+| RulesetBinding evaluator | `dnd5e-evaluation/31` | `/30` and earlier |
 
 Old envelopes, snapshots and results are explicitly rejected. There are no compatibility
 aliases for `InventoryCombatSnapshot`, `combat_inventory`, missing equipment or missing
@@ -644,3 +644,30 @@ the shared condition prohibition. Released actors can subsequently act and Pass.
 Envelope `/18` versions the expanded guarded concentration subset/tick delta;
 Snapshot `/13` and Availability `/11` remain unchanged. These are local C-15/C-16
 candidates, with no trusted-source ABI or authoritative commit service.
+
+## R29 canonical stat-block Opportunity Attack
+
+Snapshot `/14` extends the closed declaration union with stat_block_opportunity_attack.
+Every field is explicit: owner_id, mover_id, monster_slug, stat_block_action_id,
+voluntary_leave_reach trigger and owner_next_turn_start expiry. State Machine validates
+the trusted source and authorization before supplying this one-shot choice. Presence
+of a melee action never grants consent. Envelope `/19` and Availability `/12` version
+the nested breaking shape; old versions refuse. Evaluator `/31` admits the semantics.
+
+The canonical Ogre/Greatclub profile is closed against pinned complete template and
+actor facts, including abilities, PB, AC, speed, senses, defenses, empty class/trait/
+equipment/resource facts and reach. Every bound monster is checked before movement,
+including non-trigger, spent Reaction and consumed-declaration paths. The typed melee
+activity and shared stat-block magnitude/range carriers supply +6 and 2d8+4, with the
+existing crit/Damage/zero-HP rules. Original delivery attribution is shared with Legacy.
+The shared R25 trigger and walking core pay Reaction immediately before the leaving
+step, flush completed movement, and stop on zero HP/death/zero Speed. Complete guarded
+damage/budget/position/pending/death changes, ordered events and RNG return together.
+
+PC and rule-equivalent party NPC movers, including the R27 complete equipped Cleric,
+can continue after consumption and compose Pass/reset/ordinary Ogre movement/Attack.
+Party NPC zero-HP behavior follows the original party death policy; massive damage
+produces actual death. Javelin, other templates, recharge/limited uses, Multiattack,
+legendary/trait overlays, competing reactions and interactive choices remain Deferred.
+No new Pending service, live handle, public source API or formal ABI is introduced;
+C-04/C-15/C-16 remain OPEN.

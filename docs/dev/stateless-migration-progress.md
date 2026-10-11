@@ -11,8 +11,8 @@ blocked C-16. This extracts existing rules rather than adding content support.
 R26 supersedes the historical R17 lifecycle-schema defect recorded below with local
 schema/runtime agreement. Formal ABI and C-04/C-15/C-16 remain unapproved/OPEN.
 
-Current local versions after R28: envelope `/18`, Snapshot `/13`, Availability `/11`,
-evaluator `/30`. Historical batch versions below describe their original deliveries.
+Current local versions after R29: envelope `/19`, Snapshot `/14`, Availability `/12`,
+evaluator `/31`. Historical batch versions below describe their original deliveries.
 
 ## Architecture decisions and progress dimensions
 
@@ -47,8 +47,8 @@ classification applies only to the stated bounded capability, not its whole fami
 | --- | --- | --- | --- |
 | Result/binding/RNG envelope | Fully migrated local candidate | Yes for envelope | `evaluation_contracts`, `evaluation_ruleset`, `evaluation_rng`; durable commit/receipt is SM work |
 | Combat initialization / Start | Complete bounded local candidate; **public ABI blocked C-16** | **Yes, R13–R14** for bounded core and explicit ordinary NPC binding | `evaluation_initialization` / shared initiative_rules and turn_rules; explicit NonCombat setup and closed creation candidate. Legacy start, general hydration and consumer cutover remain |
-| Turn / Action Economy | Bounded explicit Pass and Attack/Item; R20/R21 invocation turn completion | **Yes, R11** for bounded lifecycle | `evaluation_turn` plus shared `turn_rules` / death saves; complete reset/dead skipping/round wrap/ordinary dying PC. R22 admits reviewed complete Cleric/Fighter/Wizard Pass/reset; R25 adds one declaration expiry. Wider classes, effects/reactions and extended actions remain incomplete; R17 adds bounded Poison |
-| Movement / positioning | Bounded Walk, Action Dash/Disengage | **Yes, R12** for admitted subset | `evaluation_movement` reuses GridTopology/movement/turn rules and closed PositionUpdate. R25 adds one authorized weapon OA; special modes, stat-block reaction templates, forced movement, effects/areas remain Legacy |
+| Turn / Action Economy | Bounded explicit Pass and Attack/Item; R20/R21 invocation turn completion | **Yes, R11** for bounded lifecycle | `evaluation_turn` plus shared `turn_rules` / death saves; complete reset/dead skipping/round wrap/ordinary dying PC. R22 admits reviewed complete Cleric/Fighter/Wizard Pass/reset; R25/R29 add bounded declaration expiry; R17 Poison and R28 existing Hold Person repeat/expiry compose. Wider classes/effects/reactions and extended actions remain incomplete |
+| Movement / positioning | Bounded Walk, Action Dash/Disengage | **Yes, R12** for admitted subset | `evaluation_movement` reuses GridTopology/movement/turn rules and closed PositionUpdate. R25 weapon OA and R29 canonical Ogre/Greatclub OA compose; other stat-block templates, special modes, forced movement and effects/areas remain Legacy |
 | Ordinary PC/NPC weapon or explicit stat-block single Attack | Fully migrated bounded subset | **Yes, R9** | `evaluation_preflight` → `evaluation_attack.execute_attack` → Activity Resolver → `evaluation_projection.attack_delta`; no Legacy execution context |
 | Attack / Damage / Death overall | Partially migrated | Partially | Ordinary roll/hit/miss/crit/R-I-V/temp HP/death/payment/turn and attack-induced next-turn death save migrated; riders, trained Masteries, Multiattack/recharge/legendary/effects remain Legacy |
 | Adjudicated noncombat ability/skill check | Fully migrated bounded subset | Yes | `evaluation_checks` → `activities/check_pipeline`; explicit DC/GM flags/proficiency/expertise/Jack/Reliable Talent; no Legacy runtime |
@@ -58,13 +58,13 @@ classification applies only to the stated bounded capability, not its whole fami
 | Owned single-use self-healing consumable | Fully migrated bounded external contract | **Yes, R10** | `evaluation_items` → shared CombatComputation / HealActivity / item_rules; inventory/HP/budget/turn/events/RNG remain complete |
 | Inventory / resource payment overall | Partially migrated: owned consumable, bounded rests and rule-priced owned payments | **Yes, R10/R16/R19** for those slices | Inventory/resource mirror guards; shared Slot selection and Feature pricing. General equip/transfer/item recharge/ammunition and production caller migration remain |
 | Bounded existing Poison lifecycle | Fully migrated local subset | **Yes, R17** | Authorized single Cunning Strike Poison → shared Save/repeat/expiry/lineage kernels → closed Effect/Condition/Turn proposals; no Apply API |
-| Conditions / effects / concentration overall | Partially migrated | Partially | R17 Poison, attack-produced dying conditions and R23 existing Hold Person cleanup migrated; general multi-effect/concentration creation, areas and child cascades remain Legacy |
+| Conditions / effects / concentration overall | Partially migrated | Partially | R17 Poison, attack-produced dying conditions and R23/R28 existing Hold Person damage/turn cleanup migrated; general multi-effect/concentration creation, areas and child cascades remain Legacy |
 | Bounded Cure Wounds / Second Wind | Complete bounded local contract | **Yes, R20** | Explicit class/source/preparation/components, shared Delivery/Feature pricing/HealActivity/Turn, atomic pool/mirror/spend/HP/budget/events/RNG |
 | Canonical instant Sacred Flame | Complete bounded local contract | **Yes, R24** | Full Cleric 1 PC/NPC class source, shared Delivery/Save/Damage, no Slot cost, real R23 concentration composition, atomic budgets/HP/turn/events/RNG |
 | Spellcasting / Features overall | Partially migrated | Partially | R20 direct healing/Second Wind and R24 Sacred Flame execute independently for reviewed profiles; general repertoire/costs/timing/grants/riders/delegated casts remain Legacy |
 | One predeclared Counterspell / Cure Wounds trigger | Complete bounded local contract | **Yes, R21** | Real Wizard 5 Evoker; pure matching/targeting and SaveActivity, one atomic trigger/Reaction/payment/delta/events/RNG; no Live dispatcher |
 | One authorized weapon Opportunity Attack / Walk | Complete bounded local contract | **Yes, R25** | Explicit Snapshot consent, shared reach/LOS and Attack/Damage, full path-prefix/death/budget/consumption/expiry delta; no Live hooks |
-| Reaction / pending choice overall | Partially migrated | Partially | Draw-free weapon/missing-DC choices, R21 Counterspell and R25 weapon OA; other reactions, priorities, nested chains, durable windows and interactive continuation remain Legacy/OPEN |
+| Reaction / pending choice overall | Partially migrated | Partially | Draw-free weapon/missing-DC choices, R21 Counterspell, R25 weapon OA and R29 canonical Ogre OA; other reactions, priorities, nested chains, durable windows and interactive continuation remain Legacy/OPEN |
 | Areas / environment / objects | Legacy Stateful Only | No | `persistent_areas`, `environment`, `combat_objects`, `ongoing_spell_activation`; state captured then refused; source/lifetime/geometry/history Delta missing |
 | Bounded victory / TPK closure | Fully migrated bounded external contract | **Yes, R10** | `evaluation_closure` → shared outcome_rules on explicit values; XP/history/events and unchanged RNG |
 | Closure / outcome overall | Partially migrated | No | Flight/forced end/effect handoff missing; loot generation and durable cross-combat effects were already Host/deferred gaps |
@@ -1126,3 +1126,54 @@ Final inspected plan and executed gate:
 This is local Integration evidence; Full/coverage/security/wheels are reserved for
 the requested final native Linux gate after R29. Evidence-only documentation edits
 receive a strict docs build. The unrelated untracked worktree remains preserved.
+
+## R29 canonical stat-block Opportunity Attack
+
+Start `21ae8df58ff186862723bdf10586d3850a318aab`, branch
+`refactor/r29-statblock-opportunity-attack`; Snapshot `/14`, envelope `/19`,
+Availability `/12`, evaluator `/31`. The versions reflect the expanded closed pending
+union and its result/availability schemas; older values explicitly refuse.
+
+Stateless External Contract: one SM-authorized bound Ogre/Greatclub choice identifies
+the owner, opposing mover, monster and action, exact voluntary-leave trigger and
+owner-next-turn expiry. Complete canonical actor/template facts close movement even
+without consent, with a spent Reaction or after consumption. All affected budgets,
+HP/TempHP, completed damage identity/attribution, conditions/death ledgers, completed
+path/position/cost, declaration consumption/expiry, ordered events and RNG return in
+one guarded result. No Agent/Host identity is treated as trusted authorization.
+
+Legacy Runtime Dependency Removed: successful actual NPC OA and follow-on movement /
+Pass / reset / ordinary Ogre movement and Attack disable Monster Dispatcher, Live
+Reaction Hooks, Orchestrator, registry, handles and recapture. R25 trigger/walk,
+original AttackActivity Resolver, shared stat-block range/magnitudes, Damage/Death
+and Turn rules remain single implementations. The existing canonical actor comparison
+was extracted from NPC initialization without widening that separate admission.
+Original delivery attribution is now shared, preserving the complete typed events.
+
+Independent expectations verify STR 19 (+4), PB +2, +6 to hit, 2d8+4 (4d8+4 critical),
+R/I/V, Temp HP, hit/miss/natural 1/20, no Action/Bonus payment and actual completed
+path prefix. Every successful differential path compares all mechanical snapshot
+fields, ordered events and RNG. Only the new authorization DTO, absent in Legacy,
+is supplied from the new result for comparison. Party NPC zero HP retains the
+original party dying policy; the actual death regression uses independently lethal
+massive damage. Complete equipped Cleric PC/equivalent NPC movers additionally
+retain their class/equipment/resource facts and continue moving after consumption.
+
+Recharge/limited-use, Multiattack, legendary, special-trait/asset drift, wrong action /
+monster/mover/binding, missing consent and competing choices refuse before RNG.
+Schema tests require all nested declaration fields in validation/serialization,
+strict Python/JSON, old-version refusal, replay/concurrency, stale/double application
+and faults/cancellation after actual resolver execution. Other templates/actions,
+complex effects/movement and interactive reactions remain Deferred; C-04/C-15/C-16
+and formal ABI remain OPEN. Full conversion and production SM/Bridge cutover remain
+incomplete.
+
+Development evidence: prior combined regression selection **355 passed in 195.54 s**;
+final expanded new R29 tests **96 passed in 4.11 s**. Ruff/format/Mypy passed.
+Final inspected plan and executed gate:
+`python tools/validate.py integration --base 21ae8df58ff186862723bdf10586d3850a318aab`
+**PASSED in 967.58 s** on Windows Python 3.14.7. Data **671 passed / 1 skipped**
+(172.88 s), Engine **8,632 passed** (705.58 s), Bridge **139** (12.37 s), Demo **54**
+(25.12 s), **24 tooling tests**, Ruff/format/Mypy, examples and strict MkDocs passed.
+Evidence-only documentation edits receive another strict docs build. Native Linux
+Full is dispatched after this source commit is pushed; it is not yet claimed green.

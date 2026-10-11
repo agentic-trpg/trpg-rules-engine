@@ -30,6 +30,11 @@ if TYPE_CHECKING:
     from dnd5e_engine.types.combat import Combatant
 
 
+def activity_source_identity(kind: str | None, source_id: str, activity_id: str) -> str:
+    """Original delivery attribution, including the empty-root monster OA identity."""
+    return f"{kind}:{source_id}:{activity_id}"
+
+
 class EffectSelection(BaseModel):
     """One explicit canonical spell/activity effect for one creature."""
 

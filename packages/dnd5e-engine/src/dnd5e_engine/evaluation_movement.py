@@ -7,6 +7,7 @@ from dnd5e_srd_data.loader import AssetLoader
 from dnd5e_engine.evaluation_class_dependencies import operation_dependencies
 from dnd5e_engine.evaluation_computation import CombatComputation
 from dnd5e_engine.evaluation_contracts import CombatIntentPayload, RuleEvaluationRequest
+from dnd5e_engine.evaluation_monster_movement import monster_movement_failure
 from dnd5e_engine.evaluation_opportunity import (
     OpportunityPlan,
     opportunity_dependencies,
@@ -50,10 +51,8 @@ def evaluate_movement(request: RuleEvaluationRequest, loader: AssetLoader) -> Tu
     actor = actors[actor_id]
     if actor_id in state.dead_ids or not actor.is_alive or actor.hp_current <= 0:
         return _refuse("rejected", "actor_incapacitated", "actor cannot move or act")
-    if state.monster_slug_by_entity:
-        return _refuse(
-            "unsupported", "movement.template", "stat-block reaction reach closure is not migrated"
-        )
+    if failure := monster_movement_failure(snapshot, loader):
+        return _refuse("unsupported", "movement.template", failure)
     if state.movement_ledgers[actor_id].active_mode != "walk":
         return _refuse("unsupported", "movement.mode", "only an active walking ledger is admitted")
     opportunity, failure = opportunity_dependencies(snapshot, loader)
@@ -65,6 +64,7 @@ def evaluate_movement(request: RuleEvaluationRequest, loader: AssetLoader) -> Tu
             movement=True,
             attack=bool(state.pending_reactions),
             reviewed_reactions=bool(state.pending_reactions),
+            equipped=True,
         )
         or template_support_failure(snapshot, loader)
     )

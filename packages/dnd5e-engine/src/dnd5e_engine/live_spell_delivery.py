@@ -20,6 +20,7 @@ from dnd5e_engine.spell_delivery import (
     DeliveryPlan,
     DeliveryPlanningError,
     SpellDeliverySpec,
+    activity_source_identity,
     plan_delivery,
 )
 from dnd5e_engine.spell_execution import ExecutionFailure, admission_failure, spell_review
@@ -549,7 +550,9 @@ def prepare_activity_delivery(
     rule = activity.target.creature_filter
     values.update(
         spell_delivery=spec,
-        activity_source_id=f"{ctx.lifecycle_source_kind}:{source_id}:{activity.id}",
+        activity_source_id=activity_source_identity(
+            ctx.lifecycle_source_kind, source_id, activity.id
+        ),
         target_auto_success_ids=frozenset(
             t.entity_id
             for t in targets

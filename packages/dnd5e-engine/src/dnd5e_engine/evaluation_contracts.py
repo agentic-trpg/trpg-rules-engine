@@ -23,8 +23,8 @@ from dnd5e_engine.intents import PlayerIntent
 from dnd5e_engine.rules.skills import Skill
 from dnd5e_engine.types.checks import CheckRequest, GrantedDie
 
-SCHEMA_VERSION = "engine-evaluation/18"
-EvaluationVersion = Literal["engine-evaluation/18"]
+SCHEMA_VERSION = "engine-evaluation/19"
+EvaluationVersion = Literal["engine-evaluation/19"]
 
 
 class ItemUsePayload(EvaluationModel):

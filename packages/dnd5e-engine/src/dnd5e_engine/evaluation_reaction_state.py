@@ -82,8 +82,21 @@ class OpportunityAttackState(EvaluationModel):
     expiry: Literal["owner_next_turn_start"]
 
 
+class StatBlockOpportunityAttackState(EvaluationModel):
+    """One SM-validated owner/action/mover choice; local C-16 candidate."""
+
+    source_kind: Literal["stat_block_opportunity_attack"]
+    owner_id: Annotated[str, Field(min_length=1)]
+    mover_id: Annotated[str, Field(min_length=1)]
+    monster_slug: Annotated[str, Field(min_length=1)]
+    stat_block_action_id: Annotated[str, Field(min_length=1)]
+    trigger: Literal["voluntary_leave_reach"]
+    expiry: Literal["owner_next_turn_start"]
+
+
 PredeclaredReactionState = Annotated[
-    PendingReactionState | OpportunityAttackState, Field(discriminator="source_kind")
+    PendingReactionState | OpportunityAttackState | StatBlockOpportunityAttackState,
+    Field(discriminator="source_kind"),
 ]
 
 

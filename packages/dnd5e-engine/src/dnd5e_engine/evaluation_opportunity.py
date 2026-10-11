@@ -1,6 +1,6 @@
 """Bounded authorized weapon OA; draw-free admission and shared resolution."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from dnd5e_srd_data.loader import AssetLoader
 from dnd5e_srd_data.schema.common import AttackActivity
@@ -12,20 +12,24 @@ from dnd5e_engine.activities.resolver import resolve_activity
 from dnd5e_engine.evaluation_actor import combatant
 from dnd5e_engine.evaluation_computation import CombatComputation
 from dnd5e_engine.evaluation_contracts import CombatIntentPayload
-from dnd5e_engine.evaluation_preflight import weapon_admission
-from dnd5e_engine.evaluation_reaction_state import OpportunityAttackState
+from dnd5e_engine.evaluation_preflight import stat_block_admission, weapon_admission
+from dnd5e_engine.evaluation_reaction_state import (
+    OpportunityAttackState,
+    StatBlockOpportunityAttackState,
+)
 from dnd5e_engine.evaluation_state import CombatSnapshot
 from dnd5e_engine.events import IntentSubmitted
 from dnd5e_engine.reactions import leaves_melee_reach
 from dnd5e_engine.spatial import GridTopology
 from dnd5e_engine.specs import GridScene
+from dnd5e_engine.spell_delivery import activity_source_identity
 from dnd5e_engine.types.combat import Combatant
 
 
 @dataclass(frozen=True)
 class OpportunityPlan:
-    declaration: OpportunityAttackState
-    weapon: Weapon
+    declaration: OpportunityAttackState | StatBlockOpportunityAttackState
+    weapon: Weapon | None
     activity: AttackActivity
     reach_ft: int
 
@@ -37,8 +41,10 @@ def opportunity_dependencies(
     pending = snapshot.combat_state.pending_reactions
     if not pending:
         return None, None
-    if len(pending) != 1 or not isinstance(pending[0], OpportunityAttackState):
-        return None, "only one explicit weapon opportunity declaration is reviewed"
+    if len(pending) != 1 or not isinstance(
+        pending[0], (OpportunityAttackState, StatBlockOpportunityAttackState)
+    ):
+        return None, "only one explicit ordinary opportunity declaration is reviewed"
     declaration = pending[0]
     if any(
         actor.granted_features is None
@@ -49,6 +55,37 @@ def opportunity_dependencies(
     actors = {a.entity_id: a for a in snapshot.character_states}
     owner, mover = actors[declaration.owner_id], actors.get(declaration.mover_id)
     state = snapshot.combat_state
+    if isinstance(declaration, StatBlockOpportunityAttackState):
+        from dnd5e_engine.evaluation_monster_movement import monster_movement_failure
+
+        failure = monster_movement_failure(snapshot, loader)
+        if failure:
+            return None, failure
+        if (
+            mover is None
+            or owner.entity_id == mover.entity_id
+            or (owner.entity_id in state.party_ids) == (mover.entity_id in state.party_ids)
+            or state.monster_slug_by_entity.get(owner.entity_id) != declaration.monster_slug
+        ):
+            return None, "stat-block declaration requires a bound opposing owner and mover"
+        intent = CombatIntentPayload(
+            intent_type="attack",
+            target_id=mover.entity_id,
+            stat_block_action_id=declaration.stat_block_action_id,
+        )
+        refusal = stat_block_admission(snapshot, combatant(owner), intent, loader)
+        if refusal is not None:
+            return None, refusal.error.reason if refusal.error else "incomplete stat-block choice"
+        monster = loader.get_monster(declaration.monster_slug)
+        assert monster is not None
+        action = next(a for a in monster.actions if a.slug == declaration.stat_block_action_id)
+        activity = action.activities[0]
+        assert isinstance(activity, AttackActivity)
+        if activity.attack.type.value != "melee":
+            return None, "opportunity attack requires an explicit melee stat-block action"
+        reach = attack_rules.monster_attack_range_ft([activity], owner.melee_reach_ft)
+        assert reach is not None
+        return OpportunityPlan(declaration, None, activity, reach), None
     if (
         mover is None
         or owner.entity_type != "Character"
@@ -119,6 +156,12 @@ def step_reactors(
         ):
             continue
         reach = owner.melee_reach_ft
+        monster_slug = state.monster_slug_by_entity.get(owner_id)
+        if monster_slug:
+            monster = loader.get_monster(monster_slug)
+            assert monster is not None  # Complete canonical closure ran before route planning.
+            action = next(a for a in monster.actions if a.slug == "greatclub")
+            reach = attack_rules.monster_attack_range_ft(action.activities, reach) or reach
         selected = state.opportunity_attack_weapons.get(owner_id)
         if selected and owner.entity_type == "Character":
             weapon = loader.get_weapon(selected)
@@ -193,9 +236,13 @@ def resolve_opportunity(
                 mover, effective_speed=computation.speed(mover)
             )
         },
-        use_versatile_damage=plan.declaration.two_handed
+        use_versatile_damage=isinstance(plan.declaration, OpportunityAttackState)
+        and plan.declaration.two_handed
         and attack_rules.versatile_grip_applies(plan.weapon, distance),
         is_proficient_attack=attack_rules.is_proficient_with_weapon(owner, plan.weapon),
+        stat_block_magnitudes=attack_rules.stat_block_magnitudes(owner)
+        if isinstance(plan.declaration, StatBlockOpportunityAttackState)
+        else None,
         is_opportunity_attack=True,
         attack_origin="opportunity",
         turn_serial=computation.state.turn_serial,
@@ -204,6 +251,10 @@ def resolve_opportunity(
         ),
         damage_instance_resolved=computation.damage_completed,
     )
+    if isinstance(plan.declaration, StatBlockOpportunityAttackState):
+        context = replace(
+            context, activity_source_id=activity_source_identity("monster", "", plan.activity.id)
+        )
     resolve_activity(plan.activity, context, weapon=plan.weapon)
 
 

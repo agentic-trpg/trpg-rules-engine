@@ -22,7 +22,7 @@ version/migration details are in [stateless evaluation](stateless-evaluation.md)
 
 ## Current stabilization additions
 
-Current snapshots are version `/13` only, with precisely CombatSnapshot and
+Current snapshots are version `/14` only, with precisely CombatSnapshot and
 NonCombatSnapshot discriminators. Both require InventoryState(entries=...),
 strict owner/instance closure and complete CharacterStateV2 equipment. Older snapshot
 versions and the third combat_inventory context are rejected explicitly; no empty
@@ -934,3 +934,23 @@ boundary scheduler and original shared Save, duration and cleanup rules are reus
 Attack/concentration loss and source death compose through the existing R23 fold.
 Positive-HP turn graphs only; dying/equipped graphs, other effects and new source
 admission remain Deferred. C-04/C-15/C-16 and formal wire ABI remain OPEN.
+
+### R29 stat-block opportunity and bounded monster movement closure
+
+Stateless External Contract: Snapshot `/14` adds an explicit stat-block owner/action/
+mover declaration to the closed pending union. Envelope `/19`, Availability `/12`
+and evaluator `/31` reject old shapes/bindings. Complete pinned Ogre actor/template
+facts close every movement dependency; one Greatclub melee activity uses shared
+reach, stat-block magnitudes and Attack/Damage. PendingReactionUpdate guards and
+consumes the full old declaration on firing or owner-next-turn expiry. Complete
+Reaction, HP/TempHP, damage attribution/instances, death, actual path prefix/cost,
+ordered events and RNG are atomic proposals, never an authoritative commit.
+
+Legacy Runtime Dependency Removed: authorized real Ogre OA, follow-on movement,
+Pass/reset and ordinary Ogre movement/Attack execute without Monster Dispatcher,
+Live Reaction Hooks, registry, CombatHandle or snapshot recapture. Existing R25
+geometry/walk, Activity Resolver, stat-block range/magnitudes and damage/death are
+reused; original delivery source identity is shared with Legacy. R27 equipped Cleric
+PC/equivalent NPC movers retain their complete class/equipment/resources.
+Other templates, Javelin, complex traits/actions/reactions and effect/area movement
+remain Deferred. New source authorization, continuation and formal C-15 ABI remain OPEN.

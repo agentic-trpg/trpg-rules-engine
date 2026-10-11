@@ -15,6 +15,30 @@ from pydantic import BaseModel, ConfigDict, model_validator
 from dnd5e_engine.types.conditions import ActiveCondition
 
 
+def conditions_after_effect_application(
+    conditions: Sequence[ActiveCondition], effect_id: str, statuses: Collection[str]
+) -> tuple[list[ActiveCondition], list[str]]:
+    """Original attachment and newly present names, after shared immunity policy."""
+    existing_names = {c.condition for c in conditions}
+    existing_keys = {(c.condition, c.source_effect_id) for c in conditions}
+    value = list(conditions)
+    added = []
+    for status in statuses:
+        if (status, effect_id) in existing_keys:
+            continue
+        value.append(
+            ActiveCondition(
+                condition=status,
+                source_entity_id="implied:effect",
+                scope="combat",
+                source_effect_id=effect_id,
+            )
+        )
+        if status not in existing_names:
+            added.append(status)
+    return value, added
+
+
 def conditions_after_effect_expiry(
     conditions: Sequence[ActiveCondition],
     effect_id: str,

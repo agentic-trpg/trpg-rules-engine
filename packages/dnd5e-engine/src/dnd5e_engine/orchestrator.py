@@ -80,7 +80,6 @@ from dnd5e_srd_data.schema.spell import (
     CastingTimeUnit,
     Spell,
     SpellComponent,
-    SpellDurationUnits,
     SpellRangeUnits,
 )
 
@@ -158,11 +157,13 @@ from dnd5e_engine.attack_rules import versatile_grip_applies as _versatile_grip_
 from dnd5e_engine.attack_rules import weapon_attack_range_ft as _weapon_attack_range_ft
 from dnd5e_engine.attack_rules import weapon_melee_reach_ft as _weapon_melee_reach_ft
 from dnd5e_engine.combat_objects import CombatObjectState
+from dnd5e_engine.concentration_rules import concentration_anchor, concentration_max_rounds
 from dnd5e_engine.death_saves import roll_death_save
 from dnd5e_engine.effect_lifecycle import (
     EffectIdentity,
     OngoingEffectLifecycle,
     concentration_rounds_after_turn_end,
+    conditions_after_effect_application,
 )
 from dnd5e_engine.events import (
     Ability,
@@ -4892,22 +4893,9 @@ def _attach_effect_statuses(live: _LiveCombat, applied: ActiveEffect) -> list[st
     live.active_conditions.setdefault(applied.target_id, set()).update(statuses)
     added: list[str] = []
     if target_combatant is not None and statuses:
-        existing_slugs = {ac.condition for ac in target_combatant.conditions}
-        existing_keys = {(ac.condition, ac.source_effect_id) for ac in target_combatant.conditions}
-        new_conditions = list(target_combatant.conditions)
-        for status in statuses:
-            if (status, applied.id) in existing_keys:
-                continue
-            new_conditions.append(
-                ActiveCondition(
-                    condition=status,
-                    source_entity_id="implied:effect",
-                    scope="combat",
-                    source_effect_id=applied.id,
-                )
-            )
-            if status not in existing_slugs:
-                added.append(status)
+        new_conditions, added = conditions_after_effect_application(
+            target_combatant.conditions, applied.id, statuses
+        )
         if new_conditions != target_combatant.conditions:
             for idx, c in enumerate(live.initiative):
                 if c.entity_id == applied.target_id:
@@ -6174,19 +6162,7 @@ def _apply_concentration_anchor(
     identity = _anchor_identity(spell.slug, caster.entity_id)
     if identity in live.concentration_chain.get(caster.entity_id, []):
         _drop_concentration(live, caster.entity_id)
-    target_id, effect_id, origin = identity
-    _emit(
-        live,
-        EffectApplied(
-            effect=ActiveEffect(
-                id=effect_id,
-                name=spell.name,
-                origin=origin,
-                target_id=target_id,
-                flags={"concentration": True, _ANCHOR_FLAG: True},
-            )
-        ),
-    )
+    _emit(live, EffectApplied(effect=concentration_anchor(spell, caster.entity_id)))
 
 
 def _fold_resolution_outcome(
@@ -6547,20 +6523,7 @@ def _concentration_max_rounds(spell: Spell | None) -> int | None:
     §Duration). ``None`` = no engine-tracked cap: non-concentration spells,
     the monster/no-spell paths, and non-metric durations (instantaneous /
     until-dispelled / until-destroyed / permanent / special)."""
-    if spell is None or not spell.concentration:
-        return None
-    duration = spell.duration
-    if duration.value is None:
-        return None
-    per_unit = {
-        SpellDurationUnits.ROUND: 1,
-        SpellDurationUnits.MINUTE: 10,
-        SpellDurationUnits.HOUR: 600,
-        SpellDurationUnits.DAY: 14400,
-    }.get(duration.units)
-    if per_unit is None:
-        return None
-    return duration.value * per_unit
+    return concentration_max_rounds(spell)
 
 
 def _duration_tick_matches_actor(*, origin: str, target_id: str, actor_id: str) -> bool:

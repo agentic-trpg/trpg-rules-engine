@@ -1,6 +1,6 @@
 """Explicit mechanical casting facts. Local candidate, not source authorization."""
 
-from typing import Annotated, Self
+from typing import Annotated, Literal, Self
 
 from pydantic import Field, model_validator
 
@@ -27,10 +27,20 @@ class ClassSpellSource(EvaluationModel):
         return self
 
 
+class HoldPersonMaterial(EvaluationModel):
+    """SM-attested nonconsumed iron in one owned component pouch, not prose stock."""
+
+    spell_slug: Literal["hold-person"]
+    source_id: Annotated[str, Field(min_length=1)]
+    inventory_instance_id: Annotated[str, Field(min_length=1)]
+    available: bool
+
+
 class ActorCastingState(EvaluationModel):
     actor_id: Annotated[str, Field(min_length=1)]
     verbal_available: bool
     sources: tuple[ClassSpellSource, ...]
+    materials: tuple[HoldPersonMaterial, ...]
 
     @model_validator(mode="after")
     def identities(self) -> Self:
@@ -38,6 +48,10 @@ class ActorCastingState(EvaluationModel):
             raise ValueError("duplicate actor spell source")
         if len({s.class_slug for s in self.sources}) != len(self.sources):
             raise ValueError("one class spell source per class")
+        if len({(m.source_id, m.spell_slug) for m in self.materials}) != len(self.materials):
+            raise ValueError("duplicate material attestation")
+        if any(m.source_id not in {s.source_id for s in self.sources} for m in self.materials):
+            raise ValueError("material attestation requires a present casting source")
         return self
 
 

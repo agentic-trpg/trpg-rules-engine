@@ -25,6 +25,8 @@ def equipped_dependencies(
     levels = actor.classes or (
         {actor.class_slug: actor.character_level} if actor.class_slug else {}
     )
+    if levels == {"wizard": 5}:
+        return wizard_pouch_dependencies(actor, snapshot, loader, canonical)
     fighter = levels == {"fighter": 1}
     if not fighter and levels != {"cleric": 1}:
         return "only equipped Cleric 1 or Fighter 1 dependencies are reviewed"
@@ -101,4 +103,54 @@ def equipped_dependencies(
     expected += defense_ac_bonus(actor.fighting_styles, wearing_armor=True)
     if actor.ac != expected or actor.stealth_disadvantage != armor.stealth_disadvantage:
         return "armor/shield AC or stealth facts contradict shared armor rules"
+    return None
+
+
+def wizard_pouch_dependencies(
+    actor: CharacterStateV2,
+    snapshot: CombatSnapshot | NonCombatSnapshot,
+    loader: AssetLoader,
+    canonical: BundledAssetLoader,
+) -> str | None:
+    entries = [e for e in snapshot.inventory_state.entries if e.owner_id == actor.entity_id]
+    item = loader.get_item("component-pouch")
+    if (
+        actor.worn_armor
+        or actor.shield_equipped
+        or actor.other_hand_occupied
+        or actor.weapon_in_hands is not None
+        or actor.weapon_grip != "none"
+        or actor.carried_item_slugs != ("component-pouch",)
+        or len(entries) != 1
+        or entries[0].item_slug != "component-pouch"
+        or entries[0].quantity != 1
+        or not entries[0].accessible
+        or entries[0].charges_remaining_per_unit
+        or item is None
+        or item != canonical.get_item("component-pouch")
+        or item.passive_effects
+        or item.requires_attunement
+        or item.uses
+        or actor.fighting_styles
+        or actor.weapon_mastery_slugs
+    ):
+        return "only an owned accessible canonical component pouch and free hands are reviewed"
+    grants = proficiency_grants([(canonical.get_class("wizard"), 5, "primary")])
+    if (
+        actor.weapon_proficiencies is None
+        or set(actor.weapon_proficiencies) != grants.weapons
+        or set(actor.save_proficiencies) != grants.saves
+        or actor.proficiency_bonus_override not in (None, 3)
+        or actor.attack_bonus is not None
+        or actor.ac
+        != armor_class(
+            "default",
+            {"dexterity": ability_modifier(actor.dexterity)},
+            body_armor=None,
+            body_armor_bonus=0,
+            shield_bonus=0,
+        )
+        or actor.stealth_disadvantage
+    ):
+        return "Wizard proficiency or unarmored AC contradicts shared class rules"
     return None

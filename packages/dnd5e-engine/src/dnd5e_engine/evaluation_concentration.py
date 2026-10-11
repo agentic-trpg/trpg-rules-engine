@@ -18,6 +18,7 @@ from pydantic import Field
 
 from dnd5e_engine.activities.context import DamageInstanceContext
 from dnd5e_engine.activities.effects import bind_effect_lifecycle, passive_effect_to_active_effect
+from dnd5e_engine.concentration_rules import concentration_anchor
 from dnd5e_engine.damage_rules import concentration_dc
 from dnd5e_engine.effect_lifecycle import (
     EffectIdentity,
@@ -121,18 +122,21 @@ def concentration_support_failure(
     effects = {(e.target_id, e.id, e.origin): e for e in snapshot.effect_states}
     clocks = {r.identity: r for r in state.effect_lifecycles}
     links = {r.identity: r for r in state.conditions_by_effect}
+    anchor = len(snapshot.effect_states) == 1 and bool(
+        snapshot.effect_states[0].flags.get("concentration_anchor")
+    )
+    clock_ids = set() if anchor else set(chain)
     if (
         not (
             len(effects)
             == len(snapshot.effect_states)
             == len(chain)
-            == len(clocks)
-            == len(state.effect_lifecycles)
             == len(links)
             == len(state.conditions_by_effect)
         )
         or set(chain) != set(effects)
-        or set(chain) != set(clocks)
+        or set(clocks) != clock_ids
+        or len(state.effect_lifecycles) != len(clock_ids)
         or set(chain) != set(links)
     ):
         return "effect graph is incomplete, duplicated or has unrelated members"
@@ -146,7 +150,13 @@ def concentration_support_failure(
     binding = activity.effects[0]
     assert binding.lifecycle is not None
     definition = next(p for p in spell.passive_effects if p.id == binding.id)
-    for identity in chain:
+    if anchor and (
+        snapshot.effect_states[0] != effect_state(concentration_anchor(spell, target_id))
+        or links[chain[0]].statuses
+        or caster.concentration_effect_id != snapshot.effect_states[0].id
+    ):
+        return "anchor differs from the exact canonical empty caster-side effect"
+    for identity in () if anchor else chain:
         effect, clock, link = effects[identity], clocks[identity].state, links[identity]
         app = effect.lifecycle
         if app is None or (
@@ -206,7 +216,7 @@ def concentration_support_failure(
         failure = identity_failure(actor)
         if failure:
             return failure
-        expected_ids = [i[1] for i in chain if i[0] == actor.entity_id]
+        expected_ids = [i[1] for i in chain if i[0] == actor.entity_id and not anchor]
         if expected_ids:
             if "paralyzed" in actor.condition_immunities:
                 return "linked condition contradicts target immunity"
@@ -252,7 +262,7 @@ def concentration_identity_failure(
     if composed and (actor.class_slug or actor.classes):
         from dnd5e_engine.evaluation_class_dependencies import class_dependencies
 
-        return class_dependencies(actor, snapshot, loader, BundledAssetLoader())
+        return class_dependencies(actor, snapshot, loader, BundledAssetLoader(), equipped=True)
     if actor.fighting_styles:
         return "fighting style dependencies require a reviewed class profile"
     return damage_save_identity_failure(actor, loader)
@@ -313,8 +323,7 @@ class ConcentrationComputation(CombatComputation):
     def expire_linked_effect(self, identity: EffectIdentity, reason: EffectExpiryReason) -> None:
         target, effect_id, origin = identity
         effect = next(e for e in self.effects if (e.target_id, e.id, e.origin) == identity)
-        assert effect.lifecycle is not None
-        source_id = effect.lifecycle.source_id
+        source_id = effect.lifecycle.source_id if effect.lifecycle else effect.target_id
         self.events.append(
             EffectExpired(target_id=target, effect_id=effect_id, origin=origin, reason=reason)
         )
@@ -323,7 +332,7 @@ class ConcentrationComputation(CombatComputation):
         actor = actor.model_copy(
             update={
                 "conditions": conditions_after_effect_expiry(
-                    actor.conditions, effect_id, ["paralyzed"], []
+                    actor.conditions, effect_id, effect.statuses, []
                 )
             }
         )
@@ -331,7 +340,8 @@ class ConcentrationComputation(CombatComputation):
         self.actors[target] = actor.model_copy(
             update={"movement_remaining": ledger.remaining(self.speed(actor))}
         )
-        self.events.append(ConditionRemoved(target_id=target, condition="paralyzed"))
+        if "paralyzed" in effect.statuses:
+            self.events.append(ConditionRemoved(target_id=target, condition="paralyzed"))
         remaining = concentration_chain_after_expiry(
             self.state.concentration_chain[source_id], identity
         )
@@ -366,14 +376,15 @@ def concentration_delta(before: CombatSnapshot, after: CombatSnapshot) -> StateD
     source = next(iter(state.concentration_chain))
     identities = {(e.target_id, e.id, e.origin) for e in after.effect_states}
     original_ids = {(e.target_id, e.id, e.origin) for e in before.effect_states}
+    clock_ids = {(e.target_id, e.id, e.origin) for e in after.effect_states if e.lifecycle}
     chain = tuple(new.concentration_chain.get(source, ()))
     if (
         not identities <= original_ids
         or len(identities) != len(after.effect_states)
         or set(chain) != identities
         or len(chain) != len(identities)
-        or {r.identity for r in new.effect_lifecycles} != identities
-        or len(new.effect_lifecycles) != len(identities)
+        or {r.identity for r in new.effect_lifecycles} != clock_ids
+        or len(new.effect_lifecycles) != len(clock_ids)
         or {r.identity for r in new.conditions_by_effect} != identities
         or len(new.conditions_by_effect) != len(identities)
         or set(new.concentration_chain) != ({source} if chain else set())
@@ -429,7 +440,7 @@ def concentration_delta(before: CombatSnapshot, after: CombatSnapshot) -> StateD
         )
     for effect in before.effect_states:
         identity = (effect.target_id, effect.id, effect.origin)
-        old_clock = next(r for r in state.effect_lifecycles if r.identity == identity)
+        old_clock = next((r for r in state.effect_lifecycles if r.identity == identity), None)
         old_link = next(r for r in state.conditions_by_effect if r.identity == identity)
         new_effect = next(
             (e for e in after.effect_states if (e.target_id, e.id, e.origin) == identity), None

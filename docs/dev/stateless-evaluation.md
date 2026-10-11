@@ -11,10 +11,10 @@ The current local candidate versions are:
 
 | Contract | Current version | Replaces |
 | --- | --- | --- |
-| RuleEvaluationRequest / Result | `engine-evaluation/20` | `/1`–`/19` |
-| StateSnapshot | `engine-snapshot/14` | `/1`–`/13` |
+| RuleEvaluationRequest / Result | `engine-evaluation/21` | `/1`–`/20` |
+| StateSnapshot | `engine-snapshot/15` | `/1`–`/14` |
 | Availability request/result | `engine-availability/12` | `/1`–`/11` |
-| RulesetBinding evaluator | `dnd5e-evaluation/33` | `/32` and earlier |
+| RulesetBinding evaluator | `dnd5e-evaluation/34` | `/33` and earlier |
 
 Old envelopes, snapshots and results are explicitly rejected. There are no compatibility
 aliases for `InventoryCombatSnapshot`, `combat_inventory`, missing equipment or missing
@@ -716,3 +716,27 @@ can supply the opposing advantage with canonical clause/provenance validation.
 Pass/reset and subsequent attacks preserve all class/equipment/resources. Other
 masteries, conditions and mixed effect/reaction graphs stay Deferred; C-04/C-15/C-16
 and full production State Machine/Bridge migration remain OPEN.
+
+
+## R32 bounded Hold Person cast creation
+
+Snapshot `/15` requires ActorCastingState.materials, a strict tuple of reviewed
+HoldPersonMaterial facts keyed by casting source and owned inventory instance.
+An available attestation represents the iron component in a canonical accessible
+component pouch; the engine does not infer stock or authorization from prose.
+Other component/material/focus profiles remain unsupported.
+
+The actor-authorized combat.intent cast_spell for Hold Person admits a complete
+Wizard 5 Evoker, level 2/3 owned slots, named explicit Humanoids and first-slot
+Action window. Shared spell delivery/count and original SaveActivity/effect binding
+produce one atomic HoldPersonGraphCreate with expected graph/condition/source
+absence, canonical identities, captured DC/clock, condition lineage and source
+concentration duration. Initial all-success/immunity preserves the original
+concentration anchor; it contains no Paralyzed condition or repeat clock. Existing
+R28 turn/attack concentration consumers admit this exact anchor and the regular
+created graph, including cleanup. Payments, Action/turn, slots and spend attribution,
+movement/conditions, events and RNG are one uncommitted candidate result.
+
+Envelope `/21`, evaluator `/34` reject prior shapes/bindings. The graph vocabulary
+is an internal local C-15/C-16 candidate, not a generic rules.effect API or a frozen
+shared ABI. Recast, mixed graphs and other spell initializations remain unsupported.

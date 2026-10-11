@@ -107,6 +107,7 @@ def healing_case(*, feature=False, seed=0, hp=10, swarm=False):
                 ActorCastingState(
                     actor_id=HERO,
                     verbal_available=True,
+                    materials=(),
                     sources=(
                         ClassSpellSource(
                             source_id="class:cleric",

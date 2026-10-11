@@ -132,6 +132,7 @@ def damage_spell_case(
             ActorCastingState(
                 actor_id=caster_id,
                 verbal_available=True,
+                materials=(),
                 sources=(
                     ClassSpellSource(
                         source_id="class:cleric",

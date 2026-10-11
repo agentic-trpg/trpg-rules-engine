@@ -138,6 +138,7 @@ def attack_concentration_case(
             ActorCastingState(
                 actor_id=FOE,
                 verbal_available=True,
+                materials=(),
                 sources=(
                     ClassSpellSource(
                         source_id="class:wizard",

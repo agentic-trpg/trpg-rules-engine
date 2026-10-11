@@ -84,7 +84,7 @@ def rest_case(*, hp=10, con=14, seed=0, spends=None):
     )
     return request.model_copy(
         update={
-            "schema_version": "engine-evaluation/20",
+            "schema_version": "engine-evaluation/21",
             "operation_kind": "rules.rest",
             "state_snapshot": snapshot,
             "ruleset_binding": ruleset_binding(loader),

@@ -11,8 +11,8 @@ blocked C-16. This extracts existing rules rather than adding content support.
 R26 supersedes the historical R17 lifecycle-schema defect recorded below with local
 schema/runtime agreement. Formal ABI and C-04/C-15/C-16 remain unapproved/OPEN.
 
-Current local versions after R31: envelope `/20`, Snapshot `/14`, Availability `/12`,
-evaluator `/33`. Historical batch versions below describe their original deliveries.
+Current local versions after R32: envelope `/21`, Snapshot `/15`, Availability `/12`,
+evaluator `/34`. Historical batch versions below describe their original deliveries.
 
 ## Architecture decisions and progress dimensions
 
@@ -65,6 +65,7 @@ classification applies only to the stated bounded capability, not its whole fami
 | One predeclared Counterspell / Cure Wounds trigger | Complete bounded local contract | **Yes, R21** | Real Wizard 5 Evoker; pure matching/targeting and SaveActivity, one atomic trigger/Reaction/payment/delta/events/RNG; no Live dispatcher |
 | One authorized weapon Opportunity Attack / Walk | Complete bounded local contract | **Yes, R25** | Explicit Snapshot consent, shared reach/LOS and Attack/Damage, full path-prefix/death/budget/consumption/expiry delta; no Live hooks |
 | Fighter Sap mastery | Complete bounded local contract | **Yes, R31** | Canonical Fighter 1/Defense, mace/chain shirt/optional shield, full three-Sap-weapon training; original AttackActivity proc, nonstacking mark, next Attack Disadvantage/consumption and source-next-start expiry. Other masteries and mixed effect/reaction graphs remain Deferred |
+| Wizard Hold Person initial cast and lifecycle | Complete bounded local candidate; shared C-15/C-16 OPEN | **Yes, R32** | Full Wizard 5 Evoker, prepared/known source, owned component pouch and explicit iron attestation, slots 2/3, named Humanoids, original Delivery/Save/Effect Binding; atomic closed graph initialization into R28 repeat/partial/full cleanup and actual attack concentration checks. Existing graphs/recast and other spell families remain Deferred |
 | Reaction / pending choice overall | Partially migrated | Partially | Draw-free weapon/missing-DC choices, R21 Counterspell, R25 weapon OA and R29 canonical Ogre OA; other reactions, priorities, nested chains, durable windows and interactive continuation remain Legacy/OPEN |
 | Areas / environment / objects | Legacy Stateful Only | No | `persistent_areas`, `environment`, `combat_objects`, `ongoing_spell_activation`; state captured then refused; source/lifetime/geometry/history Delta missing |
 | Bounded victory / TPK closure | Fully migrated bounded external contract | **Yes, R10** | `evaluation_closure` → shared outcome_rules on explicit values; XP/history/events and unchanged RNG |
@@ -1267,3 +1268,47 @@ Python 3.14.7: Data **671 passed / 1 skipped** (104.09 s), Engine **8,732 passed
 lint/format/types, examples and strict documentation passed. This is local
 Integration evidence; Full follows R33. No test, assertion or coverage floor is
 weakened. Evidence-only documentation receives a strict build.
+
+
+## R32 real Hold Person initial casting
+
+Start `4af6aa9a1129b7c91065515831cc8c12e9102f17`, branch
+`refactor/r32-stateless-hold-person-cast`.
+
+Stateless External Contract: envelope `/21`, Snapshot `/15`, evaluator `/34`.
+Both scene contexts retain the same Snapshot kinds. ActorCastingState now requires
+explicit material attestations (empty for spells without reviewed materials). One
+owned canonical component-pouch instance plus SM-attested available nonconsumed
+iron closes Hold Person V/S/M; no stock is inferred from item prose. Full Wizard 5
+Evoker grants, class resource capacities, known/prepared source, free hands and
+unarmored class proficiencies/AC are validated. The strict HoldPersonGraphCreate
+internal candidate contains expected absence, selected targets/source/slot,
+canonical effects, conditions, captured clocks and concentration chain/duration
+with combination invariants. It grants no external arbitrary effect API or source
+authority. C-15/C-16 remain OPEN.
+
+Legacy Runtime Dependency Removed: original Delivery/target-count, SaveActivity,
+effect application/binding and shared concentration duration/anchor/condition
+attachment run without live spell executor, folds, hooks, registry or handles.
+Initial saves independently decide each target; all successes or immune targets
+produce the original empty caster-side concentration anchor, with paid slot/Action.
+Cast turn counts toward the original ten-round cap (nine remain). Created graphs
+feed R28 repeat saves, partial expiry, final cleanup and later legal actions; actual
+Attack checks can break concentration. Unknown materials, source, components,
+range/count, class grants or mixed graphs refuse before RNG/payment. Existing
+concentration/recast, other levels/gear/spells and mixed reactions remain Deferred.
+
+Full state/ordered events/RNG differentials, independent DC/save/slot/duration
+expectations, guarded consumer stale/duplicate rejection, faults/cancellation and
+eight concurrent replays accompany execution. Validation evidence follows below.
+
+Final focused combination regression: **350 passed in 23.87 s**; final new cast
+suite after absence/version guards: **43 passed in 7.33 s**. Inspected plan and
+`python tools/validate.py integration --base
+4af6aa9a1129b7c91065515831cc8c12e9102f17` **PASSED in 818.66 s**, Windows
+Python 3.14.7. Data **671 passed / 1 skipped** (120.07 s), Engine **8,775**
+(597.92 s), Bridge **139** (15.73 s), Demo **54** (27.40 s). Selected tooling,
+lint/format/types, examples and strict MkDocs passed. This is local Integration;
+Full follows R33. Evidence-only docs receive a strict build.
+R31 pushed CI [38167496041](https://github.com/agentic-trpg/trpg-rules-engine/actions/runs/38167496041)
+passed on exact source `4af6aa9`; this is separate from local Integration.

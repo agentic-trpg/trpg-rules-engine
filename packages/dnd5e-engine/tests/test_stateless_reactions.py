@@ -136,6 +136,7 @@ def reaction_case(*, seed=0, npc=False):
                 ActorCastingState(
                     actor_id=FOE,
                     verbal_available=False,
+                    materials=(),
                     sources=(
                         ClassSpellSource(
                             source_id="class:wizard",

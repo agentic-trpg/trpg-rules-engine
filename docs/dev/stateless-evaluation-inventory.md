@@ -991,3 +991,21 @@ Fighters, repeated proc, Prone advantage cancellation, replay/concurrency and fa
 are exercised without Legacy Sap fold/hooks/handle/registry. Other masteries,
 conditions and mixed effect/reaction graphs remain Deferred; production callers
 still use retained Legacy combat and formal C-04/C-15/C-16 remain OPEN.
+
+
+### R32 actor-authorized Hold Person initialization
+
+Stateless External Contract: strict required material facts (Snapshot `/15`), full
+Wizard 5 Evoker class/casting/equipment/resources and closed HoldPersonGraphCreate
+(Envelope `/21`, evaluator `/34`). Expected absence, target/source references,
+effect/condition/clock and concentration cap/chain remain an atomic guarded local
+candidate. All-success or immunity creates only the original empty anchor.
+
+Legacy Runtime Dependency Removed: original Delivery/count, SaveActivity, effect
+binding and extracted shared concentration/attachment kernels initialize a graph
+that R28 independently advances and cleans. Actual attack concentration break,
+later action, multi-target partial results, fault/cancel and concurrent replay are
+covered by full state/events/RNG differential plus independent rule expectations.
+Legacy creation helpers/hooks/registry/handles are forbidden in successful tests.
+General effect creation, recast/mixed graphs and source authorization ABI remain
+Deferred/OPEN; Bridge/Demo production cutover is still incomplete.

@@ -6,6 +6,7 @@ from pydantic import Field, model_validator
 
 from dnd5e_engine.evaluation_base import EvaluationModel
 from dnd5e_engine.evaluation_effects import EffectState
+from dnd5e_engine.evaluation_hold_delta import HoldPersonGraphCreate
 from dnd5e_engine.evaluation_reaction_state import PredeclaredReactionState
 from dnd5e_engine.evaluation_resources import ResourcePool
 from dnd5e_engine.evaluation_state import (
@@ -296,7 +297,7 @@ class EffectLifecycleUpdate(EvaluationModel):
     identity: tuple[str, str, str]
     expected_effect: EffectState
     effect: EffectState | None
-    expected_lifecycle: LifecycleRecord
+    expected_lifecycle: LifecycleRecord | None
     lifecycle: LifecycleRecord | None
     expected_lineage: ConditionLink
     lineage: ConditionLink | None
@@ -304,6 +305,25 @@ class EffectLifecycleUpdate(EvaluationModel):
     @model_validator(mode="after")
     def complete_identity(self) -> Self:
         effect = self.expected_effect
+        if self.expected_lifecycle is None:
+            from dnd5e_srd_data import BundledAssetLoader
+
+            from dnd5e_engine.concentration_rules import concentration_anchor
+            from dnd5e_engine.evaluation_effects import effect_state
+
+            spell = BundledAssetLoader().get_spell("hold-person")
+            assert spell is not None
+            if (
+                effect != effect_state(concentration_anchor(spell, effect.target_id))
+                or self.identity != (effect.target_id, effect.id, effect.origin)
+                or self.expected_lineage.identity != self.identity
+                or self.expected_lineage.statuses
+                or any(v is not None for v in (self.effect, self.lifecycle, self.lineage))
+            ):
+                raise ValueError(
+                    "clock-free transition only removes the complete Hold Person anchor"
+                )
+            return self
         if (
             self.identity != (effect.target_id, effect.id, effect.origin)
             or self.expected_lifecycle.identity != self.identity
@@ -464,7 +484,8 @@ StateDeltaOperation = Annotated[
     | ConcentrationUpdate
     | SlotSpendLedgerUpdate
     | PendingReactionUpdate
-    | SapMarksUpdate,
+    | SapMarksUpdate
+    | HoldPersonGraphCreate,
     Field(discriminator="kind"),
 ]
 

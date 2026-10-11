@@ -324,6 +324,10 @@ def evaluate_invocation(request: RuleEvaluationRequest, loader: AssetLoader) -> 
     snapshot, intent = request.state_snapshot, request.payload
     assert isinstance(snapshot, CombatSnapshot)
     assert isinstance(intent, CombatIntentPayload)
+    if intent.intent_type == "cast_spell" and intent.spell_id == "hold-person":
+        from dnd5e_engine.evaluation_hold_cast import evaluate_hold_cast
+
+        return evaluate_hold_cast(request, loader)
     state = snapshot.combat_state
     if state.ended or request.actor_id not in state.initiative_ids:
         return _refuse("rejected", "combat_ended", "live combat actor is required")

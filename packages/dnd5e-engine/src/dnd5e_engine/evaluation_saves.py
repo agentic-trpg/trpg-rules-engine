@@ -71,6 +71,7 @@ def save_actor_failure(
     *,
     reviewed_identity: bool = False,
     reviewed_concentration: bool = False,
+    reviewed_equipment: bool = False,
 ) -> str | None:
     if (
         any(not 1 <= getattr(state, field) <= 30 for field in _SCORE_ATTR.values())
@@ -80,8 +81,7 @@ def save_actor_failure(
     ):
         return "invalid save ability/proficiency facts"
     if (
-        state.worn_armor
-        or state.shield_equipped
+        ((state.worn_armor or state.shield_equipped) and not reviewed_equipment)
         or (state.concentration_effect_id and not reviewed_concentration)
         or state.trait_mechanics
         or (

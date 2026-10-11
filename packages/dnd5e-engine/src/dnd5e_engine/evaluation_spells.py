@@ -42,7 +42,11 @@ from dnd5e_engine.spatial import GridTopology
 from dnd5e_engine.specs import GridScene
 from dnd5e_engine.spell_delivery import DeliveryPlanningError, SpellDeliverySpec, plan_delivery
 from dnd5e_engine.spell_execution import admission_failure, spell_review
-from dnd5e_engine.spellcasting import spell_component_metadata, spell_range_ft
+from dnd5e_engine.spellcasting import (
+    spell_component_failure,
+    spell_component_metadata,
+    spell_range_ft,
+)
 from dnd5e_engine.turn_rules import (
     bonus_action_payment,
     ordinary_action_payment,
@@ -138,9 +142,15 @@ def source_failure(
         spell.level > 0 and spell.slug not in source.prepared_spells
     ):
         return "spell is not known and prepared from the selected source"
-    if not entry.verbal_available or actor.weapon_in_hands is not None:
-        return "Verbal and free Somatic components are unavailable"
-    return None
+    return spell_component_failure(
+        spell,
+        verbal_available=entry.verbal_available,
+        somatic_hand_available=actor.weapon_grip != "two_handed"
+        and (actor.weapon_in_hands is None or not actor.other_hand_occupied),
+        # R30's two canonical V/S spells need no materials. No material or focus
+        # contract is invented for other spells.
+        material_available=False,
+    )
 
 
 def spell_event(actor_id: str, spell: Spell, slot_level: int | None) -> SpellCast:

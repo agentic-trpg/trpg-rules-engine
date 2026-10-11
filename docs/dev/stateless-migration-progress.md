@@ -11,8 +11,8 @@ blocked C-16. This extracts existing rules rather than adding content support.
 R26 supersedes the historical R17 lifecycle-schema defect recorded below with local
 schema/runtime agreement. Formal ABI and C-04/C-15/C-16 remain unapproved/OPEN.
 
-Current local versions after R29: envelope `/19`, Snapshot `/14`, Availability `/12`,
-evaluator `/31`. Historical batch versions below describe their original deliveries.
+Current local versions after R30: envelope `/19`, Snapshot `/14`, Availability `/12`,
+evaluator `/32`. Historical batch versions below describe their original deliveries.
 
 ## Architecture decisions and progress dimensions
 
@@ -59,8 +59,8 @@ classification applies only to the stated bounded capability, not its whole fami
 | Inventory / resource payment overall | Partially migrated: owned consumable, bounded rests and rule-priced owned payments | **Yes, R10/R16/R19** for those slices | Inventory/resource mirror guards; shared Slot selection and Feature pricing. General equip/transfer/item recharge/ammunition and production caller migration remain |
 | Bounded existing Poison lifecycle | Fully migrated local subset | **Yes, R17** | Authorized single Cunning Strike Poison → shared Save/repeat/expiry/lineage kernels → closed Effect/Condition/Turn proposals; no Apply API |
 | Conditions / effects / concentration overall | Partially migrated | Partially | R17 Poison, attack-produced dying conditions and R23/R28 existing Hold Person damage/turn cleanup migrated; general multi-effect/concentration creation, areas and child cascades remain Legacy |
-| Bounded Cure Wounds / Second Wind | Complete bounded local contract | **Yes, R20** | Explicit class/source/preparation/components, shared Delivery/Feature pricing/HealActivity/Turn, atomic pool/mirror/spend/HP/budget/events/RNG |
-| Canonical instant Sacred Flame | Complete bounded local contract | **Yes, R24** | Full Cleric 1 PC/NPC class source, shared Delivery/Save/Damage, no Slot cost, real R23 concentration composition, atomic budgets/HP/turn/events/RNG |
+| Bounded Cure Wounds / Second Wind | Complete bounded local contract | **Yes, R20/R30** | Explicit class/source/preparation/components, shared Delivery/Feature pricing/HealActivity/Turn, atomic pool/mirror/spend/HP/budget/events/RNG; R30 complete equipped Cleric Cure Wounds → Pass/reset → weapon Attack |
+| Canonical instant Sacred Flame | Complete bounded local contract | **Yes, R24/R30** | Full Cleric 1 PC/NPC source, shared Delivery/Save/Damage, no Slot cost, real R23 concentration composition; R30 complete equipped source with free hand and no mixed graph; atomic budgets/HP/turn/events/RNG |
 | Spellcasting / Features overall | Partially migrated | Partially | R20 direct healing/Second Wind and R24 Sacred Flame execute independently for reviewed profiles; general repertoire/costs/timing/grants/riders/delegated casts remain Legacy |
 | One predeclared Counterspell / Cure Wounds trigger | Complete bounded local contract | **Yes, R21** | Real Wizard 5 Evoker; pure matching/targeting and SaveActivity, one atomic trigger/Reaction/payment/delta/events/RNG; no Live dispatcher |
 | One authorized weapon Opportunity Attack / Walk | Complete bounded local contract | **Yes, R25** | Explicit Snapshot consent, shared reach/LOS and Attack/Damage, full path-prefix/death/budget/consumption/expiry delta; no Live hooks |
@@ -1192,3 +1192,41 @@ Hold Person duration and equipped Cleric PC/NPC + Ogre OA/Attack/reset compositi
 See the [R26–R29 review](stateless-r26-r29-review.md) for the two progress dimensions,
 original-capability classification, remaining OPEN contracts and next four batches.
 Production SM/Bridge cutover and full Stateful conversion remain incomplete.
+
+## R30 equipped Cleric spellcasting
+
+Start `d662ce367a8b41693d4978ad369608f52b7c7944`, branch
+`refactor/r30-equipped-cleric-spell`. Latest Meta Contracts v0.9, SM Architecture
+v0.11 and MVP v0.12 retain SM authority, two Snapshot kinds and OPEN shared ABI.
+
+Stateless External Contract: full Cleric 1/Protector, canonical mace/quarterstaff,
+chain shirt, explicit inventory ownership/accessibility, grip/proficiency/AC and
+complete casting/resources compose with Cure Wounds/Sacred Flame. The shared typed
+V/S/M metadata drives component admission. Single-hand weapon and free other hand
+permit V/S; shield plus weapon or two-hand grip reject before RNG/payment. No focus,
+material stock, War Caster, magical/attuned equipment or unknown grant is inferred.
+
+Legacy Runtime Dependency Removed: real equipped PC and equivalent NPC spell,
+Pass/reset and same-weapon Attack use existing Delivery, resource pricing and
+Heal/Save/Damage/Turn kernels without Legacy runtime/executor/hooks/registry/handle.
+Full mechanical state, ordered events and RNG differential are separate from
+independent healing 2d8+3, Sacred Flame DC13/DEX+4/1d8 and cost expectations.
+Equipped mixed concentration graphs and other profiles remain Deferred. Evaluator
+`/32` rejects prior binding; no Snapshot/envelope shape or formal ABI was frozen.
+
+The initial actual regression confirmed legal equipped casting was refused. Existing
+busy-hand rejection still retains its component diagnostic; no assertion was relaxed.
+Focused regression selection: **380 passed in 22.86 s**, including **61 new
+execution/component/refusal cases**. Package Ruff/format and Mypy passed. An existing
+component-diagnostic regression first failed after the admission change; its message
+was preserved without changing the assertion. The final complete casting fixture
+retains three Cantrips and four Prepared Spells; its **61 cases passed in 7.08 s**.
+
+Inspected plan and executed final gate:
+`python tools/validate.py integration --base d662ce367a8b41693d4978ad369608f52b7c7944`
+**PASSED in 813.48 s**, Windows Python 3.14.7. Data **671 passed / 1 skipped**
+(135.17 s), Engine **8,693 passed** (598.25 s), Bridge **139** (8.16 s), Demo **54**
+(17.47 s), 24 tooling tests, package lint/format/types, all three examples and strict
+MkDocs passed. Preserved unknown worktree paths broadened the scope. This is local
+Integration evidence; native CI is separate and Full follows R33. Evidence-only
+documentation updates receive a strict build; no test or threshold was weakened.

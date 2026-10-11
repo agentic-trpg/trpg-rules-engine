@@ -25,12 +25,16 @@ def invocation_dependencies(
         return "unreviewed spell damage/save trait"
     from dnd5e_engine.evaluation_saves import save_actor_failure
 
+    if failure := healing_dependencies(snapshot, loader, target_id):
+        return failure
     for actor in snapshot.character_states:
         if actor.granted_features is None:
             return "complete explicit feature repertoire is required for spell damage/saves"
-        if failure := save_actor_failure(actor, loader, reviewed_identity=True):
+        if failure := save_actor_failure(
+            actor, loader, reviewed_identity=True, reviewed_equipment=True
+        ):
             return failure
-    return healing_dependencies(snapshot, loader, target_id)
+    return None
 
 
 def healing_dependencies(
@@ -41,9 +45,11 @@ def healing_dependencies(
     canonical = BundledAssetLoader()
 
     def dependencies(actor: CharacterStateV2) -> str | None:
-        if failure := class_dependencies(actor, snapshot, loader, canonical):
-            return failure
-        if actor.worn_armor or actor.shield_equipped or actor.other_hand_occupied:
+        if failure := class_dependencies(actor, snapshot, loader, canonical, equipped=True):
+            return f"unreviewed spell component/equipment profile: {failure}"
+        if not (actor.class_slug or actor.classes) and (
+            actor.worn_armor or actor.shield_equipped or actor.other_hand_occupied
+        ):
             return "unreviewed healing equipment profile"
         if any(not key.startswith("feature_use:") for key in actor.custom_counters):
             return "unreviewed healing counter"

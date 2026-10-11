@@ -14,7 +14,7 @@ The current local candidate versions are:
 | RuleEvaluationRequest / Result | `engine-evaluation/19` | `/1`–`/18` |
 | StateSnapshot | `engine-snapshot/14` | `/1`–`/13` |
 | Availability request/result | `engine-availability/12` | `/1`–`/11` |
-| RulesetBinding evaluator | `dnd5e-evaluation/31` | `/30` and earlier |
+| RulesetBinding evaluator | `dnd5e-evaluation/32` | `/31` and earlier |
 
 Old envelopes, snapshots and results are explicitly rejected. There are no compatibility
 aliases for `InventoryCombatSnapshot`, `combat_inventory`, missing equipment or missing
@@ -619,8 +619,9 @@ The explicit Protector choice adds martial proficiency/heavy training through th
 shared passive-change readers; this slice still uses simple weapons/medium armor.
 Trained Mastery, species/subclass modifiers,
 other class/equipment profiles, passive/magical asset drift, ambiguous or missing
-instances and unexplained bonuses remain unsupported before execution. This does
-not open equipped spellcasting or rest. An equipped actor or target uses the same
+instances and unexplained bonuses remain unsupported before execution. R27
+did not open equipped spellcasting or rest; R30 below adds the reviewed spells.
+An equipped actor or target uses the same
 closure; no real class or equipment facts are stripped to pass an operation gate.
 C-04/C-15/C-16 and production SM authorization/commit remain OPEN.
 
@@ -671,3 +672,24 @@ produces actual death. Javelin, other templates, recharge/limited uses, Multiatt
 legendary/trait overlays, competing reactions and interactive choices remain Deferred.
 No new Pending service, live handle, public source API or formal ABI is introduced;
 C-04/C-15/C-16 remain OPEN.
+
+## R30 equipped Cleric spell composition
+
+Evaluator `/32` admits R27's complete equipped Cleric 1 for canonical immediate
+Cure Wounds and Sacred Flame. One-handed mace/quarterstaff plus chain shirt and an
+empty other hand preserve class/Protector grants, canonical proficiency, AC, owned
+instances, resources and CastingState. The same gear subsequently executes Attack
+after Pass/reset. Shield plus held weapon or two-handed grip cannot supply the
+Somatic hand; no focus, War Caster, material stock or equipment swap is inferred.
+
+The shared spellcasting component gate uses the original typed V/S/M metadata.
+Both reviewed spells require V/S and no M. Unavailable Verbal/Somatic facts reject
+before RNG/payment; unknown material/focus, magical or attuned equipment, feature
+and proficiency dependencies remain refused. Legacy's original component-attestation
+boundary is retained for parity, not treated as independent component proof.
+
+Shared Spell Source, Delivery, Slot/Action pricing, Save/Heal/Damage Resolver and
+Turn algorithms remain the calculation path. The strict equipment closure is proved
+before enabling its neutral armor facts in spell Save validation. No Snapshot or
+Delta shape changes; formal C-04/C-15/C-16 remain OPEN. Equipped mixed concentration
+graphs and other spell/component profiles are not admitted by this batch.

@@ -242,7 +242,8 @@ def spell_component_metadata(
     shared by ``SpellCast`` (orchestrator emission) and ``resolve_ritual_cast``
     below. SRD 5.2 §Components: "A spell's components are physical
     requirements the spellcaster must meet to cast the spell." Metadata
-    only — never enforced (host decision, spec §5 C17)."""
+    only. Legacy callers retain their component-attestation boundary; stateless
+    callers validate their supplied component facts separately below."""
     comps = tuple(c for c in _COMPONENT_ORDER if c in {str(x) for x in spell.components})
     return (
         comps,
@@ -250,6 +251,28 @@ def spell_component_metadata(
         bool(spell.materials.consumed),
         int(spell.materials.cost),
     )
+
+
+def spell_component_failure(
+    spell: Spell,
+    *,
+    verbal_available: bool,
+    somatic_hand_available: bool,
+    material_available: bool,
+) -> str | None:
+    """Shared draw-free component gate over explicit, already reviewed facts.
+
+    No focus, War Caster or material inventory is inferred from names. The caller
+    must prove those dependencies before asserting material/hand availability.
+    """
+    components, _, _, _ = spell_component_metadata(spell)
+    if "V" in components and not verbal_available:
+        return "Verbal component is unavailable"
+    if "S" in components and not somatic_hand_available:
+        return "free Somatic hand is unavailable"
+    if "M" in components and not material_available:
+        return "Material component or authorized focus facts are unavailable"
+    return None
 
 
 @dataclass(frozen=True)
@@ -319,5 +342,6 @@ __all__ = [
     "resolve_ritual_cast",
     "resolve_target_count",
     "slots_for_caster_level",
+    "spell_component_failure",
     "spell_component_metadata",
 ]

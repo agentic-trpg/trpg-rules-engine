@@ -915,7 +915,7 @@ Legacy Runtime Dependency Removed: equipped Character and equivalent bounded NPC
 ordinary attacks, damage and subsequent Pass/reset/next attack execute without
 Orchestrator, registry, CombatHandle or live hooks. Existing shared weapon,
 versatile, proficiency, armor, damage/zero-HP and turn algorithms are reused.
-Species, other classes/gear, trained Mastery and equipped casting/rest remain
+Species, other classes/gear, trained Mastery and equipped casting/rest originally remained
 Deferred rather than erased from the input. No formal ABI/SM integration claim.
 
 ### R28 linked Hold Person turn closure
@@ -954,3 +954,21 @@ reused; original delivery source identity is shared with Legacy. R27 equipped Cl
 PC/equivalent NPC movers retain their complete class/equipment/resources.
 Other templates, Javelin, complex traits/actions/reactions and effect/area movement
 remain Deferred. New source authorization, continuation and formal C-15 ABI remain OPEN.
+
+### R30 equipped Cleric spell closure
+
+Stateless External Contract: the complete R27 Cleric/Protector equipment and class
+closure composes with explicit casting source/repertoire, V/S availability,
+Slot/Action payment and spell targeting. Canonical Cure Wounds/Sacred Flame require
+no material component. The shared metadata/component gate admits one-handed
+mace/quarterstaff with the other hand free and refuses shield/two-hand conflicts,
+unknown materials/focus, equipment drift or features before RNG/payment. Evaluator
+`/32` changes support semantics; Snapshot `/14` and envelope `/19` are unchanged.
+
+Legacy Runtime Dependency Removed: complete equipped PC/equivalent NPC spell →
+Pass/reset → same-weapon Attack uses shared Delivery/Heal/Save/Damage/Turn without
+Legacy spell executor, hooks, registry, handle or recapture. Full state/events/RNG
+match Legacy, with separate independent component, numeric and cost expectations.
+Equipment, casting and class facts remain complete across calls. Mixed equipped
+concentration graphs, other classes/gear, material/focus and attunement remain
+Deferred. No new formal source ABI or authoritative commit is claimed.

@@ -6,7 +6,7 @@ from pydantic import Field, model_validator
 
 from dnd5e_engine.evaluation_base import EvaluationModel
 from dnd5e_engine.evaluation_effects import EffectState
-from dnd5e_engine.evaluation_reaction_state import PendingReactionState
+from dnd5e_engine.evaluation_reaction_state import PredeclaredReactionState
 from dnd5e_engine.evaluation_resources import ResourcePool
 from dnd5e_engine.evaluation_state import (
     ClosureDeath,
@@ -388,8 +388,8 @@ class PendingReactionUpdate(EvaluationModel):
     kind: Literal["combat.pending_reaction_update"]
     combat_id: Annotated[str, Field(min_length=1)]
     owner_id: Annotated[str, Field(min_length=1)]
-    expected: tuple[PendingReactionState, ...]
-    value: tuple[PendingReactionState, ...]
+    expected: tuple[PredeclaredReactionState, ...]
+    value: tuple[PredeclaredReactionState, ...]
 
     @model_validator(mode="after")
     def one_existing_declaration(self) -> Self:

@@ -5,7 +5,7 @@ from typing import Any, Literal
 
 from dnd5e_engine.evaluation_casting import CastingState
 from dnd5e_engine.evaluation_effects import effect_state
-from dnd5e_engine.evaluation_reaction_state import reaction_state
+from dnd5e_engine.evaluation_reaction_state import PendingReactionState, reaction_state
 from dnd5e_engine.evaluation_resources import ResourceState
 from dnd5e_engine.evaluation_state import (
     CharacterStateV2,
@@ -32,7 +32,7 @@ from dnd5e_engine.types.combat import Combatant
 def character_state(
     live: _LiveCombat,
     actor: Combatant,
-    version: Literal["engine-snapshot/12"] = "engine-snapshot/12",
+    version: Literal["engine-snapshot/13"] = "engine-snapshot/13",
 ) -> CharacterStateV2:
     value = actor.model_dump(mode="python")
     value["death_saves"] = value["death_saves"] or None
@@ -55,7 +55,7 @@ def capture_combat_snapshot(
     resource_state: ResourceState | None,
     casting_state: CastingState | None,
     reaction_sources: dict[str, str] | None = None,
-    snapshot_schema_version: Literal["engine-snapshot/12"] = "engine-snapshot/12",
+    snapshot_schema_version: Literal["engine-snapshot/13"] = "engine-snapshot/13",
 ) -> CombatSnapshot:
     """Capture a completed boundary; no registry lookup or RNG serialization.
 
@@ -186,7 +186,9 @@ def capture_evaluation_snapshot(
         resource_state=snapshot.resource_state,
         casting_state=snapshot.casting_state,
         reaction_sources={
-            p.owner_id: p.spell_source_id for p in snapshot.combat_state.pending_reactions
+            p.owner_id: p.spell_source_id
+            for p in snapshot.combat_state.pending_reactions
+            if isinstance(p, PendingReactionState)
         },
         grid=grid,
         world_version=snapshot.world_version,

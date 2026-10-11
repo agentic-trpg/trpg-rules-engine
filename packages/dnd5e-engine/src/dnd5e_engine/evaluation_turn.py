@@ -57,12 +57,23 @@ def evaluate_turn(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
         effect_turn_delta,
         effect_turn_support_failure,
     )
+    from dnd5e_engine.evaluation_opportunity import opportunity_dependencies
 
+    _, reaction_failure = opportunity_dependencies(snapshot, loader)
+    if reaction_failure:
+        return _refuse("unsupported", "turn.reaction", reaction_failure)
     has_effect = bool(snapshot.effect_states)
     failure = (
         effect_turn_support_failure(snapshot, loader)
         if has_effect
-        else operation_dependencies(snapshot, loader, turn_lifecycle=True, movement=True)
+        else operation_dependencies(
+            snapshot,
+            loader,
+            turn_lifecycle=True,
+            movement=True,
+            reviewed_reactions=bool(state.pending_reactions),
+            attack=bool(state.pending_reactions),
+        )
         or template_support_failure(snapshot, loader)
     )
     if failure:

@@ -162,6 +162,7 @@ def operation_dependencies(
     movement: bool = False,
     turn_lifecycle: bool = False,
     attack: bool = False,
+    reviewed_reactions: bool = False,
 ) -> str | None:
     """Pass/reset, walking, initialization and closure do not activate these grants.
 
@@ -194,4 +195,5 @@ def operation_dependencies(
         movement=movement,
         turn_lifecycle=turn_lifecycle,
         actor_dependencies=dependencies,
+        reviewed_reactions=reviewed_reactions,
     )

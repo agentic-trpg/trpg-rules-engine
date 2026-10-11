@@ -64,6 +64,28 @@ class PendingReactionState(EvaluationModel):
         )
 
 
+class OpportunityAttackState(EvaluationModel):
+    """Host-authorized one-shot choice; expires at owner's next turn start.
+
+    Weapon selection alone is not consent. This fact authorizes exactly this
+    owner to attack this mover if voluntary movement leaves the weapon's reach.
+    Trust/source authorization remains the Host's responsibility (C-16 OPEN).
+    """
+
+    source_kind: Literal["opportunity_attack"]
+    owner_id: Annotated[str, Field(min_length=1)]
+    mover_id: Annotated[str, Field(min_length=1)]
+    weapon_id: Annotated[str, Field(min_length=1)]
+    two_handed: bool
+    trigger: Literal["voluntary_leave_reach"]
+    expiry: Literal["owner_next_turn_start"]
+
+
+PredeclaredReactionState = Annotated[
+    PendingReactionState | OpportunityAttackState, Field(discriminator="source_kind")
+]
+
+
 def reaction_state(pending: PendingReaction, *, spell_source_id: str) -> PendingReactionState:
     """Read-only regression capture with an explicitly supplied authorized source."""
     return PendingReactionState(

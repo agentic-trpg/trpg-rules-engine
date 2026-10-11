@@ -1,4 +1,4 @@
-"""Bounded ordinary movement from explicit geometry; no reactive runtime."""
+"""Bounded movement and authorized weapon OA; no reactive runtime."""
 
 from itertools import pairwise
 
@@ -7,6 +7,13 @@ from dnd5e_srd_data.loader import AssetLoader
 from dnd5e_engine.evaluation_class_dependencies import operation_dependencies
 from dnd5e_engine.evaluation_computation import CombatComputation
 from dnd5e_engine.evaluation_contracts import CombatIntentPayload, RuleEvaluationRequest
+from dnd5e_engine.evaluation_opportunity import (
+    OpportunityPlan,
+    opportunity_dependencies,
+    resolve_opportunity,
+    step_reactors,
+    walk_stopped,
+)
 from dnd5e_engine.evaluation_preflight import template_support_failure
 from dnd5e_engine.evaluation_projection import attack_delta
 from dnd5e_engine.evaluation_rng import RNGTransition
@@ -49,8 +56,17 @@ def evaluate_movement(request: RuleEvaluationRequest, loader: AssetLoader) -> Tu
         )
     if state.movement_ledgers[actor_id].active_mode != "walk":
         return _refuse("unsupported", "movement.mode", "only an active walking ledger is admitted")
-    failure = operation_dependencies(snapshot, loader, movement=True) or template_support_failure(
-        snapshot, loader
+    opportunity, failure = opportunity_dependencies(snapshot, loader)
+    failure = (
+        failure
+        or operation_dependencies(
+            snapshot,
+            loader,
+            movement=True,
+            attack=bool(state.pending_reactions),
+            reviewed_reactions=bool(state.pending_reactions),
+        )
+        or template_support_failure(snapshot, loader)
     )
     if failure:
         return _refuse("unsupported", "movement.capability", failure)
@@ -75,12 +91,11 @@ def evaluate_movement(request: RuleEvaluationRequest, loader: AssetLoader) -> Tu
     if actor.movement_remaining != ledger.remaining(actor.base_speed):
         return _refuse("unsupported", "movement.ledger", "walk budget and explicit ledger disagree")
     path: list[str] = []
-    cost = distance = 0
     if intent.intent_type == "move":
-        planned = _move_plan(snapshot, actor_id, intent, grid, occupied, loader)
+        planned = _move_plan(snapshot, actor_id, intent, grid, occupied, loader, opportunity)
         if isinstance(planned, dict):
             return planned
-        path, cost, distance = planned
+        path, _cost, _distance = planned
     elif intent.intent_type not in {"dash", "disengage"}:
         return _refuse("unsupported", "movement.intent", "unsupported movement action")
     elif not actor.action_available:
@@ -89,32 +104,7 @@ def evaluate_movement(request: RuleEvaluationRequest, loader: AssetLoader) -> Tu
     computation = CombatComputation(snapshot, rng)
     current = computation.actors[actor_id]
     if intent.intent_type == "move":
-        updated = ledger.spend(
-            cost_ft=cost, distance_ft=distance, mode="walk", effective_speed=actor.base_speed
-        )
-        computation.state = state.model_copy(
-            update={
-                "actor_zone": {**state.actor_zone, actor_id: path[-1]},
-                "movement_ledgers": {
-                    **state.movement_ledgers,
-                    actor_id: MovementLedgerState.model_validate(updated.model_dump()),
-                },
-            }
-        )
-        computation.actors[actor_id] = current.model_copy(
-            update={"movement_remaining": updated.remaining(actor.base_speed)}
-        )
-        computation.emit(
-            ActorMoved(
-                actor_id=actor_id,
-                from_zone=path[0],
-                to_zone=path[-1],
-                distance_ft=distance,
-                movement_mode="walk",
-                movement_cost_ft=cost,
-                path=tuple(path),
-            )
-        )
+        path = _execute_walk(computation, path, grid, occupied, loader, opportunity, actor_id)
     else:
         current = current.model_copy(update=ordinary_action_payment(current))
         if intent.intent_type == "dash":
@@ -144,7 +134,7 @@ def evaluate_movement(request: RuleEvaluationRequest, loader: AssetLoader) -> Tu
     return dict(
         status="accepted",
         state_delta=attack_delta(
-            snapshot, after, position_paths={actor_id: tuple(path)} if path else {}
+            snapshot, after, position_paths={actor_id: tuple(path)} if len(path) > 1 else {}
         ),
         proposed_events=tuple(computation.events),
         rng_transition=RNGTransition.between(request.rng_context, rng),
@@ -160,6 +150,7 @@ def _move_plan(
     grid: GridTopology,
     occupied: dict[str, CharacterStateV2],
     loader: AssetLoader,
+    opportunity: OpportunityPlan | None,
 ) -> tuple[list[str], int, int] | TurnEvaluation:
     state = snapshot.combat_state
     actors = {a.entity_id: a for a in snapshot.character_states}
@@ -202,38 +193,89 @@ def _move_plan(
     distance = (len(path) - 1) * grid.cell_size_ft
     if cost > ledger.remaining(actor.base_speed):
         return _refuse("rejected", "movement.insufficient", "route exceeds movement allowance")
-    if not actor.disengaging_this_turn:
-        for enemy in actors.values():
-            if (
-                enemy.entity_id in allied
-                or not enemy.is_alive
-                or enemy.hp_current <= 0
-                or not enemy.reaction_available
-            ):
-                continue
-            # Conservative threat closure: do not silently waive an unported OA.
-            # Explicit reach and selected weapon are sufficient in this subset.
-            reach = enemy.melee_reach_ft
-            weapon_id = state.opportunity_attack_weapons.get(enemy.entity_id)
-            if weapon_id and enemy.entity_type == "Character":
-                weapon = loader.get_weapon(weapon_id)
-                if weapon is None:
-                    return _refuse("unsupported", "movement.reaction", "unknown reaction weapon")
-                from dnd5e_engine.attack_rules import weapon_melee_reach_ft
-
-                reach = (
-                    enemy.melee_reach_ft
-                    if weapon.slug == "unarmed-strike"
-                    else weapon_melee_reach_ft(weapon)
-                )
-            cell = state.actor_zone[enemy.entity_id]
-            if any(
-                grid.within_range(cell, a, reach) and not grid.within_range(cell, b, reach)
-                for a, b in pairwise(path)
-            ):
-                return _refuse(
-                    "unsupported",
-                    "movement.opportunity_attack",
-                    "route may provoke an unmigrated reaction",
-                )
+    for a, b in pairwise(path):
+        _, failure = step_reactors(snapshot, actor_id, a, b, loader, opportunity)
+        if failure:
+            return _refuse("unsupported", "movement.opportunity_attack", failure)
     return path, cost, distance
+
+
+def _execute_walk(
+    computation: CombatComputation,
+    path: list[str],
+    grid: GridTopology,
+    occupied: dict[str, CharacterStateV2],
+    loader: AssetLoader,
+    opportunity: OpportunityPlan | None,
+    actor_id: str,
+) -> list[str]:
+    completed, run, run_cost = [path[0]], [path[0]], 0
+
+    def flush() -> None:
+        nonlocal run, run_cost
+        if len(run) > 1:
+            computation.emit(
+                ActorMoved(
+                    actor_id=actor_id,
+                    from_zone=run[0],
+                    to_zone=run[-1],
+                    distance_ft=(len(run) - 1) * grid.cell_size_ft,
+                    movement_mode="walk",
+                    movement_cost_ft=run_cost,
+                    path=tuple(run),
+                )
+            )
+            run, run_cost = [run[-1]], 0
+
+    for a, b in pairwise(path):
+        fires, failure = step_reactors(computation.result(), actor_id, a, b, loader, opportunity)
+        if failure:
+            raise RuntimeError("preflight omitted a reaction dependency")
+        if fires:
+            flush()
+            assert opportunity is not None
+            resolve_opportunity(computation, opportunity, actor_id)
+            if walk_stopped(computation, computation.actors[actor_id], a):
+                break
+        actor = computation.actors[actor_id]
+        occupant = occupied.get(b)
+        allied = (
+            computation.state.party_ids
+            if actor_id in computation.state.party_ids
+            else computation.state.encounter_ids
+        )
+        cost = step_cost(
+            grid.cell_size_ft,
+            difficult_terrain=(grid.edge_distance(a, b) or 0) > grid.cell_size_ft,
+            creature_space_difficult=bool(
+                occupant
+                and creature_space_is_difficult(
+                    occupant.creature_size, allied=occupant.entity_id in allied
+                )
+            ),
+        )
+        ledger = computation.state.movement_ledgers[actor_id].spend(
+            cost_ft=cost,
+            distance_ft=grid.cell_size_ft,
+            mode="walk",
+            effective_speed=computation.speed(actor),
+        )
+        computation.state = computation.state.model_copy(
+            update={
+                "actor_zone": {**computation.state.actor_zone, actor_id: b},
+                "movement_ledgers": {
+                    **computation.state.movement_ledgers,
+                    actor_id: MovementLedgerState.model_validate(ledger.model_dump()),
+                },
+            }
+        )
+        computation.actors[actor_id] = actor.model_copy(
+            update={"movement_remaining": ledger.remaining(computation.speed(actor))}
+        )
+        completed.append(b)
+        run.append(b)
+        run_cost += cost
+    flush()
+    if computation.damage:
+        raise RuntimeError("movement left an incomplete damage instance")
+    return completed

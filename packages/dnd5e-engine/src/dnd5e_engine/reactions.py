@@ -16,6 +16,18 @@ from dnd5e_srd_data.schema.common import (
 )
 
 from dnd5e_engine.activities.context import AttackHitContext
+from dnd5e_engine.attack_rules import in_range_with_los
+from dnd5e_engine.spatial import SpatialTopology
+
+
+def leaves_melee_reach(
+    topology: SpatialTopology, reactor_cell: str, from_cell: str, to_cell: str, reach_ft: int
+) -> bool:
+    """Shared voluntary-step trigger, before the mover leaves its old cell."""
+    return in_range_with_los(
+        topology, reactor_cell, from_cell, reach_ft
+    ) and not topology.within_range(reactor_cell, to_cell, reach_ft)
+
 
 SUPPORTED_OPPORTUNITY_KINDS = frozenset(
     {

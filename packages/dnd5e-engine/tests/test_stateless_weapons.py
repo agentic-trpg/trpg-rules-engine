@@ -76,7 +76,7 @@ def weapon_case(
         grid=GridScene(width=4, height=3),
         world_version=7,
         combat_id="combat:synthetic",
-        snapshot_schema_version="engine-snapshot/12",
+        snapshot_schema_version="engine-snapshot/13",
     )
     request = request.model_copy(
         update={
@@ -167,7 +167,7 @@ def test_real_weapons_match_legacy_full_state_rng_events_and_budgets(
         grid=GridScene(width=4, height=3),
         world_version=7,
         combat_id="combat:synthetic",
-        snapshot_schema_version="engine-snapshot/12",
+        snapshot_schema_version="engine-snapshot/13",
     )
     assert apply_delta(request.state_snapshot, result) == expected
     assert not expected.combat_state.vex_grants

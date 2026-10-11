@@ -276,6 +276,7 @@ from dnd5e_engine.persistent_areas import (
 from dnd5e_engine.reactions import (
     ActiveReactionResponse,
     PendingReaction,
+    leaves_melee_reach,
 )
 from dnd5e_engine.rest import FEATURE_USE_COUNTER_PREFIX
 from dnd5e_engine.rules.character import (
@@ -11875,8 +11876,9 @@ def _opportunity_attackers(
         if (
             attack is None
             or reactor_cell is None
-            or not _in_range_with_los(live.topology, reactor_cell, from_cell, attack.reach_ft)
-            or live.topology.within_range(reactor_cell, to_cell, attack.reach_ft)
+            or not leaves_melee_reach(
+                live.topology, reactor_cell, from_cell, to_cell, attack.reach_ft
+            )
         ):
             continue
         if not _combatant_can_see(live, reactor, mover):

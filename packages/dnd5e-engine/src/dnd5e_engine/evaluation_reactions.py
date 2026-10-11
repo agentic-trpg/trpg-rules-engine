@@ -52,6 +52,8 @@ def reaction_dependencies(snapshot: CombatSnapshot, loader: AssetLoader) -> str 
     if len(declarations) != 1:
         return "only one predeclared reaction is migrated; chains and priorities remain OPEN"
     pending = declarations[0]
+    if not isinstance(pending, PendingReactionState):
+        return "only a spell declaration is admitted on this operation"
     spell = loader.get_spell(pending.spell_id)
     if (
         spell is None
@@ -110,6 +112,7 @@ def prepare_counterspell(
     if not snapshot.combat_state.pending_reactions:
         return None
     pending = snapshot.combat_state.pending_reactions[0]
+    assert isinstance(pending, PendingReactionState)
     actor = next(a for a in snapshot.character_states if a.entity_id == pending.owner_id)
     if (
         actor.entity_id == actor_id

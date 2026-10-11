@@ -12,9 +12,9 @@ The current local candidate versions are:
 | Contract | Current version | Replaces |
 | --- | --- | --- |
 | RuleEvaluationRequest / Result | `engine-evaluation/17` | `/1`–`/16` |
-| StateSnapshot | `engine-snapshot/12` | `/1`–`/11` |
+| StateSnapshot | `engine-snapshot/13` | `/1`–`/12` |
 | Availability request/result | `engine-availability/11` | `/1`–`/10` |
-| RulesetBinding evaluator | `dnd5e-evaluation/23` | `/22` and earlier |
+| RulesetBinding evaluator | `dnd5e-evaluation/27` | `/26` and earlier |
 
 Old envelopes, snapshots and results are explicitly rejected. There are no compatibility
 aliases for `InventoryCombatSnapshot`, `combat_inventory`, missing equipment or missing
@@ -527,8 +527,9 @@ No existing SRD content support is newly claimed beyond its migrated executor.
 
 See the [R18–R21 Global Review](stateless-migration-progress.md#global-review-r18r21)
 for exact commits, executed gates, confirmed findings, two-dimensional progress and
-unsupported cross-operation class workflows. The admitted Spell/Feature/Reaction
-invocations do not yet provide a fully stateless class encounter/rest loop.
+the historical R21 cross-operation class limitations. R22–R25 below provide the
+reviewed complete class encounter/rest loops and bounded spell/reaction composition;
+wider class/mechanism coverage and production State Machine integration remain incomplete.
 
 
 ## R22 complete class workflows
@@ -559,3 +560,34 @@ no damage. Reviewed existing Concentration composes through R23 in that same res
 The [R24 boundary](stateless-migration-progress.md#r24-existing-instant-save-damage-spell)
 keeps new-spell reactions, unknown modifiers and wider geometry unsupported before RNG.
 Evaluator `/26` changes no formal source/continuation/commit contract.
+
+
+## R25 bounded authorized weapon Opportunity Attack
+
+`engine-snapshot/13` changes the existing pending declaration component to a closed
+source_kind-discriminated spell / opportunity_attack union. The latter requires
+owner_id, mover_id, weapon_id, two_handed, voluntary_leave_reach trigger and
+owner_next_turn_start expiry. It is an explicit Host-authorized one-shot choice,
+not permission inferred from opportunity_attack_weapons and not an Engine decision.
+The existing guarded PendingReactionUpdate consumes it on firing or expiry; no new
+queue, handle, public operation or authoritative commit is introduced. C-04/C-15/C-16
+remain OPEN, and these local records do not establish a trusted cross-repository ABI.
+
+Only one ordinary held melee Character weapon is admitted, on either combat side,
+with an accessible owned positive-quantity instance and reviewed complete grants,
+mastery/grip/hand facts. A PC or template-less NPC can be the mover; complete reviewed
+Cleric/Fighter/Wizard movement profiles remain intact. Stat-block reactors, concurrent
+reaction choices, concentration/effect graphs, mastery procs, hidden/obscured sight,
+Shield and interactive decisions remain unsupported before payment/RNG. An additional
+potential reactor without explicit consent also refuses the whole route in preflight.
+
+The shared leaves_melee_reach predicate supplies reach/LOS/total-cover geometry to
+both Legacy and stateless callers. Movement checks the entire route before restoring
+RNG, then flushes actual completed steps before each reaction. One Reaction is paid
+on hit or miss; the original AttackActivity/Damage Resolver supplies proficiency,
+ability, Dodge, crits, resistance/immunity/vulnerability and damage-instance completion.
+Damage IDs name the actual reactor. Death/zero HP/zero Speed stop the walk before the
+leaving step; only the completed path prefix consumes movement. All actor budgets,
+HP/TempHP, conditions/death/processed-damage ledgers, position, consent, events and RNG
+are returned together. Legal non-triggers retain consent, consume no Reaction/RNG and
+can Pass through its explicit expiry at the owner's next turn start.

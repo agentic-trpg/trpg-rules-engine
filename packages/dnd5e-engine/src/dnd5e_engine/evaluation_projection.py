@@ -191,6 +191,17 @@ def attack_delta(
             )
         )
         pending.difference_update(("dead_ids", "deaths_recorded"))
+    if "pending_reactions" in pending:
+        operations.append(
+            delta.PendingReactionUpdate(
+                kind="combat.pending_reaction_update",
+                combat_id=combat,
+                owner_id=old_state.pending_reactions[0].owner_id,
+                expected=tuple(old_state.pending_reactions),
+                value=tuple(new_state.pending_reactions),
+            )
+        )
+        pending.remove("pending_reactions")
     if new_state.event_log[: len(old_state.event_log)] != old_state.event_log:
         raise EvaluationInvariantError("committed rule history was rewritten")
     pending.discard("event_log")  # returned as ordered proposals, SM appends only on commit

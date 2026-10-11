@@ -31,7 +31,7 @@ from dnd5e_engine.evaluation_effects import (
     RepeatSaveState,
     explicit_effect_fields,
 )
-from dnd5e_engine.evaluation_reaction_state import PendingReactionState
+from dnd5e_engine.evaluation_reaction_state import PredeclaredReactionState
 from dnd5e_engine.evaluation_resources import FeatureResource, ResourceState, SlotResource
 from dnd5e_engine.events import CombatEvent, DamageType
 from dnd5e_engine.movement import MovementLedger
@@ -381,7 +381,7 @@ class CombatState(EvaluationModel):
     concentration_rounds_remaining: dict[str, int]
     conditions_by_effect: tuple[ConditionLink, ...]
     effect_lifecycles: tuple[LifecycleRecord, ...]
-    pending_reactions: list[PendingReactionState]
+    pending_reactions: list[PredeclaredReactionState]
     active_reaction_responses: list[ActiveReactionResponse]
     damage_instance_sequence: int
     rider_uses: set[tuple[str, str, int]]
@@ -457,7 +457,7 @@ class InventoryState(EvaluationModel):
 
 
 class SnapshotBase(EvaluationModel):
-    snapshot_schema_version: Literal["engine-snapshot/12"]
+    snapshot_schema_version: Literal["engine-snapshot/13"]
     session_id: Annotated[str, Field(min_length=1)]
     world_version: Annotated[int, Field(ge=0)]
     character_states: tuple[CharacterStateV2, ...]

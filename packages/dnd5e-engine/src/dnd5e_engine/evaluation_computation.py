@@ -19,6 +19,7 @@ from dnd5e_engine.damage_rules import (
 )
 from dnd5e_engine.death_saves import roll_death_save
 from dnd5e_engine.evaluation_actor import actor_state, combatant
+from dnd5e_engine.evaluation_reaction_state import OpportunityAttackState
 from dnd5e_engine.evaluation_state import CombatSnapshot, MovementLedgerState
 from dnd5e_engine.events import (
     AttackRolled,
@@ -146,12 +147,17 @@ class CombatComputation:
         self.fold_death(event, killer)
         self.events.append(event)
 
-    def next_damage_id(self, target_id: str, source_id: str | None) -> str:
+    def next_damage_id(
+        self, target_id: str, source_id: str | None, *, actor_id: str | None = None
+    ) -> str:
         sequence = self.state.damage_instance_sequence + 1
         self.state = self.state.model_copy(update={"damage_instance_sequence": sequence})
-        actor_id = self.snapshot.combat_state.initiative_ids[
-            self.snapshot.combat_state.current_turn_index
-        ]
+        actor_id = (
+            actor_id
+            or self.snapshot.combat_state.initiative_ids[
+                self.snapshot.combat_state.current_turn_index
+            ]
+        )
         return f"damage:{sequence}:{actor_id}:{target_id}"
 
     def damage_completed(self, damage: DamageInstanceContext) -> None:
@@ -247,6 +253,15 @@ class CombatComputation:
                 TurnPhase(actor_id=None, phase="round_start", round_number=self.state.round_number)
             )
         next_actor = self.state.initiative_ids[index]
+        self.state = self.state.model_copy(
+            update={
+                "pending_reactions": [
+                    p
+                    for p in self.state.pending_reactions
+                    if not (isinstance(p, OpportunityAttackState) and p.owner_id == next_actor)
+                ]
+            }
+        )
         self.emit(TurnStarted(actor_id=next_actor))
         self.state = self.state.model_copy(
             update={

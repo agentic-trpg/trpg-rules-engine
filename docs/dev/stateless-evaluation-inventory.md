@@ -877,3 +877,21 @@ remain unchanged; a countered cast consumes Action but preserves its Slot. RNG d
 are CON save first, then healing only after success. The existing Resolver and pure
 actor_stats/matching/targeting rules perform calculation. All new records are local
 C-15 candidates; C-04/C-16 remain OPEN. No new Snapshot scene discriminator is added.
+
+
+### R25 weapon opportunity declaration and movement composition
+
+Snapshot `/13` reuses pending_reactions with a closed source_kind union. A weapon OA
+record requires owner/mover/weapon/grip choice and exact voluntary-leave-reach / owner
+next-turn-start semantics. It is not derived from the existing selected-weapon map.
+The full old declaration is guarded by PendingReactionUpdate on one-shot consumption
+or expiry. No partial state, callback, live queue or automatic tactical decision is
+stored. All Reaction budget, actual completed movement path/cost, source-attributed
+Attack/Damage/zero-HP/death facts, proposals and explicit RNG are returned atomically.
+
+One authorized held ordinary melee Character weapon, with explicit accessible owned
+inventory and reviewed grants/counters, is the bounded R25 reactor profile. Complete
+reviewed class movement remains intact for the mover. Non-trigger/spent-budget facts
+stay armed; the owner's next TurnStarted consumes them. All unrepresented reaction
+choices or effect/mastery/visibility dependencies fail before payment/RNG. Shield and
+stat-block OA still require separate closure. C-04/C-15/C-16 and formal ABI remain OPEN.

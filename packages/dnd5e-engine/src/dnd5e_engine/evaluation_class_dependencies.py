@@ -7,7 +7,7 @@ from dnd5e_engine.activities.build_context import build_activity_context
 from dnd5e_engine.activities.scale import build_scale_values
 from dnd5e_engine.build_spec import derive_multiclass_pact_slots, derive_multiclass_slots
 from dnd5e_engine.evaluation_actor import combatant
-from dnd5e_engine.evaluation_equipment_dependencies import equipped_cleric_dependencies
+from dnd5e_engine.evaluation_equipment_dependencies import equipped_dependencies
 from dnd5e_engine.evaluation_resources import FeatureResource, SlotResource
 from dnd5e_engine.evaluation_state import CharacterStateV2, CombatSnapshot, NonCombatSnapshot
 from dnd5e_engine.feature_runtime import DrawFreeRandom, scalar_formula
@@ -56,7 +56,7 @@ def class_dependencies(
                 if actor.worn_armor or actor.shield_equipped or actor.other_hand_occupied
                 else "only the complete empty equipment profile is reviewed"
             )
-        if failure := equipped_cleric_dependencies(actor, snapshot, loader, canonical):
+        if failure := equipped_dependencies(actor, snapshot, loader, canonical):
             return failure
     if actor.fighting_styles not in ((), ("defense",)):
         return "unreviewed fighting style"
@@ -178,6 +178,7 @@ def operation_dependencies(
     attack: bool = False,
     reviewed_reactions: bool = False,
     equipped: bool = False,
+    reviewed_sap: bool = False,
 ) -> str | None:
     """Pass/reset, walking, initialization and closure do not activate these grants.
 
@@ -192,7 +193,10 @@ def operation_dependencies(
         if actor.trait_mechanics:
             return "unreviewed operation trait"
         if attack and actor.weapon_mastery_slugs:
-            return "trained weapon mastery attack execution is not migrated"
+            if not reviewed_sap:
+                return "trained weapon mastery attack execution is not migrated"
+            if failure := equipped_dependencies(actor, snapshot, loader, canonical):
+                return failure
         if not (
             actor.class_slug
             or actor.classes
@@ -205,10 +209,33 @@ def operation_dependencies(
             return None
         return class_dependencies(actor, snapshot, loader, canonical, equipped=equipped or attack)
 
+    if reviewed_sap:
+        if not turn_lifecycle:
+            from dnd5e_engine.evaluation_death import turn_lifecycle_support_failure
+
+            if any(c.condition != "prone" for a in snapshot.character_states for c in a.conditions):
+                return "only reviewed permanent implied Prone can compose with Sap attacks"
+            if any(a.conditions for a in snapshot.character_states) and loader.get_condition(
+                "prone"
+            ) != canonical.get_condition("prone"):
+                return "Prone condition differs from reviewed canonical clauses"
+            if failure := turn_lifecycle_support_failure(snapshot):
+                return failure
+        actors = {a.entity_id: a for a in snapshot.character_states}
+        for target, source in snapshot.combat_state.sap_marks.items():
+            if target == source or target not in actors or source not in actors:
+                return "Sap mark requires distinct present source and target"
+            origin = actors[source]
+            if origin.classes != {"fighter": 1} or not origin.weapon_mastery_slugs:
+                return "Sap source requires complete reviewed Fighter training"
+            if failure := equipped_dependencies(origin, snapshot, loader, canonical):
+                return failure
     return snapshot_support_failure(
         snapshot,
         movement=movement,
         turn_lifecycle=turn_lifecycle,
         actor_dependencies=dependencies,
         reviewed_reactions=reviewed_reactions,
+        reviewed_sap=reviewed_sap,
+        reviewed_conditions=reviewed_sap,
     )

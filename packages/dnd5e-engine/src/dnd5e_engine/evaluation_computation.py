@@ -268,6 +268,11 @@ class CombatComputation:
                 ]
             }
         )
+        from dnd5e_engine.sap_rules import expire_sap
+
+        self.state = self.state.model_copy(
+            update={"sap_marks": expire_sap(self.state.sap_marks, next_actor)}
+        )
         self.emit(TurnStarted(actor_id=next_actor))
         self.state = self.state.model_copy(
             update={

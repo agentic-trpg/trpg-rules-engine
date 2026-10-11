@@ -11,8 +11,8 @@ blocked C-16. This extracts existing rules rather than adding content support.
 R26 supersedes the historical R17 lifecycle-schema defect recorded below with local
 schema/runtime agreement. Formal ABI and C-04/C-15/C-16 remain unapproved/OPEN.
 
-Current local versions after R30: envelope `/19`, Snapshot `/14`, Availability `/12`,
-evaluator `/32`. Historical batch versions below describe their original deliveries.
+Current local versions after R31: envelope `/20`, Snapshot `/14`, Availability `/12`,
+evaluator `/33`. Historical batch versions below describe their original deliveries.
 
 ## Architecture decisions and progress dimensions
 
@@ -50,7 +50,7 @@ classification applies only to the stated bounded capability, not its whole fami
 | Turn / Action Economy | Bounded explicit Pass and Attack/Item; R20/R21 invocation turn completion | **Yes, R11** for bounded lifecycle | `evaluation_turn` plus shared `turn_rules` / death saves; complete reset/dead skipping/round wrap/ordinary dying PC. R22 admits reviewed complete Cleric/Fighter/Wizard Pass/reset; R25/R29 add bounded declaration expiry; R17 Poison and R28 existing Hold Person repeat/expiry compose. Wider classes/effects/reactions and extended actions remain incomplete |
 | Movement / positioning | Bounded Walk, Action Dash/Disengage | **Yes, R12** for admitted subset | `evaluation_movement` reuses GridTopology/movement/turn rules and closed PositionUpdate. R25 weapon OA and R29 canonical Ogre/Greatclub OA compose; other stat-block templates, special modes, forced movement and effects/areas remain Legacy |
 | Ordinary PC/NPC weapon or explicit stat-block single Attack | Fully migrated bounded subset | **Yes, R9** | `evaluation_preflight` → `evaluation_attack.execute_attack` → Activity Resolver → `evaluation_projection.attack_delta`; no Legacy execution context |
-| Attack / Damage / Death overall | Partially migrated | Partially | Ordinary roll/hit/miss/crit/R-I-V/temp HP/death/payment/turn and attack-induced next-turn death save migrated; riders, trained Masteries, Multiattack/recharge/legendary/effects remain Legacy |
+| Attack / Damage / Death overall | Partially migrated | Partially | Ordinary roll/hit/miss/crit/R-I-V/temp HP/death/payment/turn and attack-induced next-turn death save migrated; riders, other trained Masteries, Multiattack/recharge/legendary/effects remain Legacy |
 | Adjudicated noncombat ability/skill check | Fully migrated bounded subset | Yes | `evaluation_checks` → `activities/check_pipeline`; explicit DC/GM flags/proficiency/expertise/Jack/Reliable Talent; no Legacy runtime |
 | Standalone saving throws | Fully migrated bounded NonCombat actor subset | **Yes, R15** | Shared actor_stats, condition projection and roll_save; six abilities, explicit DC/flags, permanent session auto-fail; no Legacy hydration |
 | Concentration damage / lineage | Complete bounded internal candidate; production source ABI C-16 OPEN | **Yes, R18/R23** for existing Hold Person, including actual Attack damage | Shared completed-instance/DC/save/lineage; R23 aggregates ordered post-defense damage types and composes full cleanup with Attack. R24 composes Sacred Flame. Public source and unrelated/mixed effect graphs remain restricted |
@@ -64,6 +64,7 @@ classification applies only to the stated bounded capability, not its whole fami
 | Spellcasting / Features overall | Partially migrated | Partially | R20 direct healing/Second Wind and R24 Sacred Flame execute independently for reviewed profiles; general repertoire/costs/timing/grants/riders/delegated casts remain Legacy |
 | One predeclared Counterspell / Cure Wounds trigger | Complete bounded local contract | **Yes, R21** | Real Wizard 5 Evoker; pure matching/targeting and SaveActivity, one atomic trigger/Reaction/payment/delta/events/RNG; no Live dispatcher |
 | One authorized weapon Opportunity Attack / Walk | Complete bounded local contract | **Yes, R25** | Explicit Snapshot consent, shared reach/LOS and Attack/Damage, full path-prefix/death/budget/consumption/expiry delta; no Live hooks |
+| Fighter Sap mastery | Complete bounded local contract | **Yes, R31** | Canonical Fighter 1/Defense, mace/chain shirt/optional shield, full three-Sap-weapon training; original AttackActivity proc, nonstacking mark, next Attack Disadvantage/consumption and source-next-start expiry. Other masteries and mixed effect/reaction graphs remain Deferred |
 | Reaction / pending choice overall | Partially migrated | Partially | Draw-free weapon/missing-DC choices, R21 Counterspell, R25 weapon OA and R29 canonical Ogre OA; other reactions, priorities, nested chains, durable windows and interactive continuation remain Legacy/OPEN |
 | Areas / environment / objects | Legacy Stateful Only | No | `persistent_areas`, `environment`, `combat_objects`, `ongoing_spell_activation`; state captured then refused; source/lifetime/geometry/history Delta missing |
 | Bounded victory / TPK closure | Fully migrated bounded external contract | **Yes, R10** | `evaluation_closure` → shared outcome_rules on explicit values; XP/history/events and unchanged RNG |
@@ -1230,3 +1231,39 @@ Inspected plan and executed final gate:
 MkDocs passed. Preserved unknown worktree paths broadened the scope. This is local
 Integration evidence; native CI is separate and Full follows R33. Evidence-only
 documentation updates receive a strict build; no test or threshold was weakened.
+
+
+## R31 Fighter Sap mastery
+
+Start `5ec8cee45974481dbcdcd98efb23125b2af48dd0`, branch
+`refactor/r31-fighter-sap-mastery`. R30 pushed CI
+[38165114050](https://github.com/agentic-trpg/trpg-rules-engine/actions/runs/38165114050)
+passed on exact source `5ec8cee`; it is separate from R30 local Integration.
+
+Stateless External Contract: complete Fighter 1 canonical class/feature/Defense
+grants, three reviewed Sap trainings (mace/flail/morningstar), actual owned mace,
+chain shirt, optional shield, proficiencies, grip, derived AC and Second Wind pool
+remain in the Snapshot. The closed Sap component delta captures expected/new marks,
+source/target references, nonstacking identity and explicit consume/expiry semantics.
+Envelope `/20`, evaluator `/33`; Snapshot `/14` and Availability `/12` unchanged.
+Previous envelope/binding are refused; this local vocabulary does not freeze C-15.
+
+Legacy Runtime Dependency Removed: original AttackActivity emits Sap on a hit,
+including zero post-immunity damage. Extracted shared pure transitions consume on
+an actual next AttackRolled, overwrite one target mark and expire at source next
+TurnStarted. Stateless Attack and Pass/reset use these transitions without Legacy
+fold/hooks/registry/handle. Independent d20/damage, disadvantage/cancellation and
+lifecycle expectations accompany complete Legacy state/event/RNG differentials.
+Permanent implied Prone is admitted with exact provenance and canonical clauses
+for advantage cancellation; other conditions, masteries and mixed effects/reactions
+remain refused before RNG/payment.
+
+The real pre-change Fighter attack regression first demonstrated unsupported
+mastery execution. Final focused regression: **265 passed in 17.57 s**. Inspected
+plan and `python tools/validate.py integration --base
+5ec8cee45974481dbcdcd98efb23125b2af48dd0` **PASSED in 726.30 s** on Windows
+Python 3.14.7: Data **671 passed / 1 skipped** (104.09 s), Engine **8,732 passed**
+(551.03 s), Bridge **139** (9.88 s), Demo **54** (16.82 s). All selected tooling,
+lint/format/types, examples and strict documentation passed. This is local
+Integration evidence; Full follows R33. No test, assertion or coverage floor is
+weakened. Evidence-only documentation receives a strict build.

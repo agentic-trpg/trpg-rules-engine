@@ -1,4 +1,4 @@
-"""Reviewed equipped Cleric 1 closure for ordinary attacks and turn reset."""
+"""Reviewed complete Cleric/Fighter equipment closure for bounded operations."""
 
 from dnd5e_srd_data import BundledAssetLoader
 from dnd5e_srd_data.loader import AssetLoader
@@ -8,13 +8,14 @@ from dnd5e_engine.evaluation_state import CharacterStateV2, CombatSnapshot, NonC
 from dnd5e_engine.rules.character import (
     armor_class,
     armor_training_from_changes,
+    defense_ac_bonus,
     proficiency_grants,
     weapon_proficiencies_from_changes,
 )
 from dnd5e_engine.rules.dice import ability_modifier
 
 
-def equipped_cleric_dependencies(
+def equipped_dependencies(
     actor: CharacterStateV2,
     snapshot: CombatSnapshot | NonCombatSnapshot,
     loader: AssetLoader,
@@ -24,10 +25,14 @@ def equipped_cleric_dependencies(
     levels = actor.classes or (
         {actor.class_slug: actor.character_level} if actor.class_slug else {}
     )
-    if levels != {"cleric": 1}:
-        return "only equipped Cleric 1 dependencies are reviewed"
+    fighter = levels == {"fighter": 1}
+    if not fighter and levels != {"cleric": 1}:
+        return "only equipped Cleric 1 or Fighter 1 dependencies are reviewed"
     weapon_slug = actor.weapon_in_hands
-    if weapon_slug not in {"mace", "quarterstaff"} or actor.worn_armor != "medium":
+    if (
+        weapon_slug not in ({"mace"} if fighter else {"mace", "quarterstaff"})
+        or actor.worn_armor != "medium"
+    ):
         return "equipped profile requires a reviewed simple weapon and chain shirt"
     slugs = {weapon_slug, "chain-shirt"} | ({"shield"} if actor.shield_equipped else set())
     entries = [e for e in snapshot.inventory_state.entries if e.owner_id == actor.entity_id]
@@ -42,8 +47,8 @@ def equipped_cleric_dependencies(
     if any(loader.get_item(s) != canonical.get_item(s) for s in slugs):
         return "equipment differs from reviewed canonical definitions"
     if (
-        actor.weapon_mastery_slugs
-        or actor.fighting_styles
+        (actor.weapon_mastery_slugs and not fighter)
+        or (actor.fighting_styles != ("defense",) if fighter else bool(actor.fighting_styles))
         or actor.attack_bonus is not None
         or actor.proficiency_bonus_override not in (None, 2)
         or actor.other_hand_occupied != actor.shield_equipped
@@ -51,11 +56,27 @@ def equipped_cleric_dependencies(
         or (actor.weapon_grip == "two_handed" and (actor.shield_equipped or weapon_slug == "mace"))
     ):
         return "unreviewed equipped attack modifier, mastery or conflicting grip"
-    grants = proficiency_grants([(canonical.get_class("cleric"), 1, "primary")])
-    protector = loader.get_feature("divine-order-protector")
-    if protector is None or protector != canonical.get_feature("divine-order-protector"):
-        return "selected Divine Order differs from reviewed canonical Protector"
-    changes = [c for e in protector.passive_effects if not e.disabled for c in e.changes]
+    if fighter:
+        if loader.get_feat("defense") != canonical.get_feat("defense"):
+            return "selected Defense feat differs from reviewed canonical definition"
+        if (
+            set(actor.weapon_mastery_slugs) != {"mace", "flail", "morningstar"}
+            or len(actor.weapon_mastery_slugs) != 3
+        ):
+            return "complete reviewed three-weapon Sap mastery training is required"
+        for slug in actor.weapon_mastery_slugs:
+            weapon = loader.get_weapon(slug)
+            if weapon is None or weapon != canonical.get_weapon(slug) or weapon.mastery != "sap":
+                return "mastery training differs from reviewed Sap weapon definitions"
+    grants = proficiency_grants(
+        [(canonical.get_class("fighter" if fighter else "cleric"), 1, "primary")]
+    )
+    changes = []
+    if not fighter:
+        protector = loader.get_feature("divine-order-protector")
+        if protector is None or protector != canonical.get_feature("divine-order-protector"):
+            return "selected Divine Order differs from reviewed canonical Protector"
+        changes = [c for e in protector.passive_effects if not e.disabled for c in e.changes]
     weapons = grants.weapons | weapon_proficiencies_from_changes(changes)
     armor_training = grants.armor | armor_training_from_changes(changes)
     if (
@@ -77,6 +98,7 @@ def equipped_cleric_dependencies(
         body_armor_bonus=armor.magical_bonus,
         shield_bonus=shield.base_ac if shield else 0,
     )
+    expected += defense_ac_bonus(actor.fighting_styles, wearing_armor=True)
     if actor.ac != expected or actor.stealth_disadvantage != armor.stealth_disadvantage:
         return "armor/shield AC or stealth facts contradict shared armor rules"
     return None

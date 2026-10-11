@@ -305,6 +305,7 @@ from dnd5e_engine.rules.conditions import (
 )
 from dnd5e_engine.rules.dice import ability_modifier
 from dnd5e_engine.rules.uses import UsesRollData, evaluate_uses_formula
+from dnd5e_engine.sap_rules import apply_sap, consume_sap, expire_sap
 from dnd5e_engine.size import target_at_most_one_size_larger
 from dnd5e_engine.spatial import GridTopology, SpatialTopology, cell_id, parse_cell
 from dnd5e_engine.specs import (
@@ -944,12 +945,7 @@ def _pop_sap_mark(live: _LiveCombat, attacker_id: str, pre_event_count: int) -> 
     in this resolution's event slice, its outstanding mark is spent —
     mirrors ``_pop_help_grant`` / ``_pop_vex_grants``.
     """
-    if attacker_id not in live.sap_marks:
-        return
-    recent = live.event_log[pre_event_count:]
-    fired = any(isinstance(ev, AttackRolled) and ev.attacker_id == attacker_id for ev in recent)
-    if fired:
-        del live.sap_marks[attacker_id]
+    live.sap_marks = consume_sap(live.sap_marks, attacker_id, live.event_log[pre_event_count:])
 
 
 def _consume_attack_roll_grants(
@@ -1019,7 +1015,7 @@ def _fold_mastery_procs(
                 2 if live.current_actor_id == attacker_id else 1
             )
         elif mastery_slug == "sap":
-            live.sap_marks[target_id] = attacker_id
+            live.sap_marks = apply_sap(live.sap_marks, attacker_id, target_id)
         elif mastery_slug == "slow":
             live.slow_marks.setdefault(target_id, set()).add(attacker_id)
             _clamp_movement_budget(live, target_id)
@@ -4588,8 +4584,7 @@ def _emit_apply_turn_started(live: _LiveCombat, event: TurnStarted) -> None:
     # next turn" — the SOURCE ATTACKER's own next turn, not the sapped
     # creature's. Clear every outstanding mark this actor sourced (an
     # unconsumed mark simply lapses), mirroring the Help sweep above.
-    for sapped_id in [sid for sid, src in live.sap_marks.items() if src == event.actor_id]:
-        del live.sap_marks[sapped_id]
+    live.sap_marks = expire_sap(live.sap_marks, event.actor_id)
     # SRD 5.2 §Weapon Mastery — Slow (C15 Task 7): "until the start of your
     # next turn" — again the SOURCE attacker's own next turn. Drop this
     # actor out of every slowed creature's source set; a creature whose set

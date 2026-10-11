@@ -410,6 +410,39 @@ class PendingReactionUpdate(EvaluationModel):
         return self
 
 
+class SapMark(EvaluationModel):
+    target_id: Annotated[str, Field(min_length=1)]
+    source_id: Annotated[str, Field(min_length=1)]
+    expires: Literal["source_next_turn_start"]
+    consumes: Literal["target_next_attack_roll"]
+
+
+class SapMarksUpdate(EvaluationModel):
+    """Closed nonstacking Sap component with complete old/new values and references."""
+
+    kind: Literal["combat.sap_marks_update"]
+    combat_id: Annotated[str, Field(min_length=1)]
+    actor_ids: tuple[str, ...]
+    expected: tuple[SapMark, ...]
+    value: tuple[SapMark, ...]
+
+    @model_validator(mode="after")
+    def closure(self) -> Self:
+        ids = set(self.actor_ids)
+        if not ids or len(ids) != len(self.actor_ids):
+            raise ValueError("Sap requires a unique nonempty actor roster")
+        for marks in (self.expected, self.value):
+            if len({m.target_id for m in marks}) != len(marks) or any(
+                m.target_id == m.source_id or not {m.target_id, m.source_id} <= ids for m in marks
+            ):
+                raise ValueError(
+                    "Sap marks must be nonstacking and reference distinct present actors"
+                )
+        if self.expected == self.value:
+            raise ValueError("Sap component update must change its value")
+        return self
+
+
 StateDeltaOperation = Annotated[
     HPDelta
     | TempHPSet
@@ -430,7 +463,8 @@ StateDeltaOperation = Annotated[
     | EffectLifecycleUpdate
     | ConcentrationUpdate
     | SlotSpendLedgerUpdate
-    | PendingReactionUpdate,
+    | PendingReactionUpdate
+    | SapMarksUpdate,
     Field(discriminator="kind"),
 ]
 

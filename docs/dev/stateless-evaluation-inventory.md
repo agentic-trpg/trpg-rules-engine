@@ -972,3 +972,22 @@ match Legacy, with separate independent component, numeric and cost expectations
 Equipment, casting and class facts remain complete across calls. Mixed equipped
 concentration graphs, other classes/gear, material/focus and attunement remain
 Deferred. No new formal source ABI or authoritative commit is claimed.
+
+
+### R31 Fighter Sap across attacks and turns
+
+Stateless External Contract: closed `SapMarksUpdate` expected/new component with
+typed source/target identities, nonstacking roster invariants and explicit next-roll
+consume/source-next-start expiry. Full canonical Fighter 1/Defense, three reviewed
+Sap trainings, mace/chain shirt/optional shield, owned instances, proficiencies,
+grip, AC and finite Second Wind pool are validated and preserved. Envelope `/20`,
+evaluator `/33`; no new Snapshot kind or shared ABI is introduced.
+
+Legacy Runtime Dependency Removed: original AttackActivity's actual Sap proc flows
+through shared extracted pure mark transitions into the atomic Attack/Turn delta.
+The target's next Attack reads disadvantage from input facts and consumes it; an
+unused mark expires on source next start. Hit/miss/crit/immune, both real PC/NPC
+Fighters, repeated proc, Prone advantage cancellation, replay/concurrency and faults
+are exercised without Legacy Sap fold/hooks/handle/registry. Other masteries,
+conditions and mixed effect/reaction graphs remain Deferred; production callers
+still use retained Legacy combat and formal C-04/C-15/C-16 remain OPEN.

@@ -110,6 +110,8 @@ def attack_delta(
         if getattr(old_state, name) != getattr(new_state, name)
     }
     combat = old_state.combat_id
+    operations.extend(sap_delta(before, after))
+    pending.discard("sap_marks")
     paths = position_paths or {}
     moved = {
         actor_id
@@ -210,3 +212,30 @@ def attack_delta(
     return delta.StateDelta(
         operations=tuple(operations), expected_world_version=before.world_version
     )
+
+
+def sap_delta(before: CombatSnapshot, after: CombatSnapshot) -> list[delta.SapMarksUpdate]:
+    old_state, new_state = before.combat_state, after.combat_state
+    if old_state.sap_marks == new_state.sap_marks:
+        return []
+
+    def marks(values: dict[str, str]) -> tuple[delta.SapMark, ...]:
+        return tuple(
+            delta.SapMark(
+                target_id=target,
+                source_id=source,
+                expires="source_next_turn_start",
+                consumes="target_next_attack_roll",
+            )
+            for target, source in sorted(values.items())
+        )
+
+    return [
+        delta.SapMarksUpdate(
+            kind="combat.sap_marks_update",
+            combat_id=old_state.combat_id,
+            actor_ids=old_state.initiative_ids,
+            expected=marks(old_state.sap_marks),
+            value=marks(new_state.sap_marks),
+        )
+    ]

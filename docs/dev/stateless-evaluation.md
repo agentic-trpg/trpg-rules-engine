@@ -11,10 +11,10 @@ The current local candidate versions are:
 
 | Contract | Current version | Replaces |
 | --- | --- | --- |
-| RuleEvaluationRequest / Result | `engine-evaluation/19` | `/1`–`/18` |
+| RuleEvaluationRequest / Result | `engine-evaluation/20` | `/1`–`/19` |
 | StateSnapshot | `engine-snapshot/14` | `/1`–`/13` |
 | Availability request/result | `engine-availability/12` | `/1`–`/11` |
-| RulesetBinding evaluator | `dnd5e-evaluation/32` | `/31` and earlier |
+| RulesetBinding evaluator | `dnd5e-evaluation/33` | `/32` and earlier |
 
 Old envelopes, snapshots and results are explicitly rejected. There are no compatibility
 aliases for `InventoryCombatSnapshot`, `combat_inventory`, missing equipment or missing
@@ -693,3 +693,26 @@ Turn algorithms remain the calculation path. The strict equipment closure is pro
 before enabling its neutral armor facts in spell Save validation. No Snapshot or
 Delta shape changes; formal C-04/C-15/C-16 remain OPEN. Equipped mixed concentration
 graphs and other spell/component profiles are not admitted by this batch.
+
+
+## R31 equipped Fighter Sap
+
+Envelope `/20` and evaluator `/33` add a closed `combat.sap_marks_update` candidate.
+It includes the complete expected/new typed source-target marks, roster references,
+source-next-turn-start expiry and target-next-attack-roll consumption. Duplicate
+targets, self marks, absent references and unchanged writes are invalid. SM alone
+checks expected state/world/RNG and commits the complete candidate.
+
+A reviewed Fighter 1 retains canonical grants, Defense, exactly three reviewed Sap
+trainings (mace/flail/morningstar), owned accessible mace/chain shirt/optional shield,
+explicit proficiency/grip/armor AC and Second Wind capacity. AttackActivity supplies
+the actual proc on a hit even when damage is immune. The shared pure transitions
+consume a mark only after an actual AttackRolled, overwrite rather than stack, and
+expire remaining marks at the source's next start. No Legacy fold/hooks execute.
+
+The next ordinary Attack independently restores Sap from the supplied Snapshot and
+uses the original disadvantage/cancellation algorithm. Exact permanent implied Prone
+can supply the opposing advantage with canonical clause/provenance validation.
+Pass/reset and subsequent attacks preserve all class/equipment/resources. Other
+masteries, conditions and mixed effect/reaction graphs stay Deferred; C-04/C-15/C-16
+and full production State Machine/Bridge migration remain OPEN.

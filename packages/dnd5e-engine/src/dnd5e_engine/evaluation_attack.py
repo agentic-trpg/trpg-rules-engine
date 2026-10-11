@@ -17,6 +17,7 @@ from dnd5e_engine.evaluation_state import CombatSnapshot
 from dnd5e_engine.events import (
     IntentSubmitted,
 )
+from dnd5e_engine.sap_rules import apply_sap, consume_sap
 from dnd5e_engine.spatial import GridTopology
 from dnd5e_engine.specs import GridScene
 from dnd5e_engine.turn_rules import (
@@ -88,6 +89,7 @@ def execute_attack(
             )
         },
         attacker_ranged_in_melee=ranged_in_melee,
+        attacker_sapped=actor.entity_id in state.sap_marks,
         use_versatile_damage=intent.two_handed
         and attack_rules.versatile_grip_applies(plan.weapon, plan.distance_ft),
         is_proficient_attack=attack_rules.is_proficient_with_weapon(actor, plan.weapon),
@@ -100,6 +102,12 @@ def execute_attack(
         damage_instance_resolved=computation.damage_completed,
     )
     resolve_activity(plan.activity, ctx, weapon=plan.weapon)
+    marks = consume_sap(computation.state.sap_marks, actor.entity_id, computation.events)
+    for mastery, target in ctx.mastery_procs:
+        if mastery != "sap":
+            raise RuntimeError("unadmitted mastery proc")
+        marks = apply_sap(marks, actor.entity_id, target)
+    computation.state = computation.state.model_copy(update={"sap_marks": marks})
     computation.finish_turn(actor.entity_id)
     computation.actors[actor.entity_id] = record_budget_changes(
         before, computation.actors[actor.entity_id]

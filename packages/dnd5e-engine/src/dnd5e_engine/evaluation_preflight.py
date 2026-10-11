@@ -55,6 +55,8 @@ def snapshot_support_failure(
     actor_dependencies: Callable[[CharacterStateV2], str | None] | None = None,
     reviewed_reactions: bool = False,
     reviewed_effects: bool = False,
+    reviewed_sap: bool = False,
+    reviewed_conditions: bool = False,
 ) -> str | None:
     state = snapshot.combat_state
     failure = death_consistency(snapshot, allow_dying=turn_lifecycle)
@@ -82,7 +84,7 @@ def snapshot_support_failure(
         state.hidden_entities,
         state.vex_grants,
         state.rage_bonus_extensions,
-        state.sap_marks,
+        state.sap_marks if not reviewed_sap else (),
         state.slow_marks,
         state.legendary_windows_used,
         state.legendary_resistance_armed,
@@ -120,7 +122,12 @@ def snapshot_support_failure(
         if actor_dependencies is None and actor.weapon_mastery_slugs:
             return "trained weapon mastery execution is not migrated"
         if (
-            (actor.conditions and not turn_lifecycle and not reviewed_effects)
+            (
+                actor.conditions
+                and not turn_lifecycle
+                and not reviewed_effects
+                and not reviewed_conditions
+            )
             or (actor.concentration_effect_id and not reviewed_effects)
             or (
                 actor_dependencies is None
@@ -470,7 +477,7 @@ def prepare_attack(
             snapshot, intent.target_id or "", loader, composed=True
         )
     else:
-        support = operation_dependencies(snapshot, loader, attack=True)
+        support = operation_dependencies(snapshot, loader, attack=True, reviewed_sap=True)
     if support:
         return refused("unsupported", "snapshot.capability", support)
     support = template_support_failure(snapshot, loader)

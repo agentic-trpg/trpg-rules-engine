@@ -161,7 +161,7 @@ def real_case(*, rolled=False):
         combat_setup=setup,
     )
     request = init.CombatInitializationCandidateRequest(
-        schema_version="engine-evaluation/19",
+        schema_version="engine-evaluation/20",
         payload=init.CombatInitializationCandidatePayload(kind="combat.init.local-candidate"),
         session_id=expected.session_id,
         command_id="cmd:r14:init",
@@ -201,7 +201,7 @@ def test_real_srd_init_then_npc_explicit_attack_without_legacy(monkeypatch, roll
         assert after.inventory_state == request.state_snapshot.inventory_state
         assert next(a for a in after.character_states if a.entity_id == HERO).spell_slots == {1: 2}
         attack = RuleEvaluationRequest(
-            schema_version="engine-evaluation/19",
+            schema_version="engine-evaluation/20",
             session_id=request.session_id,
             command_id="cmd:r14:attack",
             actor_id=NPC,

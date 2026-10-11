@@ -1040,3 +1040,42 @@ Final plan was inspected against the full base SHA above, then
 MkDocs passed. The existing unknown worktree path conservatively broadened selection;
 it remains unstaged. These are local Integration results, not Full/coverage/security/
 wheel evidence or GitHub results. The final evidence-only edit gets strict MkDocs.
+
+## R27 equipped complete-class weapon attack
+
+Base: `19fe95c3fab9682b3f3d7c91e047ec9a2d325ac7`; branch
+`refactor/r27-equipped-class-attack`; evaluator `/29`, Snapshot `/13`, envelope `/17`.
+
+Stateless External Contract: one complete canonical Cleric 1 profile retains all
+class grants, casting/repertoire, resource pools and actual equipment. Canonical
+mace or quarterstaff + chain shirt + optional shield requires unique accessible
+owned instances, explicit held grip, occupied hand and class-derived proficiencies.
+Shared Armor AC enforces medium DEX cap/shield contribution for both attacker and
+target; ordinary shared weapon/Attack/Damage/Turn cores perform all execution.
+The selected Protector feature is explicit and canonical; shared passive-change
+readers include its martial proficiency/heavy training without expanding this
+simple/medium equipment slice. Trained Sap/Topple is rejected, never ignored.
+
+Legacy Runtime Dependency Removed: equipped PC and rule-equivalent bounded NPC
+Attack, complete damage, automatic end-turn, later Pass/reset and next Attack run
+with Legacy entrypoints/registry/handle/hooks disabled. Independent expected rolls,
+critical dice, resistance/immunity/vulnerability, temporary HP and target armor
+hit/miss expectations are separate from full Legacy state/event/RNG differential.
+Replay/concurrent evaluation, stale world/state guards and injected resolver fault
+leave the caller input unchanged. Unknown gear/class/feature/instance/hand/source
+facts fail before RNG/payment. Other equipped classes, species, Mastery execution,
+equipped casting/rest and general equipment management remain Deferred. C-04,
+C-15/C-16 and formal ABI remain OPEN. Integration evidence is recorded below.
+
+R27 validation: focused class/weapon/turn workflows **336 passed in 15.09 s**;
+a confirmed existing spell-component diagnostic regression was then fixed without
+changing its assertion; combined damage-spell/equipped tests **95 passed in 7.07 s**.
+The failed pre-final Integration Engine run had 8,505 passed / 1 failed; it is not
+counted as a successful gate. Final plan was re-inspected against the base above.
+`python tools/validate.py integration --base 19fe95c3fab9682b3f3d7c91e047ec9a2d325ac7`
+**PASSED in 973.83 s**: Data **671 passed / 1 skipped** (165.71 s), Engine **8,506**
+(714.82 s), Bridge **139** (11.90 s), Demo **54** (26.36 s), **24 tooling tests**,
+Ruff/format/Mypy, examples and strict MkDocs. Windows Python 3.14.7; this is local
+Integration evidence, not Full/coverage/security/wheel or GitHub evidence. The final
+evidence-only documentation edit receives a strict MkDocs build. The preserved
+unknown worktree directory broadened the plan; it is not part of this batch.

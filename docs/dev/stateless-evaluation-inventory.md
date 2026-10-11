@@ -901,3 +901,19 @@ reviewed class movement remains intact for the mover. Non-trigger/spent-budget f
 stay armed; the owner's next TurnStarted consumes them. All unrepresented reaction
 choices or effect/mastery/visibility dependencies fail before payment/RNG. Shield and
 stat-block OA still require separate closure. C-04/C-15/C-16 and formal ABI remain OPEN.
+
+### R27 equipped complete-class attack closure
+
+Stateless External Contract: complete Cleric 1 + Spellcasting/Divine Order/Protector grants,
+explicit class-derived weapon/save proficiencies, canonical mace/quarterstaff,
+chain shirt and optional shield, unique owned accessible inventory instances and
+consistent grip/hand facts. Shared Armor AC validates the target as well as the
+attacker; shared Attack/Damage and Turn rules produce complete guarded deltas.
+No Snapshot/envelope shape change; evaluator `/29` changes supported semantics.
+
+Legacy Runtime Dependency Removed: equipped Character and equivalent bounded NPC
+ordinary attacks, damage and subsequent Pass/reset/next attack execute without
+Orchestrator, registry, CombatHandle or live hooks. Existing shared weapon,
+versatile, proficiency, armor, damage/zero-HP and turn algorithms are reused.
+Species, other classes/gear, trained Mastery and equipped casting/rest remain
+Deferred rather than erased from the input. No formal ABI/SM integration claim.

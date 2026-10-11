@@ -14,7 +14,7 @@ The current local candidate versions are:
 | RuleEvaluationRequest / Result | `engine-evaluation/17` | `/1`–`/16` |
 | StateSnapshot | `engine-snapshot/13` | `/1`–`/12` |
 | Availability request/result | `engine-availability/11` | `/1`–`/10` |
-| RulesetBinding evaluator | `dnd5e-evaluation/28` | `/27` and earlier |
+| RulesetBinding evaluator | `dnd5e-evaluation/29` | `/28` and earlier |
 
 Old envelopes, snapshots and results are explicitly rejected. There are no compatibility
 aliases for `InventoryCombatSnapshot`, `combat_inventory`, missing equipment or missing
@@ -602,3 +602,24 @@ leaving step; only the completed path prefix consumes movement. All actor budget
 HP/TempHP, conditions/death/processed-damage ledgers, position, consent, events and RNG
 are returned together. Legal non-triggers retain consent, consume no Reaction/RNG and
 can Pass through its explicit expiry at the owner's next turn start.
+
+## R27 equipped complete-class ordinary attack
+
+Evaluator `/29` adds a reviewed equipped Cleric 1 profile to ordinary Attack and
+Pass/reset. Complete canonical Spellcasting/Divine Order/selected Protector grants, class/level facts,
+spell slots, casting repertoire and inventory remain in the snapshot and result.
+The bounded profile has one canonical mace or quarterstaff, one chain shirt and
+an optional shield, each represented by one unique accessible owned instance.
+Held weapon, grip, occupied hand, shield and armor category must agree. Canonical
+class proficiency grants and shared Armor AC calculation validate offense/defense
+facts: STR 16 gives +3, level-1 PB +2; chain shirt caps DEX at +2, shield adds +2.
+The quarterstaff uses the existing versatile damage rule for a legal two-hand grip.
+
+The explicit Protector choice adds martial proficiency/heavy training through the
+shared passive-change readers; this slice still uses simple weapons/medium armor.
+Trained Mastery, species/subclass modifiers,
+other class/equipment profiles, passive/magical asset drift, ambiguous or missing
+instances and unexplained bonuses remain unsupported before execution. This does
+not open equipped spellcasting or rest. An equipped actor or target uses the same
+closure; no real class or equipment facts are stripped to pass an operation gate.
+C-04/C-15/C-16 and production SM authorization/commit remain OPEN.

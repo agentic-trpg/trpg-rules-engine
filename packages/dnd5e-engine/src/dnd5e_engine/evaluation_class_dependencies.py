@@ -7,6 +7,7 @@ from dnd5e_engine.activities.build_context import build_activity_context
 from dnd5e_engine.activities.scale import build_scale_values
 from dnd5e_engine.build_spec import derive_multiclass_pact_slots, derive_multiclass_slots
 from dnd5e_engine.evaluation_actor import combatant
+from dnd5e_engine.evaluation_equipment_dependencies import equipped_cleric_dependencies
 from dnd5e_engine.evaluation_resources import FeatureResource, SlotResource
 from dnd5e_engine.evaluation_state import CharacterStateV2, CombatSnapshot, NonCombatSnapshot
 from dnd5e_engine.feature_runtime import DrawFreeRandom, scalar_formula
@@ -22,6 +23,8 @@ def class_dependencies(
     snapshot: CombatSnapshot | NonCombatSnapshot,
     loader: AssetLoader,
     canonical: BundledAssetLoader,
+    *,
+    equipped: bool = False,
 ) -> str | None:
     if actor.species_slug:
         return "subclass/species operation dependencies are not migrated"
@@ -39,17 +42,26 @@ def class_dependencies(
         ):
             return "class/source dependency is absent"
         return None
-    if actor.worn_armor or actor.shield_equipped or actor.other_hand_occupied:
-        return "only unarmored, unencumbered component profile is reviewed"
+    has_equipment = bool(
+        actor.worn_armor
+        or actor.shield_equipped
+        or actor.other_hand_occupied
+        or actor.carried_item_slugs
+        or any(e.owner_id == actor.entity_id for e in snapshot.inventory_state.entries)
+    )
+    if has_equipment:
+        if not equipped:
+            return (
+                "only unarmored, unencumbered component profile is reviewed"
+                if actor.worn_armor or actor.shield_equipped or actor.other_hand_occupied
+                else "only the complete empty equipment profile is reviewed"
+            )
+        if failure := equipped_cleric_dependencies(actor, snapshot, loader, canonical):
+            return failure
     if actor.fighting_styles not in ((), ("defense",)):
         return "unreviewed fighting style"
     if any(not k.startswith("feature_use:") for k in actor.custom_counters):
         return "unreviewed mechanical counter"
-    if (
-        any(e.owner_id == actor.entity_id for e in snapshot.inventory_state.entries)
-        or actor.carried_item_slugs
-    ):
-        return "only the complete empty equipment profile is reviewed"
     if actor.subclass_slug and not (levels == {"wizard": 5} and actor.subclass_slug == "evoker"):
         return "unreviewed subclass dependencies"
     if levels == {"wizard": 5} and actor.subclass_slug != "evoker":
@@ -63,6 +75,8 @@ def class_dependencies(
     if cls is None or cls != canonical.get_class(slug):
         return "class definition differs from the reviewed binding"
     grants = {g.slug for g in cls.granted_features if g.ref_type == "feature" and g.level <= level}
+    if equipped and has_equipment and slug == "cleric":
+        grants.add("divine-order-protector")
     if slug == "wizard":
         additional = evoker_grants(loader, canonical, level)
         if additional is None:
@@ -163,6 +177,7 @@ def operation_dependencies(
     turn_lifecycle: bool = False,
     attack: bool = False,
     reviewed_reactions: bool = False,
+    equipped: bool = False,
 ) -> str | None:
     """Pass/reset, walking, initialization and closure do not activate these grants.
 
@@ -188,7 +203,7 @@ def operation_dependencies(
             or actor.weapon_mastery_slugs
         ):
             return None
-        return class_dependencies(actor, snapshot, loader, canonical)
+        return class_dependencies(actor, snapshot, loader, canonical, equipped=equipped or attack)
 
     return snapshot_support_failure(
         snapshot,

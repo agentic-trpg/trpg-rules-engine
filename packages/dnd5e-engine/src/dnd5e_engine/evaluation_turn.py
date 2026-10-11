@@ -73,6 +73,7 @@ def evaluate_turn(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
             movement=True,
             reviewed_reactions=bool(state.pending_reactions),
             attack=bool(state.pending_reactions),
+            equipped=True,
         )
         or template_support_failure(snapshot, loader)
     )

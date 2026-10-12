@@ -41,7 +41,7 @@ def request_and_live(**kwargs):
         combat_id="combat:synthetic",
     )
     request = RuleEvaluationRequest(
-        schema_version="engine-evaluation/22",
+        schema_version="engine-evaluation/23",
         session_id=live.session_id,
         command_id="command:synthetic",
         operation_kind="combat.intent",
@@ -114,7 +114,6 @@ def apply_delta(snapshot, result):
             combat["deaths_recorded"] = [r.model_dump() for r in op.records]
         else:
             raise TypeError(f"unhandled delta: {op.kind}")
-    combat["event_log"] += tuple(e.model_dump() for e in result.proposed_events)
     return CombatSnapshot.model_validate_json(to_json(value))
 
 

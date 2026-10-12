@@ -160,11 +160,12 @@ def test_attack_zero_hp_death_save_boundary_matches_independent_legacy_entry(
 def test_multi_enemy_successive_commits_match_legacy_events_state_and_rng(monkeypatch):
     request, loader = multi_enemy_case()
     # Only the independent Legacy oracle uses the compatibility fixture factory.
-    live = evaluation_context.execution_context(request.state_snapshot, loader)
+    live = evaluation_context.execution_context(request.state_snapshot, loader, audit_events=())
     live.rng = request.rng_context.state.restore()
     handle = orch.CombatHandle(live.handle_id)
     orch._REGISTRY[live.handle_id] = live
     submit = orch.submit_player_intent
+    audit = []
     for index, (actor, target) in enumerate(((HERO, FOE), (OTHER, HERO), (HERO, OTHER))):
         request = request.model_copy(
             update={
@@ -181,10 +182,13 @@ def test_multi_enemy_successive_commits_match_legacy_events_state_and_rng(monkey
             prohibit_legacy(isolated)
             result = execute(request, loader)
         assert result.status == "accepted", result.error
+        offset = len(live.event_log)
         asyncio.run(submit(handle, actor, request.payload))
         after = apply_delta(request.state_snapshot, result)
         assert after == recapture(request, live).state_snapshot
-        assert after.combat_state.event_log == tuple(live.event_log)
+        audit.extend(result.proposed_events)
+        assert tuple(audit) == tuple(live.event_log)
+        assert result.proposed_events == tuple(live.event_log[offset:])
         assert result.rng_transition.next_state == RNGState.capture(live.rng)
         assert request == before
         assert FOE in after.combat_state.dead_ids

@@ -5,6 +5,7 @@ from typing import Any, Literal
 
 from dnd5e_engine.evaluation_casting import CastingState
 from dnd5e_engine.evaluation_effects import effect_state
+from dnd5e_engine.evaluation_legacy_history import validate_legacy_history
 from dnd5e_engine.evaluation_reaction_state import PendingReactionState, reaction_state
 from dnd5e_engine.evaluation_resources import ResourceState
 from dnd5e_engine.evaluation_state import (
@@ -32,7 +33,7 @@ from dnd5e_engine.types.combat import Combatant
 def character_state(
     live: _LiveCombat,
     actor: Combatant,
-    version: Literal["engine-snapshot/16"] = "engine-snapshot/16",
+    version: Literal["engine-snapshot/17"] = "engine-snapshot/17",
 ) -> CharacterStateV2:
     value = actor.model_dump(mode="python")
     value["death_saves"] = value["death_saves"] or None
@@ -55,7 +56,7 @@ def capture_combat_snapshot(
     resource_state: ResourceState | None,
     casting_state: CastingState | None,
     reaction_sources: dict[str, str] | None = None,
-    snapshot_schema_version: Literal["engine-snapshot/16"] = "engine-snapshot/16",
+    snapshot_schema_version: Literal["engine-snapshot/17"] = "engine-snapshot/17",
 ) -> CombatSnapshot:
     """Capture a completed boundary; no registry lookup or RNG serialization.
 
@@ -70,6 +71,13 @@ def capture_combat_snapshot(
         or live.character_damage_instances
     ):
         raise ValueError("cannot capture an in-flight execution boundary")
+    if not isinstance(live, _LiveCombat):
+        raise TypeError("capture requires the owned Legacy execution boundary")
+    validate_legacy_history(
+        live.event_log,
+        ended=live.ended,
+        applied_indices=live.legendary_resistance_applied_event_indices,
+    )
     actors = tuple(
         character_state(live, actor, snapshot_schema_version) for actor in live.initiative
     )
@@ -82,7 +90,6 @@ def capture_combat_snapshot(
         "combat_objects",
         "conditions_by_effect",
         "effect_lifecycles",
-        "event_log",
         "constructs",
         "transforms",
         "summons",
@@ -148,7 +155,6 @@ def capture_combat_snapshot(
             LifecycleRecord(identity=key, state=copy.deepcopy(state))
             for key, state in live.effect_lifecycles.items()
         ),
-        event_log=tuple(copy.deepcopy(live.event_log)),
         constructs={
             key: ConstructState.model_validate(vars(state))
             for key, state in live.constructs.items()

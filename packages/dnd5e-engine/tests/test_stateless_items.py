@@ -63,14 +63,14 @@ def item_case(*, hp=10, quantity=1, charges=1, **entry_updates):
                 "inventory_state",
             }
         ),
-        snapshot_schema_version="engine-snapshot/16",
+        snapshot_schema_version="engine-snapshot/17",
         snapshot_kind="combat",
         character_states=tuple(actors),
         inventory_state=InventoryState(entries=(InventoryEntry(**entry),)),
     )
     request = request.model_copy(
         update={
-            "schema_version": "engine-evaluation/22",
+            "schema_version": "engine-evaluation/23",
             "operation_kind": "combat.item",
             "state_snapshot": snapshot,
             "payload": ItemUsePayload(
@@ -134,7 +134,6 @@ def apply_atomic(store, result, *, fail_at=None):
         touched.add(key)
         if fail_at == index:
             raise RuntimeError("injected consumer failure")
-    value["combat_state"]["event_log"] += tuple(e.model_dump() for e in result.proposed_events)
     value["world_version"] += 1  # Test host policy; not a frozen Engine ABI rule.
     from pydantic_core import to_json
 

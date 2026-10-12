@@ -24,8 +24,8 @@ and the explicit task govern RE validation and serial commits.
 | Batch | Scope | Status |
 | --- | --- | --- |
 | RF-RE1 | Contract/field/call-chain audit; existing differential baseline | validated and pushed as `b7f891ee83cafdc619ffc929917f693951beff86` |
-| RF-RE2 | Separate candidate mechanics from this call's ordered typed events | implementation and affected-path differentials complete; final gate below |
-| RF-RE3 | Remove full-history input and Legacy event-index requirements; version all affected envelopes | pending RF-RE2 |
+| RF-RE2 | Separate candidate mechanics from this call's ordered typed events | validated and pushed as `0da207ddf504fb17b48b424b787c6962422a351b` |
+| RF-RE3 | Remove full-history input and Legacy event-index requirements; version all affected envelopes | final Integration passed; candidate commit recorded by SM handoff |
 | RF-RE4 | Upgrade SM using the validated, pushed RF-RE3 full SHA | pending RF-RE3 and RE review |
 
 Each batch records its actual starting SHA, validation and commit before the next
@@ -37,10 +37,10 @@ of this work. RF-RE1–3 change only RE; RF-RE4 changes only SM.
 | Surface | SM actually pinned | RE baseline | RF target |
 | --- | --- | --- | --- |
 | Engine/SRD Git pin | both `602dcb8d448e670049427bbb751d6ed226005298` | RE HEAD above, packages 0.6.0 | both RF-RE3's pushed full SHA, not a branch/path |
-| Evaluation | `/1` for combat, `/4` for complete noncombat | `engine-evaluation/22` | explicit new version in RF-RE3 |
-| Snapshot | `engine-snapshot/1` or `/2` | `engine-snapshot/16` | history-free explicit new version |
-| Availability | `/1` or `/2` | `engine-availability/12` | explicit new version with the same mechanical preflight |
-| Evaluator binding | pinned package uses `/4` and `/8` profiles | `dnd5e-evaluation/35` | new revision, no aliases |
+| Evaluation | `/1` for combat, `/4` for complete noncombat | `engine-evaluation/22` | `engine-evaluation/23` |
+| Snapshot | `engine-snapshot/1` or `/2` | `engine-snapshot/16` | history-free `engine-snapshot/17` |
+| Availability | `/1` or `/2` | `engine-availability/12` | `engine-availability/13`, same mechanical preflight |
+| Evaluator binding | pinned package uses `/4` and `/8` profiles | `dnd5e-evaluation/35` | `dnd5e-evaluation/36`, no aliases |
 | Closure | flat outcome fields and optional NPC life normalization | typed `historical` report, `xp_increments`, already-consistent life/death | write only ended/XP; reports never reapplied |
 
 RF-RE2 keeps all public versions/shapes unchanged. RF-RE3 removes history from
@@ -214,5 +214,56 @@ diff. The reviewer did not edit files or repeat the running tests.
 
 The final plan and Integration gate use the exact RF-RE2 starting SHA above via
 the checked-in `tools/validate.py` entrypoint (GNU Make unavailable), with log
-`%TEMP%/rf-re2-integration.log`. Gate and commit outcomes are recorded in the next
-serial batch after completion; RF-RE3 must not start before its successful push.
+`%TEMP%/rf-re2-integration.log`. Integration passed in **776.01 s** (776.63 s
+outer stopwatch): tooling 24, Data 671 / 1 existing skip, Engine 8,824, Bridge 139,
+Demo 54; static checks, examples and strict docs passed. Commit and push verified:
+`0da207ddf504fb17b48b424b787c6962422a351b`. RF-RE1 native CI run 38295994130
+also completed successfully; local RF-RE2 evidence is recorded separately.
+
+### RF-RE3 implementation and handoff
+
+Start: `0da207ddf504fb17b48b424b787c6962422a351b`. The target versions in the
+table above apply consistently to public envelopes, nested initialization and
+concentration candidates, Availability and exported JSON schemas. Bridge remains
+the Legacy runtime adapter and has no stateless Snapshot wire consumer to upgrade.
+
+CombatState no longer contains full audit events or Legacy legendary indices.
+`ended` alone fences closure after strict current-fact validation. Existing turn
+serial, damage sequence, per-turn markers and typed lifecycle/reaction clocks
+remain the exact dependencies. No new fact/identifier is needed and no extra RNG
+draw is introduced. Delta ownership and admitted support are unchanged.
+
+The only remaining history access in evaluation-prefixed modules is explicitly
+outside the new execution path: Legacy parity capture/oracle, and the separately
+invoked `/16` migration. The latter requires original `/35` binding with identical
+effective rules data, explicit typed full history, empty indices, consistent ended
+and closed actor references; every other required current field is revalidated.
+Unknown/incomplete older sources refuse instead of acquiring guessed defaults.
+Audit retention belongs to the caller, and does not appear in the converted DTO.
+
+New tests cover wire/schema absence, strict old-version refusal, migration success
+and contradiction/missing-source refusal, fresh interpreter reproduction, session
+interleaving, and forbidden Legacy adapters during evaluate/availability. Existing
+Legacy comparisons retain state, ordered events and RNG assertions; cumulative
+events in successive commits now live in a separate test-host audit collection.
+The first targeted run passed **90 tests in 7.32 s** with existing Lark warnings.
+The broad stateless development run found 18 failures / 1,868 passes (200.45 s),
+all from two independent test consumers still writing audit events into Snapshot.
+Those consumers now apply mechanics only; existing ordered Legacy event assertions
+remain. Their affected workflows passed on rerun (115 passed in 113.65 s, plus two
+new migration fixtures initially missing an effect name). The corrected migration
+suite passed 27 tests in 4.88 s, and a subsequently added closed-source regression
+passed in 1.26 s. Package-configured `mypy src` passed all 150 modules; invoking
+mypy from the workspace root initially omitted the package plugin/configuration
+and is not treated as the configured gate.
+
+Independent cumulative RE1–3 review found one migration closure gap in nested
+reaction/effect actor references. Explicit actor-reference traversal now checks
+typed nested evidence and actor collections, without mistaking spell/activity/source
+IDs for actors. Recursive strict extra-field validation and five regression cases
+cover the correction. The reviewer found no other blocking core or version gap.
+The final plan/Integration used this batch's starting SHA and passed in **792.62 s**
+(793.29 s outer stopwatch), log `%TEMP%/rf-re3-integration.log`. All package static
+checks, complete runtime suites, tooling, examples and strict docs passed. The
+independent reviewer rechecked the nested-reference correction and closed its
+finding. The pushed candidate SHA is recorded by the SM handoff and final report.

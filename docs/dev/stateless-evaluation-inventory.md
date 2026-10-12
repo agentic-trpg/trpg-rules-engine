@@ -22,7 +22,7 @@ version/migration details are in [stateless evaluation](stateless-evaluation.md)
 
 ## Current stabilization additions
 
-Current snapshots are version `/16` only, with precisely CombatSnapshot and
+Current snapshots are version `/17` only, with precisely CombatSnapshot and
 NonCombatSnapshot discriminators. Both require InventoryState(entries=...),
 strict owner/instance closure and complete CharacterStateV2 equipment. Older snapshot
 versions and the third combat_inventory context are rejected explicitly; no empty
@@ -33,6 +33,12 @@ separates new XP/ended writes from a typed historical balance report. Shared slo
 expenditure is recorded at payment by actual payer/pool/level, never from Effect names.
 See [current contracts](stateless-evaluation.md) and
 [global migration progress](stateless-migration-progress.md).
+
+RF-RE3 removes the Legacy event log and its legendary event-index set from the
+current DTO. Existing ended/turn/damage/usage/lifecycle facts cover the admitted
+rules; the historical field index below remains an audit of Legacy runtime.
+Complete `/16` sources have a separately invoked strict migration boundary;
+ordinary evaluation never invokes that boundary or retrieves audit history.
 
 The field index below is the original Legacy baseline inventory, not a declaration
 that every listed dependency is already admitted by stateless evaluation.

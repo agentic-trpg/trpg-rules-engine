@@ -140,7 +140,7 @@ def init_case(*, fixed=(20, 1), dex=(16, 10), surprised=False, seed=0):
     snapshot = NonCombatSnapshot(
         resource_state=None,
         casting_state=None,
-        snapshot_schema_version="engine-snapshot/16",
+        snapshot_schema_version="engine-snapshot/17",
         snapshot_kind="non_combat",
         session_id="synthetic-init",
         world_version=7,
@@ -151,7 +151,7 @@ def init_case(*, fixed=(20, 1), dex=(16, 10), surprised=False, seed=0):
         combat_setup=setup,
     )
     request = init.CombatInitializationCandidateRequest(
-        schema_version="engine-evaluation/22",
+        schema_version="engine-evaluation/23",
         payload=init.CombatInitializationCandidatePayload(kind="combat.init.local-candidate"),
         session_id="synthetic-init",
         command_id="cmd:init",
@@ -184,7 +184,6 @@ def apply_creation(request, result, *, existing=None, world_version=7):
     value.pop("combat_setup")
     value["snapshot_kind"] = "combat"
     value["combat_state"] = op.value.model_dump(mode="python")
-    value["combat_state"]["event_log"] = tuple(e.model_dump() for e in result.proposed_events)
     # Combat roster order is explicit; Character collection order remains the input order.
     return CombatSnapshot.model_validate_json(to_json(value))
 

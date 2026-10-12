@@ -1,4 +1,4 @@
-"""Per-call legacy execution context, reconstructed exclusively from a snapshot."""
+"""Explicit per-call Legacy oracle adapter with separately supplied audit evidence."""
 
 import asyncio
 import copy
@@ -8,7 +8,9 @@ from dnd5e_srd_data.loader import AssetLoader
 
 from dnd5e_engine import orchestrator as orch
 from dnd5e_engine.combat_objects import CombatObjectState
+from dnd5e_engine.evaluation_legacy_history import validate_legacy_history
 from dnd5e_engine.evaluation_state import CombatSnapshot, CombatState
+from dnd5e_engine.events import CombatEvent
 from dnd5e_engine.persistent_areas import PersistentAreaState
 from dnd5e_engine.spatial import GridTopology
 from dnd5e_engine.specs import GridScene
@@ -16,8 +18,10 @@ from dnd5e_engine.timed_activities import TimedActivityState
 from dnd5e_engine.types.combat import Combatant
 
 
-def execution_context(snapshot: CombatSnapshot, loader: AssetLoader) -> orch._LiveCombat:
-    """Only called after admission excludes complex sidecars, never start_combat.
+def execution_context(
+    snapshot: CombatSnapshot, loader: AssetLoader, *, audit_events: tuple[CombatEvent, ...]
+) -> orch._LiveCombat:
+    """Explicit Legacy oracle adapter, never called by evaluate/availability.
 
     A fixed private RNG is a draw-free preflight sentinel, replaced by the
     explicit request RNG only when execution has been admitted.
@@ -31,6 +35,7 @@ def execution_context(snapshot: CombatSnapshot, loader: AssetLoader) -> orch._Li
         actors.append(Combatant.model_validate(value))
     by_id = {actor.entity_id: actor for actor in actors}
     state = snapshot.combat_state
+    validate_legacy_history(audit_events, ended=state.ended, applied_indices=set())
     live = orch._LiveCombat(
         handle_id=state.combat_id,
         session_id=snapshot.session_id,
@@ -50,7 +55,6 @@ def execution_context(snapshot: CombatSnapshot, loader: AssetLoader) -> orch._Li
         "combat_objects",
         "conditions_by_effect",
         "effect_lifecycles",
-        "event_log",
         "constructs",
         "transforms",
         "summons",
@@ -68,7 +72,7 @@ def execution_context(snapshot: CombatSnapshot, loader: AssetLoader) -> orch._Li
     live.timed_activities = TimedActivityState(
         pending=[], next_sequence=state.timed_activities.next_sequence
     )
-    live.event_log = list(copy.deepcopy(state.event_log))
+    live.event_log = list(copy.deepcopy(audit_events))
     live.current_actor_id = state.initiative_ids[state.current_turn_index]
     live.scene_sunlight = snapshot.scene_state.grid.sunlight
     live.tracked_hp = {actor.entity_id: actor.hp_current for actor in actors}

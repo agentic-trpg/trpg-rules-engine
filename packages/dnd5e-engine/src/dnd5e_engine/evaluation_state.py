@@ -35,7 +35,7 @@ from dnd5e_engine.evaluation_effects import (
 )
 from dnd5e_engine.evaluation_reaction_state import PredeclaredReactionState
 from dnd5e_engine.evaluation_resources import FeatureResource, ResourceState, SlotResource
-from dnd5e_engine.events import CombatEvent, DamageType
+from dnd5e_engine.events import DamageType
 from dnd5e_engine.movement import MovementLedger
 from dnd5e_engine.outcome import DeathRecord
 from dnd5e_engine.persistent_areas import PersistentArea
@@ -384,7 +384,6 @@ class CombatState(EvaluationModel):
     opportunity_attack_weapons: dict[str, str]
     monster_slug_by_entity: dict[str, str]
     xp_value_by_entity: dict[str, Annotated[int, Field(ge=0)]]
-    event_log: tuple[CombatEvent, ...]
     deaths_recorded: list[DeathRecord]
     dead_ids: set[str]
     expended_resources: dict[str, dict[str, Annotated[int, Field(ge=0)]]]
@@ -411,7 +410,6 @@ class CombatState(EvaluationModel):
     departed_actor_id: str | None
     legendary_windows_used: set[tuple[int, str, str]]
     legendary_resistance_armed: dict[str, int]
-    legendary_resistance_applied_event_indices: set[int]
     constructs: dict[str, ConstructState]
     transforms: dict[str, TransformState]
     summons: dict[str, SummonState]
@@ -468,7 +466,7 @@ class InventoryState(EvaluationModel):
 
 
 class SnapshotBase(EvaluationModel):
-    snapshot_schema_version: Literal["engine-snapshot/16"]
+    snapshot_schema_version: Literal["engine-snapshot/17"]
     session_id: Annotated[str, Field(min_length=1)]
     world_version: Annotated[int, Field(ge=0)]
     character_states: tuple[CharacterStateV2, ...]

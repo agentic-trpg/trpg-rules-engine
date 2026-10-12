@@ -102,7 +102,7 @@ def test_killed_enemy_does_not_block_remaining_enemy_attack():
     final = apply_delta(after, third)
     assert final.combat_state.dead_ids == {FOE}
     assert final.character_states[2].hp_current < after.character_states[2].hp_current
-    assert final.combat_state.event_log == (*after.combat_state.event_log, *third.proposed_events)
+    assert "event_log" not in final.combat_state.model_dump()
 
 
 @pytest.mark.parametrize("mutation", ["record", "life", "hp", "kind", "location", "killer"])
@@ -179,7 +179,7 @@ def test_old_snapshot_versions_are_not_silently_upgraded(old_version):
     value["state_snapshot"]["snapshot_schema_version"] = old_version
     import json
 
-    with pytest.raises(ValidationError, match="engine-snapshot/16"):
+    with pytest.raises(ValidationError, match="engine-snapshot/17"):
         RuleEvaluationRequest.model_validate_json(json.dumps(value))
     value["state_snapshot"]["snapshot_kind"] = "combat_inventory"
     with pytest.raises(ValidationError, match="union_tag_invalid"):

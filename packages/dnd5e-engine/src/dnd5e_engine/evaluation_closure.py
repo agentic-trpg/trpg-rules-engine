@@ -47,7 +47,7 @@ def evaluate_closure(request: RuleEvaluationRequest, loader: AssetLoader) -> Clo
     state = snapshot.combat_state
     if request.actor_id not in state.initiative_ids:
         return _refuse("rejected", "actor_invalid", "closure actor is absent from the roster")
-    if state.ended or any(isinstance(event, CombatEnded) for event in state.event_log):
+    if state.ended:
         return _refuse("rejected", "combat_ended", "combat has already ended")
     failure = operation_dependencies(snapshot, loader) or template_support_failure(snapshot, loader)
     if failure:

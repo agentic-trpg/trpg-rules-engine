@@ -367,8 +367,8 @@ class ConcentrationComputation(CombatComputation):
             }
         )
 
-    def result(self) -> CombatSnapshot:
-        return super().result().model_copy(update={"effect_states": tuple(self.effects)})
+    def candidate_state(self) -> CombatSnapshot:
+        return super().candidate_state().model_copy(update={"effect_states": tuple(self.effects)})
 
 
 def concentration_delta(before: CombatSnapshot, after: CombatSnapshot) -> StateDelta:
@@ -537,12 +537,13 @@ def evaluate_concentration_candidate(
                 damage_types=(instance.damage_type,),
             )
         )
-    after = computation.result()
+    computed = computation.result()
+    after = computed.candidate_state
     return RuleEvaluationResult(
         **common,
         status="accepted",
         state_delta=concentration_delta(snapshot, after),
-        proposed_events=tuple(computation.events),
+        proposed_events=computed.proposed_events,
         rng_transition=RNGTransition.between(request.rng_context, rng),
         choice=None,
         error=None,

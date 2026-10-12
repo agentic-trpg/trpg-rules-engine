@@ -135,7 +135,8 @@ async def evaluate(
         if admission.plan is None:
             raise EvaluationInvariantError("accepted preflight lacks an attack plan")
         rng = request.rng_context.state.restore()
-        after = execute_attack(snapshot, request.payload, admission.plan, rng, loader=assets)
+        computed = execute_attack(snapshot, request.payload, admission.plan, rng, loader=assets)
+        after = computed.candidate_state
         from dnd5e_engine.evaluation_concentration import concentration_delta
         from dnd5e_engine.evaluation_shield import has_shield, shield_delta
 
@@ -149,7 +150,7 @@ async def evaluate(
                 if snapshot.effect_states
                 else attack_delta
             )(snapshot, after),
-            proposed_events=after.combat_state.event_log[len(snapshot.combat_state.event_log) :],
+            proposed_events=computed.proposed_events,
             rng_transition=RNGTransition.between(request.rng_context, rng),
             choice=None,
             error=None,

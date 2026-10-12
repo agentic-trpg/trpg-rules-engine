@@ -130,13 +130,14 @@ def evaluate_movement(request: RuleEvaluationRequest, loader: AssetLoader) -> Tu
             current = current.model_copy(update={"disengaging_this_turn": True})
             computation.emit(IntentSubmitted(actor_id=actor_id, intent_type="disengage"))
         computation.actors[actor_id] = current
-    after = computation.result()
+    computed = computation.result()
+    after = computed.candidate_state
     return dict(
         status="accepted",
         state_delta=attack_delta(
             snapshot, after, position_paths={actor_id: tuple(path)} if len(path) > 1 else {}
         ),
-        proposed_events=tuple(computation.events),
+        proposed_events=computed.proposed_events,
         rng_transition=RNGTransition.between(request.rng_context, rng),
         choice=None,
         error=None,
@@ -228,7 +229,9 @@ def _execute_walk(
             run, run_cost = [run[-1]], 0
 
     for a, b in pairwise(path):
-        fires, failure = step_reactors(computation.result(), actor_id, a, b, loader, opportunity)
+        fires, failure = step_reactors(
+            computation.candidate_state(), actor_id, a, b, loader, opportunity
+        )
         if failure:
             raise RuntimeError("preflight omitted a reaction dependency")
         if fires:

@@ -204,9 +204,9 @@ def attack_delta(
             )
         )
         pending.remove("pending_reactions")
-    if new_state.event_log[: len(old_state.event_log)] != old_state.event_log:
+    if new_state.event_log != old_state.event_log:
         raise EvaluationInvariantError("committed rule history was rewritten")
-    pending.discard("event_log")  # returned as ordered proposals, SM appends only on commit
+    pending.discard("event_log")  # unchanged audit input; proposals are a separate output
     if pending:
         raise EvaluationInvariantError(f"unrepresented combat changes: {sorted(pending)}")
     return delta.StateDelta(

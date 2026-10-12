@@ -77,10 +77,11 @@ def evaluate_turn(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
         shield = ShieldComputation(snapshot, rng, loader)
         shield.emit(IntentSubmitted(actor_id=request.actor_id, intent_type="pass"))
         shield.finish_turn(request.actor_id, force=True)
+        computed = shield.result()
         return dict(
             status="accepted",
-            state_delta=shield_delta(snapshot, shield.result()),
-            proposed_events=tuple(shield.events),
+            state_delta=shield_delta(snapshot, computed.candidate_state),
+            proposed_events=computed.proposed_events,
             rng_transition=RNGTransition.between(request.rng_context, rng),
             choice=None,
             error=None,
@@ -122,7 +123,8 @@ def evaluate_turn(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
     computation.emit(IntentSubmitted(actor_id=request.actor_id, intent_type="pass"))
     # Pass pays no Action; it closes the turn even with unused budgets.
     computation.finish_turn(request.actor_id, force=True)
-    after = computation.result()
+    computed = computation.result()
+    after = computed.candidate_state
     return dict(
         status="accepted",
         state_delta=(
@@ -132,7 +134,7 @@ def evaluate_turn(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
             if has_effect
             else attack_delta
         )(snapshot, after),
-        proposed_events=tuple(computation.events),
+        proposed_events=computed.proposed_events,
         rng_transition=RNGTransition.between(request.rng_context, rng),
         choice=None,
         error=None,

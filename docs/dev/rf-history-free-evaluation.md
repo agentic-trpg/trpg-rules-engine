@@ -23,8 +23,8 @@ and the explicit task govern RE validation and serial commits.
 
 | Batch | Scope | Status |
 | --- | --- | --- |
-| RF-RE1 | Contract/field/call-chain audit; existing differential baseline | audit recorded; validation below |
-| RF-RE2 | Separate candidate mechanics from this call's ordered typed events | pending RF-RE1 validation/commit/push |
+| RF-RE1 | Contract/field/call-chain audit; existing differential baseline | validated and pushed as `b7f891ee83cafdc619ffc929917f693951beff86` |
+| RF-RE2 | Separate candidate mechanics from this call's ordered typed events | implementation and affected-path differentials complete; final gate below |
 | RF-RE3 | Remove full-history input and Legacy event-index requirements; version all affected envelopes | pending RF-RE2 |
 | RF-RE4 | Upgrade SM using the validated, pushed RF-RE3 full SHA | pending RF-RE3 and RE review |
 
@@ -174,3 +174,45 @@ An independent read-only agent review found no blocking omission in the public
 history dependency audit. Its two clarifications (movement intermediate results
 and nested candidate/schema envelopes) are included above. This is an audit
 review; it is not review or validation of the not-yet-implemented later batches.
+
+RF-RE1 final Integration passed in **924.32 s** (925.28 s outer stopwatch):
+24 tooling tests; Data 671 passed / 1 existing optional skip; Engine 8,819 passed;
+Bridge 139 passed; Demo 54 passed; package Ruff/format/mypy, three examples and
+strict MkDocs passed. The unrelated worktree remains untracked. Commit/push was
+verified at `b7f891ee83cafdc619ffc929917f693951beff86`; no GitHub Actions result is
+inferred from local success.
+
+### RF-RE2 implementation and validation
+
+Start: `b7f891ee83cafdc619ffc929917f693951beff86`. Public versions and admitted
+capabilities are unchanged. `CombatComputationResult` separately contains a
+private candidate state and a frozen tuple of this call's typed proposals.
+`candidate_state()` is the shared mechanical projection; Concentration,
+EffectTurn and Shield override that projection, including their effect/payment
+facts. Attack returns the result directly. Every final turn/movement/item/spell/
+Hold/concentration caller uses its candidate for Delta and its proposals for
+events. Movement's intermediate opportunity check requests only mechanics.
+
+No computation appends committed history or extracts a suffix. Until RF-RE3,
+the public audit-history field is retained unchanged; `attack_delta` now rejects
+even an append to candidate audit history. All other exhaustive omission checks
+remain. This is no relocation of the concatenation to a boundary adapter.
+
+New tests first failed as expected on the old mixed result and permissive prefix
+guard: **2 failed / 3 passed in 2.41 s**. After the implementation, affected-path
+regressions (`test_computation_result`, attack_core, turn, movement, spell_feature,
+concentration, effect_lifecycle, shield, hold_cast, opportunity and items) passed:
+**414 passed in 24.43 s**, two existing Lark warnings. Existing independent
+mechanical/event/RNG assertions were retained. Ruff check/format passed. An
+exploratory mypy glob command was rejected because PowerShell did not expand
+the file glob; the final gate runs the normal package `mypy src`.
+
+Independent read-only RF-RE2 review found no blocking problem: all source result
+consumers and the HoldTurn inheritance chain were checked, candidate history is
+unchanged, omission guards are retained, and public contract definitions have no
+diff. The reviewer did not edit files or repeat the running tests.
+
+The final plan and Integration gate use the exact RF-RE2 starting SHA above via
+the checked-in `tools/validate.py` entrypoint (GNU Make unavailable), with log
+`%TEMP%/rf-re2-integration.log`. Gate and commit outcomes are recorded in the next
+serial batch after completion; RF-RE3 must not start before its successful push.

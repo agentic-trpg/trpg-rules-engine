@@ -374,8 +374,8 @@ class ShieldComputation(CombatComputation):
         after = effect_ac_changes([e for e in self.effects if e.target_id == attack.target_id])
         return attack.effective_ac + scalar_ac_change_delta(before, after)
 
-    def result(self) -> CombatSnapshot:
-        value = super().result().model_copy(update={"effect_states": tuple(self.effects)})
+    def candidate_state(self) -> CombatSnapshot:
+        value = super().candidate_state().model_copy(update={"effect_states": tuple(self.effects)})
         return payment_post_state(value, tuple(self.payments))
 
 

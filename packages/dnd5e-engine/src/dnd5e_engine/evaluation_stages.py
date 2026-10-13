@@ -48,7 +48,7 @@ SamplePoint = Literal[
     "after_step",
     "operation_end",
 ]
-_SAMPLES: dict[str, str] = dict(
+_SAMPLES: dict[StageKind, SamplePoint] = dict(
     input="input_reference",
     event="after_event_fold",
     attack_execution="before_resolution",

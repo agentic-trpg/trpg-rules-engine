@@ -20,8 +20,8 @@ Neither reference repository nor its dependency pin is changed here.
 
 | Batch | Start | Status |
 |---|---|---|
-| R34 | `63a59f345aea4bac353bb715fdfa007d1ff306d4` | candidate audit/types/tests; gate below |
-| R35 | preceding pushed R34 commit | pending: basic Attack sampling |
+| R34 | `63a59f345aea4bac353bb715fdfa007d1ff306d4` | pushed `aa8997d5a9c7562d4f32632171681f818d18787a`; gate below |
+| R35 | `aa8997d5a9c7562d4f32632171681f818d18787a` | basic Attack sampling; gate below |
 | R36 | preceding pushed R35 commit | pending: ordinary Pass/Walk sampling |
 | R37 | preceding pushed R36 commit | pending: versioned evaluate Result and handoff |
 
@@ -109,6 +109,33 @@ existing skip (236.66 s), Engine 8,870 passed (866.26 s), Bridge 139 passed
 MkDocs. Local Windows evidence only; no remote CI result is inferred.
 
 ## SM boundary for subsequent handoff
+
+R35 adds `StageRecorder` to the private `CombatComputationResult` only. Ordinary
+Attack explicitly enables the audited base profile; Shield/concentration subclasses,
+effect/reaction graphs, Sap/trained Mastery and non-implied Conditions return typed
+uncovered metadata without changing existing rule admission. At the real payment
+boundary it records `attack_execution`, linked to the actual AttackRolled. Each
+accepted emit is sampled after its base fold, with the Damage packet sampled before
+nested Death. Direct Death append, completed damage, actual death-save completion,
+turn advance, budget reset and post-bookkeeping operation end are sampled separately.
+No stage-only entrypoint executes rules; official envelope integration is R37.
+
+The recorder retains only changed bounded actor/combat projections. Event samples
+inspect their supplied actor/attacker/target/source identities; direct boundary
+checkpoints inspect all supplied participants because turn/reset can alter them.
+There is no per-stage Snapshot/scene copy or additional RNG draw. Copy/size counts
+and public result consistency validation are R37 work. Original Delta omission
+guards and independent Legacy/Delta/RNG tests are retained unchanged.
+
+R35 targeted candidate/base/Legacy/isolation/concentration/Shield/Sap regression:
+**230 passed in 31.25 s**. Strict Mypy passes (152 source files). Independent
+read-only review found no blocking issue or mechanical behavior change; completed
+death-save counters are intentionally sampled after earlier roll/death events.
+Final Integration uses the exact R35 starting SHA in the table above.
+It **PASSED in 1208.89 s**: 24 tooling tests, Data 671 / 1 existing skip
+(222.07 s), Engine 8,884 (853.11 s), Bridge 139 (14.96 s), Demo 54 (30.97 s),
+static checks, three examples and strict docs. No Full gate or SM integration
+is claimed. This is local Windows evidence; remote CI is reported separately.
 
 SM must supplement Snapshot-external observer/actor/object/environment facts from
 their own owners under the same input version/dependency/OCC fence. It must verify

@@ -1278,6 +1278,13 @@ separate instances.
   `DeathSaveRolled`, from the turn-start roll, carries counters). The fix needs
   a new `CombatEvent` member or a counters payload on an existing one.
   (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_apply_zero_hp_to_character`)
+  R34–R37 now expose bounded stateless completed-damage/death-save stage facts
+  through local Evaluation `/24` / StageFacts `/2`; this does not add a public
+  CombatEvent, change this Legacy producer, or admit attacks against already-zero
+  HP targets. General event-only hosts and broader zero-HP rule paths remain open.
+  See [stage audit and coverage](docs/dev/event-stage-facts.md) and
+  [SM handoff](docs/dev/event-stage-sm-handoff.md). Common Evidence/Signal/Episode
+  integration and C-19/C-24 approval remain open.
 
 ## Conditions — SRD 5.2 rows not enforced (2026-08-27)
 

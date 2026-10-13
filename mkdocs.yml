@@ -51,6 +51,8 @@ nav:
       - R26-R29 migration review: dev/stateless-r26-r29-review.md
       - R30-R33 migration review: dev/stateless-r30-r33-review.md
       - RF history-free coordination: dev/rf-history-free-evaluation.md
+      - Local event-stage facts: dev/event-stage-facts.md
+      - Event-stage SM handoff: dev/event-stage-sm-handoff.md
       - Reaction queue: dev/reaction-queue.md
       - Passive-stat projection: dev/passive-projection.md
       - Spatial geometry: dev/spatial-geometry.md

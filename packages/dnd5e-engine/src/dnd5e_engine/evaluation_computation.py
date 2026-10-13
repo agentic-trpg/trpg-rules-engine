@@ -24,8 +24,11 @@ from dnd5e_engine.evaluation_reaction_state import (
     OpportunityAttackState,
     StatBlockOpportunityAttackState,
 )
+from dnd5e_engine.evaluation_stage_capture import StageRecorder, stage_profile_reason
+from dnd5e_engine.evaluation_stages import EventStageFacts, StageKind, StageReason
 from dnd5e_engine.evaluation_state import CombatSnapshot, MovementLedgerState
 from dnd5e_engine.events import (
+    ActorMoved,
     AttackRolled,
     CombatEvent,
     ConditionApplied,
@@ -57,6 +60,7 @@ class CombatComputationResult:
 
     candidate_state: CombatSnapshot
     proposed_events: tuple[CombatEvent, ...]
+    stage_facts: EventStageFacts
 
 
 class CombatComputation:
@@ -69,6 +73,37 @@ class CombatComputation:
         # A hit can contain several damage types. Zero-HP rules run once on the
         # completed instance, after temporary HP absorbed each ordered packet.
         self.damage: dict[tuple[str, str], tuple[int, DamageApplied, int]] = {}
+        self.stage_recorder: StageRecorder | None = None
+        self.stage_reason: StageReason = "operation_not_in_stage_profile"
+
+    def enable_stages(self) -> None:
+        reason = stage_profile_reason(self.snapshot)
+        if type(self) is not CombatComputation:
+            reason = "complex_effects_or_reactions"
+        if reason is None:
+            self.stage_recorder = StageRecorder(self.snapshot)
+        else:
+            self.stage_reason = reason
+
+    def sample_stage(self, kind: StageKind, actor_ids: tuple[str, ...] | None = None) -> None:
+        if self.stage_recorder is not None:
+            self.stage_recorder.sample(kind, len(self.events), self.actors, self.state, actor_ids)
+
+    def sample_event(self, event: CombatEvent, index: int) -> None:
+        if self.stage_recorder is not None:
+            ids = {
+                value
+                for name in ("actor_id", "attacker_id", "target_id", "source_actor_id")
+                if (value := getattr(event, name, None)) in self.actors
+            }
+            self.stage_recorder.event(
+                index,
+                self.actors,
+                self.state,
+                ids,
+                attack_roll=isinstance(event, AttackRolled),
+                movement=isinstance(event, ActorMoved),
+            )
 
     def speed(self, actor: Combatant, mode: MovementMode = "walk") -> int:
         speeds = project_speeds(
@@ -84,6 +119,7 @@ class CombatComputation:
             self.actors[event.target_id], event.condition
         ):
             return
+        index = len(self.events)
         self.events.append(event)
         if isinstance(event, AttackRolled):
             if event.attacker_id == self.state.initiative_ids[self.state.current_turn_index]:
@@ -106,9 +142,12 @@ class CombatComputation:
                 before, first, total = self.damage.get(key, (target.hp_current, event, 0))
                 self.damage[key] = (before, first, total + amount)
             elif hp <= 0 and target.entity_id not in self.state.dead_ids:
+                # Capture the packet before the nested Death append/fold.
+                self.sample_event(event, index)
                 self.record_death(
                     Death(target_id=target.entity_id, reason="damage"), event.source_actor_id
                 )
+                return
         elif isinstance(event, HealingApplied):
             actor = self.actors[event.target_id]
             self.actors[actor.entity_id] = actor.model_copy(
@@ -144,6 +183,8 @@ class CombatComputation:
                 }
             )
 
+        self.sample_event(event, index)
+
     def fold_death(self, event: Death, killer: str | None) -> None:
         if event.target_id in self.state.dead_ids:
             return
@@ -161,7 +202,9 @@ class CombatComputation:
 
     def record_death(self, event: Death, killer: str | None) -> None:
         self.fold_death(event, killer)
+        index = len(self.events)
         self.events.append(event)
+        self.sample_event(event, index)
 
     def next_damage_id(
         self, target_id: str, source_id: str | None, *, actor_id: str | None = None
@@ -177,6 +220,10 @@ class CombatComputation:
         return f"damage:{sequence}:{actor_id}:{target_id}"
 
     def damage_completed(self, damage: DamageInstanceContext) -> None:
+        self._damage_completed(damage)
+        self.sample_stage("damage_instance_completed", (damage.target_id,))
+
+    def _damage_completed(self, damage: DamageInstanceContext) -> None:
         pending = self.damage.pop((damage.target_id, damage.damage_instance_id), None)
         if pending is None or damage.target_id in self.state.dead_ids:
             return
@@ -207,6 +254,12 @@ class CombatComputation:
                 self.emit(ev)
 
     def death_save(self, actor_id: str) -> None:
+        cursor = len(self.events)
+        self._death_save(actor_id)
+        if len(self.events) != cursor:
+            self.sample_stage("death_save_completed", (actor_id,))
+
+    def _death_save(self, actor_id: str) -> None:
         actor = self.actors[actor_id]
         if (
             actor.entity_type != "Character"
@@ -255,6 +308,7 @@ class CombatComputation:
             update={"last_ended_turn": (self.state.round_number, actor_id)}
         )
         if next_turn is None:
+            self.sample_stage("turn_advanced")
             return
         index, new_round = next_turn
         self.state = self.state.model_copy(
@@ -263,6 +317,7 @@ class CombatComputation:
                 "round_number": self.state.round_number + int(new_round),
             }
         )
+        self.sample_stage("turn_advanced")
         if new_round:
             self.emit(RoundStarted(round_number=self.state.round_number))
             self.emit(
@@ -304,6 +359,7 @@ class CombatComputation:
         for key, value in self.actors.items():
             if value.sneak_attack_spent_this_turn:
                 self.actors[key] = value.model_copy(update={"sneak_attack_spent_this_turn": False})
+        self.sample_stage("budget_reset")
         self.emit(
             TurnPhase(actor_id=next_actor, phase="turn_start", round_number=self.state.round_number)
         )
@@ -320,4 +376,10 @@ class CombatComputation:
         )
 
     def result(self) -> CombatComputationResult:
-        return CombatComputationResult(self.candidate_state(), tuple(self.events))
+        facts = (
+            self.stage_recorder.finish(len(self.events), self.actors, self.state)
+            if self.stage_recorder is not None
+            else EventStageFacts.uncovered(self.stage_reason)
+        )
+        facts.verify_input(self.snapshot, tuple(self.events))
+        return CombatComputationResult(self.candidate_state(), tuple(self.events), facts)

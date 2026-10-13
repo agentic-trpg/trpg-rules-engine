@@ -11,8 +11,17 @@ blocked C-16. This extracts existing rules rather than adding content support.
 R26 supersedes the historical R17 lifecycle-schema defect recorded below with local
 schema/runtime agreement. Formal ABI and C-04/C-15/C-16 remain unapproved/OPEN.
 
-Current local versions after R33: envelope `/22`, Snapshot `/16`, Availability `/12`,
-evaluator `/35`. Historical batch versions below describe their original deliveries.
+Current local versions after RF-RE3 and R37: envelope `/24`, Snapshot `/17`,
+Availability `/13`, evaluator `/37`, stage facts `/2`. Historical batch versions
+below describe their original deliveries; they are not the current protocol row.
+
+R34–R37 implement [bounded event-stage mechanical facts](event-stage-facts.md)
+through the real one-call `evaluate()` result. Audited ordinary Attack/Pass/Walk
+retain their original Delta, ordered events and RNG; complex rule paths still
+execute under their existing admission with explicit independent stage gaps.
+The [SM handoff](event-stage-sm-handoff.md) records required fixed-pin integration,
+world supplementation, OCC and Evidence persistence. No SM code/pin changed,
+no NPC perception/Episode end-to-end completion or C-19/C-24 ABI approval is claimed.
 
 ## Architecture decisions and progress dimensions
 

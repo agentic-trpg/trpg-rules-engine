@@ -7,7 +7,6 @@ remain OPEN; the resolved-damage candidate is not exposed through evaluate or Br
 
 import random
 from copy import deepcopy
-from dataclasses import replace
 from functools import partial
 from typing import Annotated, Literal, TypedDict
 
@@ -22,10 +21,10 @@ from dnd5e_engine.concentration_rules import concentration_anchor
 from dnd5e_engine.damage_rules import concentration_dc
 from dnd5e_engine.effect_lifecycle import (
     EffectIdentity,
-    OngoingEffectLifecycle,
     concentration_chain_after_expiry,
     conditions_after_effect_expiry,
 )
+from dnd5e_engine.effect_lifecycle import OngoingEffectLifecycle as OngoingEffectLifecycle
 from dnd5e_engine.evaluation_actor import actor_state
 from dnd5e_engine.evaluation_base import EvaluationModel
 from dnd5e_engine.evaluation_computation import CombatComputation
@@ -38,11 +37,12 @@ from dnd5e_engine.evaluation_contracts import (
 )
 from dnd5e_engine.evaluation_delta import ConcentrationUpdate, EffectLifecycleUpdate, StateDelta
 from dnd5e_engine.evaluation_dependencies import damage_save_identity_failure
+from dnd5e_engine.evaluation_effect_ownership import effect_graph_index, lifecycle_clock_failure
 from dnd5e_engine.evaluation_effects import effect_state
 from dnd5e_engine.evaluation_preflight import snapshot_support_failure
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError, attack_delta
 from dnd5e_engine.evaluation_rng import RNGContext, RNGTransition
-from dnd5e_engine.evaluation_ruleset import RulesetBinding, _canonical, verify_ruleset
+from dnd5e_engine.evaluation_ruleset import RulesetBinding, verify_ruleset
 from dnd5e_engine.evaluation_saves import resolve_snapshot_save, save_actor_failure
 from dnd5e_engine.evaluation_stages import EventStageFacts
 from dnd5e_engine.evaluation_state import CharacterStateV2, CombatSnapshot
@@ -120,9 +120,11 @@ def concentration_support_failure(
         or state.concentration_rounds_remaining[target_id] not in range(1, 11)
     ):
         return "invalid concentration duration or duplicate lineage"
-    effects = {(e.target_id, e.id, e.origin): e for e in snapshot.effect_states}
-    clocks = {r.identity: r for r in state.effect_lifecycles}
-    links = {r.identity: r for r in state.conditions_by_effect}
+    try:
+        graph = effect_graph_index(snapshot)
+    except ValueError as exc:
+        return str(exc)
+    effects, clocks, links = graph.effects, graph.clocks, graph.links
     anchor = len(snapshot.effect_states) == 1 and bool(
         snapshot.effect_states[0].flags.get("concentration_anchor")
     )
@@ -158,7 +160,7 @@ def concentration_support_failure(
     ):
         return "anchor differs from the exact canonical empty caster-side effect"
     for identity in () if anchor else chain:
-        effect, clock, link = effects[identity], clocks[identity].state, links[identity]
+        effect, link = effects[identity], links[identity]
         app = effect.lifecycle
         if app is None or (
             app.source_id != target_id
@@ -192,23 +194,8 @@ def concentration_support_failure(
             or link.statuses != ["paralyzed"]
         ):
             return "effect or condition lineage differs from the captured pinned definition"
-        if (
-            _canonical(clock.application) != _canonical(app)
-            or clock.identity != identity
-            or not (
-                1 <= clock.applied_turn_serial <= state.turn_serial
-                and 1 <= clock.applied_round <= state.round_number
-            )
-        ):
-            return "lifecycle application or clock mismatch"
-        last = clock.last_repeat_turn_serial
-        if last is not None and not clock.applied_turn_serial <= last <= state.turn_serial:
-            return "repeat clock is outside combat history"
-        expected_clock = OngoingEffectLifecycle.from_application(
-            identity, clock.application, clock.applied_turn_serial, clock.applied_round
-        )
-        if clock != replace(expected_clock, last_repeat_turn_serial=last):
-            return "lifecycle expiry contradicts captured rule"
+        if failure := lifecycle_clock_failure(snapshot, effect, clocks[identity]):
+            return failure
 
     identity_failure = partial(
         concentration_identity_failure, snapshot=snapshot, loader=loader, composed=composed

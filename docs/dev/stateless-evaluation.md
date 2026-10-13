@@ -1,7 +1,10 @@
 # Stateless rule evaluation: current local contract
 
 This is a migration of the existing Rule Engine toward one stateless evaluator.
-State Machine owns every authoritative runtime fact and the final transaction.
+Each game domain owns its authoritative facts; shared commit facilities coordinate
+their atomic transaction, expected values, versions, RNG and receipt. The existing
+SM/Combat Handler is the current process entrypoint, not a central owner required
+to understand every domain's business fields.
 The conversion is incomplete; see [migration progress and the finite roadmap](stateless-migration-progress.md)
 and [the complete field inventory](stateless-evaluation-inventory.md).
 
@@ -139,8 +142,10 @@ exactly one unit through InventoryConsume. It cannot become a second payment.
 Legal misses/failed checks are accepted with their actual costs/draws. Schema/binding,
 internal/cancellation and transport failures are outside these four statuses. Results
 verify request identity/version/binding and exact RNG input. ProposedEvents have no
-authoritative event ID/sequence. SM alone validates expected values, references, combined
-invariants, permissions and OCC, then atomically commits Delta/RNG/events/receipt/outbox.
+authoritative event ID/sequence. Responsible domains validate ownership, references
+and their invariants; shared commit facilities validate common expected values,
+permissions, request association and OCC, then atomically commit the participating
+Delta/RNG/events/receipt/outbox changes.
 Engine returns no durable receipt, does no SQL write or external publication, and never
 calculates commit success. Whole-world read fencing is conservative and explicit.
 

@@ -13,6 +13,7 @@ from dnd5e_engine.activities.resolver import resolve_activity
 from dnd5e_engine.evaluation_class_dependencies import operation_dependencies
 from dnd5e_engine.evaluation_computation import CombatComputation
 from dnd5e_engine.evaluation_delta import ResourceUpdate, StateDelta
+from dnd5e_engine.evaluation_effect_ownership import effect_ownership, without_owned_shield
 from dnd5e_engine.evaluation_effects import effect_state
 from dnd5e_engine.evaluation_equipment_dependencies import wizard_pouch_dependencies
 from dnd5e_engine.evaluation_paid_projection import payment_post_state, slot_ledger
@@ -23,7 +24,6 @@ from dnd5e_engine.evaluation_reactions import reaction_paid_delta
 from dnd5e_engine.evaluation_shield_delta import (
     ShieldGraphValue,
     ShieldStateTransition,
-    response_state,
 )
 from dnd5e_engine.evaluation_state import CombatSnapshot, ConditionLink
 from dnd5e_engine.events import (
@@ -65,51 +65,17 @@ def has_shield(snapshot: CombatSnapshot) -> bool:
 
 
 def shield_graph(snapshot: CombatSnapshot) -> ShieldGraphValue | None:
-    state = snapshot.combat_state
-    if not snapshot.effect_states:
-        if (
-            state.conditions_by_effect
-            or state.active_reaction_responses
-            or state.reaction_effects_pending_expiry
-        ):
-            raise ValueError("Shield graph has dangling lineage, response or expiry")
-        return None
-    if (
-        len(snapshot.effect_states) != 1
-        or len(state.conditions_by_effect) != 1
-        or len(state.active_reaction_responses) > 1
-    ):
+    ownership = effect_ownership(snapshot)
+    if ownership.hold_identities:
         raise ValueError("only one complete Shield effect graph is reviewed")
-    effect = snapshot.effect_states[0]
-    identity = (effect.target_id, effect.id, effect.origin)
-    if state.reaction_effects_pending_expiry != {effect.target_id: [identity]}:
-        raise ValueError("Shield requires the exact owner's next-start expiry ledger")
-    return ShieldGraphValue(
-        effect=effect,
-        lineage=state.conditions_by_effect[0],
-        response=response_state(state.active_reaction_responses[0])
-        if state.active_reaction_responses
-        else None,
-        expiry_owner_id=effect.target_id,
-        expiry_identity=identity,
-        expires_at="owner_next_turn_start",
-        owner_dead=effect.target_id in state.dead_ids,
-    )
+    return ownership.shield
 
 
 def plain_shield(snapshot: CombatSnapshot) -> CombatSnapshot:
-    return snapshot.model_copy(
-        update={
-            "effect_states": (),
-            "combat_state": snapshot.combat_state.model_copy(
-                update={
-                    "conditions_by_effect": (),
-                    "active_reaction_responses": [],
-                    "reaction_effects_pending_expiry": {},
-                }
-            ),
-        }
-    )
+    ownership = effect_ownership(snapshot)
+    if ownership.hold_identities:
+        raise ValueError("plain_shield is restricted to the standalone Shield profile")
+    return without_owned_shield(snapshot, ownership)
 
 
 def shield_source_failure(

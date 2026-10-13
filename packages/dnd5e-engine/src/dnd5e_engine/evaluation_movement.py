@@ -102,6 +102,8 @@ def evaluate_movement(request: RuleEvaluationRequest, loader: AssetLoader) -> Tu
         return _refuse("rejected", "no_action_economy", "ordinary Action is unavailable")
     rng = request.rng_context.state.restore()
     computation = CombatComputation(snapshot, rng)
+    if intent.intent_type == "move":
+        computation.enable_stages()
     current = computation.actors[actor_id]
     if intent.intent_type == "move":
         path = _execute_walk(computation, path, grid, occupied, loader, opportunity, actor_id)
@@ -141,6 +143,7 @@ def evaluate_movement(request: RuleEvaluationRequest, loader: AssetLoader) -> Tu
         rng_transition=RNGTransition.between(request.rng_context, rng),
         choice=None,
         error=None,
+        stage_facts=computed.stage_facts,
     )
 
 
@@ -275,6 +278,7 @@ def _execute_walk(
         computation.actors[actor_id] = actor.model_copy(
             update={"movement_remaining": ledger.remaining(computation.speed(actor))}
         )
+        computation.sample_stage("movement_step", (actor_id,))
         completed.append(b)
         run.append(b)
         run_cost += cost

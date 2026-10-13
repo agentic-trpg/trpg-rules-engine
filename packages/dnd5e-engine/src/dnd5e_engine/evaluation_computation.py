@@ -28,6 +28,7 @@ from dnd5e_engine.evaluation_stage_capture import StageRecorder, stage_profile_r
 from dnd5e_engine.evaluation_stages import EventStageFacts, StageKind, StageReason
 from dnd5e_engine.evaluation_state import CombatSnapshot, MovementLedgerState
 from dnd5e_engine.events import (
+    ActorMoved,
     AttackRolled,
     CombatEvent,
     ConditionApplied,
@@ -84,9 +85,9 @@ class CombatComputation:
         else:
             self.stage_reason = reason
 
-    def sample_stage(self, kind: StageKind) -> None:
+    def sample_stage(self, kind: StageKind, actor_ids: tuple[str, ...] | None = None) -> None:
         if self.stage_recorder is not None:
-            self.stage_recorder.sample(kind, len(self.events), self.actors, self.state)
+            self.stage_recorder.sample(kind, len(self.events), self.actors, self.state, actor_ids)
 
     def sample_event(self, event: CombatEvent, index: int) -> None:
         if self.stage_recorder is not None:
@@ -96,7 +97,12 @@ class CombatComputation:
                 if (value := getattr(event, name, None)) in self.actors
             }
             self.stage_recorder.event(
-                index, self.actors, self.state, ids, attack_roll=isinstance(event, AttackRolled)
+                index,
+                self.actors,
+                self.state,
+                ids,
+                attack_roll=isinstance(event, AttackRolled),
+                movement=isinstance(event, ActorMoved),
             )
 
     def speed(self, actor: Combatant, mode: MovementMode = "walk") -> int:

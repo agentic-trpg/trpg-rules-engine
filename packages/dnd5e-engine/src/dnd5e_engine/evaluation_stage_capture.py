@@ -72,6 +72,7 @@ class StageRecorder:
         ]
         self.references: list[EventStageReference] = []
         self.execution: int | None = None
+        self.movement_points: list[int] = []
 
     def sample(
         self,
@@ -103,6 +104,8 @@ class StageRecorder:
         )
         if kind == "attack_execution":
             self.execution = sequence
+        elif kind == "movement_step":
+            self.movement_points.append(sequence)
         return sequence
 
     def event(
@@ -113,13 +116,17 @@ class StageRecorder:
         actor_ids: Iterable[str],
         *,
         attack_roll: bool = False,
+        movement: bool = False,
     ) -> None:
         sequence = self.sample("event", index + 1, actors, state, actor_ids)
-        points = (
+        points: tuple[int, ...] = (
             (self.execution, sequence)
             if attack_roll and self.execution is not None
             else (sequence,)
         )
+        if movement:
+            points = (*self.movement_points, sequence)
+            self.movement_points.clear()
         self.references.append(
             EventStageReference(
                 event_index=index,

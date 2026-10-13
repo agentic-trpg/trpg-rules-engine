@@ -1,6 +1,6 @@
 """Bounded explicit Pass / End Turn over supplied facts; no Legacy hooks."""
 
-from typing import Literal, TypedDict
+from typing import Literal, NotRequired, TypedDict
 
 from dnd5e_srd_data.loader import AssetLoader
 
@@ -11,6 +11,7 @@ from dnd5e_engine.evaluation_delta import StateDelta
 from dnd5e_engine.evaluation_preflight import template_support_failure
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError, attack_delta
 from dnd5e_engine.evaluation_rng import RNGTransition
+from dnd5e_engine.evaluation_stages import EventStageFacts
 from dnd5e_engine.evaluation_state import CombatSnapshot
 from dnd5e_engine.events import CombatEvent, IntentSubmitted
 
@@ -22,6 +23,7 @@ class TurnEvaluation(TypedDict):
     rng_transition: RNGTransition | None
     choice: None
     error: RuleError | None
+    stage_facts: NotRequired[EventStageFacts]
 
 
 def _refuse(status: Literal["rejected", "unsupported"], code: str, reason: str) -> TurnEvaluation:
@@ -75,6 +77,7 @@ def evaluate_turn(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
             return _refuse("unsupported", "turn.shield", failure)
         rng = request.rng_context.state.restore()
         shield = ShieldComputation(snapshot, rng, loader)
+        shield.enable_stages()
         shield.emit(IntentSubmitted(actor_id=request.actor_id, intent_type="pass"))
         shield.finish_turn(request.actor_id, force=True)
         computed = shield.result()
@@ -85,6 +88,7 @@ def evaluate_turn(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
             rng_transition=RNGTransition.between(request.rng_context, rng),
             choice=None,
             error=None,
+            stage_facts=computed.stage_facts,
         )
 
     _, reaction_failure = opportunity_dependencies(snapshot, loader)
@@ -120,6 +124,7 @@ def evaluate_turn(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
         else CombatComputation
     )
     computation = computation_type(snapshot, rng)
+    computation.enable_stages()
     computation.emit(IntentSubmitted(actor_id=request.actor_id, intent_type="pass"))
     # Pass pays no Action; it closes the turn even with unused budgets.
     computation.finish_turn(request.actor_id, force=True)
@@ -138,4 +143,5 @@ def evaluate_turn(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
         rng_transition=RNGTransition.between(request.rng_context, rng),
         choice=None,
         error=None,
+        stage_facts=computed.stage_facts,
     )

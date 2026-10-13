@@ -21,8 +21,8 @@ Neither reference repository nor its dependency pin is changed here.
 | Batch | Start | Status |
 |---|---|---|
 | R34 | `63a59f345aea4bac353bb715fdfa007d1ff306d4` | pushed `aa8997d5a9c7562d4f32632171681f818d18787a`; gate below |
-| R35 | `aa8997d5a9c7562d4f32632171681f818d18787a` | basic Attack sampling; gate below |
-| R36 | preceding pushed R35 commit | pending: ordinary Pass/Walk sampling |
+| R35 | `aa8997d5a9c7562d4f32632171681f818d18787a` | pushed `9846e359d112c8dc4003cdbdc673041b5a7ebf7c`; gate below |
+| R36 | `9846e359d112c8dc4003cdbdc673041b5a7ebf7c` | ordinary Pass/Walk sampling; gate below |
 | R37 | preceding pushed R36 commit | pending: versioned evaluate Result and handoff |
 
 R34 introduces candidate types only. Public Evaluation remains `/23`, Snapshot
@@ -136,6 +136,37 @@ It **PASSED in 1208.89 s**: 24 tooling tests, Data 671 / 1 existing skip
 (222.07 s), Engine 8,884 (853.11 s), Bridge 139 (14.96 s), Demo 54 (30.97 s),
 static checks, three examples and strict docs. No Full gate or SM integration
 is claimed. This is local Windows evidence; remote CI is reported separately.
+
+R36 enables the base recorder for ordinary Pass and Walk. Pass keeps TurnEnded
+at the old turn; turn_advanced precedes round-start audits; TurnStarted is before
+ledger/serial/budget reset, followed by a separate budget_reset checkpoint. Only
+an actually executed death save has a completed-save stage. Ordinary dying-PC
+Pass is audited; effect/Poison/Hold/Shield subclasses and OA/reaction graphs are
+explicitly uncovered and retain existing rule evaluation.
+
+Each accepted Walk step is sampled immediately after cell/ledger/budget mutation,
+before the next step or ActorMoved flush. Only the moving actor is projected per
+step. One actual ActorMoved references all completed steps and its post-fold sample;
+no per-cell public event or invented time interval is added. Dash/Disengage retain
+their existing mechanics but are outside this stage profile. Internal TurnEvaluation
+carries optional stage metadata; public /23 assembly still selects its original
+mechanical fields explicitly until R37. It executes only once.
+
+R36 development regression (after repairing a new test's fixture-unpack mistake
+and internal TypedDict assembly errors): **345 passed in 25.91 s**, including
+existing Legacy comparisons for turns, movement, weapon/stat-block OA, Hold Person,
+Poison and Shield. Package-configured Mypy passes all 152 source files; a prior
+root-directory Mypy invocation did not load that package configuration and is not
+reported as the package gate. Final Integration uses the R36 start above.
+The final 17 stage-specific tests passed in 3.71 s. Independent read-only review
+found no blocking issue, false completeness or original mechanism regression.
+R36 Integration **PASSED in 1395.53 s**: 24 tooling tests, Data 671 / 1 existing
+skip (207.61 s), Engine 8,901 (1021.40 s), Bridge 139 (16.42 s), Demo 54
+(26.13 s), static checks, three examples and strict MkDocs. R34 native CI
+[38376145663](https://github.com/agentic-trpg/trpg-rules-engine/actions/runs/38376145663)
+and R35 native CI
+[38379525450](https://github.com/agentic-trpg/trpg-rules-engine/actions/runs/38379525450)
+were independently queried and passed on their exact pushed commits.
 
 SM must supplement Snapshot-external observer/actor/object/environment facts from
 their own owners under the same input version/dependency/OCC fence. It must verify

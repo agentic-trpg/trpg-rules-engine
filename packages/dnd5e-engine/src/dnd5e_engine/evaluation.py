@@ -27,7 +27,7 @@ from dnd5e_engine.evaluation_ruleset import RulesetBinding, verify_ruleset
 from dnd5e_engine.evaluation_saves import evaluate_save
 from dnd5e_engine.evaluation_spells import evaluate_invocation
 from dnd5e_engine.evaluation_state import CombatSnapshot
-from dnd5e_engine.evaluation_turn import evaluate_turn
+from dnd5e_engine.evaluation_turn import TurnEvaluation, evaluate_turn
 from dnd5e_engine.lib_loader import scoped_lib_loader
 
 
@@ -38,6 +38,19 @@ class _ResultIdentity(TypedDict):
     input_world_version: int
     input_ruleset_binding: RulesetBinding
     read_set: tuple[ReadVersion, ...]
+
+
+def _turn_result(common: _ResultIdentity, outcome: TurnEvaluation) -> RuleEvaluationResult:
+    """R36 keeps private stage metadata outside the still-/23 public envelope."""
+    return RuleEvaluationResult(
+        **common,
+        status=outcome["status"],
+        state_delta=outcome["state_delta"],
+        proposed_events=outcome["proposed_events"],
+        rng_transition=outcome["rng_transition"],
+        choice=outcome["choice"],
+        error=outcome["error"],
+    )
 
 
 async def evaluate(
@@ -69,11 +82,11 @@ async def evaluate(
         result.verify_request(request)
         return result
     if request.operation_kind == "rules.rest":
-        result = RuleEvaluationResult(**common, **evaluate_rest(request, assets))
+        result = _turn_result(common, evaluate_rest(request, assets))
         result.verify_request(request)
         return result
     if request.operation_kind == "rules.save":
-        result = RuleEvaluationResult(**common, **evaluate_save(request, assets))
+        result = _turn_result(common, evaluate_save(request, assets))
         result.verify_request(request)
         return result
     if request.operation_kind == "rules.check":
@@ -102,16 +115,16 @@ async def evaluate(
             ),
         )
     if request.payload.intent_type in {"cast_spell", "use_feature"}:
-        result = RuleEvaluationResult(**common, **evaluate_invocation(request, assets))
+        result = _turn_result(common, evaluate_invocation(request, assets))
         result.verify_request(request)
         return result
     snapshot = request.state_snapshot
     if request.payload.intent_type == "pass":
-        result = RuleEvaluationResult(**common, **evaluate_turn(request, assets))
+        result = _turn_result(common, evaluate_turn(request, assets))
         result.verify_request(request)
         return result
     if request.payload.intent_type in {"move", "dash", "disengage"}:
-        result = RuleEvaluationResult(**common, **evaluate_movement(request, assets))
+        result = _turn_result(common, evaluate_movement(request, assets))
         result.verify_request(request)
         return result
     with scoped_lib_loader(assets):

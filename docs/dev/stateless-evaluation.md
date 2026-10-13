@@ -11,10 +11,22 @@ The current local candidate versions are:
 
 | Contract | Current version | Replaces |
 | --- | --- | --- |
-| RuleEvaluationRequest / Result | `engine-evaluation/23` | `/1`–`/22` |
+| RuleEvaluationRequest / Result | `engine-evaluation/24` | `/1`–`/23` |
 | StateSnapshot | `engine-snapshot/17` | `/1`–`/16` |
 | Availability request/result | `engine-availability/13` | `/1`–`/12` |
-| RulesetBinding evaluator | `dnd5e-evaluation/36` | `/35` and earlier |
+| RulesetBinding evaluator | `dnd5e-evaluation/37` | `/36` and earlier |
+
+R37 adds required `stage_facts` to every Result: accepted carries typed coverage,
+other statuses require explicit null. Stage facts `/2` cover audited basic Attack,
+ordinary Pass and Walk; other original rule paths retain their mechanical result
+with independent uncovered metadata. Input budget/ledger misalignment that existing
+Attack admits is explicitly uncovered, never a new rule rejection. Call
+`result.verify_request(original_request)` after Python/JSON transport to validate
+stage identity, semantics and covered final Delta consistency. It never executes
+the action or draws again. No old envelope or private `/1` stage fallback exists.
+Snapshot/Availability shapes are unchanged. Initialization/concentration candidate
+envelopes sharing EvaluationVersion also use `/24` with explicit uncovered stages.
+See [audited stage facts](event-stage-facts.md) and [SM handoff](event-stage-sm-handoff.md).
 
 Old envelopes, snapshots and results are explicitly rejected. There are no compatibility
 aliases for `InventoryCombatSnapshot`, `combat_inventory`, missing equipment or missing

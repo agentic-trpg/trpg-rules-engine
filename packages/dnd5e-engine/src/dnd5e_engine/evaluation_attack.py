@@ -65,7 +65,7 @@ def execute_attack(
         payment=ordinary_action_payment(before),
     )
     computation.actors[actor.entity_id] = actor
-    computation.sample_stage("attack_execution")
+    computation.sample_stage("attack_execution", (actor.entity_id,))
     topology = GridTopology(GridScene.model_validate(snapshot.scene_state.grid.model_dump()))
     state = snapshot.combat_state
     ranged_in_melee = attack_rules.hostile_adjacent_to_attacker(

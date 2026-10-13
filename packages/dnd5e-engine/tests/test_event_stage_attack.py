@@ -39,7 +39,7 @@ def views(snapshot, facts):
     result = []
     for stage in facts.stages:
         actors = {**actors, **{a.actor_id: a for a in stage.actor_updates}}
-        combat = stage.combat_update or combat
+        combat = stage.combat_update.apply(combat) if stage.combat_update is not None else combat
         result.append((actors, combat))
     return result
 

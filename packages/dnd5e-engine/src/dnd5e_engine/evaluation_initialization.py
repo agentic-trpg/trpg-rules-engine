@@ -32,6 +32,7 @@ from dnd5e_engine.evaluation_initial_state import initial_combat_state
 from dnd5e_engine.evaluation_npc_initialization import npc_initialization_failure
 from dnd5e_engine.evaluation_rng import RNGContext, RNGTransition
 from dnd5e_engine.evaluation_ruleset import RulesetBinding, verify_ruleset
+from dnd5e_engine.evaluation_stages import EventStageFacts
 from dnd5e_engine.evaluation_state import (
     NonCombatSnapshot,
     ObjectState,
@@ -108,6 +109,7 @@ def evaluate_combat_initialization_candidate(
             status="unsupported",
             state_delta=None,
             proposed_events=(),
+            stage_facts=None,
             rng_transition=None,
             choice=None,
             error=RuleError(code=code, reason=reason),
@@ -248,6 +250,7 @@ def evaluate_combat_initialization_candidate(
             ),
         ),
         proposed_events=events,
+        stage_facts=EventStageFacts.uncovered("operation_not_in_stage_profile"),
         rng_transition=transition,
         choice=None,
         error=None,

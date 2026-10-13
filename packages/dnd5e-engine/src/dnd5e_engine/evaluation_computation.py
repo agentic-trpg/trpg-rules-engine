@@ -221,7 +221,7 @@ class CombatComputation:
 
     def damage_completed(self, damage: DamageInstanceContext) -> None:
         self._damage_completed(damage)
-        self.sample_stage("damage_instance_completed")
+        self.sample_stage("damage_instance_completed", (damage.target_id,))
 
     def _damage_completed(self, damage: DamageInstanceContext) -> None:
         pending = self.damage.pop((damage.target_id, damage.damage_instance_id), None)
@@ -257,7 +257,7 @@ class CombatComputation:
         cursor = len(self.events)
         self._death_save(actor_id)
         if len(self.events) != cursor:
-            self.sample_stage("death_save_completed")
+            self.sample_stage("death_save_completed", (actor_id,))
 
     def _death_save(self, actor_id: str) -> None:
         actor = self.actors[actor_id]

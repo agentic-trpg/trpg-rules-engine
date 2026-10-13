@@ -24,7 +24,10 @@ from dnd5e_engine.specs import GridScene
 from dnd5e_engine.types.combat import Combatant
 
 StageReason = Literal[
-    "operation_not_in_stage_profile", "complex_effects_or_reactions", "complex_mechanics"
+    "operation_not_in_stage_profile",
+    "complex_effects_or_reactions",
+    "complex_mechanics",
+    "input_budget_ledger_not_aligned",
 ]
 StageKind = Literal[
     "input",
@@ -96,6 +99,84 @@ class StageCombatFacts(EvaluationModel):
         return tuple(sorted(value))
 
 
+class StageCombatUpdate(EvaluationModel):
+    """Changed scalars and set edits relative to input/previous stage, never history."""
+
+    turn: TurnState | None
+    damage_instance_sequence: Annotated[int, Field(ge=0)] | None
+    dead_ids_added: frozenset[str]
+    dead_ids_removed: frozenset[str]
+    processed_instances_added: frozenset[tuple[str, str]]
+    processed_instances_removed: frozenset[tuple[str, str]]
+
+    @field_serializer("dead_ids_added", "dead_ids_removed", when_used="json")
+    def ordered_ids(self, value: frozenset[str]) -> tuple[str, ...]:
+        return tuple(sorted(value))
+
+    @field_serializer("processed_instances_added", "processed_instances_removed", when_used="json")
+    def ordered_instances(self, value: frozenset[tuple[str, str]]) -> tuple[tuple[str, str], ...]:
+        return tuple(sorted(value))
+
+    @model_validator(mode="after")
+    def disjoint_changes(self) -> Self:
+        if (
+            self.dead_ids_added & self.dead_ids_removed
+            or self.processed_instances_added & self.processed_instances_removed
+        ):
+            raise ValueError("contradictory stage set edits")
+        if (
+            self.turn is None
+            and self.damage_instance_sequence is None
+            and not any(
+                (
+                    self.dead_ids_added,
+                    self.dead_ids_removed,
+                    self.processed_instances_added,
+                    self.processed_instances_removed,
+                )
+            )
+        ):
+            raise ValueError("empty combat update must be an input/previous-stage reference")
+        return self
+
+    def apply(self, before: StageCombatFacts) -> StageCombatFacts:
+        if (
+            self.dead_ids_added & before.dead_ids
+            or not self.dead_ids_removed <= before.dead_ids
+            or self.processed_instances_added & before.processed_zero_hp_damage_instances
+            or not self.processed_instances_removed <= before.processed_zero_hp_damage_instances
+        ):
+            raise ValueError("stage set edits contradict preceding facts")
+        return StageCombatFacts(
+            turn=self.turn or before.turn,
+            dead_ids=(before.dead_ids | self.dead_ids_added) - self.dead_ids_removed,
+            damage_instance_sequence=self.damage_instance_sequence
+            if self.damage_instance_sequence is not None
+            else before.damage_instance_sequence,
+            processed_zero_hp_damage_instances=(
+                before.processed_zero_hp_damage_instances | self.processed_instances_added
+            )
+            - self.processed_instances_removed,
+        )
+
+
+def combat_change(before: StageCombatFacts, after: StageCombatFacts) -> StageCombatUpdate | None:
+    if before == after:
+        return None
+    return StageCombatUpdate(
+        turn=after.turn if after.turn != before.turn else None,
+        damage_instance_sequence=after.damage_instance_sequence
+        if after.damage_instance_sequence != before.damage_instance_sequence
+        else None,
+        dead_ids_added=after.dead_ids - before.dead_ids,
+        dead_ids_removed=before.dead_ids - after.dead_ids,
+        processed_instances_added=after.processed_zero_hp_damage_instances
+        - before.processed_zero_hp_damage_instances,
+        processed_instances_removed=before.processed_zero_hp_damage_instances
+        - after.processed_zero_hp_damage_instances,
+    )
+
+
 class MechanicalStage(EvaluationModel):
     sequence: Annotated[int, Field(ge=0)]
     kind: StageKind
@@ -103,7 +184,7 @@ class MechanicalStage(EvaluationModel):
     # Emission frontier at sampling, not an authoritative event_seq or identity.
     event_cursor: Annotated[int, Field(ge=0)]
     actor_updates: tuple[StageActorFacts, ...]
-    combat_update: StageCombatFacts | None
+    combat_update: StageCombatUpdate | None
 
     @model_validator(mode="after")
     def unique_changes(self) -> Self:
@@ -127,7 +208,7 @@ class EventStageReference(EvaluationModel):
 
 
 class EventStageFacts(EvaluationModel):
-    schema_version: Literal["engine-stage-facts/1"]
+    schema_version: Literal["engine-stage-facts/2"]
     input_reference: Literal["request.state_snapshot"]
     projection_scope: Literal["bounded_participant_mechanics"]
     world_coverage: Literal["outside_snapshot_unknown"]
@@ -172,6 +253,11 @@ class EventStageFacts(EvaluationModel):
         cursors = tuple(s.event_cursor for s in self.stages)
         if tuple(sorted(cursors)) != cursors:
             raise ValueError("stage emission frontiers cannot go backwards")
+        frontier = 0
+        for stage in self.stages[1:]:
+            frontier += int(stage.kind == "event")
+            if stage.event_cursor != frontier:
+                raise ValueError("only actual event sampling may advance the emission frontier")
         indices = tuple(r.event_index for r in self.event_references)
         if indices != tuple(range(len(indices))) or last.event_cursor != len(indices):
             raise ValueError("event references must cover the returned local sequence exactly")
@@ -201,7 +287,7 @@ class EventStageFacts(EvaluationModel):
     @classmethod
     def uncovered(cls, reason: StageReason) -> Self:
         return cls(
-            schema_version="engine-stage-facts/1",
+            schema_version="engine-stage-facts/2",
             input_reference="request.state_snapshot",
             projection_scope="bounded_participant_mechanics",
             world_coverage="outside_snapshot_unknown",
@@ -233,16 +319,28 @@ class EventStageFacts(EvaluationModel):
                     raise ValueError("stage damage attribution is outside input actors")
             combat = stage.combat_update
             if combat is not None and (
-                not combat.dead_ids <= actors.keys()
-                or combat.turn.current_turn_index >= len(snapshot.combat_state.initiative_ids)
+                not (combat.dead_ids_added | combat.dead_ids_removed) <= actors.keys()
                 or (
-                    combat.turn.departed_actor_id is not None
+                    combat.turn is not None
+                    and combat.turn.current_turn_index >= len(snapshot.combat_state.initiative_ids)
+                )
+                or (
+                    combat.turn is not None
+                    and combat.turn.departed_actor_id is not None
                     and combat.turn.departed_actor_id not in actors
                 )
-                or any(a not in actors for a, _ in combat.processed_zero_hp_damage_instances)
+                or any(
+                    a not in actors
+                    for a, _ in combat.processed_instances_added
+                    | combat.processed_instances_removed
+                )
                 or any(
                     v is not None and v[1] not in actors
-                    for v in (combat.turn.last_ended_turn, combat.turn.monster_turn_start_done)
+                    for v in (
+                        (combat.turn.last_ended_turn, combat.turn.monster_turn_start_done)
+                        if combat.turn is not None
+                        else ()
+                    )
                 )
             ):
                 raise ValueError("stage combat reference is outside input closure")

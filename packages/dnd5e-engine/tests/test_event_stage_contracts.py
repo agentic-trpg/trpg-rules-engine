@@ -14,6 +14,7 @@ from dnd5e_engine.evaluation_stages import (
     MechanicalStage,
     StageCombatFacts,
     actor_facts,
+    combat_change,
     combat_facts,
 )
 from dnd5e_engine.evaluation_state import ConditionRecord
@@ -27,7 +28,7 @@ def candidate():
     snapshot = request.state_snapshot
     event = IntentSubmitted(actor_id=HERO, intent_type="attack", target_id=FOE)
     value = EventStageFacts(
-        schema_version="engine-stage-facts/1",
+        schema_version="engine-stage-facts/2",
         input_reference="request.state_snapshot",
         projection_scope="bounded_participant_mechanics",
         world_coverage="outside_snapshot_unknown",
@@ -226,7 +227,11 @@ def test_departed_actor_reference_is_closed_against_input():
         update={
             "stages": (
                 value.stages[0],
-                value.stages[1].model_copy(update={"combat_update": combat}),
+                value.stages[1].model_copy(
+                    update={
+                        "combat_update": combat_change(combat_facts(snapshot.combat_state), combat)
+                    }
+                ),
                 value.stages[2],
             )
         }

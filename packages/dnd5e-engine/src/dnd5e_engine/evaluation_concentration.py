@@ -44,6 +44,7 @@ from dnd5e_engine.evaluation_projection import EvaluationInvariantError, attack_
 from dnd5e_engine.evaluation_rng import RNGContext, RNGTransition
 from dnd5e_engine.evaluation_ruleset import RulesetBinding, _canonical, verify_ruleset
 from dnd5e_engine.evaluation_saves import resolve_snapshot_save, save_actor_failure
+from dnd5e_engine.evaluation_stages import EventStageFacts
 from dnd5e_engine.evaluation_state import CharacterStateV2, CombatSnapshot
 from dnd5e_engine.events import (
     CombatEvent,
@@ -507,6 +508,7 @@ def evaluate_concentration_candidate(
             status="unsupported",
             state_delta=None,
             proposed_events=(),
+            stage_facts=None,
             rng_transition=None,
             choice=None,
             error=RuleError(code="concentration.dependencies", reason=failure),
@@ -544,6 +546,7 @@ def evaluate_concentration_candidate(
         status="accepted",
         state_delta=concentration_delta(snapshot, after),
         proposed_events=computed.proposed_events,
+        stage_facts=EventStageFacts.uncovered("complex_effects_or_reactions"),
         rng_transition=RNGTransition.between(request.rng_context, rng),
         choice=None,
         error=None,

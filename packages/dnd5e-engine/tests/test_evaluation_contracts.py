@@ -20,6 +20,7 @@ from dnd5e_engine.evaluation_effects import effect_state
 from dnd5e_engine.evaluation_rng import RNGContext, RNGState, RNGTransition
 from dnd5e_engine.evaluation_ruleset import RulesetBindingError, ruleset_binding, verify_ruleset
 from dnd5e_engine.evaluation_snapshot import capture_combat_snapshot
+from dnd5e_engine.evaluation_stages import EventStageFacts
 from dnd5e_engine.evaluation_state import (
     CombatSnapshot,
     InventoryState,
@@ -43,7 +44,7 @@ def input_request():
         combat_id="combat:synthetic",
     )
     return RuleEvaluationRequest(
-        schema_version="engine-evaluation/23",
+        schema_version="engine-evaluation/24",
         session_id=live.session_id,
         command_id="command:synthetic",
         operation_kind="combat.intent",
@@ -57,7 +58,7 @@ def input_request():
 
 def result_for(request, status="accepted"):
     return RuleEvaluationResult(
-        schema_version="engine-evaluation/23",
+        schema_version="engine-evaluation/24",
         session_id=request.session_id,
         command_id=request.command_id,
         input_world_version=request.state_snapshot.world_version,
@@ -68,6 +69,9 @@ def result_for(request, status="accepted"):
         if status == "accepted"
         else None,
         proposed_events=(),
+        stage_facts=EventStageFacts.uncovered("operation_not_in_stage_profile")
+        if status == "accepted"
+        else None,
         rng_transition=RNGTransition.between(
             request.rng_context, request.rng_context.state.restore()
         )

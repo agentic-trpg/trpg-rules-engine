@@ -10,6 +10,7 @@ from dnd5e_engine.evaluation_delta import StateDelta
 from dnd5e_engine.evaluation_resources import HitDieSpend
 from dnd5e_engine.evaluation_rng import RNGContext, RNGTransition
 from dnd5e_engine.evaluation_ruleset import RulesetBinding
+from dnd5e_engine.evaluation_stages import EventStageFacts
 from dnd5e_engine.evaluation_state import CombatSnapshot, StateSnapshot
 from dnd5e_engine.events import (
     ALL_COMBAT_EVENT_TYPES,
@@ -23,8 +24,8 @@ from dnd5e_engine.intents import PlayerIntent
 from dnd5e_engine.rules.skills import Skill
 from dnd5e_engine.types.checks import CheckRequest, GrantedDie
 
-SCHEMA_VERSION = "engine-evaluation/23"
-EvaluationVersion = Literal["engine-evaluation/23"]
+SCHEMA_VERSION = "engine-evaluation/24"
+EvaluationVersion = Literal["engine-evaluation/24"]
 
 
 class ItemUsePayload(EvaluationModel):
@@ -212,6 +213,7 @@ class RuleEvaluationResult(EvaluationModel):
     read_set: tuple[ReadVersion, ...]
     state_delta: StateDelta | None
     proposed_events: ProposedEvents
+    stage_facts: EventStageFacts | None
     rng_transition: RNGTransition | None
     choice: PreflightChoice | CheckAdjudicationChoice | None
     error: RuleError | None
@@ -233,8 +235,12 @@ class RuleEvaluationResult(EvaluationModel):
     @model_validator(mode="after")
     def status_fields(self) -> Self:
         if self.status == "accepted":
-            if self.state_delta is None or self.rng_transition is None:
-                raise ValueError("accepted requires delta and RNG transition")
+            if self.state_delta is None or self.rng_transition is None or self.stage_facts is None:
+                raise ValueError("accepted requires delta, RNG transition and stage coverage")
+            if self.stage_facts.coverage == "complete" and len(self.proposed_events) != len(
+                self.stage_facts.event_references
+            ):
+                raise ValueError("stage references differ from actual proposed_events")
             if self.choice is not None or self.error is not None:
                 raise ValueError("accepted forbids choice/error")
             if self.state_delta.expected_world_version != self.input_world_version:
@@ -244,6 +250,7 @@ class RuleEvaluationResult(EvaluationModel):
                 self.state_delta is not None
                 or self.proposed_events
                 or self.rng_transition is not None
+                or self.stage_facts is not None
             ):
                 raise ValueError("non-accepted result cannot carry mechanical results")
             if self.status == "needs_choice":
@@ -272,3 +279,7 @@ class RuleEvaluationResult(EvaluationModel):
             raise ValueError("result does not match request identity/version/binding")
         if self.rng_transition is not None:
             self.rng_transition.verify_input(request.rng_context)
+        if self.stage_facts is not None:
+            from dnd5e_engine.evaluation_stage_validation import verify_stage_result
+
+            verify_stage_result(self.stage_facts, request, self.proposed_events, self.state_delta)

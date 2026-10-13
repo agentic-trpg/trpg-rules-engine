@@ -26,6 +26,7 @@ from dnd5e_engine.evaluation_rng import RNGTransition
 from dnd5e_engine.evaluation_ruleset import RulesetBinding, verify_ruleset
 from dnd5e_engine.evaluation_saves import evaluate_save
 from dnd5e_engine.evaluation_spells import evaluate_invocation
+from dnd5e_engine.evaluation_stages import EventStageFacts
 from dnd5e_engine.evaluation_state import CombatSnapshot
 from dnd5e_engine.evaluation_turn import TurnEvaluation, evaluate_turn
 from dnd5e_engine.lib_loader import scoped_lib_loader
@@ -41,15 +42,24 @@ class _ResultIdentity(TypedDict):
 
 
 def _turn_result(common: _ResultIdentity, outcome: TurnEvaluation) -> RuleEvaluationResult:
-    """R36 keeps private stage metadata outside the still-/23 public envelope."""
+    """One computation supplies both mechanical results and independent coverage."""
     return RuleEvaluationResult(
         **common,
         status=outcome["status"],
         state_delta=outcome["state_delta"],
         proposed_events=outcome["proposed_events"],
+        stage_facts=_stage_coverage(outcome["status"], outcome.get("stage_facts")),
         rng_transition=outcome["rng_transition"],
         choice=outcome["choice"],
         error=outcome["error"],
+    )
+
+
+def _stage_coverage(status: str, facts: EventStageFacts | None = None) -> EventStageFacts | None:
+    if status != "accepted":
+        return None
+    return (
+        facts if facts is not None else EventStageFacts.uncovered("operation_not_in_stage_profile")
     )
 
 
@@ -78,7 +88,8 @@ async def evaluate(
         ),
     )
     if request.operation_kind == "combat.item":
-        result = RuleEvaluationResult(**common, **await evaluate_item(request, assets))
+        item = await evaluate_item(request, assets)
+        result = RuleEvaluationResult(**common, **item, stage_facts=_stage_coverage(item["status"]))
         result.verify_request(request)
         return result
     if request.operation_kind == "rules.rest":
@@ -90,12 +101,17 @@ async def evaluate(
         result.verify_request(request)
         return result
     if request.operation_kind == "rules.check":
-        result = RuleEvaluationResult(**common, **evaluate_check(request, assets))
+        check = evaluate_check(request, assets)
+        result = RuleEvaluationResult(
+            **common, **check, stage_facts=_stage_coverage(check["status"])
+        )
         result.verify_request(request)
         return result
     if request.operation_kind == "combat.close":
         closure = evaluate_closure(request, assets)
-        result = RuleEvaluationResult(**common, **closure)
+        result = RuleEvaluationResult(
+            **common, **closure, stage_facts=_stage_coverage(closure["status"])
+        )
         result.verify_request(request)
         return result
     if (
@@ -108,6 +124,7 @@ async def evaluate(
             status="unsupported",
             state_delta=None,
             proposed_events=(),
+            stage_facts=None,
             rng_transition=None,
             choice=None,
             error=RuleError(
@@ -141,6 +158,7 @@ async def evaluate(
                 status=admission.status,
                 state_delta=None,
                 proposed_events=(),
+                stage_facts=None,
                 rng_transition=None,
                 choice=admission.choice,
                 error=admission.error,
@@ -164,6 +182,7 @@ async def evaluate(
                 else attack_delta
             )(snapshot, after),
             proposed_events=computed.proposed_events,
+            stage_facts=computed.stage_facts,
             rng_transition=RNGTransition.between(request.rng_context, rng),
             choice=None,
             error=None,

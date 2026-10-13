@@ -2,6 +2,7 @@
 
 from collections.abc import Iterable, Mapping
 
+from dnd5e_engine.activities.passive_stats import CombatantMovementModes
 from dnd5e_engine.evaluation_stages import (
     _SAMPLES,
     EventStageFacts,
@@ -10,9 +11,11 @@ from dnd5e_engine.evaluation_stages import (
     StageKind,
     StageReason,
     actor_facts,
+    combat_change,
     combat_facts,
 )
 from dnd5e_engine.evaluation_state import CombatSnapshot, CombatState
+from dnd5e_engine.movement import project_speeds, speed_for_mode
 from dnd5e_engine.types.combat import Combatant
 
 
@@ -43,6 +46,15 @@ def stage_profile_reason(snapshot: CombatSnapshot) -> StageReason | None:
         for a in snapshot.character_states
     ):
         return "complex_mechanics"
+    for actor in snapshot.character_states:
+        ledger = state.movement_ledgers[actor.entity_id]
+        speeds = project_speeds(
+            actor.base_speed,
+            CombatantMovementModes.model_validate(actor.movement_modes.model_dump()),
+            condition_names=tuple(c.condition for c in actor.conditions),
+        )
+        if actor.movement_remaining != ledger.remaining(speed_for_mode(speeds, ledger.active_mode)):
+            return "input_budget_ledger_not_aligned"
     return None
 
 
@@ -89,7 +101,7 @@ class StageRecorder:
                 changed.append(value)
                 self.actors[key] = value
         combat = combat_facts(state)
-        combat_update = combat if combat != self.combat else None
+        combat_update = combat_change(self.combat, combat)
         self.combat = combat
         sequence = len(self.stages)
         self.stages.append(
@@ -140,7 +152,7 @@ class StageRecorder:
     ) -> EventStageFacts:
         self.sample("operation_completed", cursor, actors, state)
         value = EventStageFacts(
-            schema_version="engine-stage-facts/1",
+            schema_version="engine-stage-facts/2",
             input_reference="request.state_snapshot",
             projection_scope="bounded_participant_mechanics",
             world_coverage="outside_snapshot_unknown",

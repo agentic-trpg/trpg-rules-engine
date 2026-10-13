@@ -2,9 +2,10 @@
 
 ## Fixed candidate and scope
 
-The final full **R37 source SHA is recorded in delivery evidence after the source
-gate/commit/push**. Do not integrate a moving branch or infer that this pending
-record authorizes an SM change. This task changes RE only. SM's inspected reference
+The fixed **R37 source candidate is `d7ee80c338a90e7029eecec61a67b9ca530e1482`**,
+independently validated, committed and pushed after R34/R35/R36. A subsequent
+documentation-only evidence commit does not change that source candidate. Pin this
+full SHA rather than a moving branch. This task changes RE only. SM's inspected reference
 is `80bc1af59993d29f3281e99b06de60915dc450a9`, architecture
 `8141402592946942ff5f6a69f04858ef382bd734`. Neither is modified; SM's Engine/SRD
 pin remains `675552406e67470bf3456fe90e88c4f1595bf324` in the inspected RF4 adapter.

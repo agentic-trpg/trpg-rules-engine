@@ -23,7 +23,7 @@ Neither reference repository nor its dependency pin is changed here.
 | R34 | `63a59f345aea4bac353bb715fdfa007d1ff306d4` | pushed `aa8997d5a9c7562d4f32632171681f818d18787a`; gate below |
 | R35 | `aa8997d5a9c7562d4f32632171681f818d18787a` | pushed `9846e359d112c8dc4003cdbdc673041b5a7ebf7c`; gate below |
 | R36 | `9846e359d112c8dc4003cdbdc673041b5a7ebf7c` | pushed `e5c7a28d49a87f2dd9300442eedb95c00fea50c5`; gate below |
-| R37 | `e5c7a28d49a87f2dd9300442eedb95c00fea50c5` | versioned evaluate Result, regression and handoff; gate below |
+| R37 | `e5c7a28d49a87f2dd9300442eedb95c00fea50c5` | pushed `d7ee80c338a90e7029eecec61a67b9ca530e1482`; final gate below |
 
 R34 introduces candidate types only. Public Evaluation remains `/23`, Snapshot
 `/17`, Availability `/13`, evaluator `/36` until the versioned R37 integration.
@@ -245,7 +245,35 @@ extra NPCs add participant references, not per-stage full NPC/scene copies.
 Transient set comparisons still inspect existing combat facts. No O(1), reduced
 latency, production throughput or general performance improvement is claimed.
 
-The final fixed source SHA, final gate timing and CI are recorded in delivery
-evidence after the independently committed R37 source. See [SM handoff](event-stage-sm-handoff.md)
-for versioned consumption and remaining world/OCC/Evidence work. This does not
-complete C-19/C-24 or whole migration.
+## Final R37 delivery evidence
+
+Fixed source candidate: **`d7ee80c338a90e7029eecec61a67b9ca530e1482`**.
+All four batches were separately validated/committed/pushed in order. This later
+documentation-only record does not alter the source candidate. Remote main was
+verified unchanged at `63a59f345aea4bac353bb715fdfa007d1ff306d4`; no merge occurred.
+
+R37 plan: `uv run --no-project python tools/validate.py fast --plan --base
+e5c7a28d49a87f2dd9300442eedb95c00fea50c5`. It required Integration and conservatively
+included all four packages because the preserved untracked `.evaluation-worktree/`
+is an unknown path. That directory was not staged or committed. Final command:
+`uv run --no-project python tools/validate.py integration --base
+e5c7a28d49a87f2dd9300442eedb95c00fea50c5`, with `PYTHONUTF8=1`.
+**PASSED in 1376.99 s**: tooling 24; Data 671 / 1 existing skip (227.50 s);
+Engine 8,993 (1002.37 s); Bridge 139 (16.58 s); Demo 54 (29.06 s);
+lint/format/types, three existing public examples and strict MkDocs. The new
+one-call CLI/schema export is exercised by the stage measurement suite. Full was
+not requested or run; no unchanged Fast gate was run in addition to Integration.
+
+R36 native CI [38383159218](https://github.com/agentic-trpg/trpg-rules-engine/actions/runs/38383159218)
+was queried and passed on its exact source commit, like R34/R35 above. R37 native
+CI [38393625558](https://github.com/agentic-trpg/trpg-rules-engine/actions/runs/38393625558)
+was separately queried and **completed/success** on `d7ee80c338a90e7029eecec61a67b9ca530e1482`.
+All four source commits therefore have both local Integration and actual native
+CI success. One transient GitHub status-query TCP timeout was retried successfully;
+it was not a validation failure. The final read-only reviewer rechecked the whole
+`63a59f3..d7ee80c` diff after all four commits/pushes and confirmed all reproduced
+findings closed, with no unresolved concrete blocker in this bounded batch.
+
+See [SM handoff](event-stage-sm-handoff.md) for versioned consumption and remaining
+world/OCC/Evidence work. SM remains unmodified and unverified end-to-end;
+C-19/C-24, common ABI and whole migration remain OPEN.

@@ -234,8 +234,9 @@ async def evaluate_item(request: RuleEvaluationRequest, loader: AssetLoader) -> 
     computation.actors[current.entity_id] = record_budget_changes(
         current, computation.actors[current.entity_id]
     )
-    after = computation.result()
-    proposals = tuple(computation.events)
+    computed = computation.result()
+    after = computed.candidate_state
+    proposals = computed.proposed_events
     if sum(isinstance(e, HealingApplied) for e in proposals) != 1:
         raise EvaluationInvariantError("item did not produce exactly one healing result")
     mechanical = attack_delta(view, after)

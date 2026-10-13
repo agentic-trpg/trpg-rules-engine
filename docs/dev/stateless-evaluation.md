@@ -11,10 +11,10 @@ The current local candidate versions are:
 
 | Contract | Current version | Replaces |
 | --- | --- | --- |
-| RuleEvaluationRequest / Result | `engine-evaluation/22` | `/1`–`/21` |
-| StateSnapshot | `engine-snapshot/16` | `/1`–`/15` |
-| Availability request/result | `engine-availability/12` | `/1`–`/11` |
-| RulesetBinding evaluator | `dnd5e-evaluation/35` | `/34` and earlier |
+| RuleEvaluationRequest / Result | `engine-evaluation/23` | `/1`–`/22` |
+| StateSnapshot | `engine-snapshot/17` | `/1`–`/16` |
+| Availability request/result | `engine-availability/13` | `/1`–`/12` |
+| RulesetBinding evaluator | `dnd5e-evaluation/36` | `/35` and earlier |
 
 Old envelopes, snapshots and results are explicitly rejected. There are no compatibility
 aliases for `InventoryCombatSnapshot`, `combat_inventory`, missing equipment or missing
@@ -22,6 +22,26 @@ inventory. This is a breaking local protocol revision, not a silent shape change
 Legacy public coroutine signatures remain; their corrected death/turn/payment/Mastery
 behavior is shared with the new execution path. A Legacy `CombatOutcome` is a separate
 host handoff API and must not be applied as a stateless StateDelta.
+
+RF-RE3 removes `event_log` and `legendary_resistance_applied_event_indices` from
+CombatState and every enclosing public/internal candidate schema. Computations
+return private candidate mechanics and this call's ordered typed proposals
+separately. The new evaluate/availability path never reads audit history or calls
+a Legacy compatibility adapter. Existing `ended`, `turn_serial`, damage sequence,
+usage markers and effect/reaction clocks supply the admitted current rule facts;
+no duplicate summary or new RNG-consuming identity is introduced. StateDelta is
+unchanged, and the candidate snapshot is never a whole-state persistence command.
+
+Ordinary requests reject old formats. The explicitly invoked
+`evaluation_migration.migrate_snapshot_16` accepts only a complete serialized `/16`
+source bound to evaluator `/35` and identical effective rules data. It requires
+explicit typed audit history and an empty Legacy event-index set, validates
+ended/history consistency, event fields/references and all current fact closure,
+then returns `/17` without audit history. Earlier incomplete sources, missing
+facts, unknown event fields, contradictions and unconvertible indices reject;
+they are never defaulted to empty. The owner retains the original audit records.
+Legacy parity capture validates that same history/ended boundary, while the
+test-only Legacy oracle factory requires audit events as a separate argument.
 
 Meta MODULE_CONTRACTS §4.2 DECIDED require exactly **CombatSnapshot /
 NonCombatSnapshot** scene discriminators. Both now require typed `InventoryState(entries=...)`,
@@ -118,7 +138,7 @@ The shared terminal Death fold now synchronizes dead_ids, DeathRecord and is_ali
 for all creature kinds. Zero-HP Characters still awaiting death saves are distinct;
 their bounded lifecycle is admitted by explicit Pass (R11); Attack/Item admission remains narrower. Shared turn advancement skips recorded dead
 creatures without their start/end hooks or RNG and bounds the all-dead scan. Dead
-roster entries and history remain available for outcome projection. After killing one
+roster entries and the explicit death ledger remain available for outcome projection. After killing one
 enemy, remaining live actors can continue legal attacks with the complete committed
 Snapshot. Attack, item and closure admission share exact death-ledger consistency checks;
 unrecorded/contradictory death, HP, life state, kind, location or killer is refused before
@@ -131,7 +151,8 @@ list. Those values already exist in the input: they are reports, never new write
 Only ended and XP increments are new consequences, committed once under both world
 and ended fences. Old flat residual_hp/expended_resources/xp_awarded fields are rejected.
 Do not apply HP/deaths, pay resources, or grant XP by translating historical reports
-back into mutations. Already-ended/history-ended input rejects a repeated closure.
+back into mutations. The explicit `ended` fact rejects a repeated closure; Legacy
+conversion refuses contradictions between that fact and its original history.
 
 Closure calls the shared reason/outcome projector on disposable supplied state and
 returns one CombatEnded plus an unchanged RNGTransition without restoring execution
@@ -292,7 +313,7 @@ objects/timing and other unmigrated hooks before restoring RNG. Canonical stat-b
 hydration is outside this local subset; full authoritative actor facts are supplied.
 
 CombatCreationCandidate is one closed operation: expected absence, expected setup,
-a complete fresh typed CombatState with empty event history, and guarded per-actor
+a complete fresh typed history-free CombatState, and guarded per-actor
 Initiative/budget updates. It cannot replace an Actor, World or whole Snapshot; no
 existing inventory/resources are replaced. Ordered proposals and RNG accompany it
 in one uncommitted unit. Only SM can check absence/versions/permission and atomically

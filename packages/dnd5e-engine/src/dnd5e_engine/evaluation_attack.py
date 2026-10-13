@@ -13,6 +13,7 @@ from dnd5e_engine import attack_rules
 from dnd5e_engine.activities.build_context import build_activity_context
 from dnd5e_engine.activities.resolver import resolve_activity
 from dnd5e_engine.evaluation_computation import CombatComputation as _AttackComputation
+from dnd5e_engine.evaluation_computation import CombatComputationResult
 from dnd5e_engine.evaluation_contracts import CombatIntentPayload
 from dnd5e_engine.evaluation_preflight import AttackPlan
 from dnd5e_engine.evaluation_state import CombatSnapshot
@@ -36,7 +37,7 @@ def execute_attack(
     rng: random.Random,
     *,
     loader: AssetLoader | None = None,
-) -> CombatSnapshot:
+) -> CombatComputationResult:
     """Compute a private post-state for closed delta projection, never publication."""
     from dnd5e_engine.evaluation_shield import ShieldComputation, has_shield
 

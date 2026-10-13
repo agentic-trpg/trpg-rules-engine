@@ -436,14 +436,15 @@ def evaluate_hold_cast(request: RuleEvaluationRequest, loader: AssetLoader) -> T
                 }
             }
         )
-        after = payment_post_state(computation.result(), payments)
+        computed = computation.result()
+        after = payment_post_state(computed.candidate_state, payments)
         # The shared SaveActivity captured this DC; no second save/DC formula.
         dc = next(e.dc for e in computation.events if e.type == "save_rolled")
         sourced = intent.model_copy(update={"source_id": actor.entity_id})
         return dict(
             status="accepted",
             state_delta=hold_create_delta(snapshot, after, sourced, payments, ledgers, dc),
-            proposed_events=tuple(computation.events),
+            proposed_events=computed.proposed_events,
             rng_transition=RNGTransition.between(request.rng_context, rng),
             choice=None,
             error=None,

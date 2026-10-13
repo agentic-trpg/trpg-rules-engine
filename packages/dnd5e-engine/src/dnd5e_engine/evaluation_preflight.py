@@ -88,7 +88,6 @@ def snapshot_support_failure(
         state.slow_marks,
         state.legendary_windows_used,
         state.legendary_resistance_armed,
-        state.legendary_resistance_applied_event_indices,
         state.constructs,
         state.transforms,
         state.summons,

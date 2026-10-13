@@ -427,11 +427,12 @@ def evaluate_invocation(request: RuleEvaluationRequest, loader: AssetLoader) -> 
             )
         if computation.damage:
             raise RuntimeError("invocation left an incomplete damage instance")
-        after = payment_post_state(computation.result(), payments)
+        computed = computation.result()
+        after = payment_post_state(computed.candidate_state, payments)
         return dict(
             status="accepted",
             state_delta=reaction_paid_delta(snapshot, after, payments, ledgers),
-            proposed_events=tuple(computation.events),
+            proposed_events=computed.proposed_events,
             rng_transition=RNGTransition.between(request.rng_context, rng),
             choice=None,
             error=None,

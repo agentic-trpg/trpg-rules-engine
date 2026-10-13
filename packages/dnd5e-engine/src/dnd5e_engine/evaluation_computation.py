@@ -6,6 +6,7 @@ that this vertical slice cannot yet execute; this is not a general combat runtim
 """
 
 import random
+from dataclasses import dataclass
 
 from dnd5e_engine import attack_rules
 from dnd5e_engine.activities.context import DamageInstanceContext
@@ -44,6 +45,18 @@ from dnd5e_engine.turn_rules import (
     reset_turn_budget,
 )
 from dnd5e_engine.types.combat import Combatant
+
+
+@dataclass(frozen=True)
+class CombatComputationResult:
+    """Private candidate mechanics and only this call's ordered proposals.
+
+    The candidate is input to exhaustive Delta projection, never an instruction
+    to persist an entire Snapshot. Committed audit history is not appended here.
+    """
+
+    candidate_state: CombatSnapshot
+    proposed_events: tuple[CombatEvent, ...]
 
 
 class CombatComputation:
@@ -296,14 +309,15 @@ class CombatComputation:
         )
         self.death_save(next_actor)
 
-    def result(self) -> CombatSnapshot:
+    def candidate_state(self) -> CombatSnapshot:
         return self.snapshot.model_copy(
             update={
                 "character_states": tuple(
                     actor_state(self.actors[a.entity_id], a) for a in self.snapshot.character_states
                 ),
-                "combat_state": self.state.model_copy(
-                    update={"event_log": (*self.snapshot.combat_state.event_log, *self.events)}
-                ),
+                "combat_state": self.state,
             }
         )
+
+    def result(self) -> CombatComputationResult:
+        return CombatComputationResult(self.candidate_state(), tuple(self.events))

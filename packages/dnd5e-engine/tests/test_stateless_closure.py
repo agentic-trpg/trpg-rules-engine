@@ -57,7 +57,7 @@ def terminal_request(*, defeat=False):
     return (
         request.model_copy(
             update={
-                "schema_version": "engine-evaluation/22",
+                "schema_version": "engine-evaluation/23",
                 "operation_kind": "combat.close",
                 "payload": CombatClosePayload(kind="combat.close"),
                 "state_snapshot": snapshot,
@@ -93,7 +93,6 @@ def consume(snapshot, result, *, xp=10, fail=False):
             xp += op.xp_increments.get(HERO, 0)
         else:
             raise TypeError(f"unexpected closure operation {op.kind}")
-    state["event_log"] += tuple(e.model_dump() for e in result.proposed_events)
     result.rng_transition.verify_input(result_to_rng_context(result))
     if fail:
         raise RuntimeError("host commit fault")
@@ -159,7 +158,7 @@ def test_nonterminal_and_alien_actor_rejected_without_rng(monkeypatch):
     request, _, _ = request_and_live()
     request = request.model_copy(
         update={
-            "schema_version": "engine-evaluation/22",
+            "schema_version": "engine-evaluation/23",
             "operation_kind": "combat.close",
             "payload": CombatClosePayload(kind="combat.close"),
         }

@@ -105,7 +105,7 @@ def save_case(
     )
     return request.model_copy(
         update={
-            "schema_version": "engine-evaluation/22",
+            "schema_version": "engine-evaluation/23",
             "operation_kind": "rules.save",
             "actor_id": target_id,
             "state_snapshot": snapshot,

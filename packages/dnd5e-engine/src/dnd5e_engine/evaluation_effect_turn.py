@@ -259,10 +259,10 @@ class EffectTurnComputation(CombatComputation):
         )
         self.emit(ConditionRemoved(target_id=effect.target_id, condition="poisoned"))
 
-    def result(self) -> CombatSnapshot:
+    def candidate_state(self) -> CombatSnapshot:
         return (
             super()
-            .result()
+            .candidate_state()
             .model_copy(
                 update={
                     "effect_states": self.snapshot.effect_states

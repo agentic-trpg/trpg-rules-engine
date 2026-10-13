@@ -168,6 +168,7 @@ async def evaluate(
         rng = request.rng_context.state.restore()
         computed = execute_attack(snapshot, request.payload, admission.plan, rng, loader=assets)
         after = computed.candidate_state
+        from dnd5e_engine.evaluation_composition import composition_delta, has_composed_effects
         from dnd5e_engine.evaluation_concentration import concentration_delta
         from dnd5e_engine.evaluation_shield import has_shield, shield_delta
 
@@ -175,7 +176,9 @@ async def evaluate(
             **common,
             status="accepted",
             state_delta=(
-                shield_delta
+                composition_delta
+                if has_composed_effects(snapshot)
+                else shield_delta
                 if has_shield(snapshot)
                 else concentration_delta
                 if snapshot.effect_states

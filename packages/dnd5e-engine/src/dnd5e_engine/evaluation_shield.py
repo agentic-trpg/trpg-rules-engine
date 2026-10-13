@@ -10,6 +10,7 @@ from dnd5e_srd_data.schema.common import ReactionTriggerKind, UtilityActivity
 from dnd5e_engine.activities.build_context import build_activity_context
 from dnd5e_engine.activities.context import AttackHitContext
 from dnd5e_engine.activities.resolver import resolve_activity
+from dnd5e_engine.evaluation_actor import actor_state
 from dnd5e_engine.evaluation_class_dependencies import operation_dependencies
 from dnd5e_engine.evaluation_computation import CombatComputation
 from dnd5e_engine.evaluation_delta import ResourceUpdate, StateDelta
@@ -21,11 +22,12 @@ from dnd5e_engine.evaluation_payments import spell_payment
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError
 from dnd5e_engine.evaluation_reaction_state import PendingReactionState
 from dnd5e_engine.evaluation_reactions import reaction_paid_delta
+from dnd5e_engine.evaluation_resources import SlotResource
 from dnd5e_engine.evaluation_shield_delta import (
     ShieldGraphValue,
     ShieldStateTransition,
 )
-from dnd5e_engine.evaluation_state import CombatSnapshot, ConditionLink
+from dnd5e_engine.evaluation_state import CharacterStateV2, CombatSnapshot, ConditionLink
 from dnd5e_engine.events import (
     CombatEvent,
     Death,
@@ -124,8 +126,8 @@ def shield_source_id(snapshot: CombatSnapshot, owner_id: str) -> str | None:
     return source.source_id if source else None
 
 
-def shield_support_failure(
-    snapshot: CombatSnapshot, loader: AssetLoader, *, turn: bool = False
+def shield_policy_failure(
+    snapshot: CombatSnapshot, loader: AssetLoader, graph: ShieldGraphValue | None
 ) -> str | None:
     spell = loader.get_spell("shield")
     if spell is None or spell != BundledAssetLoader().get_spell("shield"):
@@ -137,10 +139,6 @@ def shield_support_failure(
         or admission_failure(spell, [activity])
     ):
         return "complete reviewed Shield utility payload is required"
-    try:
-        graph = shield_graph(snapshot)
-    except ValueError as exc:
-        return str(exc)
     pending = snapshot.combat_state.pending_reactions
     source: str | None
     if len(pending) > 1 or (pending and graph):
@@ -167,6 +165,18 @@ def shield_support_failure(
         return "Shield admission requires a declaration or complete existing graph"
     if failure := shield_source_failure(snapshot, owner, source, loader):
         return failure
+    return None
+
+
+def shield_support_failure(
+    snapshot: CombatSnapshot, loader: AssetLoader, *, turn: bool = False
+) -> str | None:
+    try:
+        graph = shield_graph(snapshot)
+    except ValueError as exc:
+        return str(exc)
+    if failure := shield_policy_failure(snapshot, loader, graph):
+        return failure
     return operation_dependencies(
         plain_shield(snapshot),
         loader,
@@ -174,7 +184,7 @@ def shield_support_failure(
         equipped=True,
         turn_lifecycle=turn,
         movement=turn,
-        reviewed_reactions=bool(pending),
+        reviewed_reactions=bool(snapshot.combat_state.pending_reactions),
     )
 
 
@@ -184,6 +194,25 @@ class ShieldComputation(CombatComputation):
         self.effects = list(snapshot.effect_states)
         self.loader = loader
         self.payments: list[ResourceUpdate] = []
+
+    def actor_snapshot(self, actor_id: str) -> CharacterStateV2:
+        """Current typed actor facts, including already priced local payments.
+
+        Combatant deliberately has no resource fields. Overlay only its owner's
+        typed payment mirrors when a later rule needs a CharacterStateV2 view.
+        """
+        original = next(a for a in self.snapshot.character_states if a.entity_id == actor_id)
+        value = actor_state(self.actors[actor_id], original)
+        for payment in self.payments:
+            if payment.owner_id == actor_id:
+                pool = payment.value
+                if not isinstance(pool, SlotResource):
+                    raise EvaluationInvariantError("Shield can only price a spell slot")
+                field = "spell_slots" if pool.kind == "spell_slot" else "pact_slots"
+                value = value.model_copy(
+                    update={field: {**getattr(value, field), pool.level: pool.current}}
+                )
+        return value
 
     def emit(self, event: CombatEvent) -> None:
         if isinstance(event, EffectApplied):
@@ -358,8 +387,16 @@ def shield_delta(before: CombatSnapshot, after: CombatSnapshot) -> StateDelta:
         )
     ledgers = tuple(slot_ledger(before, p) for p in payments)
     base = reaction_paid_delta(plain_shield(before), plain_shield(after), payments, ledgers)
+    return base.model_copy(
+        update={"operations": (*base.operations, *shield_graph_operations(before, old, new))}
+    )
+
+
+def shield_graph_operations(
+    before: CombatSnapshot, old: ShieldGraphValue | None, new: ShieldGraphValue | None
+) -> tuple[ShieldStateTransition, ...]:
     if old == new:
-        return base
+        return ()
     graph = new or old
     assert graph is not None
     source = shield_source_id(before, graph.expiry_owner_id)
@@ -374,4 +411,4 @@ def shield_delta(before: CombatSnapshot, after: CombatSnapshot) -> StateDelta:
         expected=old,
         value=new,
     )
-    return base.model_copy(update={"operations": (*base.operations, op)})
+    return (op,)

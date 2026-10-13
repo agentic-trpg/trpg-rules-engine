@@ -18,22 +18,19 @@ from pydantic import Field
 from dnd5e_engine.activities.context import DamageInstanceContext
 from dnd5e_engine.activities.effects import bind_effect_lifecycle, passive_effect_to_active_effect
 from dnd5e_engine.concentration_rules import concentration_anchor
-from dnd5e_engine.damage_rules import concentration_dc
 from dnd5e_engine.effect_lifecycle import (
     EffectIdentity,
-    concentration_chain_after_expiry,
-    conditions_after_effect_expiry,
 )
 from dnd5e_engine.effect_lifecycle import OngoingEffectLifecycle as OngoingEffectLifecycle
 from dnd5e_engine.evaluation_actor import actor_state
 from dnd5e_engine.evaluation_base import EvaluationModel
 from dnd5e_engine.evaluation_computation import CombatComputation
+from dnd5e_engine.evaluation_concentration_mechanics import ConcentrationMechanics
 from dnd5e_engine.evaluation_contracts import (
     EvaluationVersion,
     ReadVersion,
     RuleError,
     RuleEvaluationResult,
-    SavePayload,
 )
 from dnd5e_engine.evaluation_delta import ConcentrationUpdate, EffectLifecycleUpdate, StateDelta
 from dnd5e_engine.evaluation_dependencies import damage_save_identity_failure
@@ -43,22 +40,17 @@ from dnd5e_engine.evaluation_preflight import snapshot_support_failure
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError, attack_delta
 from dnd5e_engine.evaluation_rng import RNGContext, RNGTransition
 from dnd5e_engine.evaluation_ruleset import RulesetBinding, verify_ruleset
-from dnd5e_engine.evaluation_saves import resolve_snapshot_save, save_actor_failure
+from dnd5e_engine.evaluation_saves import resolve_snapshot_save as resolve_snapshot_save
+from dnd5e_engine.evaluation_saves import save_actor_failure
 from dnd5e_engine.evaluation_stages import EventStageFacts
 from dnd5e_engine.evaluation_state import CharacterStateV2, CombatSnapshot
 from dnd5e_engine.events import (
     CombatEvent,
-    ConcentrationCheck,
-    ConcentrationDropped,
-    ConditionApplied,
-    ConditionRemoved,
     DamageApplied,
     DamageType,
     Death,
-    EffectExpired,
     EffectExpiryReason,
 )
-from dnd5e_engine.rules.conditions import conditions_break_concentration
 
 
 class ResolvedDamageInstance(EvaluationModel):
@@ -262,16 +254,15 @@ class ConcentrationComputation(CombatComputation):
     def __init__(self, snapshot: CombatSnapshot, rng: random.Random) -> None:
         super().__init__(snapshot, rng)
         self.effects = list(snapshot.effect_states)
+        self.concentration = ConcentrationMechanics(self)
+
+    def actor_snapshot(self, actor_id: str) -> CharacterStateV2:
+        original = next(a for a in self.snapshot.character_states if a.entity_id == actor_id)
+        return actor_state(self.actors[actor_id], original)
 
     def emit(self, event: CombatEvent) -> None:
         super().emit(event)
-        if (
-            isinstance(event, ConditionApplied)
-            and conditions_break_concentration([event.condition])
-            and any(c.condition == event.condition for c in self.actors[event.target_id].conditions)
-            and event.target_id in self.state.concentration_chain
-        ):
-            self.drop(event.target_id)
+        self.concentration.after_event(event)
 
     def record_death(self, event: Death, killer: str | None) -> None:
         if event.target_id in self.state.concentration_chain:
@@ -279,81 +270,14 @@ class ConcentrationComputation(CombatComputation):
         super().record_death(event, killer)
 
     def damage_completed(self, damage: DamageInstanceContext) -> None:
-        # Typed completed facts include all post-defense types, even damage
-        # absorbed by temporary HP. Zero damage does not trigger a save.
-        if damage.amount > 0 and damage.target_id in self.state.concentration_chain:
-            original = next(
-                a for a in self.snapshot.character_states if a.entity_id == damage.target_id
-            )
-            save = resolve_snapshot_save(
-                actor_state(self.actors[damage.target_id], original),
-                SavePayload(
-                    kind="rules.save",
-                    target_id=damage.target_id,
-                    ability="con",
-                    dc=concentration_dc(damage.amount),
-                    advantage=(),
-                    disadvantage=(),
-                    is_magical=False,
-                ),
-                self.rng,
-            )
-            self.events.append(ConcentrationCheck(**save.model_dump(exclude={"type", "ability"})))
-            if not save.succeeded:
-                self.drop(damage.target_id)
+        self.concentration.damage_completed(damage)
         super().damage_completed(damage)
 
     def drop(self, source_id: str, *, reason: EffectExpiryReason = "concentration_drop") -> None:
-        for identity in tuple(self.state.concentration_chain[source_id]):
-            self.events.append(ConcentrationDropped(target_id=source_id, effect_name=identity[1]))
-            self.expire_linked_effect(identity, reason)
+        self.concentration.drop(source_id, reason=reason)
 
     def expire_linked_effect(self, identity: EffectIdentity, reason: EffectExpiryReason) -> None:
-        target, effect_id, origin = identity
-        effect = next(e for e in self.effects if (e.target_id, e.id, e.origin) == identity)
-        source_id = effect.lifecycle.source_id if effect.lifecycle else effect.target_id
-        self.events.append(
-            EffectExpired(target_id=target, effect_id=effect_id, origin=origin, reason=reason)
-        )
-        self.effects = [e for e in self.effects if (e.target_id, e.id, e.origin) != identity]
-        actor = self.actors[target]
-        actor = actor.model_copy(
-            update={
-                "conditions": conditions_after_effect_expiry(
-                    actor.conditions, effect_id, effect.statuses, []
-                )
-            }
-        )
-        ledger = self.state.movement_ledgers[target]
-        self.actors[target] = actor.model_copy(
-            update={"movement_remaining": ledger.remaining(self.speed(actor))}
-        )
-        if "paralyzed" in effect.statuses:
-            self.events.append(ConditionRemoved(target_id=target, condition="paralyzed"))
-        remaining = concentration_chain_after_expiry(
-            self.state.concentration_chain[source_id], identity
-        )
-        chains = {k: v for k, v in self.state.concentration_chain.items() if k != source_id}
-        rounds = dict(self.state.concentration_rounds_remaining)
-        if remaining:
-            chains[source_id] = list(remaining)
-        else:
-            rounds.pop(source_id)
-            self.actors[source_id] = self.actors[source_id].model_copy(
-                update={"concentration_effect_id": None}
-            )
-        self.state = self.state.model_copy(
-            update={
-                "concentration_chain": chains,
-                "concentration_rounds_remaining": rounds,
-                "effect_lifecycles": tuple(
-                    r for r in self.state.effect_lifecycles if r.identity != identity
-                ),
-                "conditions_by_effect": tuple(
-                    r for r in self.state.conditions_by_effect if r.identity != identity
-                ),
-            }
-        )
+        self.concentration.expire_linked_effect(identity, reason)
 
     def candidate_state(self) -> CombatSnapshot:
         return super().candidate_state().model_copy(update={"effect_states": tuple(self.effects)})

@@ -11,8 +11,8 @@ blocked C-16. This extracts existing rules rather than adding content support.
 R26 supersedes the historical R17 lifecycle-schema defect recorded below with local
 schema/runtime agreement. Formal ABI and C-04/C-15/C-16 remain unapproved/OPEN.
 
-Current local versions after RF-RE3 and R37: envelope `/24`, Snapshot `/17`,
-Availability `/13`, evaluator `/37`, stage facts `/2`. Historical batch versions
+Current local versions after R39: envelope `/24`, Snapshot `/17`,
+Availability `/13`, evaluator `/39`, stage facts `/2`. Historical batch versions
 below describe their original deliveries; they are not the current protocol row.
 
 R34–R37 implement [bounded event-stage mechanical facts](event-stage-facts.md)
@@ -22,6 +22,17 @@ execute under their existing admission with explicit independent stage gaps.
 The [SM handoff](event-stage-sm-handoff.md) records required fixed-pin integration,
 world supplementation, OCC and Evidence persistence. No SM code/pin changed,
 no NPC perception/Episode end-to-end completion or C-19/C-24 ABI approval is claimed.
+
+| R38/R39 dimension | Current bounded delivery | Remaining |
+|---|---|---|
+| Rule execution | canonical same-caster Hold Person + declared/active Shield during one ordinary Attack | mixed Pass/repeat/caster-end boundaries R40; replacement R41 |
+| Dependency closure | full ownership graph, canonical source/class/equipment/material and existing actor/resource gates | arbitrary effects, multiple sources, other spell families, competing reactions |
+| Typed Delta | one mechanical projection with owned concentration, resource/ledger/declaration and Shield transitions | closed replacement transition R41 |
+| Stage coverage | original ordinary complete paths preserved; new mixed paths explicitly uncovered | mixed event-stage capture not implemented |
+| SM integration | local candidate only; domain facts plus shared atomic commit remain required | no SM code/pin or cross-repository ABI change |
+
+The [composition audit](effect-composition.md) records actual per-batch gates and
+temporary limitations; it does not turn proposed later batches into delivered work.
 
 ## Architecture decisions and progress dimensions
 

@@ -13,8 +13,8 @@ C-04/C-15/C-16/C-19/C-24 and the common ABI remain OPEN.
 
 | Batch | Actual start | Delivery |
 |---|---|---|
-| R38 | `e5254a2ac7166a830a24c46eb35b2b1e0c4f4b80` | full-identity ownership and standalone refactor; validation recorded below |
-| R39 | after validated/pushed R38 | not yet delivered |
+| R38 | `e5254a2ac7166a830a24c46eb35b2b1e0c4f4b80` | pushed `470c3dc236df5a2ab2ed340183e82422afec8adc`; full-identity ownership and standalone refactor |
+| R39 | `470c3dc236df5a2ab2ed340183e82422afec8adc` | one real composed Attack; final validation below |
 | R40 | after validated/pushed R39 | not yet delivered |
 | R41 | after validated/pushed R40 | not yet delivered |
 
@@ -80,3 +80,71 @@ including all workspace packages because `.evaluation-worktree/` is unknown.
 Final gate is `uv run --no-project python tools/validate.py integration --base`
 with that same full start SHA and `PYTHONUTF8=1`. Actual outcome/commit/CI follows
 execution; none of the later batch capabilities or whole migration is claimed here.
+
+R38 final Integration **PASSED in 1267.32 s**: tooling 24; SRD 671 / 1 existing
+skip (225.93 s); Engine 9,008 (901.94 s); Bridge 139 (16.94 s); Demo 54
+(31.95 s); lint/format/types, public examples and strict docs. Native CI
+[38408895697](https://github.com/agentic-trpg/trpg-rules-engine/actions/runs/38408895697)
+was independently queried and succeeded on its exact R38 source SHA.
+
+## R39 one-call composition
+
+`prepare_attack` (also Availability), `execute_attack` and `evaluate` select the
+bounded mixed profile before any draw. `ComposedEffectComputation` has one parent
+ShieldComputation and one explicit ConcentrationMechanics component referencing
+the same actors/state/events/RNG. It executes the Activity Resolver once. Original
+Shield hit reaction decides qualification, pays one owner slot/reaction, resolves
+the exact utility effect and returns the effective AC for that original Attack
+roll. Actual damage completes once; shared concentration checks occur once per
+completed instance, including temporary-HP absorption, followed by existing
+zero-HP/condition/death handling. Concentration cleanup removes only its owned
+Hold graph; Shield remains independently governed by its exact response/expiry.
+
+Combatant intentionally excludes resource fields. A current typed actor_snapshot
+view overlays already priced ResourceUpdate mirrors before a later concentration
+save. A new regression first exposed the old input mirror (1 failed / 43 passed,
+11.01 s); the corrected view now supplies the paid slot count. This is not another
+resource store or extra payment. The final resource/actor mirror and expended
+ledger are guarded against the original Snapshot by the existing paid projector.
+
+The mixed projector removes only the proven Shield-owned graph from read-only
+before/after views, runs reaction/payment/concentration projection and one base
+omission guard, then appends only the disjoint Shield graph transition. HP,
+Conditions, budgets and resource writes are not independently concatenated.
+Unknown effects or malformed cross-links cannot disappear into a view.
+
+R39 supports one/two Hold targets or the reviewed empty anchor, with one Shield
+declaration or active Shield belonging to that same complete Wizard 5 Evoker.
+The ordinary attacker must be neither caster nor held target and must attack
+that caster. All supplied actors start alive with positive HP. No mixed Pass,
+held-target repeat-save or caster turn-end boundary is admitted yet; these return
+unsupported before RNG/payment and remain R40 work. Same-spell recast is R41 work.
+OA, competing reactions, Magic Missile, other effects/classes/levels and generic
+concentration replacement remain outside this bounded delivery.
+
+Existing standalone Legacy comparisons retain their assertions. Composed expected
+rolls, +5 AC, flat damage, costs, condition/clock ownership and RNG are asserted
+explicitly; Legacy mixed execution has not been assumed a trustworthy oracle.
+Real initial Hold casting -> independently guarded Delta -> test Host declaration
+-> real Attack is exercised. The test Host does not implement a persistent
+production reaction window. JSON roundtrips and independent next-state application
+retain complete graphs rather than rebuilding idealized templates.
+
+R39 focused related regression **235 passed in 34.50 s**; expanded composed suite
+**50 passed in 12.10 s**. Coverage includes untriggered/blocked/still-hit Shield,
+CON success/failure, active Shield on a second ordinary attacker, mixed packets
+sharing one instance, temporary HP, NPC death/PC dying, source/material/unknown
+graph refusal, resource unavailability, cancellation, interleaved sessions,
+stale application, paid mirrors and omission guards. Strict Mypy passes 156 source
+files. Wire schemas are unchanged; evaluator binding is `/39`. Original complete
+ordinary stages remain; mixed stages are explicitly uncovered.
+
+Independent R39 read-only review found a correctly rebound effective corpus
+missing Hold Person could reach a source helper assertion. The new negative test
+first failed (1 case, 5.90 s); canonical concentration validation now runs before
+that source helper and returns unsupported before RNG/payment. Final reviewer
+confirmed this finding closed and no remaining blocker. Final related regression,
+including original stages: **378 passed in 56.37 s**. R39 plan requires Integration;
+the exact base for plan and final `tools/validate.py integration --base` is
+`470c3dc236df5a2ab2ed340183e82422afec8adc` (with `PYTHONUTF8=1`). Actual final gate
+outcome and pushed SHA are recorded after execution.

@@ -39,12 +39,18 @@ def execute_attack(
     loader: AssetLoader | None = None,
 ) -> CombatComputationResult:
     """Compute a private post-state for closed delta projection, never publication."""
+    from dnd5e_engine.evaluation_composition import ComposedEffectComputation, has_composed_effects
     from dnd5e_engine.evaluation_shield import ShieldComputation, has_shield
 
-    if has_shield(snapshot):
+    computation: _AttackComputation
+    if has_composed_effects(snapshot):
+        if loader is None:
+            raise RuntimeError("composed effects require the explicit verified loader")
+        computation = ComposedEffectComputation(snapshot, rng, loader)
+    elif has_shield(snapshot):
         if loader is None:
             raise RuntimeError("Shield computation requires the explicit verified loader")
-        computation: _AttackComputation = ShieldComputation(snapshot, rng, loader)
+        computation = ShieldComputation(snapshot, rng, loader)
     elif snapshot.effect_states:
         from dnd5e_engine.evaluation_concentration import ConcentrationComputation
 

@@ -12,9 +12,11 @@ verbatim; validate source/material/equipment/complete dependencies before execut
 Original ordinary complete stages remain; mixed Attack/Pass and replacement
 remain uncovered. Unsupported stage sampling is not world Evidence.
 
-Fixed R41 source SHA and final local/CI evidence are recorded after source commit
-in [the composition audit](effect-composition.md). Pin that SHA, not this moving
-branch. RE-only local candidates do not implement SM/domain consumers, shared
+The fixed **R41 source candidate is `44ab4e6fbacad8386c8ac8b83a41e5fcff20a1b9`**, independently validated,
+committed and pushed after R38/R39/R40. An evidence-only documentation commit
+preserves that source candidate. Per-batch local/CI evidence and independent
+whole-branch review are in [the composition audit](effect-composition.md).
+Pin the full source SHA, not this moving branch. RE-only local candidates do not implement SM/domain consumers, shared
 transactions, durable reaction windows or production caller cutover. Domain facts
 retain their owners; shared facilities coordinate their atomic commit and receipt.
 C-04/C-15/C-16/C-19/C-24 and the common ABI remain OPEN. SM/architecture/pins were

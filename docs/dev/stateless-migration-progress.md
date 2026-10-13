@@ -1423,3 +1423,11 @@ and Hold replacement execute once with explicit uncovered stages. Local typed
 contracts, independent test consumers and sequential local/CI gates do not prove
 production domain integration, reaction-window persistence or world Evidence.
 C-04/C-15/C-16/C-19/C-24 and the common ABI remain OPEN.
+
+
+R38–R41 fixed source candidate: `44ab4e6fbacad8386c8ac8b83a41e5fcff20a1b9` on
+`feat/re-r38-r41-effect-composition`, baseline
+`e5254a2ac7166a830a24c46eb35b2b1e0c4f4b80`. Four separate Integration gates and
+commits/pushes passed; the subsequent independent whole-branch read-only review
+found no unresolved blocker. See the composition audit for measured local results
+and separately queried CI. No main merge or production SM/ABI cutover occurred.

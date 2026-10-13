@@ -16,7 +16,7 @@ C-04/C-15/C-16/C-19/C-24 and the common ABI remain OPEN.
 | R38 | `e5254a2ac7166a830a24c46eb35b2b1e0c4f4b80` | pushed `470c3dc236df5a2ab2ed340183e82422afec8adc`; full-identity ownership and standalone refactor |
 | R39 | `470c3dc236df5a2ab2ed340183e82422afec8adc` | pushed `03cd42bb751d6219f28881b1de6996ff525fe819`; one real composed Attack |
 | R40 | `03cd42bb751d6219f28881b1de6996ff525fe819` | pushed `4965450994881b4cf10fc68650c4016181c2a909`; actual mixed lifecycle continuation |
-| R41 | `4965450994881b4cf10fc68650c4016181c2a909` | actual bounded same-Wizard replacement; final validation below |
+| R41 | `4965450994881b4cf10fc68650c4016181c2a909` | pushed `44ab4e6fbacad8386c8ac8b83a41e5fcff20a1b9`; actual bounded same-Wizard replacement |
 
 ## R38 ownership and projection audit
 
@@ -330,3 +330,67 @@ Bridge **139** (9.33 s); Demo **54**; Ruff/format/Mypy, all three public example
 and strict MkDocs. Native CI is a separate post-push observation, not this local
 evidence. All four gates were run sequentially before their own commit/push.
 The final R41 source SHA, whole-branch review and post-push CI follow below.
+
+
+## Fixed R41 source and four-batch overall review
+
+The fixed source candidate for subsequent SM/domain integration is
+**`44ab4e6fbacad8386c8ac8b83a41e5fcff20a1b9`**. It includes the four independently
+validated/pushed batches on baseline `e5254a2ac7166a830a24c46eb35b2b1e0c4f4b80`.
+The later evidence-only documentation commit does not change this source
+candidate. Pin the full source SHA, not a moving feature-branch head.
+
+| Batch | Source SHA | Windows Integration total | Engine tests | SRD / Bridge / Demo |
+|---|---|---|---|---|
+| R38 | `470c3dc236df5a2ab2ed340183e82422afec8adc` | 1267.32 s | 9008 | 671 + 1 existing skip / 139 / 54 |
+| R39 | `03cd42bb751d6219f28881b1de6996ff525fe819` | 1149.15 s | 9059 | 671 + 1 existing skip / 139 / 54 |
+| R40 | `4965450994881b4cf10fc68650c4016181c2a909` | 1441.49 s | 9069 | 671 + 1 existing skip / 139 / 54 |
+| R41 | `44ab4e6fbacad8386c8ac8b83a41e5fcff20a1b9` | 930.61 s | 9100 | 671 + 1 existing skip / 139 / 54 |
+
+Every final gate uses `PYTHONUTF8=1` and
+`uv run --no-project python tools/validate.py integration --base <actual start>`,
+preceded by the corresponding `fast --plan --base <actual start>` inspection,
+where exact start SHAs are in the first table. This is the Makefile-equivalent
+Windows entrypoint; the plan is not a second Fast execution. All four Integration
+gates include static checks, tooling, public examples and strict docs. No local
+Full run or coverage-threshold change is claimed. Final evidence-only edits run
+strict MkDocs again because the docs changed, without repeating unchanged runtime.
+
+After all four source commits/pushes, the independent reviewer inspected the
+whole fixed range `e5254a2..44ab4e6` read-only, including cumulative interactions,
+canonical closure, unique payment/current mirrors, actual turn scheduling and
+replacement fences. **No unresolved blocker was found.** All earlier findings
+(missing Hold corpus assertion, legal array-order constraints, late generation
+refusal) were closed with regressions. Reviewer confirmed original standalone
+mechanics and ordinary stage-complete paths/strong assertions remain; mixed and
+replacement results remain explicitly uncovered. The reviewer did not edit code
+or rerun the full gate; measured test evidence is the execution above.
+
+The overall review also verified RE-only file changes, no main merge, origin
+feature synchronization and preservation of `.evaluation-worktree/`. Remote main
+was separately rechecked at the original baseline. The exact capability boundary
+remains Wizard 5 Evoker, one canonical Hold chain with one/two targets (or its
+empty anchor), same-caster declared/active Shield, ordinary attacks directed at
+that caster, ordinary Pass and same-caster Hold-to-Hold replacement. Broader
+effects, multiple concentration sources, competing/nested reactions, OA/Magic
+Missile expansion, mixed stage sampling, production consumers/atomic Host, durable
+reaction windows and SM Evidence/NPC perception are not implemented. Domain fact
+ownership/shared atomic commit and OPEN C-04/C-15/C-16/C-19/C-24/common ABI remain.
+
+
+R41 native GitHub Actions
+[38427510057](https://github.com/agentic-trpg/trpg-rules-engine/actions/runs/38427510057)
+was queried after completion and **succeeded on exact source SHA
+`44ab4e6fbacad8386c8ac8b83a41e5fcff20a1b9`**. All four source runs above are
+separately verified successful. The workflow selected Fast / Focused Validation;
+its Full Validation job was skipped, so this is not a native Full claim.
+
+The changed public example was additionally executed on that fixed source:
+`uv run --no-sync python examples/event_stage_evaluation.py
+examples/event_stage_request.json --output <temporary-result.json>`. It returned
+accepted Evaluation `/25` with ordinary stage coverage **complete**; the example
+consumer also transported the result and called verify_request. Schema export
+was separately checked as recorded above. Temporary outputs are outside Git.
+Final evidence-only edits touch this audit, the SM handoff and progress document;
+strict MkDocs and git diff --check validate the changed documentation. Runtime
+source and its four completed gates are unchanged.

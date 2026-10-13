@@ -11,8 +11,8 @@ blocked C-16. This extracts existing rules rather than adding content support.
 R26 supersedes the historical R17 lifecycle-schema defect recorded below with local
 schema/runtime agreement. Formal ABI and C-04/C-15/C-16 remain unapproved/OPEN.
 
-Current local versions after R40: envelope `/24`, Snapshot `/17`,
-Availability `/13`, evaluator `/40`, stage facts `/2`. Historical batch versions
+Current local versions after R41: envelope `/25`, Snapshot `/17`,
+Availability `/13`, evaluator `/41`, stage facts `/2`. Historical batch versions
 below describe their original deliveries; they are not the current protocol row.
 
 R34–R37 implement [bounded event-stage mechanical facts](event-stage-facts.md)
@@ -23,11 +23,11 @@ The [SM handoff](event-stage-sm-handoff.md) records required fixed-pin integrati
 world supplementation, OCC and Evidence persistence. No SM code/pin changed,
 no NPC perception/Episode end-to-end completion or C-19/C-24 ABI approval is claimed.
 
-| R38–R40 dimension | Current bounded delivery | Remaining |
+| R38–R41 dimension | Current bounded delivery | Remaining |
 |---|---|---|
-| Rule execution | canonical same-caster Hold Person + declared/active Shield; ordinary Attack against the caster, ordinary Pass, target repeats/caster cap and independent Shield expiry | replacement R41; arbitrary effects and wider attack-target compositions |
+| Rule execution | canonical same-caster Hold Person + declared/active Shield; ordinary Attack against the caster, ordinary Pass, target repeats/caster cap, independent Shield expiry and same-Wizard canonical Hold Person replacement | arbitrary effects and wider attack-target compositions |
 | Dependency closure | full ownership graph, canonical source/class/equipment/material and existing actor/resource gates | arbitrary effects, multiple sources, other spell families, competing reactions |
-| Typed Delta | one mechanical projection with owned concentration, resource/ledger/declaration and Shield transitions | closed replacement transition R41 |
+| Typed Delta | one mechanical projection with owned concentration, resource/ledger/declaration, Shield and closed old-value GraphReplace transitions | production consumer/atomic commit integration remains |
 | Stage coverage | original ordinary complete paths preserved; new mixed paths explicitly uncovered | mixed event-stage capture not implemented |
 | SM integration | local candidate only; domain facts plus shared atomic commit remain required | no SM code/pin or cross-repository ABI change |
 
@@ -92,8 +92,8 @@ classification applies only to the stated bounded capability, not its whole fami
 | One predeclared Counterspell / Cure Wounds trigger | Complete bounded local contract | **Yes, R21** | Real Wizard 5 Evoker; pure matching/targeting and SaveActivity, one atomic trigger/Reaction/payment/delta/events/RNG; no Live dispatcher |
 | One authorized weapon Opportunity Attack / Walk | Complete bounded local contract | **Yes, R25** | Explicit Snapshot consent, shared reach/LOS and Attack/Damage, full path-prefix/death/budget/consumption/expiry delta; no Live hooks |
 | Fighter Sap mastery | Complete bounded local contract | **Yes, R31** | Canonical Fighter 1/Defense, mace/chain shirt/optional shield, full three-Sap-weapon training; original AttackActivity proc, nonstacking mark, next Attack Disadvantage/consumption and source-next-start expiry. Other masteries and mixed effect/reaction graphs remain Deferred |
-| Wizard Hold Person initial cast and lifecycle | Complete bounded local candidate; shared C-15/C-16 OPEN | **Yes, R32** | Full Wizard 5 Evoker, prepared/known source, owned component pouch and explicit iron attestation, slots 2/3, named Humanoids, original Delivery/Save/Effect Binding; atomic closed graph initialization into R28 repeat/partial/full cleanup and actual attack concentration checks. Existing graphs/recast and other spell families remain Deferred |
-| Predeclared Wizard Shield lifecycle | Complete bounded local candidate; shared C-04/C-15 OPEN | **Yes, R33** | SM-authorized single canonical declaration, original attack roll and AC reclassification, Slot/Reaction payment, persisted effect/response/owner-next-start expiry. Later Attack and Pass restore the full graph independently; no Live reaction hooks. Magic Missile casting, competing/nested choices and mixed graphs remain Deferred |
+| Wizard Hold Person initial cast and lifecycle | Complete bounded local candidate; shared C-15/C-16 OPEN | **Yes, R32** | Full Wizard 5 Evoker, prepared/known source, owned component pouch and explicit iron attestation, slots 2/3, named Humanoids, original Delivery/Save/Effect Binding; atomic closed graph initialization into repeat/partial/full cleanup and actual attack concentration checks; R41 adds same-Wizard Hold-to-Hold replacement. Other spell families/graph compositions remain Deferred |
+| Predeclared Wizard Shield lifecycle | Complete bounded local candidate; shared C-04/C-15 OPEN | **Yes, R33** | SM-authorized single canonical declaration, original attack roll and AC reclassification, Slot/Reaction payment, persisted effect/response/owner-next-start expiry. Later Attack and Pass restore the full graph independently; R39–R41 admit the one same-owner Hold composition. No Live reaction hooks. Magic Missile casting, competing/nested choices and other mixed graphs remain Deferred |
 | Reaction / pending choice overall | Partially migrated | Partially | Draw-free weapon/missing-DC choices, R21 Counterspell, R25 weapon OA, R29 canonical Ogre OA and R33 Shield; other reactions, priorities, nested chains, durable windows and interactive continuation remain Legacy/OPEN |
 | Areas / environment / objects | Legacy Stateful Only | No | `persistent_areas`, `environment`, `combat_objects`, `ongoing_spell_activation`; state captured then refused; source/lifetime/geometry/history Delta missing |
 | Bounded victory / TPK closure | Fully migrated bounded external contract | **Yes, R10** | `evaluation_closure` → shared outcome_rules on explicit values; XP/history/events and unchanged RNG |
@@ -1411,3 +1411,15 @@ was corrected; current dependency/ABI mismatch and newer C-19 stage-evidence OPE
 remain explicit. See [R30–R33 review](stateless-r30-r33-review.md) for the two-axis
 matrix, retained original capabilities, actual validation and next four proposals.
 No merge, production caller cutover or complete conversion is claimed.
+
+
+## R38–R41 bounded effect composition
+
+The current dimension table above supersedes only the historical mixed-effect and
+recast deferrals within this exact profile. See [per-batch implementation and
+evidence](effect-composition.md) and [updated SM handoff](event-stage-sm-handoff.md).
+The original R34–R37 ordinary stage-complete contract remains; mixed Attack/Pass
+and Hold replacement execute once with explicit uncovered stages. Local typed
+contracts, independent test consumers and sequential local/CI gates do not prove
+production domain integration, reaction-window persistence or world Evidence.
+C-04/C-15/C-16/C-19/C-24 and the common ABI remain OPEN.

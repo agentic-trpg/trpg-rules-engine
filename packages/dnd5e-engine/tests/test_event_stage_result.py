@@ -40,7 +40,7 @@ def verify(data, request, mode):
 def test_public_evaluate_returns_nonempty_stages_without_a_capture_helper(factory):
     request, _, _ = factory()
     result = asyncio.run(evaluate(request, loader=synthetic_loader()))
-    assert result.schema_version == "engine-evaluation/24"
+    assert result.schema_version == "engine-evaluation/25"
     assert result.stage_facts.schema_version == "engine-stage-facts/2"
     assert result.stage_facts.coverage == "complete"
     assert result.stage_facts.stages
@@ -274,7 +274,7 @@ def test_exported_schema_includes_required_stages_without_snapshot_availability_
 
     schema = RuleEvaluationResult.model_json_schema(mode=mode)
     assert "stage_facts" in schema["required"]
-    assert schema["properties"]["schema_version"]["const"] == "engine-evaluation/24"
+    assert schema["properties"]["schema_version"]["const"] == "engine-evaluation/25"
     assert (
         schema["$defs"]["EventStageFacts"]["properties"]["schema_version"]["const"]
         == "engine-stage-facts/2"

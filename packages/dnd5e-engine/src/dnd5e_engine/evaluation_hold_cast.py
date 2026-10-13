@@ -140,14 +140,12 @@ def hold_cast_source_failure(
     )
 
 
-def hold_create_delta(
+def hold_created_graph(
     before: CombatSnapshot,
     after: CombatSnapshot,
     intent: CombatIntentPayload,
-    payments: tuple[ResourceUpdate, ...],
-    ledgers: tuple[SlotSpendLedgerUpdate, ...],
     dc: int,
-) -> StateDelta:
+) -> HoldPersonGraphCreate:
     assert intent.source_id is not None
     assert intent.spell_source_id is not None
     assert intent.target_id is not None
@@ -222,7 +220,11 @@ def hold_create_delta(
             != (op.concentration_id if old.entity_id == op.source_id else None)
         ):
             raise EvaluationInvariantError("unrepresented Hold Person conditions or concentration")
-    normalized = after.model_copy(
+    return op
+
+
+def normalized_hold_graph(before: CombatSnapshot, after: CombatSnapshot) -> CombatSnapshot:
+    return after.model_copy(
         update={
             "effect_states": before.effect_states,
             "character_states": tuple(
@@ -247,7 +249,18 @@ def hold_create_delta(
             ),
         }
     )
-    base = paid_delta(before, normalized, payments, ledgers)
+
+
+def hold_create_delta(
+    before: CombatSnapshot,
+    after: CombatSnapshot,
+    intent: CombatIntentPayload,
+    payments: tuple[ResourceUpdate, ...],
+    ledgers: tuple[SlotSpendLedgerUpdate, ...],
+    dc: int,
+) -> StateDelta:
+    op = hold_created_graph(before, after, intent, dc)
+    base = paid_delta(before, normalized_hold_graph(before, after), payments, ledgers)
     return base.model_copy(update={"operations": (*base.operations, op)})
 
 
@@ -308,11 +321,19 @@ def evaluate_hold_cast(request: RuleEvaluationRequest, loader: AssetLoader) -> T
         or loader.get_condition("paralyzed") != canonical.get_condition("paralyzed")
     ):
         return _refuse("unsupported", "spell.binding", "canonical spell and condition are required")
-    if state.pending_reactions or snapshot.effect_states or state.concentration_chain:
+    replacement_view = None
+    if state.concentration_chain:
+        from dnd5e_engine.evaluation_hold_replace import hold_replacement_view
+
+        replacement_view, failure = hold_replacement_view(snapshot, actor.entity_id, loader)
+        if failure:
+            return _refuse("unsupported", "spell.graph", failure)
+    elif state.pending_reactions or snapshot.effect_states:
         return _refuse(
             "unsupported", "spell.graph", "initial cast requires no existing effect/reaction graph"
         )
-    if failure := invocation_dependencies(snapshot, loader, targets[0], damaging=True):
+    dependencies = replacement_view or snapshot
+    if failure := invocation_dependencies(dependencies, loader, targets[0], damaging=True):
         return _refuse("unsupported", "spell.dependencies", failure)
     if failure := hold_cast_source_failure(snapshot, intent, actor.entity_id, loader):
         return _refuse("rejected", "spell.source", failure)
@@ -380,6 +401,11 @@ def evaluate_hold_cast(request: RuleEvaluationRequest, loader: AssetLoader) -> T
         computation.actors[actor.entity_id] = actor.model_copy(
             update=ordinary_action_payment(actor)
         )
+        # All source, delivery, dependency, action and resource checks have passed.
+        # End the old chain at the start of this accepted concentration cast,
+        # before SpellCast and before the single new SaveActivity consumes RNG.
+        if replacement_view is not None:
+            computation.drop(actor.entity_id)
         computation.emit(spell_event(actor.entity_id, spell, intent.slot_level))
         ctx = build_activity_context(
             computation.actors[actor.entity_id],
@@ -441,9 +467,17 @@ def evaluate_hold_cast(request: RuleEvaluationRequest, loader: AssetLoader) -> T
         # The shared SaveActivity captured this DC; no second save/DC formula.
         dc = next(e.dc for e in computation.events if e.type == "save_rolled")
         sourced = intent.model_copy(update={"source_id": actor.entity_id})
+        if replacement_view is not None:
+            from dnd5e_engine.evaluation_hold_replace import hold_replace_delta
+
+            delta = hold_replace_delta(
+                snapshot, replacement_view, after, sourced, payments, ledgers, dc
+            )
+        else:
+            delta = hold_create_delta(snapshot, after, sourced, payments, ledgers, dc)
         return dict(
             status="accepted",
-            state_delta=hold_create_delta(snapshot, after, sourced, payments, ledgers, dc),
+            state_delta=delta,
             proposed_events=computed.proposed_events,
             rng_transition=RNGTransition.between(request.rng_context, rng),
             choice=None,

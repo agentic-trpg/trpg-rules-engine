@@ -44,7 +44,7 @@ def input_request():
         combat_id="combat:synthetic",
     )
     return RuleEvaluationRequest(
-        schema_version="engine-evaluation/24",
+        schema_version="engine-evaluation/25",
         session_id=live.session_id,
         command_id="command:synthetic",
         operation_kind="combat.intent",
@@ -58,7 +58,7 @@ def input_request():
 
 def result_for(request, status="accepted"):
     return RuleEvaluationResult(
-        schema_version="engine-evaluation/24",
+        schema_version="engine-evaluation/25",
         session_id=request.session_id,
         command_id=request.command_id,
         input_world_version=request.state_snapshot.world_version,

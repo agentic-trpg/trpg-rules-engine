@@ -7,6 +7,7 @@ from pydantic import Field, model_validator
 from dnd5e_engine.evaluation_base import EvaluationModel
 from dnd5e_engine.evaluation_effects import EffectState
 from dnd5e_engine.evaluation_hold_delta import HoldPersonGraphCreate
+from dnd5e_engine.evaluation_hold_replace_delta import HoldPersonGraphReplace
 from dnd5e_engine.evaluation_reaction_state import PredeclaredReactionState
 from dnd5e_engine.evaluation_resources import ResourcePool
 from dnd5e_engine.evaluation_shield_delta import ShieldStateTransition
@@ -487,6 +488,7 @@ StateDeltaOperation = Annotated[
     | PendingReactionUpdate
     | SapMarksUpdate
     | HoldPersonGraphCreate
+    | HoldPersonGraphReplace
     | ShieldStateTransition,
     Field(discriminator="kind"),
 ]

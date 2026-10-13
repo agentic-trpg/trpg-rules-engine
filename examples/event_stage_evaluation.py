@@ -1,4 +1,4 @@
-"""Evaluate one explicit /24 request once, or export the current local schemas.
+"""Evaluate one explicit /25 request once, or export the current local schemas.
 
 uv run python examples/event_stage_evaluation.py examples/event_stage_request.json
 uv run python examples/event_stage_evaluation.py --schema-dir <output-directory>

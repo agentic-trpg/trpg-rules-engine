@@ -15,8 +15,8 @@ C-04/C-15/C-16/C-19/C-24 and the common ABI remain OPEN.
 |---|---|---|
 | R38 | `e5254a2ac7166a830a24c46eb35b2b1e0c4f4b80` | pushed `470c3dc236df5a2ab2ed340183e82422afec8adc`; full-identity ownership and standalone refactor |
 | R39 | `470c3dc236df5a2ab2ed340183e82422afec8adc` | pushed `03cd42bb751d6219f28881b1de6996ff525fe819`; one real composed Attack |
-| R40 | `03cd42bb751d6219f28881b1de6996ff525fe819` | actual mixed lifecycle continuation; final validation below |
-| R41 | after validated/pushed R40 | not yet delivered |
+| R40 | `03cd42bb751d6219f28881b1de6996ff525fe819` | pushed `4965450994881b4cf10fc68650c4016181c2a909`; actual mixed lifecycle continuation |
+| R41 | `4965450994881b4cf10fc68650c4016181c2a909` | actual bounded same-Wizard replacement; final validation below |
 
 ## R38 ownership and projection audit
 
@@ -205,3 +205,128 @@ gate: **182 passed in 25.16 s**. Strict Mypy passes all 156 source files.
 Plan: `uv run --no-project python tools/validate.py fast --plan --base
 03cd42bb751d6219f28881b1de6996ff525fe819`; it requires Integration. The same actual
 base is used for the final `integration --base` gate with `PYTHONUTF8=1`.
+
+
+R40 final Integration **PASSED in 1441.49 s**: tooling 24; SRD 671 / 1 existing
+skip (228.47 s); Engine 9,069 (1047.83 s); Bridge 139 (17.79 s); Demo 54
+(35.76 s); static checks, three examples and strict docs. Independent R40 read-only
+review found no blocker. Native CI
+[38421666529](https://github.com/agentic-trpg/trpg-rules-engine/actions/runs/38421666529)
+was separately queried and succeeded on exact R40 SHA `4965450994881b4cf10fc68650c4016181c2a909`.
+
+## R41 same-source canonical concentration replacement
+
+The public `evaluate` -> `evaluate_hold_cast` path now admits a subsequent legal
+Wizard 5 Evoker Hold Person -> Hold Person cast, with the same/changed one/two
+Humanoid targets and reviewed level 2/3 slots. It proves the entire original
+canonical Hold graph, attachments, clocks, source, optional same-caster canonical
+pending Shield and all existing actor dependencies before a narrow initial-cast
+dependency view. An active Shield at its owner's current turn is stale relative
+to the existing owner-next-start rule and is refused, not silently expired or
+ignored. Other graphs/families, multi-source concentration, competing reactions,
+Magic Missile/OA expansion and broader class/equipment profiles remain unsupported.
+
+After all target/source/material/action/resource/delivery checks, one computation
+emits IntentSubmitted, prices its ordinary Action, drops every owned old Hold
+identity with shared concentration cleanup, emits SpellCast and invokes the
+original SaveActivity once. Thus old drop/condition removal precede every new
+target save/application. No extra RNG, payment or turn occurs. All new successful
+saves are an accepted paid cast with old targets released and one canonical empty
+caster-side anchor. The new cap starts at the shared maximum 10 and becomes 9 at
+this actual caster turn end, just like the original initial cast. Existing
+ordinary turn reset/round/ledger rules then run once.
+
+The Legacy `_record_effect_lifecycle_links` audit found that it folds prior chains
+after new resolution and silently refreshes identical target identities. Its
+`_apply_concentration_anchor` handles an all-success cast only in that later fold.
+Consequently Legacy is not a trusted replacement-order/clock oracle here. Tests
+assert explicit start-of-cast drop ordering, canonical DC/save outcomes, resource
+arithmetic and actual clocks independently, while retaining the original
+standalone Legacy parity suites. No new path calls Legacy or infers rules from
+a spell name/prose; it uses the encoded canonical concentration flag, spell
+activity, shared cleanup, anchor, duration, delivery and budget functions.
+
+`HoldPersonGraphReplace` is a new closed Delta variant, never arbitrary Patch. It
+guards complete old effect values/full identities, lifecycle/last-repeat clocks,
+lineages, every actor's exact condition footprint, caster concentration id, chain
+and rounds. Its canonical `creation` uses the unchanged strict GraphCreate
+expected-absence shape only **after atomic guarded old deletion**. Consumers must
+validate every old value before any write, delete the old owned graph/attachments,
+install the new canonical graph and apply all base/resource/turn operations in
+one participating-domain transaction. The operation owns conditions and caster
+concentration; base projection normalizes exactly those owned components back to
+the original input and runs its full omission guard once. It still guards actual
+movement released by old Paralyzed cleanup, budgets and unrelated facts. Resource
+Update/slot mirrors and one expended-slot ledger apply once; pending Shield is
+preserved verbatim. No two HP/condition/budget deltas are concatenated.
+
+New target clocks capture the real later turn serial/round with last-repeat unset.
+Same identity is allowed, but full old clock values distinguish generations. Old
+whole cleanup proposals are additionally fenced by world version, request/RNG
+association and turn pre-values. Empty anchors have no target clock; their safety
+depends on those mandatory whole-proposal atomic version fences, not a fictional
+new identity. Applying individual operations out of that transaction is unsupported.
+
+The typed union changes Evaluation `/24` -> `/25` and evaluator `/40` -> `/41`.
+Schemas are generated directly by the DTOs and the public schema-export example;
+tests deserialize the new union and reject missing/extra/wrong-type/referenced
+fields and old formats. Existing request/result consumers and public example are
+updated. Snapshot `/17`, Availability `/13`, StageFacts `/2`, dependencies and SM
+pins do not change. Availability's existing attack gate is shared with evaluation;
+no draw or action is executed for that query. No new spell-availability API is
+introduced. New mixed and replacement paths remain stage-uncovered; R37 ordinary
+complete stages remain unchanged.
+
+First R41 related regression: **47 passed in 10.29 s** (new continuous replacement
+and original initial casts). Expanded replacement suite: **25 passed in 11.70 s**.
+The suite applies independent guarded Typed Deltas and JSON-roundtrips next inputs,
+including initial cast -> trusted test-Host Shield declaration -> enemy Shield
+attack -> actual repeats/expiry -> replacement -> later attack/turns. It covers
+one/two old/new targets, changed targets, all-success empty-anchor replacement and
+a later anchor-to-target cast, pending Shield preservation and a second real paid
+Shield response, source/resource/material/unknown/clock refusal, fault/cancellation
+after actual drop/save, omission guards, stale generations and interleaved sessions.
+A second-Shield test initially chose a deterministic miss (1 failed / 21 passed,
+13.14 s); it now uses a verified initial seed that reaches the asserted trigger.
+Production admission was unchanged and the assertion was preserved. Strict Mypy
+passes all 158 source files. Final expanded regression, independent review and
+Integration outcomes follow actual execution.
+
+R41 plan/final Integration use the exact batch start
+`4965450994881b4cf10fc68650c4016181c2a909` with `PYTHONUTF8=1`. Commands are
+`uv run --no-project python tools/validate.py fast --plan --base <start>` and
+`uv run --no-project python tools/validate.py integration --base <start>`, equivalent
+to the repository Make targets on this Windows host. No redundant Fast or Full
+gate is substituted. Fixed source-candidate SHA and final CI evidence are added
+after source commit/push, without claiming production SM/ABI integration.
+
+
+R41 final expanded focused command: `uv run --no-sync --package dnd5e-engine
+pytest -q` with `test_effect_composition_{recast,ownership,attack,turn}.py`,
+`test_stateless_{hold_cast,hold_turn,attack_concentration,concentration,shield}.py`,
+`test_event_stage_result.py` and `test_evaluation_contracts.py` (all under
+`packages/dnd5e-engine/tests/`): **434 passed in 79.20 s**. A subsequently added
+explicit R40 envelope/evaluator rejection test passed **1 / 30 deselected in
+2.16 s**. Public `examples/event_stage_evaluation.py --schema-dir` exports current
+request/result schemas, verified with Evaluation `/25` and HoldPersonGraphReplace
+in the generated result definitions. No checked-in duplicate schema is maintained.
+
+Independent R41 review reproduced two classes of defect before final gate:
+non-authoritative actor/effect array ordering was accidentally constrained to
+initiative/chain ordering, and a same-generation old clock was refused too late
+in result construction. Fences now emit in initiative order and compare keyed
+actors; old effects/chains retain actual pre-values with unique full-identity set
+closure. Canonical old application and last-repeat serials must strictly precede
+the new cast during preflight, before payment/RNG. Three serialized legal-order
+positive cases and two draw-forbidden clock negatives cover the fixes. Expanded
+focused tests above include them. Reviewer independently confirmed all findings
+closed and found no new blocker; no existing admission was narrowed to hide the
+valid-order cases. The remaining full-branch review follows all four source commits.
+
+
+R41 final Integration **PASSED in 930.61 s** on the actual R40 start SHA:
+tooling 24; SRD 671 / 1 existing skip (142.41 s); Engine **9,100** (698.04 s);
+Bridge **139** (9.33 s); Demo **54**; Ruff/format/Mypy, all three public examples
+and strict MkDocs. Native CI is a separate post-push observation, not this local
+evidence. All four gates were run sequentially before their own commit/push.
+The final R41 source SHA, whole-branch review and post-push CI follow below.

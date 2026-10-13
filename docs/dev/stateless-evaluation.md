@@ -14,10 +14,10 @@ The current local candidate versions are:
 
 | Contract | Current version | Replaces |
 | --- | --- | --- |
-| RuleEvaluationRequest / Result | `engine-evaluation/24` | `/1`–`/23` |
+| RuleEvaluationRequest / Result | `engine-evaluation/25` | `/1`–`/24` |
 | StateSnapshot | `engine-snapshot/17` | `/1`–`/16` |
 | Availability request/result | `engine-availability/13` | `/1`–`/12` |
-| RulesetBinding evaluator | `dnd5e-evaluation/40` | `/39` and earlier |
+| RulesetBinding evaluator | `dnd5e-evaluation/41` | `/40` and earlier |
 
 R37 adds required `stage_facts` to every Result: accepted carries typed coverage,
 other statuses require explicit null. Stage facts `/2` cover audited basic Attack,
@@ -28,7 +28,7 @@ Attack admits is explicitly uncovered, never a new rule rejection. Call
 stage identity, semantics and covered final Delta consistency. It never executes
 the action or draws again. No old envelope or private `/1` stage fallback exists.
 Snapshot/Availability shapes are unchanged. Initialization/concentration candidate
-envelopes sharing EvaluationVersion also use `/24` with explicit uncovered stages.
+envelopes sharing EvaluationVersion now also use `/25` with explicit uncovered stages.
 See [audited stage facts](event-stage-facts.md) and [SM handoff](event-stage-sm-handoff.md).
 
 R39 adds one bounded Wizard 5 Evoker Hold Person + Shield Attack computation via
@@ -38,11 +38,20 @@ One provisional Attack roll, Shield, actual damage and completed-instance
 concentration cleanup form one proposal. Mixed stages are explicitly uncovered.
 R40 adds mixed ordinary Pass, actual Hold target/caster turn-end boundaries and
 independent Shield expiry. Subsequent inputs come from applying the previous
-typed proposal, not retaining a computation. Concentration replacement remains
-refused until R41. See [composition scope](effect-composition.md).
-Only evaluator binding changes here; envelope `/24`, Snapshot `/17`, Availability
-`/13` and StageFacts `/2` retain their unchanged schemas. Old evaluator `/39`
-does not silently fall back to the new implementation.
+typed proposal, not retaining a computation. R41 adds legal later same-Wizard
+Hold Person -> Hold Person casts for the same/changed one/two targets. Full old
+canonical graph, source, delivery, payment and action checks precede old cleanup
+and RNG. At accepted cast start the shared cleanup ends the old chain before the
+new SaveActivity; all successful saves still pay and create the canonical empty
+anchor. One closed `HoldPersonGraphReplace` owns guarded old graph/conditions/
+concentration deletion and nested expected-absence creation. One base paid
+projection owns other fields; pending canonical Shield survives unchanged.
+Old/new captured application clocks plus atomic whole-proposal world/RNG/turn
+fences prevent stale generation cleanup. See [composition scope](effect-composition.md).
+The new Delta union changes envelope to `/25` and binding to `/41`;
+Snapshot `/17`, Availability `/13` and StageFacts `/2` retain unchanged schemas.
+Old envelope `/24` and evaluator `/40` are refused without fallback. Mixed and
+replacement stages remain uncovered; original ordinary complete paths remain.
 
 Old envelopes, snapshots and results are explicitly rejected. There are no compatibility
 aliases for `InventoryCombatSnapshot`, `combat_inventory`, missing equipment or missing

@@ -14,6 +14,7 @@ from dnd5e_engine.evaluation_delta import (
     ResourceUpdate,
     SlotSpendLedgerUpdate,
 )
+from dnd5e_engine.evaluation_hold_replace_delta import HoldPersonGraphReplace
 from dnd5e_engine.evaluation_reaction_state import (
     PendingReactionState,
     ReactionConditionState,
@@ -191,7 +192,12 @@ def apply_composed(snapshot, result):
     """Check all old graph components before applying any unpublished proposal."""
     assert result.state_delta.expected_world_version == snapshot.world_version
     assert result.read_set[0].version == snapshot.world_version
-    graph_types = (ConcentrationUpdate, EffectLifecycleUpdate, ShieldStateTransition)
+    graph_types = (
+        ConcentrationUpdate,
+        EffectLifecycleUpdate,
+        ShieldStateTransition,
+        HoldPersonGraphReplace,
+    )
     graph_ops = [o for o in result.state_delta.operations if isinstance(o, graph_types)]
     seen = set()
     for op in result.state_delta.operations:
@@ -250,6 +256,27 @@ def apply_composed(snapshot, result):
                 )
                 == op.expected_lineage
             )
+        elif isinstance(op, HoldPersonGraphReplace):
+            assert op.actor_ids == snapshot.combat_state.initiative_ids
+            assert snapshot.effect_states == op.expected_effects
+            assert snapshot.combat_state.effect_lifecycles == op.expected_clocks
+            assert snapshot.combat_state.conditions_by_effect == op.expected_lineages
+            assert (
+                tuple(snapshot.combat_state.concentration_chain[op.source_id]) == op.expected_chain
+            )
+            assert (
+                snapshot.combat_state.concentration_rounds_remaining[op.source_id]
+                == op.expected_rounds
+            )
+            assert (
+                next(
+                    a for a in snapshot.character_states if a.entity_id == op.source_id
+                ).concentration_effect_id
+                == op.expected_concentration_id
+            )
+            assert {a.entity_id: tuple(a.conditions) for a in snapshot.character_states} == {
+                f.actor_id: f.conditions for f in op.expected_conditions
+            }
         else:
             assert op.actor_ids == snapshot.combat_state.initiative_ids
             old = op.expected
@@ -305,6 +332,32 @@ def apply_composed(snapshot, result):
                     mapping.pop(op.identity, None)
                 else:
                     mapping[op.identity] = value
+        elif isinstance(op, HoldPersonGraphReplace):
+            for identity in op.expected_chain:
+                effects.pop(identity)
+                clocks.pop(identity, None)
+                links.pop(identity)
+            graph = op.creation
+            conditions = {
+                e.effect.target_id: [e.condition] if e.condition else [] for e in graph.entries
+            }
+            for actor_id, actor in actors.items():
+                actors[actor_id] = actor.model_copy(
+                    update={
+                        "conditions": conditions.get(actor_id, []),
+                        "concentration_effect_id": graph.concentration_id
+                        if actor_id == op.source_id
+                        else None,
+                    }
+                )
+            for entry in graph.entries:
+                identity = (entry.effect.target_id, entry.effect.id, entry.effect.origin)
+                effects[identity] = entry.effect
+                links[identity] = entry.lineage
+                if entry.clock:
+                    clocks[identity] = entry.clock
+            chains[op.source_id] = list(graph.chain)
+            rounds[op.source_id] = graph.rounds
         else:
             if op.expected:
                 effects.pop(op.expected.expiry_identity)

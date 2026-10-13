@@ -1,5 +1,10 @@
 # R34–R37: local event-stage mechanical facts
 
+Current R41 envelope is `/25`, evaluator `/41`, with Snapshot `/17`, Availability
+`/13` and StageFacts `/2` unchanged. Original ordinary complete stages remain; new
+Hold/Shield compositions and replacements explicitly report uncovered. See
+[current composition evidence](effect-composition.md) and [handoff](event-stage-sm-handoff.md).
+
 ## Scope, baseline and progress
 
 RE only: `D:/Projects/agentic-trpg/trpg-rules-engine`, origin
@@ -30,7 +35,7 @@ R34 introduces candidate types only. Public Evaluation remains `/23`, Snapshot
 C-19/C-24 and the shared ABI remain OPEN. Stage facts are not StateDelta,
 committed WorldEvents, complete world Evidence, Signals, noticing, OB or Episode.
 
-**Current R37 local candidate:** Evaluation Request/Result `/24`, evaluator
+**Historical R37 local candidate:** Evaluation Request/Result `/24`, evaluator
 `dnd5e-evaluation/37`, stage facts `/2`; Snapshot `/17` and Availability `/13`
 are unchanged. The `/23` envelope, `/36` evaluator binding and private `/1`
 stage shape are explicitly refused. The earlier versions above describe R34's

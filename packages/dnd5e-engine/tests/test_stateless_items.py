@@ -70,7 +70,7 @@ def item_case(*, hp=10, quantity=1, charges=1, **entry_updates):
     )
     request = request.model_copy(
         update={
-            "schema_version": "engine-evaluation/24",
+            "schema_version": "engine-evaluation/25",
             "operation_kind": "combat.item",
             "state_snapshot": snapshot,
             "payload": ItemUsePayload(

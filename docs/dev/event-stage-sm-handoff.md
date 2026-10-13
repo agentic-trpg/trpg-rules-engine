@@ -1,4 +1,26 @@
-# R34–R37: SM handoff for local stage mechanical facts
+# SM handoff: local stage facts and R38–R41 bounded composition
+
+## Current R41 candidate boundary
+
+Current local versions: Evaluation `/25`, evaluator `/41`, Snapshot `/17`,
+Availability `/13`, StageFacts `/2`. The new closed HoldPersonGraphReplace must be
+consumed atomically with base/payment/turn changes using complete expected old
+graph, clocks, conditions, chain/rounds, world/RNG and request association fences.
+Nested GraphCreate applies only after guarded old deletion; standalone Create
+continues to require absence. Preserve one pending same-caster canonical Shield
+verbatim; validate source/material/equipment/complete dependencies before execution.
+Original ordinary complete stages remain; mixed Attack/Pass and replacement
+remain uncovered. Unsupported stage sampling is not world Evidence.
+
+Fixed R41 source SHA and final local/CI evidence are recorded after source commit
+in [the composition audit](effect-composition.md). Pin that SHA, not this moving
+branch. RE-only local candidates do not implement SM/domain consumers, shared
+transactions, durable reaction windows or production caller cutover. Domain facts
+retain their owners; shared facilities coordinate their atomic commit and receipt.
+C-04/C-15/C-16/C-19/C-24 and the common ABI remain OPEN. SM/architecture/pins were
+not modified. The R37 fixed-pin record below is historical and remains intact.
+
+## Historical R37 handoff
 
 ## Fixed candidate and scope
 

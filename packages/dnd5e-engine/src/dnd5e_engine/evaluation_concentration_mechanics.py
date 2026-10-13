@@ -8,6 +8,7 @@ from dnd5e_engine.damage_rules import concentration_dc
 from dnd5e_engine.effect_lifecycle import (
     EffectIdentity,
     concentration_chain_after_expiry,
+    concentration_rounds_after_turn_end,
     conditions_after_effect_expiry,
 )
 from dnd5e_engine.evaluation_contracts import SavePayload
@@ -37,6 +38,7 @@ class ConcentrationHost(Protocol):
 
     def speed(self, actor: Combatant, mode: MovementMode = "walk") -> int: ...
     def actor_snapshot(self, actor_id: str) -> CharacterStateV2: ...
+    def repeat_boundary(self, actor_id: str) -> None: ...
     def drop(
         self, source_id: str, *, reason: EffectExpiryReason = "concentration_drop"
     ) -> None: ...
@@ -50,6 +52,7 @@ class ConcentrationMechanics:
 
     def __init__(self, host: ConcentrationHost) -> None:
         self.host = host
+        self.ended_turns: set[tuple[str, int]] = set()
 
     def after_event(self, event: CombatEvent) -> None:
         host = self.host
@@ -60,6 +63,30 @@ class ConcentrationMechanics:
             and event.target_id in host.state.concentration_chain
         ):
             host.drop(event.target_id)
+
+    def turn_end(self, actor_id: str) -> None:
+        """One actual TurnPhase(end), using the existing repeat/cap scheduler."""
+        host = self.host
+        boundary = (actor_id, host.state.turn_serial)
+        if boundary in self.ended_turns:
+            return
+        self.ended_turns.add(boundary)
+        host.repeat_boundary(actor_id)
+        remaining = host.state.concentration_rounds_remaining.get(actor_id)
+        if remaining is None:
+            return
+        next_rounds = concentration_rounds_after_turn_end(remaining)
+        if next_rounds is None:
+            host.drop(actor_id, reason="duration")
+        else:
+            host.state = host.state.model_copy(
+                update={
+                    "concentration_rounds_remaining": {
+                        **host.state.concentration_rounds_remaining,
+                        actor_id: next_rounds,
+                    }
+                }
+            )
 
     def damage_completed(self, damage: DamageInstanceContext) -> None:
         from dnd5e_engine import evaluation_concentration

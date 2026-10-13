@@ -11,8 +11,8 @@ blocked C-16. This extracts existing rules rather than adding content support.
 R26 supersedes the historical R17 lifecycle-schema defect recorded below with local
 schema/runtime agreement. Formal ABI and C-04/C-15/C-16 remain unapproved/OPEN.
 
-Current local versions after R39: envelope `/24`, Snapshot `/17`,
-Availability `/13`, evaluator `/39`, stage facts `/2`. Historical batch versions
+Current local versions after R40: envelope `/24`, Snapshot `/17`,
+Availability `/13`, evaluator `/40`, stage facts `/2`. Historical batch versions
 below describe their original deliveries; they are not the current protocol row.
 
 R34–R37 implement [bounded event-stage mechanical facts](event-stage-facts.md)
@@ -23,9 +23,9 @@ The [SM handoff](event-stage-sm-handoff.md) records required fixed-pin integrati
 world supplementation, OCC and Evidence persistence. No SM code/pin changed,
 no NPC perception/Episode end-to-end completion or C-19/C-24 ABI approval is claimed.
 
-| R38/R39 dimension | Current bounded delivery | Remaining |
+| R38–R40 dimension | Current bounded delivery | Remaining |
 |---|---|---|
-| Rule execution | canonical same-caster Hold Person + declared/active Shield during one ordinary Attack | mixed Pass/repeat/caster-end boundaries R40; replacement R41 |
+| Rule execution | canonical same-caster Hold Person + declared/active Shield; ordinary Attack against the caster, ordinary Pass, target repeats/caster cap and independent Shield expiry | replacement R41; arbitrary effects and wider attack-target compositions |
 | Dependency closure | full ownership graph, canonical source/class/equipment/material and existing actor/resource gates | arbitrary effects, multiple sources, other spell families, competing reactions |
 | Typed Delta | one mechanical projection with owned concentration, resource/ledger/declaration and Shield transitions | closed replacement transition R41 |
 | Stage coverage | original ordinary complete paths preserved; new mixed paths explicitly uncovered | mixed event-stage capture not implemented |
@@ -37,7 +37,9 @@ temporary limitations; it does not turn proposed later batches into delivered wo
 ## Architecture decisions and progress dimensions
 
 Latest Meta MODULE_CONTRACTS §4–6/14.1, STATE_MACHINE_ARCHITECTURE and MVP_SCOPE
-are authoritative. DECIDED: SM alone owns authoritative state and final commits;
+are authoritative. DECIDED: each game domain owns its authoritative facts and
+invariants; shared commit facilities coordinate the participating atomic writes,
+versions/RNG and receipts. The existing SM/Combat Handler organizes the process;
 exactly CombatSnapshot / NonCombatSnapshot share typed mechanical components;
 complete dependencies, closed deltas, ordered typed events, explicit RNG and binding
 are required. Accepted is not committed. The final evaluator must not depend on

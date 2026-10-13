@@ -63,7 +63,15 @@ SECOND_ATTACKER = "char:second-attacker"
 
 
 def composed_case(
-    *, seed=0, pc=False, hp=40, temp=0, multi=False, extra_attacker=False, mixed=False
+    *,
+    seed=0,
+    pc=False,
+    hp=40,
+    temp=0,
+    multi=False,
+    extra_attacker=False,
+    mixed=False,
+    target_wisdom=None,
 ):
     request, _, _, loader = cast_case(seed=seed, pc=pc, multi=multi)
     actors = tuple(
@@ -79,6 +87,22 @@ def composed_case(
             "state_snapshot": request.state_snapshot.model_copy(update={"character_states": actors})
         }
     )
+    if target_wisdom is not None:
+        snapshot = request.state_snapshot
+        request = request.model_copy(
+            update={
+                "state_snapshot": snapshot.model_copy(
+                    update={
+                        "character_states": tuple(
+                            a.model_copy(update={"wisdom": target_wisdom})
+                            if a.entity_id == HERO
+                            else a
+                            for a in snapshot.character_states
+                        )
+                    }
+                )
+            }
+        )
     if multi or extra_attacker:
         snapshot, state = request.state_snapshot, request.state_snapshot.combat_state
         ref = HERO if multi else ATTACKER
@@ -365,15 +389,22 @@ def apply_paid(snapshot, result):
 
 def continued(request, result, *, intent=None):
     snapshot = apply_composed(request.state_snapshot, result)
+    # Test Host accepts one whole proposal and advances its existing version.
+    # RE itself neither commits nor supplies an authoritative version increment.
+    snapshot = snapshot.model_copy(update={"world_version": snapshot.world_version + 1})
     return request.model_copy(
         update={
+            "command_id": request.command_id + ":next",
             "state_snapshot": snapshot,
             "actor_id": snapshot.combat_state.initiative_ids[
                 snapshot.combat_state.current_turn_index
             ],
             "payload": intent or CombatIntentPayload(intent_type="pass"),
             "rng_context": request.rng_context.model_copy(
-                update={"state": result.rng_transition.next_state}
+                update={
+                    "state": result.rng_transition.next_state,
+                    "version": request.rng_context.version + 1,
+                }
             ),
         }
     )

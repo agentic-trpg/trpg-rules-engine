@@ -17,7 +17,7 @@ The current local candidate versions are:
 | RuleEvaluationRequest / Result | `engine-evaluation/24` | `/1`–`/23` |
 | StateSnapshot | `engine-snapshot/17` | `/1`–`/16` |
 | Availability request/result | `engine-availability/13` | `/1`–`/12` |
-| RulesetBinding evaluator | `dnd5e-evaluation/39` | `/37` and earlier |
+| RulesetBinding evaluator | `dnd5e-evaluation/40` | `/39` and earlier |
 
 R37 adds required `stage_facts` to every Result: accepted carries typed coverage,
 other statuses require explicit null. Stage facts `/2` cover audited basic Attack,
@@ -36,10 +36,12 @@ the same evaluate/preflight/Availability path. All full-input ownership, canonic
 sources/materials and resource dependencies are checked before RNG/payment.
 One provisional Attack roll, Shield, actual damage and completed-instance
 concentration cleanup form one proposal. Mixed stages are explicitly uncovered.
-Pass and Hold target/caster turn-end boundaries remain refused until R40;
-concentration replacement remains refused until R41. See [composition scope](effect-composition.md).
+R40 adds mixed ordinary Pass, actual Hold target/caster turn-end boundaries and
+independent Shield expiry. Subsequent inputs come from applying the previous
+typed proposal, not retaining a computation. Concentration replacement remains
+refused until R41. See [composition scope](effect-composition.md).
 Only evaluator binding changes here; envelope `/24`, Snapshot `/17`, Availability
-`/13` and StageFacts `/2` retain their unchanged schemas. Old evaluator `/37`
+`/13` and StageFacts `/2` retain their unchanged schemas. Old evaluator `/39`
 does not silently fall back to the new implementation.
 
 Old envelopes, snapshots and results are explicitly rejected. There are no compatibility

@@ -260,6 +260,11 @@ class ConcentrationComputation(CombatComputation):
         original = next(a for a in self.snapshot.character_states if a.entity_id == actor_id)
         return actor_state(self.actors[actor_id], original)
 
+    def repeat_boundary(self, actor_id: str) -> None:
+        from dnd5e_engine.evaluation_effect_turn import run_snapshot_effect_boundary
+
+        run_snapshot_effect_boundary(self, actor_id, self.expire_linked_effect)
+
     def emit(self, event: CombatEvent) -> None:
         super().emit(event)
         self.concentration.after_event(event)

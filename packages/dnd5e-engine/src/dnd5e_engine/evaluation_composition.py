@@ -24,7 +24,7 @@ from dnd5e_engine.evaluation_shield import (
     shield_source_id,
 )
 from dnd5e_engine.evaluation_state import CombatSnapshot
-from dnd5e_engine.events import CombatEvent, Death, EffectExpiryReason
+from dnd5e_engine.events import CombatEvent, Death, EffectExpiryReason, TurnPhase
 
 
 def has_composed_effects(snapshot: CombatSnapshot) -> bool:
@@ -54,18 +54,17 @@ def composition_support_failure(
         return "Shield declaration must belong to the Hold Person caster"
     if any(not a.is_alive or a.hp_current <= 0 for a in snapshot.character_states):
         return "composed input requires living positive-HP actors"
-    current = snapshot.combat_state.initiative_ids[snapshot.combat_state.current_turn_index]
-    if turn or current == source or any(i[0] == current for i in ownership.hold_identities):
-        return "R39 does not yet admit Hold repeat-save/caster turn-end boundaries"
-    if target_id != source:
-        return "R39 composed attack must target the concentrating Shield owner"
+    if not turn and target_id != source:
+        return "composed attack must target the concentrating Shield owner"
     # Full partition and canonical Shield policy precede this narrowly owned view.
     # Remove only that reviewed pending declaration, not unknown reaction records.
     hold_view = without_owned_shield(snapshot, ownership)
     hold_view = hold_view.model_copy(
         update={"combat_state": hold_view.combat_state.model_copy(update={"pending_reactions": []})}
     )
-    if failure := concentration_support_failure(hold_view, source, loader, composed=True):
+    if failure := concentration_support_failure(
+        hold_view, source, loader, composed=True, turn_lifecycle=turn
+    ):
         return failure
     spell_source = shield_source_id(snapshot, source)
     intent = CombatIntentPayload(
@@ -87,6 +86,14 @@ class ComposedEffectComputation(ShieldComputation):
     def emit(self, event: CombatEvent) -> None:
         super().emit(event)
         self.concentration.after_event(event)
+        if isinstance(event, TurnPhase) and event.phase == "turn_end":
+            assert event.actor_id is not None
+            self.concentration.turn_end(event.actor_id)
+
+    def repeat_boundary(self, actor_id: str) -> None:
+        from dnd5e_engine.evaluation_effect_turn import run_snapshot_effect_boundary
+
+        run_snapshot_effect_boundary(self, actor_id, self.expire_linked_effect)
 
     def record_death(self, event: Death, killer: str | None) -> None:
         if event.target_id in self.state.concentration_chain:

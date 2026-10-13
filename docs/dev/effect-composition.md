@@ -14,8 +14,8 @@ C-04/C-15/C-16/C-19/C-24 and the common ABI remain OPEN.
 | Batch | Actual start | Delivery |
 |---|---|---|
 | R38 | `e5254a2ac7166a830a24c46eb35b2b1e0c4f4b80` | pushed `470c3dc236df5a2ab2ed340183e82422afec8adc`; full-identity ownership and standalone refactor |
-| R39 | `470c3dc236df5a2ab2ed340183e82422afec8adc` | one real composed Attack; final validation below |
-| R40 | after validated/pushed R39 | not yet delivered |
+| R39 | `470c3dc236df5a2ab2ed340183e82422afec8adc` | pushed `03cd42bb751d6219f28881b1de6996ff525fe819`; one real composed Attack |
+| R40 | `03cd42bb751d6219f28881b1de6996ff525fe819` | actual mixed lifecycle continuation; final validation below |
 | R41 | after validated/pushed R40 | not yet delivered |
 
 ## R38 ownership and projection audit
@@ -148,3 +148,60 @@ including original stages: **378 passed in 56.37 s**. R39 plan requires Integrat
 the exact base for plan and final `tools/validate.py integration --base` is
 `470c3dc236df5a2ab2ed340183e82422afec8adc` (with `PYTHONUTF8=1`). Actual final gate
 outcome and pushed SHA are recorded after execution.
+
+R39 final Integration **PASSED in 1149.15 s**: tooling 24; SRD 671 / 1 existing
+skip (207.32 s); Engine 9,059 (823.76 s); Bridge 139 (14.50 s); Demo 54
+(27.60 s); static checks, three public examples and strict docs. Native CI
+[38415705753](https://github.com/agentic-trpg/trpg-rules-engine/actions/runs/38415705753)
+was separately queried and succeeded on the exact R39 source commit.
+
+## R40 actual mixed lifecycle continuation
+
+Ordinary mixed Pass is now admitted by the real evaluate entrypoint. One actual
+TurnPhase(end) invokes the shared target-repeat scheduler, identity-specific expiry
+and the caster-only concentration cap. Existing standalone Hold turns call the
+same component. A request-local `(actor, turn_serial)` set prevents duplicated
+processing of that same end boundary; authoritative repeat clocks still travel
+in the typed Snapshot/Delta. No global cache or uniform per-call decrement exists.
+Shield remains on its original owner-next-turn-start expiry, after TurnStarted,
+budget/serial/ledger reset and the actual start phase. No Hold clock or remaining
+duration changes merely because Shield changes.
+
+One target's successful repeat removes only that identity/clock/attachment. The
+last target or caster-duration expiry closes the chain and caster mirror. Shared
+condition filters, damage/death and turn rules are retained. After concentration
+ends, the remaining Shield graph/declaration can continue through its original
+standalone path. NPC death removes the owner's response/declaration but preserves
+the existing independently owned Shield effect/expiry behavior; no blanket effect
+clear is introduced. The positive-HP mixed admission does not invent a wider
+dying/dead Hold graph profile. Ordinary attacks remain directed at the concentrating
+Wizard; arbitrary mixed-target attacks, effects and reactions remain unsupported.
+
+The new continuous tests apply complete typed proposals with an independent
+guarded consumer, serialize/deserialize each next Request, and use only its
+returned mechanical state/RNG. A test Host advances existing world/RNG versions
+and command association at accepted-proposal boundaries; this is not an RE commit
+API or proof of production Host integration. Expected repeat naturals, modifiers,
+DCs, clock ownership, caster-only cap, round wrap, budget refresh and exact expiry
+event ordering are asserted independently. The R39 temporary plain-Pass rejection
+is replaced by real continuation positives; malformed Pass still refuses before RNG.
+
+First continuous suite: **7 passed in 8.39 s**, including partial/all target
+release, exact independent Shield expiry and an actual nine-caster-end/eighteen-
+repeat-save duration run with no idealized per-step Snapshot reconstruction.
+Mixed stages stay uncovered; subsequent fully ordinary states recover the original
+complete stage profile. R40 changes evaluator binding to `/40` only; envelope,
+Snapshot, Availability, StageFacts and existing Delta schemas are unchanged.
+
+Expanded R40 lifecycle/composition/standalone regression: **252 passed in
+45.48 s**, including NPC-death/PC-dying continuation, request-local phase
+idempotence, multi-session determinism and rejection of an old whole Delta after
+the test Host's version advancement. Initial fixture seed assumptions were
+corrected without weakening the branch assertions. Final Integration/review
+evidence follows actual execution; R41 replacement is not yet delivered.
+
+R40 stage/composition regression after preserving the original plain-grid Attack
+gate: **182 passed in 25.16 s**. Strict Mypy passes all 156 source files.
+Plan: `uv run --no-project python tools/validate.py fast --plan --base
+03cd42bb751d6219f28881b1de6996ff525fe819`; it requires Integration. The same actual
+base is used for the final `integration --base` gate with `PYTHONUTF8=1`.

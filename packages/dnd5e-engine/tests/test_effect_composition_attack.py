@@ -119,7 +119,7 @@ def test_availability_uses_the_same_draw_free_composition_preflight(monkeypatch)
         "wrong_source",
         "missing_material",
         "target",
-        "turn",
+        "turn_extra_fields",
     ],
 )
 def test_composition_gaps_fail_before_rng_or_payment(fault, monkeypatch):
@@ -167,7 +167,10 @@ def test_composition_gaps_fail_before_rng_or_payment(fault, monkeypatch):
         )
     else:
         request = request.model_copy(
-            update={"actor_id": HERO, "payload": CombatIntentPayload(intent_type="pass")}
+            update={
+                "actor_id": HERO,
+                "payload": CombatIntentPayload(intent_type="pass", target_id=FOE),
+            }
         )
         snapshot = snapshot.model_copy(
             update={

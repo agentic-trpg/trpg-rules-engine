@@ -54,6 +54,12 @@ def evaluate_turn(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
     if request.actor_id in state.dead_ids:
         return _refuse("rejected", "actor_incapacitated", "recorded dead actors have no turn")
     # Lazy import keeps the shared R15 Save core independent of turn dispatch.
+    from dnd5e_engine.evaluation_composition import (
+        ComposedEffectComputation,
+        composition_delta,
+        composition_support_failure,
+        has_composed_effects,
+    )
     from dnd5e_engine.evaluation_concentration import concentration_delta
     from dnd5e_engine.evaluation_effect_turn import (
         EffectTurnComputation,
@@ -69,6 +75,27 @@ def evaluate_turn(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
         shield_support_failure,
     )
 
+    if has_composed_effects(snapshot):
+        failure = composition_support_failure(
+            snapshot, loader, turn=True
+        ) or template_support_failure(snapshot, loader)
+        if failure:
+            return _refuse("unsupported", "turn.composition", failure)
+        rng = request.rng_context.state.restore()
+        mixed = ComposedEffectComputation(snapshot, rng, loader)
+        mixed.enable_stages()
+        mixed.emit(IntentSubmitted(actor_id=request.actor_id, intent_type="pass"))
+        mixed.finish_turn(request.actor_id, force=True)
+        computed = mixed.result()
+        return dict(
+            status="accepted",
+            state_delta=composition_delta(snapshot, computed.candidate_state),
+            proposed_events=computed.proposed_events,
+            rng_transition=RNGTransition.between(request.rng_context, rng),
+            choice=None,
+            error=None,
+            stage_facts=computed.stage_facts,
+        )
     if has_shield(snapshot):
         failure = shield_support_failure(snapshot, loader, turn=True) or template_support_failure(
             snapshot, loader

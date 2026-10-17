@@ -83,3 +83,22 @@ def test_leverage_cannot_be_forged_for_dexterity():
     data["leverage_applicable"] = True
     with pytest.raises(ValidationError):
         OpenableCheckRequest.model_validate(data)
+
+
+def test_crowbar_equipment_is_not_a_tool_proficiency_bonus():
+    spec = case(tool="crowbar", proficient=True)
+    req = spec.request.model_copy(
+        update={
+            "payload": spec.request.payload.model_copy(update={"ability": "str", "skill": None})
+        }
+    )
+    data = spec.model_dump(mode="python")
+    data.update(
+        request=req, operation="force_open", required_tool="crowbar", leverage_applicable=True
+    )
+    force = OpenableCheckRequest.model_validate(data)
+    result = asyncio.run(evaluate_openable(force, loader=synthetic_loader()))
+    assert result.status == "accepted"
+    actor = req.state_snapshot.character_states[0]
+    assert result.proposed_events[0].modifier == (actor.strength - 10) // 2
+    assert result.proposed_events[0].advantage == "advantage"

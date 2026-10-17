@@ -69,7 +69,7 @@ async def evaluate_openable(
         outcome = evaluate_check(
             req,
             loader,
-            tool_slug=spec.required_tool,
+            tool_slug=None if spec.required_tool == "crowbar" else spec.required_tool,
             tool_advantage=spec.leverage_applicable,
         )
     result = RuleEvaluationResult(

@@ -27,3 +27,11 @@ passed / 1 failed, caused by passing new optional kwargs to the generic fault
 injection seam. The generic call signature was restored; the complete affected
 check suites then passed 474 tests. A frozen full engine rerun is pending; this
 note does not claim that it has passed. No source assertion was weakened.
+
+
+Final bounded API review: crowbars grant leverage advantage, never tool proficiency
+bonus even if a supplied proficiency label incorrectly names the equipment. The
+actual-resolver edge regression passes; Openable tests now total 8. Strict types
+pass on this revision. Full engine rerun covers the generic-seam repair; the final
+crowbar-only correction is covered by the focused API tests, not claimed as a new
+whole-suite frozen run.

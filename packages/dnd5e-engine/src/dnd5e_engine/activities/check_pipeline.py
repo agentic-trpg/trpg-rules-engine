@@ -162,6 +162,8 @@ def resolve_check_request(
     cost_owner: CheckCostOwner = "internal",
     activity_id: str | None = None,
     skill_label: str | None = None,
+    tool_slug: str | None = None,
+    tool_advantage: bool = False,
 ) -> CheckRolled:
     actor = next((c for c in [ctx.caster, *ctx.targets] if c.entity_id == request.actor_id), None)
     if actor is None:
@@ -184,6 +186,14 @@ def resolve_check_request(
         ).total + ctx.d20_test_penalty.get(actor.entity_id, d20_test_penalty(actor.conditions))
         if request.tool in actor.tool_proficiencies:
             modifier += proficiency_bonus_of(actor)
+    if tool_slug is not None and tool_slug in actor.tool_proficiencies:
+        # Tool and skill proficiency never add the same proficiency bonus twice.
+        existing = check_modifier(actor, request.ability, request.skill)
+        modifier += max(0, proficiency_bonus_of(actor) - existing.proficiency)
+    if tool_advantage or (
+        tool_slug in actor.tool_proficiencies and request.skill in actor.skill_proficiencies
+    ):
+        request = request.model_copy(update={"advantage": (*request.advantage, "flag")})
     sources = _sources(request, actor, ctx, state)
     failure: Literal["sight", "hearing"] | None = None
     if request.required_sense in ("sight", "hearing") and conditions_auto_fail_check(
@@ -222,7 +232,8 @@ def resolve_check_request(
             ctx.rng, modifier, sources, forced_natural=int(forced) if forced is not None else None
         )
         eligible = (request.skill is not None and request.skill in actor.skill_proficiencies) or (
-            request.tool is not None and request.tool in actor.tool_proficiencies
+            (request.tool or tool_slug) is not None
+            and (request.tool or tool_slug) in actor.tool_proficiencies
         )
         natural = max(10, roll.kept) if actor.reliable_talent and eligible else roll.kept
         if actor.entity_id in ctx.check_states or actor.entity_id not in ctx.check_modifiers:

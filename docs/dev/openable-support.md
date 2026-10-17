@@ -35,3 +35,12 @@ actual-resolver edge regression passes; Openable tests now total 8. Strict types
 pass on this revision. Full engine rerun covers the generic-seam repair; the final
 crowbar-only correction is covered by the focused API tests, not claimed as a new
 whole-suite frozen run.
+
+
+Final resumed integration evidence: full engine rerun after the generic signature
+repair passed 8,859 tests in 636.67s (exit 0). Final crowbar-only API correction:
+8 focused tests passed in 1.75s, plus strict types. This is combined integration
+plan evidence, not a single final all-package gate invocation or a new frozen
+whole-engine run after the last bounded API correction. Data 671 passed / 1 skip,
+Bridge 139 passed, Demo 54 passed, tooling 24 passed; lint, format, types, examples
+and strict documentation all passed. Runtime pin is d596161060555630019163ab301e1d25fd816549.

@@ -202,7 +202,12 @@ Checks support six abilities, eighteen skills, proficiency/expertise/Jack/Reliab
 explicit GM advantage/disadvantage flags and reviewed numeric modifiers. Missing DC
 returns one unambiguous `check.adjudication` choice with `required_fields=("dc",)` before
 RNG. Alternate governing ability with a nonzero projected skill bonus remains unsupported.
-Tools, senses, consumable modifiers and complex contexts need further migration.
+General tools, senses, consumable modifiers and complex contexts need further migration.
+The separate [bounded Openable entry](openable-support.md) admits explicit owned
+tool instances for noncombat pick-lock/force-open/clear-jam checks through this same
+resolver, binding and current Result contract. It does not broaden generic check
+admission or define combat costs. It accepts the same retained frozen dataset or
+omitted bundled default; accepted Openable stage coverage is explicitly uncovered.
 
 The Potion's actual HealActivity supplies dice, Bonus Action activation and one itemUses
 payment; shared healing computes the cap. Feeding/revival, shields, occupied hands,

@@ -23,6 +23,65 @@ The [SM handoff](event-stage-sm-handoff.md) records required fixed-pin integrati
 world supplementation, OCC and Evidence persistence. No SM code/pin changed,
 no NPC perception/Episode end-to-end completion or C-19/C-24 ABI approval is claimed.
 
+## Openable integration with latest main (2026-10-20)
+
+Branch `feat/integrate-world-openable`, start/main
+`3718f7c3d35424cc7910bcc19673083a357afdb7`, source
+`74d9e0800c22a740614af72930dd77dd3c064561`, common ancestor
+`675552406e67470bf3456fe90e88c4f1595bf324`. A real two-parent merge retains
+main's history-free evaluation, R34–R37 stages and frozen datasets/UUID validation;
+R38–R41 effect composition is excluded. The original source branch and main are
+not modified. [Openable integration and SM handoff](openable-support.md) lists
+source/main-only commits, retained capabilities, compatibility and boundaries.
+
+The original eight Openable tests reproduced **7 failures / 1 pass** on the
+textually conflict-free merge: missing required Result `stage_facts`. The fix uses
+main's coverage helper, detached request revalidation, optional shared frozen default
+and original three-field binding verification. Outer Openable `/1` now wraps current
+Evaluation `/24`, Snapshot `/17`, evaluator `/37`, StageFacts `/2` (uncovered for
+accepted checks; null for refusal). Generic check admission/signature and shared
+Activity Resolver are retained. No new protocol, mechanical evaluator, World writes,
+combat Openable or resource costs are introduced.
+
+Original tool identity/ownership/access/quantity gates, skill/tool PB de-duplication,
+expertise, advantage and Reliable Talent remain; crowbar leverage grants neither PB
+nor tool-based Reliable Talent. Expanded tests cover accepted failed rolls, exact
+read fence/empty Delta/RNG transition, strict transport, deterministic replay,
+all three binding fields and unsupported/invalid requests before RNG restoration.
+The real bundled corpus test separates freeze counters from six sequential legal
+Openable evaluations plus their default-loader replays: runtime must add no file
+reads, canonical constructions, category enumerations or full-corpus digests.
+
+SM still needs a separate Engine/SRD dependency update, current nested DTO adapters,
+persisted binding checks and retained frozen-dataset references across its callers.
+It alone admits objects/reach/DC and commits authorized World consequences, RNG,
+events and receipts. No SM file, pin, DB integration or end-to-end acceptance is
+changed or claimed here.
+
+Focused regression (original Openable, new integration, ordinary stateless checks,
+frozen rulesets): **452 passed in 19.44 s**. Measured construction: **1,663 file
+reads / 1,663 canonical model constructions / 11 source category enumerations /
+11 fixed category enumerations / 1 corpus digest**. The six sequential legal
+requests and their default-loader replays added **zero** of each runtime counter.
+The original pre-fix failure is retained as evidence; no existing assertion or test
+was deleted or weakened.
+
+Final plan was inspected with `python tools/validate.py fast --plan --base
+3718f7c3d35424cc7910bcc19673083a357afdb7`. `make` is unavailable on this host,
+so its exact runner was invoked directly: `python tools/validate.py integration
+--base 3718f7c3d35424cc7910bcc19673083a357afdb7` (workspace `.venv`, UTF-8).
+The shared resolver/public interface requires Integration; the preserved untracked
+`.evaluation-worktree/` conservatively expanded the plan to all four packages.
+That directory is not changed or committed.
+
+**Integration PASSED in 1,008.94 s**, exit 0: Data **676 passed / 1 existing skip**
+(147.95 s), Engine **9,045 passed** (742.08 s), Bridge **142 passed** (11.08 s),
+Demo **54 passed** (22.06 s), tooling **24 passed** (19.16 s). All selected
+Ruff/format/Mypy gates, three executable examples and strict MkDocs (7.05 s build)
+passed. This is local Windows Python 3.14 evidence, not a GitHub Actions result,
+Full/coverage run or SM acceptance. Only evidence documentation changes after the
+gate; it receives another strict build before the merge commit is published.
+
 ## Fixed effective datasets and reusable trusted identity (2026-10-19)
 
 Start `e5254a2ac7166a830a24c46eb35b2b1e0c4f4b80`, branch

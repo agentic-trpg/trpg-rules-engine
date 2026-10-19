@@ -43,7 +43,68 @@ def _refuse(status: Literal["rejected", "unsupported"], code: str, reason: str) 
     )
 
 
-def evaluate_check(request: RuleEvaluationRequest, loader: AssetLoader) -> CheckEvaluation:
+def evaluate_check(
+    request: RuleEvaluationRequest,
+    loader: AssetLoader,
+    *,
+    tool_slug: str | None = None,
+    tool_advantage: bool = False,
+) -> CheckEvaluation:
+    if failure := check_support_failure(request, loader):
+        return failure
+    payload, snapshot = request.payload, request.state_snapshot
+    if not isinstance(payload, CheckPayload) or not isinstance(snapshot, NonCombatSnapshot):
+        raise EvaluationInvariantError("unreachable admitted check types")
+    actors = {actor.entity_id: actor for actor in snapshot.character_states}
+    actor = actors[request.actor_id]
+    if payload.dc is None:
+        return dict(
+            status="needs_choice",
+            state_delta=None,
+            proposed_events=(),
+            rng_transition=None,
+            choice=CheckAdjudicationChoice(
+                kind="check.adjudication", actor_id=actor.entity_id, required_fields=("dc",)
+            ),
+            error=None,
+        )
+    combatants = []
+    for state in actors.values():
+        value = state.model_dump(mode="python")
+        for field in ("spell_slots", "pact_slots", "spells_known", "custom_counters"):
+            del value[field]
+        value["death_saves"] = value["death_saves"] or {}
+        combatants.append(Combatant.model_validate(value))
+    caster = next(c for c in combatants if c.entity_id == actor.entity_id)
+    rng = request.rng_context.state.restore()
+    ctx = ActivityResolutionContext(
+        rng=rng,
+        caster=caster,
+        targets=[c for c in combatants if c is not caster],
+        event_emitter=lambda event: None,
+        caster_abilities={
+            ability: getattr(caster, field) for ability, field in _SCORE_ATTR.items()
+        },
+        check_states={c.entity_id: CheckActorState() for c in combatants},
+    )
+    event = (
+        resolve_check_request(payload, ctx, tool_slug=tool_slug, tool_advantage=tool_advantage)
+        if tool_slug is not None or tool_advantage
+        else resolve_check_request(payload, ctx)
+    )
+    return dict(
+        status="accepted",
+        state_delta=StateDelta(expected_world_version=snapshot.world_version, operations=()),
+        proposed_events=(event,),
+        rng_transition=RNGTransition.between(request.rng_context, rng),
+        choice=None,
+        error=None,
+    )
+
+
+def check_support_failure(
+    request: RuleEvaluationRequest, loader: AssetLoader
+) -> CheckEvaluation | None:
     snapshot, payload = request.state_snapshot, request.payload
     if not isinstance(snapshot, NonCombatSnapshot):
         return _refuse("unsupported", "check.snapshot", "checks require a noncombat snapshot")
@@ -115,42 +176,4 @@ def evaluate_check(request: RuleEvaluationRequest, loader: AssetLoader) -> Check
                 return _refuse(
                     "unsupported", "check.equipment", "equipment passive effects require migration"
                 )
-    if payload.dc is None:
-        return dict(
-            status="needs_choice",
-            state_delta=None,
-            proposed_events=(),
-            rng_transition=None,
-            choice=CheckAdjudicationChoice(
-                kind="check.adjudication", actor_id=actor.entity_id, required_fields=("dc",)
-            ),
-            error=None,
-        )
-    combatants = []
-    for state in actors.values():
-        value = state.model_dump(mode="python")
-        for field in ("spell_slots", "pact_slots", "spells_known", "custom_counters"):
-            del value[field]
-        value["death_saves"] = value["death_saves"] or {}
-        combatants.append(Combatant.model_validate(value))
-    caster = next(c for c in combatants if c.entity_id == actor.entity_id)
-    rng = request.rng_context.state.restore()
-    ctx = ActivityResolutionContext(
-        rng=rng,
-        caster=caster,
-        targets=[c for c in combatants if c is not caster],
-        event_emitter=lambda event: None,
-        caster_abilities={
-            ability: getattr(caster, field) for ability, field in _SCORE_ATTR.items()
-        },
-        check_states={c.entity_id: CheckActorState() for c in combatants},
-    )
-    event = resolve_check_request(payload, ctx)
-    return dict(
-        status="accepted",
-        state_delta=StateDelta(expected_world_version=snapshot.world_version, operations=()),
-        proposed_events=(event,),
-        rng_transition=RNGTransition.between(request.rng_context, rng),
-        choice=None,
-        error=None,
-    )
+    return None

@@ -3,7 +3,6 @@
 import copy
 from typing import Annotated, Literal, Self
 
-from dnd5e_srd_data import BundledAssetLoader
 from dnd5e_srd_data.loader import AssetLoader
 from pydantic import Field, model_validator
 
@@ -11,7 +10,7 @@ from dnd5e_engine.evaluation_base import EvaluationModel
 from dnd5e_engine.evaluation_contracts import CombatIntentPayload, RuleError
 from dnd5e_engine.evaluation_preflight import prepare_attack
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError
-from dnd5e_engine.evaluation_ruleset import RulesetBinding, verify_ruleset
+from dnd5e_engine.evaluation_ruleset import RulesetBinding, get_default_ruleset, verify_ruleset
 from dnd5e_engine.evaluation_state import CombatSnapshot
 from dnd5e_engine.lib_loader import scoped_lib_loader
 
@@ -54,7 +53,7 @@ def query_action_availability(
     independently authorizes actors and rechecks versions before real execution.
     """
     request = ActionAvailabilityRequest.model_validate(copy.deepcopy(request))
-    assets = loader if loader is not None else BundledAssetLoader()
+    assets = loader if loader is not None else get_default_ruleset()
     verify_ruleset(request.ruleset_binding, assets)
     with scoped_lib_loader(assets):
         admission = prepare_attack(

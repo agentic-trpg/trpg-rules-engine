@@ -3,7 +3,6 @@
 import random
 from dataclasses import dataclass, replace
 
-from dnd5e_srd_data import BundledAssetLoader
 from dnd5e_srd_data.loader import AssetLoader
 from dnd5e_srd_data.schema.common import HealActivity, SaveActivity
 from dnd5e_srd_data.schema.spell import Spell
@@ -27,6 +26,7 @@ from dnd5e_engine.evaluation_reactions import (
     resolve_counterspell,
 )
 from dnd5e_engine.evaluation_rng import RNGTransition
+from dnd5e_engine.evaluation_ruleset import get_default_ruleset
 from dnd5e_engine.evaluation_spell_dependencies import invocation_dependencies
 from dnd5e_engine.evaluation_state import CombatSnapshot
 from dnd5e_engine.evaluation_turn import TurnEvaluation, _refuse
@@ -192,7 +192,7 @@ def spell_plan(
     if intent != basic:
         return _refuse("unsupported", "spell.inputs", "additional casting choices are not migrated")
     spell = loader.get_spell(intent.spell_id)
-    if spell is None or spell != BundledAssetLoader().get_spell(intent.spell_id):
+    if spell is None or spell != get_default_ruleset().get_spell(intent.spell_id):
         return _refuse(
             "unsupported", "spell.binding", "spell definition differs from reviewed canonical data"
         )
@@ -285,7 +285,7 @@ def feature_plan(
     actor = next(a for a in snapshot.character_states if a.entity_id == request.actor_id)
     if (
         feature is None
-        or feature != BundledAssetLoader().get_feature("second-wind")
+        or feature != get_default_ruleset().get_feature("second-wind")
         or "second-wind" not in (actor.granted_features or ())
     ):
         return _refuse("rejected", "feature.source", "actual reviewed Fighter grant is required")

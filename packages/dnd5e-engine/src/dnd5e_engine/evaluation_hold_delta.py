@@ -2,13 +2,13 @@
 
 from typing import Annotated, Literal, Self
 
-from dnd5e_srd_data import BundledAssetLoader
 from pydantic import Field, model_validator
 
 from dnd5e_engine.concentration_rules import concentration_anchor
 from dnd5e_engine.effect_lifecycle import OngoingEffectLifecycle
 from dnd5e_engine.evaluation_base import EvaluationModel
 from dnd5e_engine.evaluation_effects import EffectState, effect_state
+from dnd5e_engine.evaluation_ruleset import get_default_ruleset
 from dnd5e_engine.evaluation_state import ConditionLink, ConditionRecord, LifecycleRecord
 from dnd5e_engine.hold_person_rules import hold_person_effect
 from dnd5e_engine.spellcasting import resolve_target_count
@@ -54,7 +54,7 @@ class HoldPersonGraphCreate(EvaluationModel):
         ids = set(self.actor_ids)
         targets = self.selected_target_ids
         identities = tuple((e.effect.target_id, e.effect.id, e.effect.origin) for e in self.entries)
-        spell = BundledAssetLoader().get_spell("hold-person")
+        spell = get_default_ruleset().get_spell("hold-person")
         assert spell is not None
         count = resolve_target_count(
             spell.activities[0].target.affects.count, cast_level=self.slot_level

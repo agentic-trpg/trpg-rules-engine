@@ -9,6 +9,7 @@ from dnd5e_engine.evaluation_effects import EffectState
 from dnd5e_engine.evaluation_hold_delta import HoldPersonGraphCreate
 from dnd5e_engine.evaluation_reaction_state import PredeclaredReactionState
 from dnd5e_engine.evaluation_resources import ResourcePool
+from dnd5e_engine.evaluation_ruleset import get_default_ruleset
 from dnd5e_engine.evaluation_shield_delta import ShieldStateTransition
 from dnd5e_engine.evaluation_state import (
     ClosureDeath,
@@ -307,12 +308,10 @@ class EffectLifecycleUpdate(EvaluationModel):
     def complete_identity(self) -> Self:
         effect = self.expected_effect
         if self.expected_lifecycle is None:
-            from dnd5e_srd_data import BundledAssetLoader
-
             from dnd5e_engine.concentration_rules import concentration_anchor
             from dnd5e_engine.evaluation_effects import effect_state
 
-            spell = BundledAssetLoader().get_spell("hold-person")
+            spell = get_default_ruleset().get_spell("hold-person")
             assert spell is not None
             if (
                 effect != effect_state(concentration_anchor(spell, effect.target_id))

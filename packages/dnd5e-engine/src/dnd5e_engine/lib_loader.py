@@ -2,7 +2,7 @@
 
 The engine ships no rules data. Every typed entity it resolves is fetched
 through ``get_lib_loader``. Outside combat it returns the process default,
-which defaults to the bundled SRD 5.2 corpus (``BundledAssetLoader``). Public
+which defaults to the shared fixed bundled SRD 5.2 corpus. Public
 combat operations bind the loader captured when that combat opened.
 
 The engine is edition-agnostic: it resolves whatever typed content it is handed.
@@ -10,7 +10,8 @@ To drive it from a different corpus, implement the ``AssetLoader`` protocol and
 install it with ``configure_lib_loader``; pass ``None`` to revert to the bundled
 corpus. Replacing the default applies to future combats. Loader objects must
 remain immutable after installation; replace the loader rather than mutating
-an existing instance's assets.
+an existing instance's assets. ``evaluation_ruleset.freeze_ruleset`` enforces
+this isolation for custom sources; raw loaders remain a compatibility seam.
 """
 
 from __future__ import annotations
@@ -19,20 +20,19 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 
-from dnd5e_srd_data.loader import AssetLoader, BundledAssetLoader
+from dnd5e_srd_data.loader import AssetLoader
+
+from dnd5e_engine.evaluation_ruleset import get_default_ruleset
 
 _LIB_LOADER: AssetLoader | None = None
 _SCOPED_LIB_LOADER: ContextVar[AssetLoader | None] = ContextVar("combat_lib_loader", default=None)
 
 
 def get_lib_loader() -> AssetLoader:
-    global _LIB_LOADER
     scoped = _SCOPED_LIB_LOADER.get()
     if scoped is not None:
         return scoped
-    if _LIB_LOADER is None:
-        _LIB_LOADER = BundledAssetLoader()
-    return _LIB_LOADER
+    return _LIB_LOADER if _LIB_LOADER is not None else get_default_ruleset()
 
 
 @contextmanager

@@ -7,9 +7,12 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping, Sequence
+from copy import copy
 from importlib import resources
 from pathlib import Path
-from typing import Any, Literal, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, TypeVar, cast, runtime_checkable
+
+from pydantic import BaseModel
 
 from dnd5e_srd_data.schema.background import Background
 from dnd5e_srd_data.schema.class_ import Class, Subclass
@@ -179,6 +182,9 @@ class MemoryAssetLoader:
         return slug in self.list_slugs(category)
 
 
+_Model = TypeVar("_Model", bound=BaseModel)
+
+
 class BundledAssetLoader:
     """Reads canonical/<category>/<slug>.json on demand. Lazy per-slug.
 
@@ -189,6 +195,33 @@ class BundledAssetLoader:
     def __init__(self, *, root: Path | None = None) -> None:
         self._root: Path | None = root
         self._spell_uuid_index: dict[str, str] | None = None
+        self._models: dict[tuple[Category, str], BaseModel | None] | None = None
+
+    def _for_materialization(self) -> BundledAssetLoader:
+        """Private short-lived parse cache; the public live loader stays uncached."""
+        result = copy(self)
+        result._models = {}
+        result._spell_uuid_index = None
+        return result
+
+    def _model(self, category: Category, slug: str, model: type[_Model]) -> _Model | None:
+        key = (category, slug)
+        if self._models is not None and key in self._models:
+            return cast("_Model | None", self._models[key])
+        raw = self._load_json(category, slug)
+        result = None
+        if raw is not None:
+            if category == "items":
+                item_models: dict[str, type[Item]] = {
+                    "weapon": Weapon,
+                    "armor": Armor,
+                    "magic_item": MagicItem,
+                }
+                model = cast("type[_Model]", item_models.get(raw.get("item_kind", "item"), Item))
+            result = model.model_validate(raw)
+        if self._models is not None:
+            self._models[key] = result
+        return result
 
     def _category_dir(self, category: Category) -> Path:
         if self._root is not None:
@@ -206,20 +239,7 @@ class BundledAssetLoader:
         return loaded
 
     def get_item(self, slug: str) -> Item | Weapon | Armor | MagicItem | None:
-        raw = self._load_json("items", slug)
-        if raw is None:
-            return None
-        # Explicit ``item_kind`` discriminator is authoritative; canonical
-        # always writes it via the schema default. Default to ``"item"`` so
-        # any legacy JSON without the field deserializes as a plain Item.
-        kind = raw.get("item_kind", "item")
-        if kind == "weapon":
-            return Weapon.model_validate(raw)
-        if kind == "armor":
-            return Armor.model_validate(raw)
-        if kind == "magic_item":
-            return MagicItem.model_validate(raw)
-        return Item.model_validate(raw)
+        return self._model("items", slug, Item)
 
     def get_weapon(self, slug: str) -> Weapon | None:
         candidate = self.get_item(slug)
@@ -230,16 +250,10 @@ class BundledAssetLoader:
         return candidate if isinstance(candidate, Armor) else None
 
     def get_monster(self, slug: str) -> Monster | None:
-        raw = self._load_json("monsters", slug)
-        if raw is None:
-            return None
-        return Monster.model_validate(raw)
+        return self._model("monsters", slug, Monster)
 
     def get_spell(self, slug: str) -> Spell | None:
-        raw = self._load_json("spells", slug)
-        if raw is None:
-            return None
-        return Spell.model_validate(raw)
+        return self._model("spells", slug, Spell)
 
     def get_spell_by_uuid(self, uuid: str) -> Spell | None:
         if not uuid:
@@ -255,55 +269,31 @@ class BundledAssetLoader:
         return self.get_spell(resolved_slug) if resolved_slug is not None else None
 
     def get_species(self, slug: str) -> Species | None:
-        raw = self._load_json("species", slug)
-        if raw is None:
-            return None
-        return Species.model_validate(raw)
+        return self._model("species", slug, Species)
 
     def get_class(self, slug: str) -> Class | None:
-        raw = self._load_json("classes", slug)
-        if raw is None:
-            return None
-        return Class.model_validate(raw)
+        return self._model("classes", slug, Class)
 
     def get_subclass(self, slug: str) -> Subclass | None:
-        raw = self._load_json("subclasses", slug)
-        if raw is None:
-            return None
-        return Subclass.model_validate(raw)
+        return self._model("subclasses", slug, Subclass)
 
     def get_background(self, slug: str) -> Background | None:
-        raw = self._load_json("backgrounds", slug)
-        if raw is None:
-            return None
-        return Background.model_validate(raw)
+        return self._model("backgrounds", slug, Background)
 
     def get_feat(self, slug: str) -> Feat | None:
-        raw = self._load_json("feats", slug)
-        if raw is None:
-            return None
-        return Feat.model_validate(raw)
+        return self._model("feats", slug, Feat)
 
     def get_feature(self, slug: str) -> Feature | None:
-        raw = self._load_json("features", slug)
-        if raw is None:
-            return None
-        return Feature.model_validate(raw)
+        return self._model("features", slug, Feature)
 
     def get_condition(self, slug: str) -> Condition | None:
-        raw = self._load_json("conditions", slug)
-        if raw is None:
-            return None
-        return Condition.model_validate(raw)
+        return self._model("conditions", slug, Condition)
 
     def list_conditions(self) -> list[str]:
         return self.list_slugs("conditions")
 
     def get_trait(self, slug: str) -> MonsterTrait | None:
-        raw = self._load_json("traits", slug)
-        if raw is None:
-            return None
-        return MonsterTrait.model_validate(raw)
+        return self._model("traits", slug, MonsterTrait)
 
     def list_slugs(self, category: Category) -> list[str]:
         d = self._category_dir(category)

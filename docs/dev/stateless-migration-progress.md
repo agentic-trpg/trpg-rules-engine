@@ -23,6 +23,71 @@ The [SM handoff](event-stage-sm-handoff.md) records required fixed-pin integrati
 world supplementation, OCC and Evidence persistence. No SM code/pin changed,
 no NPC perception/Episode end-to-end completion or C-19/C-24 ABI approval is claimed.
 
+## Fixed effective datasets and reusable trusted identity (2026-10-19)
+
+Start `e5254a2ac7166a830a24c46eb35b2b1e0c4f4b80`, branch
+`feat/frozen-ruleset-assets`. RE-only loading work preserves the current local
+protocol versions, canonical SHA-256 encoding and evaluator `/37` semantics.
+
+`evaluation_ruleset.freeze_ruleset(source)` materializes the entire effective
+eleven-category corpus and its verified three-field identity. Custom/override
+enumerations, slug identity, missing assets and typed item accessor checks run
+before publication. Private parsed models are detached from inputs and every
+getter returns a deep copy, including nested mutable dictionaries/lists and UUID
+lookups. Candidate mutation cannot alter shared rules. Bundled materialization
+uses a temporary parse cache; repeated Item/Weapon/Armor access no longer parses
+the same JSON. A fixed dataset never returns to its original source.
+
+The default dataset is shared per process by evaluation, availability, the local
+initialization candidate, Legacy default loading, canonical admission/delta helpers
+and the Bridge overlay's bundled base. A lock serializes first construction;
+failures propagate without publishing a partial dataset and the next call retries.
+Custom datasets coexist without a global per-source/Session cache, retain no source
+reference and are released when their owners drop the last reference. Hosts share
+one dataset per selected content version and replace references for content updates.
+Canonical condition module initialization may trigger the first default load.
+
+Raw `AssetLoader`/`MemoryAssetLoader`/Bundled/custom injection stays compatible and
+still fully rehashes on every verification. Loaders must remain stable during a
+call; arbitrary declared revisions cannot claim the fixed fast path. Fixed
+verification compares only the original three identity fields and still refuses
+wrong bindings before execution/payment/RNG. Existing mutation-detection assertions
+are retained. `ruleset_binding()` and initialization now also allow default-loader
+omission; existing explicit-loader calls and distribution versions are unchanged.
+
+The new focused regression module passed **14 cases in 7.34 s**. Stable counters
+prove five mutable verifications enumerate **55 categories**, versus **0** for
+five fixed verifications, with **0 JSON reads / 0 SHA-256 calls** on the fixed path.
+For a listed item, five raw Bundled verifications read/parse **15 times** (three
+typed accessors per check); materialization reads/parses **once**, and subsequent
+getters/verification read/parse **zero** times. Actual `model_validate` construction
+counts are asserted, as are the unchanged default digest
+`sha256:f1f2b8d5e9bef154940cb14c615f2f4ac7301a4ab9d869841bc1b86e9664c44e`,
+nested isolation, source/dataset release, concurrency/failure retry, default entry
+reuse, custom bonus execution and identical result/events/RNG to the live source.
+An additional real Bridge Overlay probe passed (5.74 s): a complete canonical base
+with an empty overlay retains the default identity; a homebrew weapon changes it,
+and subsequent input mutation changes neither the fixed data nor the default.
+
+Final plan required Integration for shared loading/public entrypoints; the preserved
+untracked `.evaluation-worktree/` also conservatively broadened the plan. Native
+`make` is unavailable on this Windows host, so the exact Makefile runner was used:
+`python tools/validate.py integration --base e5254a2ac7166a830a24c46eb35b2b1e0c4f4b80`.
+**PASSED, exit 0, 1129.78 s**: Data **671 passed / 1 existing skip** (173.63 s),
+Engine **9007 passed** (831.97 s), Bridge **139 passed** (10.87 s), Demo **54 passed**
+(28.19 s), 24 tooling tests, all package Ruff/format/Mypy gates, three examples
+and strict MkDocs (7.93 s build) passed. These are local Integration results,
+not coverage/Full or GitHub Actions claims. Windows sandbox execution initially
+stalled inside asyncio's local `socketpair` creation; the confirmed task-owned
+processes were interrupted and the successful regressions/gate ran with local
+sockets permitted and a dedicated repository-local test temporary directory.
+Evidence-only final documentation receives a separate strict build.
+
+SM still needs to retain the selected dataset/configuration, save and verify the
+three-field Session binding and pass the same dataset to every RE entrypoint.
+No SM code/pin, Meta document, WorldObject instantiation, Session protocol,
+authoritative commit or production caller integration is changed or claimed.
+
 ## Architecture decisions and progress dimensions
 
 Latest Meta MODULE_CONTRACTS §4–6/14.1, STATE_MACHINE_ARCHITECTURE and MVP_SCOPE

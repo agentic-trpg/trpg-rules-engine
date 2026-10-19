@@ -1,6 +1,5 @@
 """Canonical class closure for reviewed operations over complete actor facts."""
 
-from dnd5e_srd_data import BundledAssetLoader
 from dnd5e_srd_data.loader import AssetLoader
 
 from dnd5e_engine.activities.build_context import build_activity_context
@@ -9,6 +8,7 @@ from dnd5e_engine.build_spec import derive_multiclass_pact_slots, derive_multicl
 from dnd5e_engine.evaluation_actor import combatant
 from dnd5e_engine.evaluation_equipment_dependencies import equipped_dependencies
 from dnd5e_engine.evaluation_resources import FeatureResource, SlotResource
+from dnd5e_engine.evaluation_ruleset import get_default_ruleset
 from dnd5e_engine.evaluation_state import CharacterStateV2, CombatSnapshot, NonCombatSnapshot
 from dnd5e_engine.feature_runtime import DrawFreeRandom, scalar_formula
 
@@ -22,7 +22,7 @@ def class_dependencies(
     actor: CharacterStateV2,
     snapshot: CombatSnapshot | NonCombatSnapshot,
     loader: AssetLoader,
-    canonical: BundledAssetLoader,
+    canonical: AssetLoader,
     *,
     equipped: bool = False,
 ) -> str | None:
@@ -152,9 +152,7 @@ def pool_dependencies(
     return None
 
 
-def evoker_grants(
-    loader: AssetLoader, canonical: BundledAssetLoader, level: int
-) -> set[str] | None:
+def evoker_grants(loader: AssetLoader, canonical: AssetLoader, level: int) -> set[str] | None:
     subclass = loader.get_subclass("evoker")
     if (
         subclass is None
@@ -187,7 +185,7 @@ def operation_dependencies(
     """
     from dnd5e_engine.evaluation_preflight import snapshot_support_failure
 
-    canonical = BundledAssetLoader()
+    canonical = get_default_ruleset()
 
     def dependencies(actor: CharacterStateV2) -> str | None:
         if actor.trait_mechanics:

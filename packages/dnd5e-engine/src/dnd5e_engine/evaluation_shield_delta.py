@@ -2,12 +2,12 @@
 
 from typing import Annotated, Literal, Self
 
-from dnd5e_srd_data import BundledAssetLoader
 from pydantic import Field, model_validator
 
 from dnd5e_engine.evaluation_base import EvaluationModel
 from dnd5e_engine.evaluation_effects import EffectState, effect_state
 from dnd5e_engine.evaluation_reaction_state import ReactionConditionState, ReactionResponseState
+from dnd5e_engine.evaluation_ruleset import get_default_ruleset
 from dnd5e_engine.evaluation_state import ConditionLink
 from dnd5e_engine.reaction_effect_rules import retained_reaction_response, shield_effect
 from dnd5e_engine.reactions import ActiveReactionResponse
@@ -54,7 +54,7 @@ class ShieldGraphValue(EvaluationModel):
 
     @model_validator(mode="after")
     def canonical_graph(self) -> Self:
-        spell = BundledAssetLoader().get_spell("shield")
+        spell = get_default_ruleset().get_spell("shield")
         assert spell is not None
         effect = shield_effect(spell, self.expiry_owner_id)
         identity = (effect.target_id, effect.id, effect.origin)

@@ -1,6 +1,5 @@
 """Reviewed complete Cleric/Fighter equipment closure for bounded operations."""
 
-from dnd5e_srd_data import BundledAssetLoader
 from dnd5e_srd_data.loader import AssetLoader
 from dnd5e_srd_data.schema.item import Armor
 
@@ -19,7 +18,7 @@ def equipped_dependencies(
     actor: CharacterStateV2,
     snapshot: CombatSnapshot | NonCombatSnapshot,
     loader: AssetLoader,
-    canonical: BundledAssetLoader,
+    canonical: AssetLoader,
 ) -> str | None:
     # Reviewed identities, never a rule inferred from item prose.
     levels = actor.classes or (
@@ -110,7 +109,7 @@ def wizard_pouch_dependencies(
     actor: CharacterStateV2,
     snapshot: CombatSnapshot | NonCombatSnapshot,
     loader: AssetLoader,
-    canonical: BundledAssetLoader,
+    canonical: AssetLoader,
 ) -> str | None:
     entries = [e for e in snapshot.inventory_state.entries if e.owner_id == actor.entity_id]
     item = loader.get_item("component-pouch")

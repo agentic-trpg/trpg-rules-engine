@@ -3,7 +3,6 @@
 import random
 from collections import Counter
 
-from dnd5e_srd_data import BundledAssetLoader
 from dnd5e_srd_data.loader import AssetLoader
 from dnd5e_srd_data.schema.common import ReactionTriggerKind, UtilityActivity
 
@@ -20,6 +19,7 @@ from dnd5e_engine.evaluation_payments import spell_payment
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError
 from dnd5e_engine.evaluation_reaction_state import PendingReactionState
 from dnd5e_engine.evaluation_reactions import reaction_paid_delta
+from dnd5e_engine.evaluation_ruleset import get_default_ruleset
 from dnd5e_engine.evaluation_shield_delta import (
     ShieldGraphValue,
     ShieldStateTransition,
@@ -135,7 +135,7 @@ def shield_source_failure(
         or "shield" not in source.prepared_spells
     ):
         return "complete prepared/known Wizard 5 Evoker Shield source is required"
-    if failure := wizard_pouch_dependencies(actor, snapshot, loader, BundledAssetLoader()):
+    if failure := wizard_pouch_dependencies(actor, snapshot, loader, get_default_ruleset()):
         return failure
     assert entry is not None
     spell = loader.get_spell("shield")
@@ -162,7 +162,7 @@ def shield_support_failure(
     snapshot: CombatSnapshot, loader: AssetLoader, *, turn: bool = False
 ) -> str | None:
     spell = loader.get_spell("shield")
-    if spell is None or spell != BundledAssetLoader().get_spell("shield"):
+    if spell is None or spell != get_default_ruleset().get_spell("shield"):
         return "canonical Shield definition is required"
     activity = spell.activities[0]
     if (

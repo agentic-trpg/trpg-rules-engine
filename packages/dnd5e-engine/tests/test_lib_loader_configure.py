@@ -3,6 +3,7 @@
 from dnd5e_srd_data.loader import BundledAssetLoader, MemoryAssetLoader
 
 import dnd5e_engine
+from dnd5e_engine.evaluation_ruleset import get_default_ruleset
 from dnd5e_engine.events import CastFailed, SpellCast
 from dnd5e_engine.lib_loader import get_lib_loader
 from tests.c20_support import act, combatant, events, start, wizard
@@ -19,7 +20,7 @@ def test_configure_installs_and_none_reverts() -> None:
         assert get_lib_loader() is custom
     finally:
         dnd5e_engine.configure_lib_loader(None)
-    assert isinstance(get_lib_loader(), BundledAssetLoader)
+    assert get_lib_loader() is get_default_ruleset()
 
 
 def test_configure_replacement_only_applies_to_future_combats() -> None:

@@ -3,7 +3,6 @@
 import copy
 from typing import TypedDict
 
-from dnd5e_srd_data import BundledAssetLoader
 from dnd5e_srd_data.loader import AssetLoader
 
 from dnd5e_engine.evaluation_attack import execute_attack
@@ -23,7 +22,7 @@ from dnd5e_engine.evaluation_preflight import prepare_attack
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError, attack_delta
 from dnd5e_engine.evaluation_rest import evaluate_rest
 from dnd5e_engine.evaluation_rng import RNGTransition
-from dnd5e_engine.evaluation_ruleset import RulesetBinding, verify_ruleset
+from dnd5e_engine.evaluation_ruleset import RulesetBinding, get_default_ruleset, verify_ruleset
 from dnd5e_engine.evaluation_saves import evaluate_save
 from dnd5e_engine.evaluation_spells import evaluate_invocation
 from dnd5e_engine.evaluation_stages import EventStageFacts
@@ -69,10 +68,12 @@ async def evaluate(
     """Evaluate independently: no registry, persistent handle, receipt or publication.
 
     Schema/binding/internal exceptions propagate independently of rule status.
-    Pass an immutable explicit loader for overlays; omitted loader is bundled data.
+    Pass freeze_ruleset(source) for overlays; omitted loader shares fixed bundled
+    data. Raw mutable loaders retain full binding verification on every request
+    and must remain stable during each call.
     """
     request = RuleEvaluationRequest.model_validate(copy.deepcopy(request))
-    assets = loader if loader is not None else BundledAssetLoader()
+    assets = loader if loader is not None else get_default_ruleset()
     verify_ruleset(request.ruleset_binding, assets)
     common: _ResultIdentity = dict(
         schema_version=request.schema_version,

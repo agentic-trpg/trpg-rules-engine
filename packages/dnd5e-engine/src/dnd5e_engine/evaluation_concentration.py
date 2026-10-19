@@ -11,7 +11,6 @@ from dataclasses import replace
 from functools import partial
 from typing import Annotated, Literal, TypedDict
 
-from dnd5e_srd_data import BundledAssetLoader
 from dnd5e_srd_data.loader import AssetLoader
 from dnd5e_srd_data.schema.common import SaveActivity
 from pydantic import Field
@@ -42,7 +41,12 @@ from dnd5e_engine.evaluation_effects import effect_state
 from dnd5e_engine.evaluation_preflight import snapshot_support_failure
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError, attack_delta
 from dnd5e_engine.evaluation_rng import RNGContext, RNGTransition
-from dnd5e_engine.evaluation_ruleset import RulesetBinding, _canonical, verify_ruleset
+from dnd5e_engine.evaluation_ruleset import (
+    RulesetBinding,
+    _canonical,
+    get_default_ruleset,
+    verify_ruleset,
+)
 from dnd5e_engine.evaluation_saves import resolve_snapshot_save, save_actor_failure
 from dnd5e_engine.evaluation_stages import EventStageFacts
 from dnd5e_engine.evaluation_state import CharacterStateV2, CombatSnapshot
@@ -141,10 +145,10 @@ def concentration_support_failure(
         or set(chain) != set(links)
     ):
         return "effect graph is incomplete, duplicated or has unrelated members"
-    if loader.get_condition("paralyzed") != BundledAssetLoader().get_condition("paralyzed"):
+    if loader.get_condition("paralyzed") != get_default_ruleset().get_condition("paralyzed"):
         return "condition clauses differ from the reviewed pinned projection"
     spell = loader.get_spell("hold-person")
-    if spell is None or spell != BundledAssetLoader().get_spell("hold-person"):
+    if spell is None or spell != get_default_ruleset().get_spell("hold-person"):
         return "Hold Person differs from the reviewed pinned declaration"
     activity = spell.activities[0]
     assert isinstance(activity, SaveActivity)
@@ -263,7 +267,7 @@ def concentration_identity_failure(
     if composed and (actor.class_slug or actor.classes):
         from dnd5e_engine.evaluation_class_dependencies import class_dependencies
 
-        return class_dependencies(actor, snapshot, loader, BundledAssetLoader(), equipped=True)
+        return class_dependencies(actor, snapshot, loader, get_default_ruleset(), equipped=True)
     if actor.fighting_styles:
         return "fighting style dependencies require a reviewed class profile"
     return damage_save_identity_failure(actor, loader)

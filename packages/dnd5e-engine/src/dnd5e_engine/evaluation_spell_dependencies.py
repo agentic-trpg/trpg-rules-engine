@@ -1,12 +1,12 @@
 """Reviewed immediate-healing admission without removing any input facts."""
 
-from dnd5e_srd_data import BundledAssetLoader
 from dnd5e_srd_data.loader import AssetLoader
 from dnd5e_srd_data.schema.monster import MonsterTraitMechanic
 
 from dnd5e_engine.evaluation_class_dependencies import class_dependencies
 from dnd5e_engine.evaluation_preflight import snapshot_support_failure
 from dnd5e_engine.evaluation_reactions import reaction_dependencies
+from dnd5e_engine.evaluation_ruleset import get_default_ruleset
 from dnd5e_engine.evaluation_state import CharacterStateV2, CombatSnapshot
 
 
@@ -42,7 +42,7 @@ def healing_dependencies(
 ) -> str | None:
     if failure := reaction_dependencies(snapshot, loader):
         return failure
-    canonical = BundledAssetLoader()
+    canonical = get_default_ruleset()
 
     def dependencies(actor: CharacterStateV2) -> str | None:
         if failure := class_dependencies(actor, snapshot, loader, canonical, equipped=True):

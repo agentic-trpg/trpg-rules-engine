@@ -1,6 +1,5 @@
 """Bounded Short Rest: existing resolver, typed owned pools and no world mutation."""
 
-from dnd5e_srd_data import BundledAssetLoader
 from dnd5e_srd_data.loader import AssetLoader
 from dnd5e_srd_data.schema.feature import RecoveryRule
 
@@ -15,6 +14,7 @@ from dnd5e_engine.evaluation_resources import (
     SlotResource,
 )
 from dnd5e_engine.evaluation_rng import RNGTransition
+from dnd5e_engine.evaluation_ruleset import get_default_ruleset
 from dnd5e_engine.evaluation_state import CharacterStateV2, InventoryState, NonCombatSnapshot
 from dnd5e_engine.evaluation_turn import TurnEvaluation, _refuse
 from dnd5e_engine.events import CombatEvent, HealingApplied, RestResolved, RestSpend
@@ -55,7 +55,7 @@ def evaluate_rest(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
         or actor.fighting_styles
     )
     failure = (
-        class_dependencies(actor, snapshot, loader, BundledAssetLoader()) if reviewed else None
+        class_dependencies(actor, snapshot, loader, get_default_ruleset()) if reviewed else None
     )
     if (
         failure
@@ -429,7 +429,7 @@ def _long_rest_failure(
                 or (item.uses is not None and item.uses.recovery)
             ):
                 return "owned item recovery/passive closure is not migrated"
-    canonical = BundledAssetLoader()
+    canonical = get_default_ruleset()
     granted: set[str] = set()
     for slug, level in classes.items():
         definition = loader.get_class(slug)

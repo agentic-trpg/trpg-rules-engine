@@ -15,7 +15,7 @@ from dnd5e_engine import (
     resolve_short_rest,
     roll_dice_str,
 )
-from dnd5e_srd_data.loader import BundledAssetLoader
+from dnd5e_engine.evaluation_ruleset import get_default_ruleset
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -182,7 +182,7 @@ def create_app(state: BridgeState) -> FastAPI:
     def _refresh_loader() -> None:
         if state.combats:
             raise RuntimeError("end all open combats before refreshing the ruleset")
-        loader = OverlayAssetLoader(base=BundledAssetLoader(), overlay=store.as_memory_loader())
+        loader = OverlayAssetLoader(base=get_default_ruleset(), overlay=store.as_memory_loader())
         configure_lib_loader(loader)
         state.loader = loader
 

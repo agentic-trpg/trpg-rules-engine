@@ -5,9 +5,11 @@ import json
 from collections.abc import Mapping
 from datetime import date, datetime
 from enum import Enum
+from threading import Lock
 from typing import Annotated, Any
 
-from dnd5e_srd_data.loader import AssetLoader, Category
+from dnd5e_srd_data.frozen import FrozenAssetLoader
+from dnd5e_srd_data.loader import AssetLoader, BundledAssetLoader, Category
 from dnd5e_srd_data.schema.item import Armor, Weapon
 from pydantic import BaseModel, Field
 
@@ -49,12 +51,13 @@ def _encode(value: Any) -> str:
     )
 
 
-def ruleset_binding(loader: AssetLoader) -> RulesetBinding:
+def _compute_binding(loader: AssetLoader) -> RulesetBinding:
     """Hash every effective category/slug and its actual typed content.
 
     Loaders must enumerate their entire effective corpus, including homebrew and
     overrides. Missing listed assets or duplicate identities are binding errors.
-    No digest cache is used: a mutated loader cannot retain an old valid binding.
+    This uncached compatibility implementation also computes each new snapshot's
+    identity once. Mutable sources cannot retain an old valid binding.
     """
     categories: tuple[Category, ...] = (
         "items",
@@ -103,6 +106,64 @@ def ruleset_binding(loader: AssetLoader) -> RulesetBinding:
     return RulesetBinding(
         ruleset_id=RULESET_ID, data_revision=f"sha256:{digest}", evaluator_version=EVALUATOR_VERSION
     )
+
+
+class FrozenRuleset(FrozenAssetLoader):
+    """A detached effective corpus and its locally computed, verified identity."""
+
+    __slots__ = ("__binding",)
+    __binding: RulesetBinding
+
+    def __init__(self, source: AssetLoader) -> None:
+        try:
+            super().__init__(source)
+            binding = _compute_binding(self)
+        except ValueError as exc:
+            raise RulesetBindingError(str(exc)) from exc
+        object.__setattr__(self, "_FrozenRuleset__binding", binding)
+
+    @property
+    def binding(self) -> RulesetBinding:
+        return self.__binding
+
+
+def freeze_ruleset(loader: AssetLoader) -> FrozenRuleset:
+    """Validate/copy a stable source once; retain and reuse the returned loader.
+
+    Caller owns synchronization of mutable sources during construction. No
+    per-source/session global cache is retained. Editing requires a new dataset.
+    """
+    return loader if type(loader) is FrozenRuleset else FrozenRuleset(loader)
+
+
+_DEFAULT_LOCK = Lock()
+_DEFAULT_RULESET: FrozenRuleset | None = None
+
+
+def get_default_ruleset() -> FrozenRuleset:
+    """One process-wide bundled snapshot, published only after complete success.
+
+    Failed construction leaves the slot empty and the next caller retries.
+    Custom datasets are reference-owned and never occupy this slot.
+    """
+    global _DEFAULT_RULESET
+    with _DEFAULT_LOCK:
+        if _DEFAULT_RULESET is None:
+            _DEFAULT_RULESET = freeze_ruleset(BundledAssetLoader())
+        return _DEFAULT_RULESET
+
+
+def ruleset_binding(loader: AssetLoader | None = None) -> RulesetBinding:
+    """Compare fixed identities cheaply; live/custom loaders are fully rehashed.
+
+    Only this module's exact concrete snapshot type is trusted, never a loader's
+    self-declared revision or an object-address cache.
+    """
+    if loader is None:
+        loader = get_default_ruleset()
+    if type(loader) is FrozenRuleset:
+        return loader.binding
+    return _compute_binding(loader)
 
 
 def verify_ruleset(binding: RulesetBinding, loader: AssetLoader) -> None:

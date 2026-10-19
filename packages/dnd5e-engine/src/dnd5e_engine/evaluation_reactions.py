@@ -3,7 +3,6 @@
 import random
 from dataclasses import dataclass
 
-from dnd5e_srd_data import BundledAssetLoader
 from dnd5e_srd_data.loader import AssetLoader
 from dnd5e_srd_data.schema.common import ReactionTriggerKind, SaveActivity
 from dnd5e_srd_data.schema.spell import Spell
@@ -22,6 +21,7 @@ from dnd5e_engine.evaluation_paid_projection import paid_delta
 from dnd5e_engine.evaluation_payments import spell_payment
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError
 from dnd5e_engine.evaluation_reaction_state import PendingReactionState
+from dnd5e_engine.evaluation_ruleset import get_default_ruleset
 from dnd5e_engine.evaluation_state import CombatSnapshot
 from dnd5e_engine.events import ReactionTriggered, SaveRolled
 from dnd5e_engine.reactions import (
@@ -58,7 +58,7 @@ def reaction_dependencies(snapshot: CombatSnapshot, loader: AssetLoader) -> str 
     if (
         spell is None
         or spell.slug != "counterspell"
-        or spell != BundledAssetLoader().get_spell("counterspell")
+        or spell != get_default_ruleset().get_spell("counterspell")
     ):
         return "only canonical Counterspell is reviewed"
     if len(spell.activities) != 1 or not isinstance(spell.activities[0], SaveActivity):

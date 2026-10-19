@@ -75,8 +75,92 @@ any unexpected inventory/component change.
 
 The three-field RulesetBinding still pins ruleset_id, effective data_revision and
 evaluator_version. SHA-256 includes all enumerated effective typed assets and overlays,
-checks accessor/enumeration identity, and has no stale cache. Loaders must remain immutable
-during evaluation. Final shared fingerprint/wire formats remain OPEN in Meta.
+with the same canonical encoding and digest as before. Final shared fingerprint/wire
+formats remain OPEN in Meta.
+
+### Fixed datasets and trusted identity
+
+```python
+from dnd5e_engine.evaluation_ruleset import (
+    freeze_ruleset, get_default_ruleset, ruleset_binding, verify_ruleset,
+)
+
+assets = get_default_ruleset()       # shared fixed bundled corpus
+# assets = freeze_ruleset(custom_loader)  # final effective overrides included
+binding = ruleset_binding(assets)
+verify_ruleset(binding, assets)      # compares three fields, no corpus scan
+# await evaluate(request, loader=assets)
+```
+
+`freeze_ruleset` returns a `FrozenRuleset` implementing the existing `AssetLoader`
+protocol. It materializes all eleven categories, validates duplicate/missing/slug
+identity and Item/Weapon/Armor consistency, revalidates custom mutable model fields,
+and computes the binding from the detached data actually used for evaluation.
+No supplied version string or arbitrary loader `binding` attribute is trusted.
+Only the concrete engine-created `FrozenRuleset` takes the fast verification path.
+Calling `freeze_ruleset` on that same concrete dataset returns it unchanged.
+
+The dataset retains private parsed models and returns **deep copies** at every
+getter, including UUID access. Nested models, dictionaries, lists and sets never
+escape by reference. Consumers may modify these independent instances for candidate
+execution; those edits and later original-input edits cannot change the dataset.
+This deliberately does not promise `is` identity between returned copies. There is
+no JSON parsing or model validation on repeated getters. Bundled materialization
+reads/parses each listed JSON once, including item accessor consistency checks.
+UUID indices are rebuilt from the captured effective spell corpus, so execution
+never falls back to a mutable source's auxiliary index.
+Different effective spell slugs sharing a nonempty `foundry_uuid` make the whole
+dataset invalid. Construction rejects them before publishing any dataset/index or
+computing its trusted binding; `freeze_ruleset` raises `RulesetBindingError` naming
+the UUID and both slugs. Enumeration order cannot select a winner. Multiple empty
+UUIDs remain legal and unindexed. Validation examines the final effective corpus,
+preserving the source's explicit same-slug override behavior. Successful queries
+and binding checks reuse the verified index without repeating this scan. Failed
+construction does not alter existing datasets; correct the source and retry.
+
+`get_default_ruleset` retains exactly one bundled dataset per Python process. It is
+loaded under a lock on first use (currently canonical condition-helper module
+initialization can be that first use), published only after successful validation
+and hashing, and reused by omitted-loader evaluate, availability, initialization,
+Legacy default loading and reviewed canonical dependency/delta checks. Bridge
+homebrew overlays also reuse that fixed bundled base. Concurrent first callers
+wait for the same complete result; failure leaves the slot empty for retry and
+propagates to the caller. Restart the process to reload installed bundled data.
+Offline audit tools retain their explicit live-source enumeration behavior.
+
+Custom datasets are owned by references, can coexist, and are never added to a
+global per-loader or per-Session cache. Hosts create one per intended effective
+content version and share it across Sessions, rather than freezing per request.
+Replacing a host's reference affects future uses; in-flight calls and existing
+Legacy combats retain their captured loader. Reinitializing or assigning fields
+on a fixed dataset is rejected; release it by dropping all references. The source
+must remain stable during construction, with host locking around concurrent edits.
+
+`AssetLoader`, `MemoryAssetLoader`, raw `BundledAssetLoader`, overlays and other
+custom implementations remain accepted directly. This **mutable compatibility
+path** re-enumerates and hashes all effective content on every binding/verification
+and detects edits after a previous binding; it does not get the fixed fast path.
+Sources must remain stable for each verification/execution call. Existing
+`configure_lib_loader` injection semantics remain; pass a frozen dataset to enforce
+isolation, or replace the raw loader instead of mutating it during execution.
+Ruleset mismatch still raises `RulesetBindingError` before payment or RNG restore.
+
+`ruleset_id` identifies the D&D rules (`dnd-2024-srd-5.2.1`); `data_revision` hashes
+all final effective typed content; `evaluator_version` identifies admitted evaluator
+semantics (`dnd5e-evaluation/37`). Python distribution versions identify releases
+and are not substitutes for any of these. This loading optimization changes no
+rule/RNG semantics, canonical data or evaluator version. `ruleset_binding(loader)`
+and `verify_ruleset(binding, loader)` remain compatible; `ruleset_binding()` now
+also accepts omission for the fixed bundled default. Initialization additionally
+accepts an omitted loader, consistently with evaluation and availability.
+The default loader's concrete type is now `FrozenRuleset`, rather than
+`BundledAssetLoader`; consumers should rely on the `AssetLoader` protocol.
+
+State Machine still needs to retain the selected dataset reference/configuration,
+persist the three-field Session binding, compare it on restore and before execution,
+and pass the same dataset to evaluation/availability/initialization. This batch
+implements RE interfaces only; SM integration, shared ABI approval and authoritative
+Session persistence are not claimed.
 
 R26 corrects lifecycle wire schemas without changing Snapshot `/13`'s field shape.
 `OngoingEffectLifecycleState` defines every clock field and nests the explicit

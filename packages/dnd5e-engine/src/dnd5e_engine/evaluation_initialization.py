@@ -7,7 +7,6 @@ It must not be connected to untrusted callers until Meta C-16 is decided.
 import copy
 from typing import Literal, Self, TypedDict
 
-from dnd5e_srd_data import BundledAssetLoader
 from dnd5e_srd_data.loader import AssetLoader
 from pydantic import Field, model_validator
 
@@ -31,7 +30,7 @@ from dnd5e_engine.evaluation_delta import (
 from dnd5e_engine.evaluation_initial_state import initial_combat_state
 from dnd5e_engine.evaluation_npc_initialization import npc_initialization_failure
 from dnd5e_engine.evaluation_rng import RNGContext, RNGTransition
-from dnd5e_engine.evaluation_ruleset import RulesetBinding, verify_ruleset
+from dnd5e_engine.evaluation_ruleset import RulesetBinding, get_default_ruleset, verify_ruleset
 from dnd5e_engine.evaluation_stages import EventStageFacts
 from dnd5e_engine.evaluation_state import (
     NonCombatSnapshot,
@@ -85,9 +84,10 @@ class InitializationIdentity(TypedDict):
 
 
 def evaluate_combat_initialization_candidate(
-    request: CombatInitializationCandidateRequest, *, loader: AssetLoader
+    request: CombatInitializationCandidateRequest, *, loader: AssetLoader | None = None
 ) -> RuleEvaluationResult:
     request = CombatInitializationCandidateRequest.model_validate(copy.deepcopy(request))
+    loader = loader if loader is not None else get_default_ruleset()
     verify_ruleset(request.ruleset_binding, loader)
     snapshot = request.state_snapshot
     setup = snapshot.combat_setup
@@ -142,7 +142,7 @@ def evaluate_combat_initialization_candidate(
             or actor.species_slug
             or actor.fighting_styles
             or actor.weapon_mastery_slugs
-        ) and (failure := class_dependencies(actor, snapshot, loader, BundledAssetLoader())):
+        ) and (failure := class_dependencies(actor, snapshot, loader, get_default_ruleset())):
             return refuse("init.class_dependencies", failure)
         if (
             not actor.is_alive

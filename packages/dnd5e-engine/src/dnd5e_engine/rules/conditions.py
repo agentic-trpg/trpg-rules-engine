@@ -5,9 +5,9 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from dnd5e_srd_data.loader import BundledAssetLoader
 from dnd5e_srd_data.schema.condition import ConditionEffect, ConditionEffectKind
 
+from dnd5e_engine.evaluation_ruleset import get_default_ruleset
 from dnd5e_engine.rules.effects import (
     attack_distance_flag_applies,
     condition_immunity_slugs,
@@ -141,7 +141,7 @@ _DECLARATIVE_CONDITION_MIGRATIONS: dict[str, frozenset[ConditionEffectKind]] = {
 _DECLARATIVE_CONDITION_EFFECTS: dict[str, tuple[ConditionEffect, ...]] = {
     slug: tuple(definition.effects)
     for slug in _DECLARATIVE_CONDITION_MIGRATIONS
-    if (definition := BundledAssetLoader().get_condition(slug)) is not None
+    if (definition := get_default_ruleset().get_condition(slug)) is not None
 }
 
 

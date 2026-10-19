@@ -3,7 +3,6 @@
 from dataclasses import replace
 from typing import Literal, cast
 
-from dnd5e_srd_data import BundledAssetLoader
 from dnd5e_srd_data.loader import AssetLoader
 from dnd5e_srd_data.schema.common import SaveActivity
 
@@ -27,6 +26,7 @@ from dnd5e_engine.evaluation_paid_projection import paid_delta, payment_post_sta
 from dnd5e_engine.evaluation_payments import spell_payment
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError
 from dnd5e_engine.evaluation_rng import RNGTransition
+from dnd5e_engine.evaluation_ruleset import get_default_ruleset
 from dnd5e_engine.evaluation_spell_dependencies import invocation_dependencies
 from dnd5e_engine.evaluation_state import CombatSnapshot, ConditionLink, LifecycleRecord
 from dnd5e_engine.evaluation_turn import TurnEvaluation, _refuse
@@ -301,7 +301,7 @@ def evaluate_hold_cast(request: RuleEvaluationRequest, loader: AssetLoader) -> T
     if intent.slot_level not in (2, 3):
         return _refuse("rejected", "no_slot", "reviewed level 2 or 3 slot is required")
     spell = loader.get_spell("hold-person")
-    canonical = BundledAssetLoader()
+    canonical = get_default_ruleset()
     if (
         spell is None
         or spell != canonical.get_spell("hold-person")

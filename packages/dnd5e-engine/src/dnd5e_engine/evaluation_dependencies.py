@@ -1,8 +1,8 @@
 """Reviewed dependency-specific admission; actor identities and facts stay intact."""
 
-from dnd5e_srd_data import BundledAssetLoader
 from dnd5e_srd_data.loader import AssetLoader
 
+from dnd5e_engine.evaluation_ruleset import get_default_ruleset
 from dnd5e_engine.evaluation_state import CharacterStateV2
 
 # Canonical activated/rest abilities below do not fire on ordinary damage/CON saves.
@@ -21,7 +21,7 @@ def damage_save_identity_failure(actor: CharacterStateV2, loader: AssetLoader) -
         return "class levels contradict the supplied character level"
     if actor.class_slug and actor.classes and actor.class_slug not in actor.classes:
         return "primary class is absent from explicit class levels"
-    reviewed = BundledAssetLoader()
+    reviewed = get_default_ruleset()
     for slug in classes:
         if slug not in {"wizard", "fighter", "cleric", "warlock"} or loader.get_class(
             slug

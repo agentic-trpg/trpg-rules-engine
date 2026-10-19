@@ -1,9 +1,9 @@
 """Closed canonical monster dependencies for ordinary reactive movement."""
 
-from dnd5e_srd_data import BundledAssetLoader
 from dnd5e_srd_data.loader import AssetLoader
 
 from dnd5e_engine.evaluation_npc_initialization import monster_actor_failure
+from dnd5e_engine.evaluation_ruleset import get_default_ruleset
 from dnd5e_engine.evaluation_state import CombatSnapshot
 
 
@@ -12,7 +12,7 @@ def monster_movement_failure(snapshot: CombatSnapshot, loader: AssetLoader) -> s
     actors = {a.entity_id: a for a in snapshot.character_states}
     for actor_id, slug in snapshot.combat_state.monster_slug_by_entity.items():
         monster = loader.get_monster(slug)
-        if slug != "ogre" or monster is None or monster != BundledAssetLoader().get_monster(slug):
+        if slug != "ogre" or monster is None or monster != get_default_ruleset().get_monster(slug):
             return "only the pinned ordinary Ogre movement/reach profile is reviewed"
         actor = actors[actor_id]
         if (

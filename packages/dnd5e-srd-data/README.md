@@ -13,6 +13,35 @@ aboleth = loader.get_monster("aboleth")
 print(aboleth.hp)  # 135
 ```
 
+`BundledAssetLoader` is a live, lazy source: ordinary getters read and parse the
+current JSON, while `MemoryAssetLoader` retains mutable input models. Neither is
+trusted as a fixed corpus by the engine.
+
+For a reusable detached data-only snapshot, use
+`dnd5e_srd_data.frozen.FrozenAssetLoader(source)`. It enumerates every effective
+category, checks duplicate/missing/mismatched identities and typed item accessors,
+and isolates nested models, dictionaries and lists. Its getters return deep
+copies of private parsed models; they perform no JSON reads or parsing. Item,
+Weapon and Armor accessors use the same stored item, and UUID lookup uses an index
+built from the captured spells. Bundled materialization temporarily caches parsed
+models so typed item validation reads/parses each JSON only once. The ordinary live
+loader's behavior is unchanged.
+
+Different effective spell slugs must not share a nonempty `foundry_uuid`. Snapshot
+construction rejects the complete dataset before publishing its data or index,
+with an error naming the UUID and both conflicting slugs. Empty UUIDs remain legal
+and unindexed. The check applies after explicit source overrides, and runs only at
+construction. `freeze_ruleset` preserves its `RulesetBindingError` error contract;
+correct the source and construct a new dataset to retry.
+
+For engine execution, prefer `dnd5e_engine.evaluation_ruleset.freeze_ruleset(source)`:
+it adds the verified three-field `RulesetBinding` and constant-work verification.
+Keep the returned loader and pass that same instance to execution; hashing a
+snapshot and then executing against its mutable source does not establish a pin.
+The source must be stable during materialization; callers synchronize concurrent
+edits. A failed construction returns no dataset. Updates require a new snapshot;
+dropping references releases custom snapshots without an unbounded global cache.
+
 ## License
 
 Dataset content is CC-BY-4.0. See `NOTICE` for attribution chain.

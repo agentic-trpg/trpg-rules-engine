@@ -183,3 +183,6 @@ identify the SRD ruleset this project implements.
 
 Built by the [Tapestria](https://github.com/tapestria) team. Nat20 is the deterministic
 rules oracle behind [tapestria.quest](https://tapestria.quest), an AI-driven MUD TTRPG.
+
+
+For Agentic TRPG development, start with [AGENTS.md](AGENTS.md). The [current runtime contract baseline](docs/dev/stateless-evaluation.md#cross-repository-contract-alignment-2026-10-20) records local DTO versions, SM fixed-dependency adoption and remaining target gaps; the sibling Module Contracts remains the cross-module authority. Dated reviews and earlier handoff pins are historical evidence.

@@ -109,6 +109,14 @@ no JSON parsing or model validation on repeated getters. Bundled materialization
 reads/parses each listed JSON once, including item accessor consistency checks.
 UUID indices are rebuilt from the captured effective spell corpus, so execution
 never falls back to a mutable source's auxiliary index.
+Different effective spell slugs sharing a nonempty `foundry_uuid` make the whole
+dataset invalid. Construction rejects them before publishing any dataset/index or
+computing its trusted binding; `freeze_ruleset` raises `RulesetBindingError` naming
+the UUID and both slugs. Enumeration order cannot select a winner. Multiple empty
+UUIDs remain legal and unindexed. Validation examines the final effective corpus,
+preserving the source's explicit same-slug override behavior. Successful queries
+and binding checks reuse the verified index without repeating this scan. Failed
+construction does not alter existing datasets; correct the source and retry.
 
 `get_default_ruleset` retains exactly one bundled dataset per Python process. It is
 loaded under a lock on first use (currently canonical condition-helper module

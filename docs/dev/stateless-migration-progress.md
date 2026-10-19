@@ -88,6 +88,48 @@ three-field Session binding and pass the same dataset to every RE entrypoint.
 No SM code/pin, Meta document, WorldObject instantiation, Session protocol,
 authoritative commit or production caller integration is changed or claimed.
 
+### Spell UUID collision rejection follow-up (2026-10-19)
+
+Start `f02ab4a20b71c55c80393e650dfb31df95c2039d`, continuing
+`feat/frozen-ruleset-assets`. The snapshot's UUID dictionary previously silently
+overwrote entries when different effective spell slugs shared a nonempty UUID.
+This could change base/homebrew UUID resolution after freezing while the content
+digest remained identical. A new regression first reproduced **3 failures / 2
+passes**, with the failures reporting that invalid corpora did not raise.
+
+`FrozenAssetLoader` now checks uniqueness while constructing the UUID index from
+the captured final effective spells. A collision raises `ValueError` naming the
+UUID and both slugs, before any private corpus/index fields are published.
+`freeze_ruleset` retains its existing `RulesetBindingError` wrapping and never
+computes a trusted identity for the rejected data. There is no conflict winner or
+runtime selection rule. Explicit same-slug overrides still determine the effective
+corpus before this check; shadowed inputs are excluded. Multiple empty UUIDs remain
+legal/unindexed. Existing datasets are untouched, and source correction permits a
+new freeze; default failure leaves the singleton unpublished and retries normally.
+
+No canonical encoding, legitimate default digest, binding fields, evaluator/package
+versions, rule/RNG algorithm or mutable-loader compatibility behavior changed.
+Successful UUID queries and fixed verification retain their existing fast paths.
+Prior slug/enumeration/item-accessor validation and mutation-detection tests remain.
+
+Targeted regressions passed **97 tests**: Data frozen/Memory/Bundled loaders **24**
+(4.08 s), Engine fixed dataset and original binding contracts **63** (8.78 s),
+real Bridge Overlay **10** (4.37 s). Cases cover reversed enumeration, diagnostics,
+unique/empty UUIDs, partial-publication rejection, unchanged existing datasets,
+corrected-source/default retries before hashing, unchanged canonical default digest
+and zero-scan/read/hash repeated fixed verification.
+
+Final plan required Focused Integration for shared data loading and the preserved
+untracked `.evaluation-worktree/` fallback. Ran the exact Makefile Python entrypoint
+(native `make` is unavailable): `python tools/validate.py integration --base
+f02ab4a20b71c55c80393e650dfb31df95c2039d`. **PASSED, exit 0, 1009.12 s**: Data
+**676 passed / 1 existing skip** (117.33 s), Engine **9009 passed** (778.11 s),
+Bridge **142 passed** (12.73 s), Demo **54 passed**, 24 tooling tests, all package
+Ruff/format/Mypy checks, all three examples and strict MkDocs (6.25 s build) passed.
+This is local Integration evidence; Full/coverage and GitHub Actions are not
+claimed. Final evidence-only documentation receives another strict build.
+No SM/Meta repository, integration pin, new Session protocol or main merge is included.
+
 ## Architecture decisions and progress dimensions
 
 Latest Meta MODULE_CONTRACTS §4–6/14.1, STATE_MACHINE_ARCHITECTURE and MVP_SCOPE

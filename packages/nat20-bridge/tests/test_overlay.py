@@ -1,5 +1,11 @@
 from datetime import date
 
+import pytest
+from dnd5e_engine.evaluation_ruleset import (
+    RulesetBindingError,
+    freeze_ruleset,
+    get_default_ruleset,
+)
 from dnd5e_srd_data.loader import BundledAssetLoader, MemoryAssetLoader
 from dnd5e_srd_data.schema.common import Provenance, ReviewState
 from dnd5e_srd_data.schema.condition import Condition, ConditionEffect, ConditionEffectKind
@@ -7,6 +13,41 @@ from dnd5e_srd_data.schema.item import Weapon
 from dnd5e_srd_data.schema.monster import MonsterTrait
 
 from nat20_bridge.overlay import OverlayAssetLoader
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_freeze_rejects_base_and_homebrew_spell_uuid_collision(reverse):
+    base = get_default_ruleset()
+    fireball = base.get_spell("fireball")
+    homebrew = fireball.model_copy(deep=True, update={"slug": "hb-fireball"})
+    source = OverlayAssetLoader(base=base, overlay=MemoryAssetLoader(spells=[homebrew]))
+    enumerate_assets = source.list_slugs
+    source.list_slugs = lambda category: enumerate_assets(category)[:: -1 if reverse else 1]
+    assert source.get_spell_by_uuid(fireball.foundry_uuid) == fireball
+    with pytest.raises(RulesetBindingError) as caught:
+        freeze_ruleset(source)
+    for identity in (fireball.foundry_uuid, fireball.slug, homebrew.slug):
+        assert identity in str(caught.value)
+    assert base.get_spell_by_uuid(fireball.foundry_uuid) == fireball
+    assert base.get_spell("hb-fireball") is None
+
+
+def test_freeze_checks_final_effective_spells_without_changing_explicit_slug_overlay():
+    fireball = get_default_ruleset().get_spell("fireball")
+    homebrew = fireball.model_copy(
+        deep=True, update={"slug": "hb-fireball", "foundry_uuid": "custom:hb-fireball"}
+    )
+    # This shadowed record collides with homebrew, but is absent from the final
+    # effective corpus. Existing explicit same-slug overlay behavior is retained.
+    hidden = fireball.model_copy(deep=True, update={"foundry_uuid": homebrew.foundry_uuid})
+    source = OverlayAssetLoader(
+        base=MemoryAssetLoader(spells=[fireball]),
+        overlay=MemoryAssetLoader(spells=[hidden, homebrew]),
+    )
+    fixed = freeze_ruleset(source)
+    assert fixed.get_spell("fireball") == fireball
+    assert fixed.get_spell_by_uuid(fireball.foundry_uuid) == fireball
+    assert fixed.get_spell_by_uuid(homebrew.foundry_uuid) == homebrew
 
 
 def _hb_weapon(slug: str = "hb-frost-brand") -> Weapon:

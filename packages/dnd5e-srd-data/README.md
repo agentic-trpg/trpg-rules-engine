@@ -27,6 +27,13 @@ built from the captured spells. Bundled materialization temporarily caches parse
 models so typed item validation reads/parses each JSON only once. The ordinary live
 loader's behavior is unchanged.
 
+Different effective spell slugs must not share a nonempty `foundry_uuid`. Snapshot
+construction rejects the complete dataset before publishing its data or index,
+with an error naming the UUID and both conflicting slugs. Empty UUIDs remain legal
+and unindexed. The check applies after explicit source overrides, and runs only at
+construction. `freeze_ruleset` preserves its `RulesetBindingError` error contract;
+correct the source and construct a new dataset to retry.
+
 For engine execution, prefer `dnd5e_engine.evaluation_ruleset.freeze_ruleset(source)`:
 it adds the verified three-field `RulesetBinding` and constant-work verification.
 Keep the returned loader and pass that same instance to execution; hashing a

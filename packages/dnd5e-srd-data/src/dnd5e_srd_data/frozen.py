@@ -69,6 +69,23 @@ def _capture(source: AssetLoader) -> Mapping[Category, Mapping[str, BaseModel]]:
     return MappingProxyType(corpus)
 
 
+def _spell_uuid_index(spells: Mapping[str, BaseModel]) -> dict[str, str]:
+    """Reject ambiguous identities before publishing any captured data or index."""
+    index: dict[str, str] = {}
+    for slug, spell in spells.items():
+        if not isinstance(spell, Spell) or not spell.foundry_uuid:
+            continue
+        uuid = spell.foundry_uuid
+        previous = index.get(uuid)
+        if previous is not None:
+            raise ValueError(
+                f"duplicate effective spell UUID {uuid!r}: "
+                f"conflicting slugs {previous!r} and {slug!r}"
+            )
+        index[uuid] = slug
+    return index
+
+
 class FrozenAssetLoader:
     """Materialize one effective corpus, retaining no reference to its source.
 
@@ -86,11 +103,7 @@ class FrozenAssetLoader:
         if hasattr(self, "_FrozenAssetLoader__corpus"):
             raise AttributeError("fixed datasets cannot be initialized again")
         corpus = _capture(source)
-        uuids = {
-            spell.foundry_uuid: slug
-            for slug, spell in corpus["spells"].items()
-            if isinstance(spell, Spell) and spell.foundry_uuid
-        }
+        uuids = _spell_uuid_index(corpus["spells"])
         object.__setattr__(self, "_FrozenAssetLoader__corpus", corpus)
         object.__setattr__(self, "_FrozenAssetLoader__spell_uuids", MappingProxyType(uuids))
 

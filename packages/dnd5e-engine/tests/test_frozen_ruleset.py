@@ -132,6 +132,54 @@ def test_live_loader_cannot_claim_a_trusted_binding():
         rules.verify_ruleset(source.binding, source)
 
 
+def test_uuid_collision_keeps_binding_error_contract_and_never_computes_identity(monkeypatch):
+    spell = rules.get_default_ruleset().get_spell("fireball")
+    homebrew = spell.model_copy(deep=True, update={"slug": "hb-fireball"})
+    source = MemoryAssetLoader(spells=[spell, homebrew])
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("invalid UUID corpus must fail before computing a trusted binding")
+
+    monkeypatch.setattr(rules, "_compute_binding", forbidden)
+    with pytest.raises(rules.RulesetBindingError) as caught:
+        rules.freeze_ruleset(source)
+    for identity in (spell.foundry_uuid, spell.slug, homebrew.slug):
+        assert identity in str(caught.value)
+
+
+def test_default_uuid_collision_does_not_publish_and_retry_after_correction_succeeds(monkeypatch):
+    existing = rules.get_default_ruleset()
+    existing_binding = existing.binding
+    spell = existing.get_spell("fireball")
+    homebrew = spell.model_copy(deep=True, update={"slug": "hb-fireball"})
+    source = MemoryAssetLoader(spells=[spell, homebrew])
+    monkeypatch.setattr(rules, "_DEFAULT_RULESET", None)
+    monkeypatch.setattr(rules, "BundledAssetLoader", lambda: source)
+    original_compute = rules._compute_binding
+    computed = []
+
+    def compute(loader):
+        computed.append(loader)
+        return original_compute(loader)
+
+    monkeypatch.setattr(rules, "_compute_binding", compute)
+    for _ in range(2):
+        with pytest.raises(rules.RulesetBindingError):
+            rules.get_default_ruleset()
+        assert rules._DEFAULT_RULESET is None
+        assert computed == []
+        assert existing.binding == existing_binding
+        assert existing.get_spell_by_uuid(spell.foundry_uuid) == spell
+    homebrew.foundry_uuid = "custom:corrected-fireball"
+    fixed = rules.get_default_ruleset()
+    assert rules.get_default_ruleset() is fixed
+    assert computed == [fixed]
+    assert fixed.get_spell_by_uuid(spell.foundry_uuid) == spell
+    assert fixed.get_spell_by_uuid(homebrew.foundry_uuid) == homebrew
+    assert existing.get_spell("hb-fireball") is None
+    assert existing.binding == existing_binding
+
+
 def test_bundled_materialization_reads_parses_once_and_uuid_uses_same_corpus(monkeypatch):
     # A small real JSON corpus gives exact counts independent of corpus growth.
     from pathlib import Path

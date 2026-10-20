@@ -173,3 +173,8 @@ passed. The next real CI run verifies the fix from another clean checkout.
 Runtime source, canonical data, existing test assertions, lockfile, coverage floors,
 provenance and release workflows are unchanged. The lifecycle test's input location
 is the sole change to an existing test file; its validation is strengthened.
+
+
+## Architecture and contract checks
+
+The [current cross-repository baseline](stateless-evaluation.md#cross-repository-contract-alignment-2026-10-20) separates implemented DTOs and SM adoption from target proposals. Before public-contract changes, inspect the consumer pin, required fields/statuses, Snapshot/Delta adoption and corresponding tests; then choose the existing gate above. Shared audit/query/finalize rules live in sibling Module Contracts §2.3 and §6.5–§6.6, not in a second validation policy here. Scope optimizations preserve full relevant mechanical closure and add deterministic growth counters. Documentation-only alignment uses the existing strict MkDocs path and no unrelated runtime suites.

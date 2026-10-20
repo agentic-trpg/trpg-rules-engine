@@ -110,3 +110,12 @@ do not claim completion or green checks that did not run.
 After commit/push report the branch, commit SHA, executed validation and timings,
 push result, and remaining issues. Distinguish local evidence from GitHub Actions results.
 The user and ChatGPT review the branch; the user decides whether and when to merge.
+
+
+## Current contracts and consumer compatibility
+
+- Check the Current Implemented Interface separately from the Target Architecture Contract and migration gap. Module Contracts §1.6 is the dated source index; verify the actual repository SHA and DTOs before using it. Never infer current API version, required fields, operation support or statuses from a `[PROPOSED]` example such as module-contracts/0.2.
+- Public-contract changes must check SM's exact Engine/SRD dependency pin and real consumer validators/adoption whitelist; matching Schema shapes alone do not establish supported end-to-end behavior. Review whether the top-level architecture DOC and local Progress need synchronization after implementation.
+- Full-audit/query/finalize policy is maintained once in Module Contracts §2.3 and §6.5–§6.6. Ordinary rules operations should not unnecessarily enumerate the full asset corpus or unrelated entities. Retain complete relevant mechanical dependency validation, Snapshot, Schema, RNG and RulesetBinding checks; performance never authorizes removing them.
+- For scoped optimizations, test fixed target work against growing unrelated data using deterministic read/parse/projection/scan counts. Audit cache/index validity through commit/rollback, OCC, failure/retry and lifecycle changes; keep authorization and fail-closed behavior on hits.
+- Record remote/main baseline and existing branches before new work. Use an isolated worktree for overlapping dirty work; never reset, stash, delete branches or overwrite unrelated files without explicit task authorization. Resolve mandatory sibling-doc paths against the actual parallel workspace when using worktrees.

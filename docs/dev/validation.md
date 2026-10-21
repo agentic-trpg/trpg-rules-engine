@@ -1,5 +1,11 @@
 # Validation and CI
 
+## Session memory consumer checks — 2026-10-21
+
+This batch changes documentation only. Use the existing scope planner with the exact starting SHA and the docs-only strict MkDocs path; do not run unrelated game suites. Local documentation checks are not runtime acceptance or GitHub Actions evidence.
+
+For future consumer integration, follow [the fixed-input contract](stateless-evaluation.md#session-ram-consumer-architecture-2026-10-21). Verify old requests/Snapshots and history remain unchanged after SM RAM publication; candidate inputs include candidate changes; the complete mechanical closure, Schema, FrozenRuleset binding and RNG validation remain. Count Snapshot/request construction and repeated SQL/JSON preparation separately. SM must validate SQL/current RAM/old references/indexes/caches/recovery, all write paths, unknown commits, post-commit publication failure and response loss. RE supplies no independent world recovery or shared mutable state. These are planned checks **[NOT IMPLEMENTED as complete cross-repository acceptance]**, not results of this docs build; current public ABI is unchanged.
+
 The root `AGENTS.md` defines the default development and Git workflow. More explicit
 instructions in a task override its defaults. Normal batches use scoped validation;
 full validation is reserved for explicit requests, freezes and releases.

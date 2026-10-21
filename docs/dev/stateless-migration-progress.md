@@ -1,5 +1,11 @@
 # Stateful → Stateless migration progress
 
+## 2026-10-21 consumer architecture decision — docs only
+
+Architecture Decision Status **[DECIDED]**; complete SM Session memory integration **[NOT IMPLEMENTED]**; runtime Acceptance Status **not executed**. The consumer now targets fixed-version inputs assembled from SM's unified RAM facts (isolated candidate inputs when appropriate), incremental SQLite commit then RAM publication by SM. RE remains stateless and never owns, reads from SQL or restores that world. See [the input/ownership contract](stateless-evaluation.md#session-ram-consumer-architecture-2026-10-21).
+
+Source checked at RE `34ce8e764c1a8b1d5be2c4465a013e322fdbbc5a`, SM `d6be5a99b12fefcf8cfc57fdebb81493c1ac4d34`; SM still pins Engine/SRD `a011eba3ea2226e22d8081294ee38d3ec193b325`. Current request/result `/24`, Snapshot `/17`, Availability `/13`, evaluator `/37`, stage `/2`, FrozenRuleset and supported operation subsets are unchanged. No new ABI, runtime integration, Legacy exit completion, memory performance or recovery support is claimed. Earlier batch results below retain their original dates and scope.
+
 R9 baseline: `fix/re-eval-contract-stabilization@33cb12fb657b8fa511f297ece62e57cdb8c9a46d`.
 The goal is to replace the existing Stateful Rule Engine with one stateless evaluator.
 **Full conversion is incomplete.** R10 starts at R9 main

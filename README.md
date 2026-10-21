@@ -13,6 +13,10 @@ Developer batches follow [AGENTS.md](AGENTS.md): use `make check-fast` normally,
 `make check-integration` for public or high-risk changes, and reserve `make check`
 for full validation. See [validation and CI](docs/dev/validation.md) for scope selection.
 
+## Agentic TRPG Session memory target (2026-10-21)
+
+**[DECIDED]**, complete SM RAM integration **[NOT IMPLEMENTED]**, runtime acceptance **not executed**. RE consumes fixed-version necessary inputs built from SM's consistent RAM scope, returns uncommitted typed changes/events/RNG, and never reads SM SQL or mutates a shared world. SM owns incremental SQLite commit, subsequent RAM publication, receipts and recovery. This preserves Stateless RE, FrozenRuleset, bindings and all public DTO/Schema versions; it does not restore Legacy Stateful Engine. See [the consumer contract and exact source baseline](docs/dev/stateless-evaluation.md#session-ram-consumer-architecture-2026-10-21) and [progress](docs/dev/stateless-migration-progress.md).
+
 ## What is Nat20
 
 Nat20 is a `uv` workspace of two complementary packages:

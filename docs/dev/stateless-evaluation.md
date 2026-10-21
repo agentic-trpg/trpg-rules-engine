@@ -1,5 +1,17 @@
 # Stateless rule evaluation: current local contract
 
+## Session RAM consumer architecture (2026-10-21)
+
+Architecture Decision Status **[DECIDED]**. Implementation Status: the complete SM Session RAM integration is **[NOT IMPLEMENTED]**; RE already has bounded stateless evaluation and fixed ruleset reuse, while full Legacy conversion remains incomplete. Acceptance Status: **no runtime, fault or concurrency acceptance executed in this documentation batch**.
+
+The [paired Module Contracts §2.3 / §4 / §6](https://github.com/agentic-trpg/agentic-trpg/blob/docs/session-memory-runtime/docs/MODULE_CONTRACTS.md) is authoritative; the link targets the new documentation branch, not a merged main change. SM supplies fixed-version inputs covering the complete necessary mechanical dependency closure from its consistent Session RAM scope. Loaded valid facts must not be re-read/reassembled from SQL just to build a request or Snapshot, or to prove each memory read valid. Cold persisted dependencies must match that read version; candidate-stage checks use an isolated candidate scope. Old RE/NPC/history inputs must not change when the world advances.
+
+RE does not read SM's database, mutate shared runtime objects, own a Session lifecycle or restore an independent cross-request world/combat state. In-process calls, read-only sharing or structure reuse must not leak mutable world references. Current evaluate() deep-copies/revalidates the request; any future reuse must prove equivalent isolation and complete typed/Schema/binding/RNG validation rather than assuming arbitrary DTOs are immutable.
+
+RE returns **uncommitted typed result, Delta, events and RNG transition**. SM revalidates authorization, versions/original values, task/preconditions where applicable, bindings and domain invariants, then incrementally commits all affected facts/RNG/Receipt/Outbox/reliable work in one short SQLite transaction and publishes the matching RAM state before normal success/current projections. Unknown commit reconciles the original durable receipt; committed SQL with failed RAM publication pauses SM for rebuild. These responsibilities do not add a RE commit API or restore Legacy Stateful Engine.
+
+FrozenRuleset reuse, the three-field binding and current public versions remain unchanged: Evaluation `/24`, Snapshot `/17`, Availability `/13`, evaluator `/37`, stage facts `/2` (Openable wrapper `/1`). Concrete SM memory structures/accessors, fine-grained versioning and shared ABI changes remain **OPEN**; this consumer architecture changes no DTO/Schema. Future 5–6-player load is outside the current single-player MVP and requires separate measurements.
+
 This is a migration of the existing Rule Engine toward one stateless evaluator.
 State Machine owns every authoritative runtime fact and the final transaction.
 The conversion is incomplete; see [migration progress and the finite roadmap](stateless-migration-progress.md)

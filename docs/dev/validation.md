@@ -178,3 +178,43 @@ is the sole change to an existing test file; its validation is strengthened.
 ## Architecture and contract checks
 
 The [current cross-repository baseline](stateless-evaluation.md#cross-repository-contract-alignment-2026-10-20) separates implemented DTOs and SM adoption from target proposals. Before public-contract changes, inspect the consumer pin, required fields/statuses, Snapshot/Delta adoption and corresponding tests; then choose the existing gate above. Shared audit/query/finalize rules live in sibling Module Contracts §2.3 and §6.5–§6.6, not in a second validation policy here. Scope optimizations preserve full relevant mechanical closure and add deterministic growth counters. Documentation-only alignment uses the existing strict MkDocs path and no unrelated runtime suites.
+
+## Runtime reuse and source research (2026-10-21)
+
+Before design or implementation, read the project contract and relevant domain docs.
+The [unified references](https://github.com/agentic-trpg/agentic-trpg/blob/docs/runtime-reuse-and-references/docs/REFERENCES.md)
+organize rule originals, Package setting/adventure evidence and engineering research.
+The [reuse contract in MC §2.3](https://github.com/agentic-trpg/agentic-trpg/blob/docs/runtime-reuse-and-references/docs/MODULE_CONTRACTS.md#23-运行时数据复用派生-snapshot-与版本有效性-decided)
+is the single shared policy for on-demand scope, dependency validity, incremental
+update prerequisites, read/transaction isolation, bounded disposable caches and checks
+on hits. Persistence and instance ownership follow MC §2.4; ruleset identity follows
+§4.3. These links target the accompanying unmerged documentation branch; in the logical
+workspace use sibling `../agentic-trpg/docs/`. They do not claim main already contains
+this update.
+
+For rule behavior, consult relevant passages of the bound edition; the project baseline
+remains PHB 2024, DMG 2024, MM 2025 and SRD 5.2.1. This does not change any dataset or
+RulesetBinding. For lore, verify the Package's adopted setting, era and adventure edition;
+using D&D rules does not select a setting. Distinguish official text, approved project
+adaptations, engineering choices, target designs and supported implementation. Report
+conflicts or inaccessible passages; memory and inference are not verified evidence.
+External materials are development references, not a new runtime online lookup dependency.
+
+**Source check, not new runtime acceptance:** starting RE main/origin/main was
+`f18e0ad0d0bb6641efb050b51bf919dd41a8631f`. Its
+[evaluation_ruleset.py](https://github.com/agentic-trpg/trpg-rules-engine/blob/f18e0ad0d0bb6641efb050b51bf919dd41a8631f/packages/dnd5e-engine/src/dnd5e_engine/evaluation_ruleset.py)
+freezes detached effective inputs once, compares the exact FrozenRuleset identity and
+publishes the default frozen dataset only after successful construction. Mutable/custom
+loaders retain full digest verification. Its
+[frozen.py](https://github.com/agentic-trpg/trpg-rules-engine/blob/f18e0ad0d0bb6641efb050b51bf919dd41a8631f/packages/dnd5e-srd-data/src/dnd5e_srd_data/frozen.py)
+prepares the UUID index before publication and returns detached copies to callers.
+This is prepared-input/index reuse, not a claim that all evaluated results are cached.
+Check the [capability matrix](../capabilities.md), exact source/tests and the actual
+consumer pin separately before making a behavior claim. This documentation batch runs
+no business or performance tests and does not refresh earlier acceptance results.
+
+SM's `refactor/scoped-runtime-validation@4341f69cbb560edd9c9c1b1bd907ed6c599c0ed0`
+is unmerged against main `7927a382738fc97e2420967c3e1c6280c717d1fb`; its
+operation-local ContainmentState.weights is not the cross-operation memory-cache target.
+Its Engine/SRD pin remains `a011eba3ea2226e22d8081294ee38d3ec193b325`, distinct from
+this RE checkout. The consumer and existing protections are not changed by this batch.

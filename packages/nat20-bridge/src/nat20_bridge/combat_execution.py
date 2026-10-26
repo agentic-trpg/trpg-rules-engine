@@ -48,6 +48,13 @@ async def _execute(
     action: Callable[[], Awaitable[dict[str, Any]]],
     drain: Callable[[], Awaitable[None]],
 ) -> JSONResponse:
+    """Serialize one Bridge mutation and retain its retry outcome under the combat lock.
+
+    Matching request IDs replay the stored response; conflicting fingerprints return
+    not_executed. Compare execution/event progress to classify failures, retain a
+    fallback response before draining events, and reconcile the actual new combat ID for
+    start requests. These receipts are Bridge runtime state, not SM SQL commits.
+    """
     fingerprint = hashlib.sha256(
         json.dumps([operation, payload], sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
@@ -121,6 +128,7 @@ async def _execute(
 def _primary_failure(events: list[dict[str, Any]], actor_id: str | None) -> dict[str, Any] | None:
     # A pre-execution refusal is the actor's leading result, before its
     # IntentSubmitted. Later reaction/child failures remain committed events.
+    """Select the primary failure from the attempted combat execution."""
     first = next((event for event in events if event.get("actor_id") == actor_id), None)
     return first if first and first["type"].endswith("_failed") else None
 
@@ -128,6 +136,7 @@ def _primary_failure(events: list[dict[str, Any]], actor_id: str | None) -> dict
 async def _invoke(
     action: Callable[[], Awaitable[dict[str, Any]]], committed: Callable[[], bool]
 ) -> tuple[int, str, Any, dict[str, Any]]:
+    """Invoke the operation and reconcile its collected events/error outcome."""
     try:
         return 200, "committed", None, await action()
     except IntentRejectedError as error:

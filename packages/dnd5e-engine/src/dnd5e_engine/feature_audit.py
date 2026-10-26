@@ -36,6 +36,8 @@ from dnd5e_engine.types.combat import Combatant
 
 @dataclass(frozen=True)
 class FeatureAuditRow:
+    """Report inspected feature support and the evidence for its classification."""
+
     slug: str
     activity_id: str
     owner: str
@@ -99,6 +101,7 @@ def reachable_actors(loader: AssetLoader) -> dict[str, Combatant]:
 
 
 def audit_context(actor: Combatant, slug: str, loader: AssetLoader) -> ActivityResolutionContext:
+    """Build a draw-free activity context for auditing one reachable feature."""
     owners = feature_repertoire(actor, loader)
     owner = next(o for o in owners if o.slug == slug)
     classes = dict(actor.classes) or (
@@ -128,6 +131,7 @@ def audit_context(actor: Combatant, slug: str, loader: AssetLoader) -> ActivityR
 
 
 def audit_features(loader: AssetLoader) -> tuple[FeatureAuditRow, ...]:
+    """Inspect reachable feature activities and return their support classifications."""
     from dataclasses import replace
 
     rows = []
@@ -201,6 +205,7 @@ def audit_features(loader: AssetLoader) -> tuple[FeatureAuditRow, ...]:
 
 
 def audit_document(loader: AssetLoader) -> dict[str, object]:
+    """Assemble the audit report from the inspected asset corpus."""
     rows = audit_features(loader)
     return {
         "counts": dict(sorted(Counter(row.classification for row in rows).items())),
@@ -210,6 +215,7 @@ def audit_document(loader: AssetLoader) -> dict[str, object]:
 
 
 def main() -> None:
+    """Parse command-line options and run this module's command entrypoint."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()

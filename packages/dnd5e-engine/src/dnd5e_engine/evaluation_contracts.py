@@ -29,6 +29,8 @@ EvaluationVersion = Literal["engine-evaluation/24"]
 
 
 class ItemUsePayload(EvaluationModel):
+    """Select an owned inventory instance, activity and target for item evaluation."""
+
     kind: Literal["combat.item"]
     instance_id: Annotated[str, Field(min_length=1)]
     activity_id: Annotated[str, Field(min_length=1)]
@@ -67,6 +69,8 @@ class SavePayload(EvaluationModel):
 
 
 class RestPayload(EvaluationModel):
+    """Describe the requested rest and explicit owned hit-dice spends."""
+
     kind: Literal["rules.rest"]
     target_id: Annotated[str, Field(min_length=1)]
     rest_type: Literal["short", "long"]
@@ -74,6 +78,7 @@ class RestPayload(EvaluationModel):
 
     @model_validator(mode="after")
     def unique_spend(self) -> Self:
+        """Reject duplicate resource spends within the request."""
         if len({s.pool_id for s in self.hit_dice}) != len(self.hit_dice):
             raise ValueError("a rest must name each spent Hit Dice pool once")
         return self
@@ -95,6 +100,8 @@ class CombatIntentPayload(PlayerIntent):
 
 
 class RuleEvaluationRequest(EvaluationModel):
+    """Bind a typed operation to fixed mechanical inputs, rules identity and explicit RNG."""
+
     schema_version: EvaluationVersion
     session_id: Annotated[str, Field(min_length=1)]
     command_id: Annotated[str, Field(min_length=1)]
@@ -117,6 +124,7 @@ class RuleEvaluationRequest(EvaluationModel):
     @field_validator("payload", mode="before")
     @classmethod
     def strict_check_payload(cls, value: object, info: ValidationInfo) -> object:
+        """Restore and validate the operation's closed check payload."""
         if info.mode == "json" and info.data.get("operation_kind") == "combat.intent":
             return CombatIntentPayload.model_validate_json(to_json(value))
         if info.data.get("operation_kind") == "rules.rest":
@@ -136,6 +144,7 @@ class RuleEvaluationRequest(EvaluationModel):
 
     @model_validator(mode="after")
     def operation_payload(self) -> Self:
+        """Require the payload type and shape matching the operation tag."""
         if self.session_id != self.state_snapshot.session_id:
             raise ValueError("request and snapshot session identities differ")
         if self.operation_kind == "rules.rest":
@@ -170,23 +179,30 @@ class RuleEvaluationRequest(EvaluationModel):
 
 
 class ReadVersion(EvaluationModel):
+    """Identify the fixed world version consumed by evaluation."""
+
     kind: Literal["world", "actor", "combat", "scene", "effects", "history"]
     ref: Annotated[str, Field(min_length=1)]
     version: Annotated[int, Field(ge=0)]
 
 
 class RuleError(EvaluationModel):
+    """Carry a structured reason for a rejected or unsupported rules operation."""
+
     code: Annotated[str, Field(min_length=1)]
     reason: Annotated[str, Field(min_length=1)]
 
 
 class PreflightChoice(EvaluationModel):
+    """Describe a required explicit choice before mechanical resolution can proceed."""
+
     kind: Literal["attack.weapon"]
     actor_id: Annotated[str, Field(min_length=1)]
     allowed_weapon_ids: Annotated[tuple[str, ...], Field(min_length=1)]
 
     @model_validator(mode="after")
     def unique_options(self) -> Self:
+        """Reject duplicate option identities."""
         if any(not option for option in self.allowed_weapon_ids) or len(
             set(self.allowed_weapon_ids)
         ) != len(self.allowed_weapon_ids):
@@ -198,12 +214,16 @@ ProposedEvents = tuple[CombatEvent, ...]
 
 
 class CheckAdjudicationChoice(EvaluationModel):
+    """Request missing check adjudication fields without drawing RNG."""
+
     kind: Literal["check.adjudication"]
     actor_id: Annotated[str, Field(min_length=1)]
     required_fields: tuple[Literal["dc"]]
 
 
 class RuleEvaluationResult(EvaluationModel):
+    """Return uncommitted Delta/events/RNG and verify their association with the request."""
+
     schema_version: EvaluationVersion
     session_id: Annotated[str, Field(min_length=1)]
     command_id: Annotated[str, Field(min_length=1)]
@@ -221,6 +241,7 @@ class RuleEvaluationResult(EvaluationModel):
     @field_validator("proposed_events", mode="before")
     @classmethod
     def closed_event_fields(cls, value: object) -> object:
+        """Reject event payload fields outside the declared event model."""
         if isinstance(value, (list, tuple)):
             kinds = {
                 model.model_fields["type"].default: set(model.model_fields)
@@ -234,6 +255,7 @@ class RuleEvaluationResult(EvaluationModel):
 
     @model_validator(mode="after")
     def status_fields(self) -> Self:
+        """Require result fields to agree with accepted, choice or refusal status."""
         if self.status == "accepted":
             if self.state_delta is None or self.rng_transition is None or self.stage_facts is None:
                 raise ValueError("accepted requires delta, RNG transition and stage coverage")
@@ -263,6 +285,7 @@ class RuleEvaluationResult(EvaluationModel):
         return self
 
     def verify_request(self, request: RuleEvaluationRequest) -> None:
+        """Validate result association and invariants against its original fixed request."""
         if (
             self.schema_version,
             self.session_id,

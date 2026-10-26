@@ -1,3 +1,8 @@
+"""Bridge transport configuration, effective content references and legacy combat handles.
+
+This process-local host state does not persist authoritative SM world facts.
+"""
+
 from __future__ import annotations
 
 import asyncio
@@ -16,6 +21,10 @@ if TYPE_CHECKING:
 
 @dataclass
 class BridgeState:
+    """Own Bridge transport runtime handles and content configuration, not SM world
+    authority.
+    """
+
     homebrew_path: Path
     instance_id: str = field(default_factory=lambda: uuid4().hex)
     # Monotonically increasing counter for combat_id allocation — never

@@ -24,6 +24,13 @@ from dnd5e_engine.spell_execution import (
 
 
 def audit_document(loader: AssetLoader) -> dict[str, object]:
+    """Build an explicit corpus support report from typed spell review and admission.
+
+    Enumerate the selected loader's spells and record reviewed execution/delivery
+    support and limiting reasons. This is offline static contract evidence, not proof
+    that every asset has executed successfully or permission to scan the corpus on
+    ordinary actions.
+    """
     rows = []
     seen = set()
     legacy_inert = legacy_inert_concentration = 0
@@ -225,6 +232,7 @@ def audit_document(loader: AssetLoader) -> dict[str, object]:
 
 
 def main() -> None:
+    """Parse command-line options and run this module's command entrypoint."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()

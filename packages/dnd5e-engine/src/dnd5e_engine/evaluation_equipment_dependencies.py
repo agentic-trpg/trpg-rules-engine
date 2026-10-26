@@ -21,6 +21,7 @@ def equipped_dependencies(
     canonical: AssetLoader,
 ) -> str | None:
     # Reviewed identities, never a rule inferred from item prose.
+    """Check effective equipped item dependencies against the bound rules assets."""
     levels = actor.classes or (
         {actor.class_slug: actor.character_level} if actor.class_slug else {}
     )
@@ -111,6 +112,7 @@ def wizard_pouch_dependencies(
     loader: AssetLoader,
     canonical: AssetLoader,
 ) -> str | None:
+    """Check the reviewed wizard material-pouch dependency profile."""
     entries = [e for e in snapshot.inventory_state.entries if e.owner_id == actor.entity_id]
     item = loader.get_item("component-pouch")
     if (

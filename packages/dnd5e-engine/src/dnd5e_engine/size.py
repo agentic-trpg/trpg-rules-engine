@@ -11,23 +11,28 @@ _FOUNDRY_SIZES = dict(zip(("tiny", "sm", "med", "lg", "huge", "grg"), _SIZES, st
 
 
 def size_rank(size: CreatureSize) -> int:
+    """Return the ordered rank of the supplied creature size."""
     return _SIZES.index(size)
 
 
 def one_size_larger(size: CreatureSize) -> CreatureSize | None:
+    """Return the next size category, bounded by the supported size range."""
     rank = size_rank(size) + 1
     return _SIZES[rank] if rank < len(_SIZES) else None
 
 
 def two_or_more_sizes_apart(first: CreatureSize, second: CreatureSize) -> bool:
+    """Check whether creature sizes differ by at least two categories."""
     return abs(size_rank(first) - size_rank(second)) >= 2
 
 
 def target_at_most_one_size_larger(attacker: CreatureSize, target: CreatureSize) -> bool:
+    """Check the relative size limit for the target."""
     return size_rank(target) <= size_rank(attacker) + 1
 
 
 def size_at_most(actual: CreatureSize, maximum: CreatureSize) -> bool:
+    """Check whether the supplied size is within the maximum category."""
     return size_rank(actual) <= size_rank(maximum)
 
 
@@ -51,6 +56,7 @@ def species_size_options(species: Species) -> tuple[CreatureSize, ...]:
 
 
 def resolve_species_size(species: Species, choice: CreatureSize | None) -> CreatureSize:
+    """Resolve a valid explicit species size choice or its fixed size."""
     options = species_size_options(species)
     if choice is None:
         if len(options) != 1:

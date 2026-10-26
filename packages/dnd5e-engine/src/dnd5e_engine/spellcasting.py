@@ -99,6 +99,7 @@ _DIVISOR: Final[dict[str, tuple[int, bool]]] = {
 
 
 def _check_level(level: int) -> None:
+    """Validate the supplied spell/cast level relationship."""
     if not 1 <= level <= 20:
         raise ValueError(f"level must be within 1..20, got {level}")
 

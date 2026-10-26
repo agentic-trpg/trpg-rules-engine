@@ -46,22 +46,30 @@ EffectIdentity = tuple[str, str, str]
 
 @dataclass(frozen=True)
 class StationaryArea:
+    """Anchor persistent area geometry to a fixed origin."""
+
     origin: str
 
 
 @dataclass(frozen=True)
 class FollowSourceEmanation:
+    """Anchor persistent area geometry to its source actor."""
+
     source_entity_id: str
 
 
 @dataclass(frozen=True)
 class FollowObjectEmanation:
+    """Anchor persistent area geometry to a combat object."""
+
     object_id: str
     includes_origin_object: bool = False
 
 
 @dataclass
 class PersistentArea:
+    """Retain one active area's geometry, source and trigger/lifecycle mechanics."""
+
     id: str
     sequence: int
     source_id: str
@@ -91,11 +99,13 @@ class PersistentArea:
 
     @property
     def source_entity_id(self) -> str:
+        """Read the entity anchoring the persistent area's source."""
         return self.caster.entity_id
 
     def origin(
         self, positions: Mapping[str, str], objects: Mapping[str, CombatObject] | None = None
     ) -> str | None:
+        """Resolve the area's current origin from its fixed or following anchor."""
         if isinstance(self.geometry, FollowObjectEmanation):
             from dnd5e_engine.combat_objects import object_position
 
@@ -111,12 +121,14 @@ class PersistentArea:
         positions: Mapping[str, str],
         objects: Mapping[str, CombatObject] | None = None,
     ) -> frozenset[str]:
+        """Resolve the area's currently affected geometry cells."""
         origin = self.origin(positions, objects)
         return (
             area_cells(topology, self.template, origin, None) if origin is not None else frozenset()
         )
 
     def contains(self, live: _LiveCombat, entity_id: str) -> bool:
+        """Check whether the entity currently occupies the area's geometry."""
         return entity_id not in self.excluded_ids and live.actor_zone.get(entity_id) in self.cells(
             live.topology, live.actor_zone, live.combat_objects.objects
         )
@@ -124,6 +136,8 @@ class PersistentArea:
 
 @dataclass
 class PersistentAreaState:
+    """Manage working persistent areas inside the enclosing combat state."""
+
     areas: list[PersistentArea] = field(default_factory=list)
     next_sequence: int = 0
     # Area riders ending at a target's next turn start live independently of
@@ -131,6 +145,7 @@ class PersistentAreaState:
     next_turn_start_effects: dict[EffectIdentity, int] = field(default_factory=dict)
 
     def concentration_ended(self, live: _LiveCombat, caster_id: str, *, duration: bool) -> None:
+        """Remove areas linked to an ended concentration source."""
         for area in tuple(self.areas):
             if area.concentration_identity is not None and area.source_entity_id == caster_id:
                 self.expire(live, area, "duration" if duration else "concentration_drop")
@@ -150,6 +165,9 @@ class PersistentAreaState:
         *,
         cause_id: str | None = None,
     ) -> None:
+        """Remove the expired area and reconcile its associated environment/lifecycle
+        state.
+        """
         from dnd5e_engine import orchestrator as orch
 
         if area not in self.areas:
@@ -171,6 +189,7 @@ class PersistentAreaState:
         )
 
     def observe(self, live: _LiveCombat, event: CombatEvent) -> None:
+        """Observe mechanical events relevant to the enclosing lifecycle state."""
         for area in tuple(self.areas):
             if isinstance(event, (Death, CombatantLeft)):
                 target_id = event.target_id if isinstance(event, Death) else event.entity_id
@@ -223,6 +242,7 @@ def register_area(
     intent: PlayerIntent | None = None,
     origin: str | None = None,
 ) -> None:
+    """Validate input consistency; reject object source disappeared during execution."""
     from dnd5e_engine import orchestrator as orch
 
     spec = activity.persistent_area
@@ -370,6 +390,7 @@ def resolve_area_appearances(live: _LiveCombat, caster_id: str) -> None:
 
 
 def _duration_rounds(spell: Spell | None) -> int | None:
+    """Convert supported spell duration units to rounds, preserving unknown duration."""
     if spell is None or spell.duration.value is None:
         return None
     factor = {"round": 1, "minute": 10, "hour": 600, "day": 14400}.get(spell.duration.units)
@@ -377,6 +398,7 @@ def _duration_rounds(spell: Spell | None) -> int | None:
 
 
 def area_speed(live: _LiveCombat, entity_id: str, speed: int) -> int:
+    """Apply persistent area movement locks and the strongest speed multiplier."""
     if any(identity[0] == entity_id for identity in live.persistent_areas.next_turn_start_effects):
         return 0
     # Identical overlapping speed effects do not multiply repeatedly.
@@ -418,16 +440,19 @@ def after_movement_step(live: _LiveCombat, mover_id: str, from_cell: str) -> Non
 
 
 def _trigger(live: _LiveCombat, area: PersistentArea, target_id: str, trigger: AreaTrigger) -> None:
+    """Dispatch one target to the shared persistent area trigger path."""
     trigger_targets(live, area, [target_id], trigger)
 
 
 def release_shape_locks(live: _LiveCombat, area: PersistentArea) -> None:
+    """Release shape locks for entities no longer within the area."""
     area.shape_locked_ids.intersection_update(
         entity_id for entity_id in tuple(area.shape_locked_ids) if area.contains(live, entity_id)
     )
 
 
 def shapechange_blocked(live: _LiveCombat, entity_id: str) -> bool:
+    """Return whether an active area currently shape-locks the entity."""
     return any(entity_id in area.shape_locked_ids for area in live.persistent_areas.areas)
 
 
@@ -451,6 +476,7 @@ def trigger_targets(
 def _eligible_trigger(
     live: _LiveCombat, area: PersistentArea, target_id: str, trigger: AreaTrigger
 ) -> bool:
+    """Check target, stacking and trigger lifecycle prerequisites for the area."""
     from dnd5e_engine import orchestrator as orch
 
     target = orch._find_combatant(live, target_id)
@@ -488,6 +514,7 @@ def _eligible_trigger(
 
 
 def _execute(live: _LiveCombat, area: PersistentArea, targets: Sequence[Combatant]) -> None:
+    """Resolve the enclosing area's or timed activity's admitted effects in working combat."""
     from dnd5e_engine import orchestrator as orch
     from dnd5e_engine.live_reactions import attach_reaction_hooks
     from dnd5e_engine.live_spell_delivery import fold_forced_movement_requests
@@ -505,6 +532,9 @@ def _execute(live: _LiveCombat, area: PersistentArea, targets: Sequence[Combatan
     saves: dict[str, bool] = {}
 
     def emit(event: CombatEvent) -> None:
+        """Append mechanical event evidence and fold its consequences into this candidate
+        computation.
+        """
         if isinstance(event, SaveRolled):
             saves.setdefault(event.target_id, event.succeeded)
         if isinstance(event, EffectApplied):
@@ -556,6 +586,7 @@ def _execute(live: _LiveCombat, area: PersistentArea, targets: Sequence[Combatan
     damage_reaction = ctx.damage_instance_resolved
 
     def after_damage(damage: DamageInstanceContext) -> None:
+        """Forward completed damage evidence to the area resolution context."""
         target_id = damage.target_id
         if (
             area.spec.revert_shape_on_failed_save
@@ -602,6 +633,7 @@ def before_turn_start(live: _LiveCombat, actor_id: str) -> None:
 
 
 def run_area_boundary(live: _LiveCombat, actor_id: str | None, trigger: AreaTrigger) -> None:
+    """Process matching area triggers and concentration duration at the actor boundary."""
     if actor_id is None:
         return
     for area in tuple(live.persistent_areas.areas):
@@ -619,6 +651,7 @@ def run_area_boundary(live: _LiveCombat, actor_id: str | None, trigger: AreaTrig
 
 
 def register_area_hooks(live: _LiveCombat) -> None:
+    """Register keyed environment and persistent-area boundary callbacks."""
     from dnd5e_engine.environment import expire_environment_round
 
     live.lifecycle.register(
@@ -642,6 +675,7 @@ def register_item_areas(
     ctx: ActivityResolutionContext,
     intent: PlayerIntent,
 ) -> None:
+    """Register persistent areas declared by the selected item activities."""
     for activity in activities:
         if activity.persistent_area is not None:
             register_area(live, activity, ctx, source_id=intent.item_id or "", intent=intent)

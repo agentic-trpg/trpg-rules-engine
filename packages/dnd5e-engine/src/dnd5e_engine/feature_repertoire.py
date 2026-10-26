@@ -15,6 +15,8 @@ from dnd5e_engine.types.combat import Combatant
 
 @dataclass(frozen=True)
 class FeatureOwner:
+    """Associate a feature with its owning character progression."""
+
     slug: str
     owner_slug: str
     level: int

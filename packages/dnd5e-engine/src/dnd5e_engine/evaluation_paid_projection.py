@@ -54,6 +54,7 @@ def paid_delta(
     payments: tuple[ResourceUpdate, ...],
     ledgers: tuple[SlotSpendLedgerUpdate, ...],
 ) -> StateDelta:
+    """Project payment-related changes into guarded Delta operations."""
     expected = payment_post_state(before, payments)
     if after.resource_state != expected.resource_state:
         raise EvaluationInvariantError("unrepresented payment pool change")
@@ -109,6 +110,7 @@ def paid_delta(
 
 
 def slot_ledger(snapshot: CombatSnapshot, payment: ResourceUpdate) -> SlotSpendLedgerUpdate:
+    """Project the paid spell slot into the expenditure ledger."""
     pool = payment.value
     if not isinstance(pool, SlotResource) or payment.amount != -1:
         raise EvaluationInvariantError("not a single slot payment")

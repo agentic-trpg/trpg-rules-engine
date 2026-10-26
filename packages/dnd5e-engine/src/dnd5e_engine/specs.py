@@ -31,6 +31,7 @@ class PartyMemberSpec(BaseModel):
     @field_validator("zone_id")
     @classmethod
     def _canonical_cell(cls, value: str) -> str:
+        """Normalize a cell identity while preserving an optional absent value."""
         from dnd5e_engine.spatial import cell_id, parse_cell
 
         return cell_id(*parse_cell(value)) if value else value
@@ -213,6 +214,7 @@ class PartyMemberSpec(BaseModel):
 
     @model_validator(mode="after")
     def _check_classes(self) -> PartyMemberSpec:
+        """Validate character class levels and their aggregate level relationship."""
         if not self.classes:
             return self
         if any(level < 1 for level in self.classes.values()):
@@ -238,6 +240,7 @@ class EncounterMemberSpec(BaseModel):
     @field_validator("zone_id")
     @classmethod
     def _canonical_cell(cls, value: str) -> str:
+        """Normalize a cell identity while preserving an optional absent value."""
         from dnd5e_engine.spatial import cell_id, parse_cell
 
         return cell_id(*parse_cell(value)) if value else value
@@ -366,6 +369,7 @@ class GridScene(BaseModel):
     @field_validator("blocked_cells", "difficult_terrain_cells")
     @classmethod
     def _canonical_cell_list(cls, values: list[str]) -> list[str]:
+        """Normalize each supplied cell identity."""
         from dnd5e_engine.spatial import canonical_cell_id
 
         return list(dict.fromkeys(canonical_cell_id(value) for value in values))
@@ -373,6 +377,7 @@ class GridScene(BaseModel):
     @field_validator("cover_cells", "lighting", "obscurement_cells")
     @classmethod
     def _canonical_cell_keys(cls, values: dict[str, str]) -> dict[str, str]:
+        """Normalize the keys of the cell-indexed mapping."""
         from dnd5e_engine.spatial import canonical_cell_id
 
         canonical: dict[str, str] = {}

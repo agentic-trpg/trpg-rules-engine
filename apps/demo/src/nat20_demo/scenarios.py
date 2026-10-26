@@ -68,6 +68,7 @@ class Scenario(BaseModel):
 
 
 def _goblin_ambush() -> Scenario:
+    """Build the seeded goblin scenario exercising attacks, cover and grid movement."""
     return Scenario(
         id="goblin-ambush",
         title="Goblin Ambush",
@@ -153,6 +154,7 @@ def _goblin_ambush() -> Scenario:
 
 
 def _burning_hands() -> Scenario:
+    """Build the seeded cone-spell scenario with per-target saves and slot spending."""
     return Scenario(
         id="burning-hands",
         title="Burning Hands at the Bottleneck",
@@ -242,6 +244,7 @@ def _burning_hands() -> Scenario:
 
 
 def _hold_the_line() -> Scenario:
+    """Build the seeded Hold Person scenario exercising conditions and concentration."""
     return Scenario(
         id="hold-the-line",
         title="Hold the Line",
@@ -363,6 +366,7 @@ def _hold_the_line() -> Scenario:
 
 
 def _marsh_crossing() -> Scenario:
+    """Build the seeded ranged-combat scenario with difficult terrain and cover."""
     return Scenario(
         id="marsh-crossing",
         title="Marsh Crossing",
@@ -449,6 +453,7 @@ def _marsh_crossing() -> Scenario:
 
 
 def _last_stand() -> Scenario:
+    """Build the seeded low-HP scenario exercising healing and death saves."""
     return Scenario(
         id="last-stand",
         title="Last Stand",

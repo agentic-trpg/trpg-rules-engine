@@ -14,12 +14,15 @@ from dnd5e_engine.reactions import ActiveReactionResponse
 
 
 class ShieldResponseState(EvaluationModel):
+    """Represent the reviewed Shield reaction response mechanics."""
+
     owner_id: str
     effect_identity: tuple[str, str, str]
     conditions: tuple[ReactionConditionState, ...]
     responses: tuple[ReactionResponseState, ...]
 
     def response(self) -> ActiveReactionResponse:
+        """Validate the supported reaction response profile."""
         from dnd5e_srd_data.schema.common import ReactionCondition, ReactionResponse
 
         return ActiveReactionResponse(
@@ -31,6 +34,7 @@ class ShieldResponseState(EvaluationModel):
 
 
 def response_state(response: ActiveReactionResponse) -> ShieldResponseState:
+    """Project the reaction response into the guarded Shield state representation."""
     return ShieldResponseState(
         owner_id=response.owner_id,
         effect_identity=response.effect_identity,
@@ -44,6 +48,8 @@ def response_state(response: ActiveReactionResponse) -> ShieldResponseState:
 
 
 class ShieldGraphValue(EvaluationModel):
+    """Represent the complete canonical Shield effect graph."""
+
     effect: EffectState
     lineage: ConditionLink
     response: ShieldResponseState | None
@@ -54,6 +60,7 @@ class ShieldGraphValue(EvaluationModel):
 
     @model_validator(mode="after")
     def canonical_graph(self) -> Self:
+        """Require the supplied Shield graph to match the canonical effect profile."""
         spell = get_default_ruleset().get_spell("shield")
         assert spell is not None
         effect = shield_effect(spell, self.expiry_owner_id)
@@ -74,6 +81,8 @@ class ShieldGraphValue(EvaluationModel):
 
 
 class ShieldStateTransition(EvaluationModel):
+    """Propose a guarded transition of the complete Shield component."""
+
     kind: Literal["combat.shield_state_transition"]
     combat_id: Annotated[str, Field(min_length=1)]
     owner_id: Annotated[str, Field(min_length=1)]
@@ -84,6 +93,7 @@ class ShieldStateTransition(EvaluationModel):
 
     @model_validator(mode="after")
     def closed_transition(self) -> Self:
+        """Validate the enclosing component's guarded, closed state transition."""
         if (
             not self.actor_ids
             or len(set(self.actor_ids)) != len(self.actor_ids)

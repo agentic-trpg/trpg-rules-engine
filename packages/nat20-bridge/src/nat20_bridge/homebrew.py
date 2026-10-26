@@ -39,6 +39,7 @@ class HomebrewValidationError(Exception):
 
 
 def _parse_item(raw: dict[str, Any]) -> Item | Weapon | Armor | MagicItem:
+    """Validate a homebrew item using the correct specialized item schema."""
     kind = raw.get("item_kind", "item")
     if kind == "weapon":
         return Weapon.model_validate(raw)
@@ -63,6 +64,7 @@ _PARSERS: dict[str, Any] = {
 
 
 def _normalize_slug(raw: dict[str, Any]) -> str:
+    """Normalize and validate the homebrew asset slug."""
     slug = str(raw.get("slug", ""))
     if not slug.startswith(_HB_PREFIX):
         slug = f"{_HB_PREFIX}{slug}"
@@ -73,11 +75,13 @@ class HomebrewStore:
     """Validated, disk-persisted homebrew content store."""
 
     def __init__(self, path: Path) -> None:
+        """Bind the JSON store path and load its validated homebrew entries."""
         self._path = path
         self._entries: dict[str, dict[str, Any]] = {}
         self._load()
 
     def _load(self) -> None:
+        """Read and validate persisted homebrew entries from the configured local store."""
         if not self._path.is_file():
             return
         try:
@@ -100,12 +104,14 @@ class HomebrewStore:
             self._entries[slug] = {"category": category, "raw": raw}
 
     def _persist(self) -> None:
+        """Write the current homebrew entries to the configured JSON store."""
         tmp_path = self._path.with_suffix(".tmp")
         tmp_path.parent.mkdir(parents=True, exist_ok=True)
         tmp_path.write_text(json.dumps(self._entries, indent=2), encoding="utf-8")
         os.replace(tmp_path, self._path)
 
     def add(self, category: Category, raw: dict[str, Any]) -> str:
+        """Validate/add a homebrew entry and persist the updated store."""
         parser = _PARSERS[category]
         slug = _normalize_slug(raw)
         raw = {**raw, "slug": slug}
@@ -120,6 +126,7 @@ class HomebrewStore:
         return slug
 
     def remove(self, slug: str) -> bool:
+        """Remove and persist a homebrew entry, returning False when the slug is absent."""
         if slug not in self._entries:
             return False
         del self._entries[slug]
@@ -127,9 +134,11 @@ class HomebrewStore:
         return True
 
     def entries(self) -> dict[str, dict[str, Any]]:
+        """Return a top-level copy of the homebrew entry directory."""
         return dict(self._entries)
 
     def as_memory_loader(self) -> MemoryAssetLoader:
+        """Build a typed memory loader from the store's current homebrew entries."""
         grouped: dict[str, list[Any]] = {category: [] for category in _PARSERS}
         for entry in self._entries.values():
             category = entry["category"]

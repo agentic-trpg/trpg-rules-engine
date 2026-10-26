@@ -35,7 +35,10 @@ if TYPE_CHECKING:
 
 
 class SpellAdmissionError(DeliveryPlanningError):
+    """Signal a spell delivery admission failure before execution."""
+
     def __init__(self, failure: ExecutionFailure) -> None:
+        """Retain the typed execution failure and unsupported-activity reason."""
         super().__init__(failure.code, "unsupported_activity")
         self.failure = failure
 
@@ -109,6 +112,7 @@ def _validate_spell_inputs(
 
 
 def spec_from_intent(intent: PlayerIntent) -> SpellDeliverySpec:
+    """Build delivery choices from the typed player intent."""
     return SpellDeliverySpec(
         primary_target_id=intent.target_id,
         target_object_id=intent.target_object_id,
@@ -126,6 +130,7 @@ def spec_from_intent(intent: PlayerIntent) -> SpellDeliverySpec:
 
 
 def _range_ft(value: Any) -> int | None:
+    """Resolve the activity's supported range in feet."""
     if value is None:
         return None
     if value.units == "touch":
@@ -151,6 +156,7 @@ def plan_activity_delivery(
     default_target_ids: tuple[str, ...] = (),
     expand_areas: bool = True,
 ) -> DeliveryPlan:
+    """Validate geometry/targets and return a delivery plan for one activity."""
     from dnd5e_engine import orchestrator as orch
 
     creatures = [c for c in live.initiative if c.is_alive and c.entity_id not in live.dead_ids]
@@ -213,6 +219,7 @@ def plan_spell_delivery(
     *,
     execution: bool = False,
 ) -> DeliveryPlan:
+    """Build the admitted activity delivery plans for the selected spell."""
     return plan_activity_delivery(
         live,
         actor,
@@ -432,6 +439,7 @@ def _validate_effect_selections(
 def _validate_cast_count(
     activities: Sequence[Activity], spec: SpellDeliverySpec, level: int
 ) -> None:
+    """Check explicit target count against the cast's supported scaling."""
     from dnd5e_engine.spellcasting import resolve_target_count
 
     ids = spec.selected_target_ids
@@ -457,6 +465,7 @@ def emit_area_delivery(
     source_spell_id: str | None = None,
     source_parent_id: str | None = None,
 ) -> None:
+    """Emit area target selection evidence for the admitted delivery plan."""
     from dnd5e_engine import orchestrator as orch
 
     if plan.template is None or plan.origin is None:
@@ -487,6 +496,7 @@ def prepare_activity_delivery(
     spec: SpellDeliverySpec,
     source_id: str,
 ) -> ActivityResolutionContext:
+    """Refresh current targets and attach delivery/reaction context for the activity."""
     from dnd5e_engine import orchestrator as orch
 
     actor = orch._find_combatant(live, ctx.caster.entity_id) or ctx.caster
@@ -586,6 +596,7 @@ def execute_activity_delivery(
     spec: SpellDeliverySpec,
     source_id: str,
 ) -> ActivityResolutionContext:
+    """Resolve one prepared activity and fold its forced movement requests."""
     ctx = prepare_activity_delivery(live, ctx, activity, activity_plan, spec, source_id)
     resolve_activity(activity, ctx)
     fold_forced_movement_requests(live, ctx)
@@ -598,6 +609,7 @@ def execute_spell_delivery(
     ctx: ActivityResolutionContext,
     spec: SpellDeliverySpec | None = None,
 ) -> ActivityResolutionContext:
+    """Admit and resolve the selected spell activities through shared delivery machinery."""
     from dnd5e_engine import orchestrator as orch
     from dnd5e_engine.timed_activities import resolve_spell_activities
 
@@ -629,6 +641,9 @@ def execute_spell_delivery(
     def prepare(
         activity: Activity, current: ActivityResolutionContext
     ) -> ActivityResolutionContext:
+        """Resolve activity target multiplicity and prepare its current geometry and
+        reaction context.
+        """
         from dnd5e_engine.spellcasting import resolve_target_count
 
         activity_spec = spec
@@ -674,6 +689,7 @@ def execute_spell_delivery(
 
 
 def fold_forced_movement_requests(live: _LiveCombat, ctx: ActivityResolutionContext) -> None:
+    """Consume queued movement requests through the shared forced movement path."""
     from dnd5e_engine import orchestrator as orch
 
     requests = tuple(ctx.forced_movement_requests)

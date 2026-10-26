@@ -194,21 +194,29 @@ IntentType = Literal[
 
 
 class RoundStarted(BaseModel):
+    """Describe the beginning of a numbered combat round."""
+
     type: Literal["round_started"] = "round_started"
     round_number: int
 
 
 class RoundEnded(BaseModel):
+    """Describe the completion of a numbered combat round."""
+
     type: Literal["round_ended"] = "round_ended"
     round_number: int
 
 
 class TurnStarted(BaseModel):
+    """Identify the actor whose turn has begun."""
+
     type: Literal["turn_started"] = "turn_started"
     actor_id: str
 
 
 class TurnEnded(BaseModel):
+    """Identify the actor whose turn has ended."""
+
     type: Literal["turn_ended"] = "turn_ended"
     actor_id: str
 
@@ -244,6 +252,8 @@ class TurnPhase(BaseModel):
 
 
 class IntentSubmitted(BaseModel):
+    """Record the mechanical intent entering resolution."""
+
     type: Literal["intent_submitted"] = "intent_submitted"
     actor_id: str
     intent_type: IntentType
@@ -260,6 +270,8 @@ class IntentSubmitted(BaseModel):
 
 
 class AttackRolled(BaseModel):
+    """Carry attack roll evidence and the resolved hit qualification."""
+
     type: Literal["attack_rolled"] = "attack_rolled"
     attacker_id: str
     target_id: str
@@ -308,12 +320,16 @@ class AttackRolled(BaseModel):
 
 
 class RiderResourceSpent(BaseModel):
+    """Record the resource payment associated with an attack rider."""
+
     feature_id: str
     cost: int = Field(ge=1)
     maximum: int = Field(ge=0)
 
 
 class AttackRiderTriggered(BaseModel):
+    """Record the rider selected by resolved attack evidence."""
+
     type: Literal["attack_rider_triggered"] = "attack_rider_triggered"
     attacker_id: str
     target_id: str
@@ -344,6 +360,8 @@ class EffectModifiersConsumed(BaseModel):
 
 
 class SaveRolled(BaseModel):
+    """Carry saving throw evidence and its outcome."""
+
     type: Literal["save_rolled"] = "save_rolled"
     target_id: str
     ability: Ability
@@ -360,6 +378,8 @@ class SaveRolled(BaseModel):
 
 
 class CheckRolled(BaseModel):
+    """Carry ability check evidence and its outcome."""
+
     type: Literal["check_rolled"] = "check_rolled"
     actor_id: str
     ability: Ability
@@ -392,6 +412,8 @@ class CheckRolled(BaseModel):
 
 
 class DamageApplied(BaseModel):
+    """Describe resolved damage and its source/instance attribution."""
+
     type: Literal["damage_applied"] = "damage_applied"
     target_id: str
     amount: int
@@ -415,12 +437,16 @@ class DamageApplied(BaseModel):
 
 
 class HealingApplied(BaseModel):
+    """Describe resolved healing for a target."""
+
     type: Literal["healing_applied"] = "healing_applied"
     target_id: str
     amount: int
 
 
 class TempHpApplied(BaseModel):
+    """Describe a resolved temporary-HP grant."""
+
     type: Literal["temphp_applied"] = "temphp_applied"
     target_id: str
     amount: int
@@ -443,6 +469,8 @@ class RechargeRolled(BaseModel):
 
 
 class EffectApplied(BaseModel):
+    """Identify an active effect added by resolution."""
+
     type: Literal["effect_applied"] = "effect_applied"
     effect: ActiveEffect
     # statuses live on `effect.statuses`; no separate field — there is
@@ -450,6 +478,8 @@ class EffectApplied(BaseModel):
 
 
 class EffectExpired(BaseModel):
+    """Identify an effect removed at a lifecycle boundary."""
+
     type: Literal["effect_expired"] = "effect_expired"
     effect_id: str
     target_id: str
@@ -458,12 +488,16 @@ class EffectExpired(BaseModel):
 
 
 class ConditionApplied(BaseModel):
+    """Identify a condition applied to a target."""
+
     type: Literal["condition_applied"] = "condition_applied"
     target_id: str
     condition: ConditionType
 
 
 class ConditionRemoved(BaseModel):
+    """Identify a condition removed from a target."""
+
     type: Literal["condition_removed"] = "condition_removed"
     target_id: str
     condition: ConditionType
@@ -498,6 +532,8 @@ class ConcentrationCheck(BaseModel):
 
 
 class ConcentrationDropped(BaseModel):
+    """Identify a concentration source whose chain ended."""
+
     type: Literal["concentration_dropped"] = "concentration_dropped"
     target_id: str
     effect_name: str
@@ -507,16 +543,22 @@ class ConcentrationDropped(BaseModel):
 
 
 class Unconscious(BaseModel):
+    """Describe a target becoming unconscious."""
+
     type: Literal["unconscious"] = "unconscious"
     target_id: str
 
 
 class DeathSaveStarted(BaseModel):
+    """Describe entry into the death-save lifecycle."""
+
     type: Literal["death_save_started"] = "death_save_started"
     target_id: str
 
 
 class DeathSaveRolled(BaseModel):
+    """Carry death-save roll evidence and counters."""
+
     type: Literal["death_save_rolled"] = "death_save_rolled"
     target_id: str
     roll_total: int
@@ -526,11 +568,15 @@ class DeathSaveRolled(BaseModel):
 
 
 class Stabilized(BaseModel):
+    """Describe a dying target becoming stable."""
+
     type: Literal["stabilized"] = "stabilized"
     target_id: str
 
 
 class Death(BaseModel):
+    """Describe a resolved target death and its mechanical reason."""
+
     type: Literal["death"] = "death"
     target_id: str
     reason: Literal["damage", "death_saves", "instant_kill"]
@@ -695,6 +741,8 @@ AreaShape = Literal["cone", "cube", "cylinder", "emanation", "line", "sphere"]
 
 
 class CombatObjectChanged(BaseModel):
+    """Describe a trusted combat object mutation."""
+
     type: Literal["combat_object_changed"] = "combat_object_changed"
     object_id: str
     source_id: str
@@ -748,6 +796,8 @@ class AreaRelocated(BaseModel):
 
 
 class AreaExpired(BaseModel):
+    """Identify a persistent area whose lifecycle ended."""
+
     type: Literal["area_expired"] = "area_expired"
     area_id: str
     actor_id: str
@@ -788,6 +838,8 @@ class AreaTargeted(BaseModel):
 
 
 class CastFailed(BaseModel):
+    """Describe spell resolution failure and its structured reason."""
+
     type: Literal["cast_failed"] = "cast_failed"
     actor_id: str
     spell_id: str
@@ -796,6 +848,8 @@ class CastFailed(BaseModel):
 
 
 class SomaticSpellRolled(BaseModel):
+    """Carry the roll evidence for a somatic failure check."""
+
     type: Literal["somatic_spell_rolled"] = "somatic_spell_rolled"
     actor_id: str
     spell_id: str
@@ -842,6 +896,8 @@ class ProvisionalAttackEvidence(BaseModel):
 
 
 class ReactionTriggered(BaseModel):
+    """Identify a reaction selected by its triggering event."""
+
     type: Literal["reaction_triggered"] = "reaction_triggered"
     actor_id: str
     reaction_name: str
@@ -911,6 +967,8 @@ class CombatantLeft(BaseModel):
 
 
 class CombatEnded(BaseModel):
+    """Describe the resolved combat termination and outcome."""
+
     type: Literal["combat_ended"] = "combat_ended"
     reason: Literal["victory", "defeat_tpk", "flee", "forced"]
 
@@ -943,6 +1001,8 @@ class LegendaryResistanceUsed(BaseModel):
 
 
 class RestSpend(BaseModel):
+    """Record hit-dice expenditure and associated healing rolls."""
+
     model_config = {"extra": "forbid", "frozen": True}
     pool_id: str = Field(min_length=1)
     die_size: Literal[6, 8, 10, 12]
@@ -951,12 +1011,15 @@ class RestSpend(BaseModel):
 
     @model_validator(mode="after")
     def roll_count(self) -> RestSpend:
+        """Validate that supplied roll evidence contains the required number of dice."""
         if len(self.healing_rolls) != self.amount or any(n < 1 for n in self.healing_rolls):
             raise ValueError("rest roll evidence must match spent dice")
         return self
 
 
 class RestResolved(BaseModel):
+    """Describe completed rest recovery for an actor."""
+
     model_config = {"extra": "forbid", "frozen": True}
     type: Literal["rest_resolved"] = "rest_resolved"
     actor_id: str

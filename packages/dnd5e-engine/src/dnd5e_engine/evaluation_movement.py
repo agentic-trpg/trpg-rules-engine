@@ -28,6 +28,13 @@ from dnd5e_engine.turn_rules import ordinary_action_payment
 
 
 def evaluate_movement(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEvaluation:
+    """Admit movement and compute its route, costs and candidate consequences.
+
+    Validate actor/turn, explicit geometry and supported effect/reaction dependencies
+    before resolution. Execute supported movement in isolated working state and project
+    positions, expenditure, events and RNG transition into an uncommitted result. Return
+    structured refusal for invalid or unsupported input rather than moving host actors.
+    """
     snapshot, intent = request.state_snapshot, request.payload
     assert isinstance(snapshot, CombatSnapshot)
     assert isinstance(intent, CombatIntentPayload)
@@ -156,6 +163,7 @@ def _move_plan(
     loader: AssetLoader,
     opportunity: OpportunityPlan | None,
 ) -> tuple[list[str], int, int] | TurnEvaluation:
+    """Prepare the admitted route and its movement prerequisites."""
     state = snapshot.combat_state
     actors = {a.entity_id: a for a in snapshot.character_states}
     actor = actors[actor_id]
@@ -172,6 +180,7 @@ def _move_plan(
     allied = state.party_ids if actor_id in state.party_ids else state.encounter_ids
 
     def price(a: str, b: str) -> int | None:
+        """Compute movement cost for the next candidate step."""
         edge = grid.edge_distance(a, b)
         if edge is None:
             return None
@@ -213,9 +222,11 @@ def _execute_walk(
     opportunity: OpportunityPlan | None,
     actor_id: str,
 ) -> list[str]:
+    """Execute the validated route in isolated candidate state."""
     completed, run, run_cost = [path[0]], [path[0]], 0
 
     def flush() -> None:
+        """Emit accumulated movement evidence at the enclosing resolution boundary."""
         nonlocal run, run_cost
         if len(run) > 1:
             computation.emit(

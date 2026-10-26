@@ -35,6 +35,8 @@ _ABILITY_BY_NAME: Final[dict[str, Ability]] = {name: code for code, name in _SCO
 
 @dataclass(frozen=True)
 class D20Modifier:
+    """Carry the effective advantage/disadvantage and numeric inputs for a d20 roll."""
+
     ability: Ability
     ability_mod: int
     proficiency: int
@@ -43,22 +45,26 @@ class D20Modifier:
 
 
 def ability_modifier_of(c: Combatant, ability: Ability) -> int:
+    """Read the actor's modifier for the selected ability."""
     return ability_modifier(int(getattr(c, _SCORE_ATTR[ability])))
 
 
 def proficiency_bonus_of(c: Combatant) -> int:
+    """Derive the actor's proficiency bonus from available character or monster inputs."""
     if c.proficiency_bonus_override is not None:
         return c.proficiency_bonus_override
     return proficiency_bonus(c.character_level)
 
 
 def save_modifier(c: Combatant, ability: Ability) -> D20Modifier:
+    """Compute the saving throw modifier for the selected ability."""
     mod = ability_modifier_of(c, ability)
     prof = proficiency_bonus_of(c) if ability in c.save_proficiencies else 0
     return D20Modifier(ability, mod, prof, False, mod + prof)
 
 
 def check_modifier(c: Combatant, ability: Ability, skill: str | None = None) -> D20Modifier:
+    """Compute the ability check modifier with applicable skill proficiency."""
     mod = ability_modifier_of(c, ability)
     prof = 0
     expertise = False

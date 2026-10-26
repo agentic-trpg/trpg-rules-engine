@@ -4,6 +4,8 @@ from pydantic import BaseModel, ConfigDict
 
 
 class EvaluationModel(BaseModel):
+    """Provide strict closed-field validation for evaluation contract models."""
+
     model_config = ConfigDict(
         extra="forbid", frozen=True, strict=True, revalidate_instances="always"
     )

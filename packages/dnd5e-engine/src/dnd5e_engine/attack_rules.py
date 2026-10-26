@@ -248,6 +248,7 @@ def attack_action_is_spent(current: Combatant) -> bool:
 
 
 def damage_modifiers(actors: Iterable[Combatant]) -> dict[str, dict[str, list[str]]]:
+    """Collect nonempty static damage modifier projections by actor identity."""
     return {c.entity_id: static_damage_modifiers(c) for c in actors if static_damage_modifiers(c)}
 
 
@@ -270,6 +271,7 @@ def hostile_adjacent_to_attacker(
     topology: SpatialTopology,
     can_see: Callable[[Combatant, Combatant], bool],
 ) -> bool:
+    """Check for a living, capable, visible adjacent hostile actor."""
     if not allies or (origin := positions.get(caster.entity_id)) is None:
         return False
     for hostile in actors:
@@ -286,6 +288,7 @@ def hostile_adjacent_to_attacker(
 
 
 def static_damage_modifiers(c: Combatant) -> dict[str, list[str]]:
+    """Combine condition-derived and explicitly supplied damage resistances/immunities."""
     cond_names = [ac.condition for ac in c.conditions]
     damage_proj = project_passive_damage_modifiers(cond_names)
     # Merge per-creature damage_resistances / damage_immunities (from the
@@ -326,6 +329,7 @@ def stat_block_magnitudes(
     attack_bonus: int | None = None,
     transformed: bool = False,
 ) -> StatBlockMagnitudes:
+    """Project ability/proficiency/attack magnitudes for stat-block activity resolution."""
     return StatBlockMagnitudes(
         ability_scores={
             "str": current.strength,

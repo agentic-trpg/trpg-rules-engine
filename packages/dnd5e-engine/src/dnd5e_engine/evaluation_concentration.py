@@ -74,12 +74,16 @@ class ResolvedDamageInstance(EvaluationModel):
 
 
 class ConcentrationDamagePayload(EvaluationModel):
+    """Describe explicit damage evidence used by concentration candidate evaluation."""
+
     target_id: Annotated[str, Field(min_length=1)]
     source_id: Annotated[str, Field(min_length=1)]
     instances: Annotated[tuple[ResolvedDamageInstance, ...], Field(min_length=1)]
 
 
 class ConcentrationDamageRequest(EvaluationModel):
+    """Bind concentration damage input to snapshot, rules identity and RNG context."""
+
     schema_version: EvaluationVersion
     session_id: Annotated[str, Field(min_length=1)]
     command_id: Annotated[str, Field(min_length=1)]
@@ -99,6 +103,7 @@ def concentration_support_failure(
     composed: bool = False,
     turn_lifecycle: bool = False,
 ) -> str | None:
+    """Check whether all concentration dependencies fit the admitted profile."""
     state = snapshot.combat_state
     if (
         composed
@@ -262,6 +267,7 @@ def concentration_support_failure(
 def concentration_identity_failure(
     actor: CharacterStateV2, *, snapshot: CombatSnapshot, loader: AssetLoader, composed: bool
 ) -> str | None:
+    """Check concentration source/target and effect identity consistency."""
     if actor.weapon_mastery_slugs:
         return "trained weapon mastery execution is not migrated"
     if composed and (actor.class_slug or actor.classes):
@@ -277,10 +283,14 @@ class ConcentrationComputation(CombatComputation):
     """Only this evaluation's explicit existing graph and damaged actors."""
 
     def __init__(self, snapshot: CombatSnapshot, rng: random.Random) -> None:
+        """Initialize combat candidates and a separate working effect collection."""
         super().__init__(snapshot, rng)
         self.effects = list(snapshot.effect_states)
 
     def emit(self, event: CombatEvent) -> None:
+        """Append mechanical event evidence and fold its consequences into this candidate
+        computation.
+        """
         super().emit(event)
         if (
             isinstance(event, ConditionApplied)
@@ -291,6 +301,9 @@ class ConcentrationComputation(CombatComputation):
             self.drop(event.target_id)
 
     def record_death(self, event: Death, killer: str | None) -> None:
+        """Drop a dying concentration source before recording the candidate death and its
+        evidence.
+        """
         if event.target_id in self.state.concentration_chain:
             self.drop(event.target_id)
         super().record_death(event, killer)
@@ -298,6 +311,9 @@ class ConcentrationComputation(CombatComputation):
     def damage_completed(self, damage: DamageInstanceContext) -> None:
         # Typed completed facts include all post-defense types, even damage
         # absorbed by temporary HP. Zero damage does not trigger a save.
+        """Resolve concentration on positive damage, then settle zero-HP consequences and
+        stage evidence.
+        """
         if damage.amount > 0 and damage.target_id in self.state.concentration_chain:
             original = next(
                 a for a in self.snapshot.character_states if a.entity_id == damage.target_id
@@ -321,11 +337,13 @@ class ConcentrationComputation(CombatComputation):
         super().damage_completed(damage)
 
     def drop(self, source_id: str, *, reason: EffectExpiryReason = "concentration_drop") -> None:
+        """Remove the candidate concentration chain and its linked effects."""
         for identity in tuple(self.state.concentration_chain[source_id]):
             self.events.append(ConcentrationDropped(target_id=source_id, effect_name=identity[1]))
             self.expire_linked_effect(identity, reason)
 
     def expire_linked_effect(self, identity: EffectIdentity, reason: EffectExpiryReason) -> None:
+        """Expire a linked effect within the current candidate computation."""
         target, effect_id, origin = identity
         effect = next(e for e in self.effects if (e.target_id, e.id, e.origin) == identity)
         source_id = effect.lifecycle.source_id if effect.lifecycle else effect.target_id
@@ -373,10 +391,14 @@ class ConcentrationComputation(CombatComputation):
         )
 
     def candidate_state(self) -> CombatSnapshot:
+        """Project this computation's working actors and components into a new candidate
+        snapshot.
+        """
         return super().candidate_state().model_copy(update={"effect_states": tuple(self.effects)})
 
 
 def concentration_delta(before: CombatSnapshot, after: CombatSnapshot) -> StateDelta:
+    """Project the admitted concentration candidate into guarded Delta operations."""
     state, new = before.combat_state, after.combat_state
     source = next(iter(state.concentration_chain))
     identities = {(e.target_id, e.id, e.origin) for e in after.effect_states}
@@ -473,6 +495,9 @@ def concentration_delta(before: CombatSnapshot, after: CombatSnapshot) -> StateD
 def evaluate_concentration_candidate(
     request: ConcentrationDamageRequest, *, loader: AssetLoader
 ) -> RuleEvaluationResult:
+    """Evaluate concentration damage against fixed input and return an uncommitted
+    candidate.
+    """
     request = ConcentrationDamageRequest.model_validate(deepcopy(request))
     verify_ruleset(request.ruleset_binding, loader)
     snapshot, payload = request.state_snapshot, request.payload
@@ -480,6 +505,8 @@ def evaluate_concentration_candidate(
         raise ValueError("candidate source/session identity mismatch")
 
     class Identity(TypedDict):
+        """Describe identity fields shared by the concentration candidate result."""
+
         schema_version: EvaluationVersion
         session_id: str
         command_id: str

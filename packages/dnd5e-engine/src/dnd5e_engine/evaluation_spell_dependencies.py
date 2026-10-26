@@ -13,6 +13,7 @@ from dnd5e_engine.evaluation_state import CharacterStateV2, CombatSnapshot
 def invocation_dependencies(
     snapshot: CombatSnapshot, loader: AssetLoader, target_id: str, *, damaging: bool
 ) -> str | None:
+    """Check rules dependencies needed by the selected invocation."""
     if not damaging:
         return healing_dependencies(snapshot, loader, target_id)
     if snapshot.combat_state.pending_reactions:
@@ -40,11 +41,13 @@ def invocation_dependencies(
 def healing_dependencies(
     snapshot: CombatSnapshot, loader: AssetLoader, target_id: str
 ) -> str | None:
+    """Check dependencies required by the admitted healing invocation."""
     if failure := reaction_dependencies(snapshot, loader):
         return failure
     canonical = get_default_ruleset()
 
     def dependencies(actor: CharacterStateV2) -> str | None:
+        """Check the complete rules dependency set for the enclosing operation."""
         if failure := class_dependencies(actor, snapshot, loader, canonical, equipped=True):
             return f"unreviewed spell component/equipment profile: {failure}"
         if not (actor.class_slug or actor.classes) and (

@@ -1524,6 +1524,7 @@ def _plan_flee_route(
     """
 
     def nearest_threat_ft(cell: str) -> int:
+        """Compute distance in feet to the nearest threat cell."""
         return min(grid.distance_ft(cell, threat) or 0 for threat in threat_cells)
 
     reached = grid.reachable_cells(start, budget_ft, avoid=enemy_cells)
@@ -1870,6 +1871,7 @@ def _monster_limited_cast_remaining(
 def _monster_activity_available(
     live: _LiveCombat, current: Combatant, action: MonsterAction, activity: Activity
 ) -> bool:
+    """Check monster activity resources and supported delivery before offering it."""
     entry = live.monster_action_uses_by_entity.get(current.entity_id, {}).get(action.slug)
     if not activity_resources_available(action, activity, entry):
         return False
@@ -2339,6 +2341,7 @@ def _eligible_legendary_actor(live: _LiveCombat, actor_id: str | None) -> Combat
     ended_round, ended_actor_id = live.last_ended_turn
 
     def qualifies(monster: Combatant) -> bool:
+        """Check living/capable legendary-action eligibility after another actor's turn."""
         if monster.entity_id not in live.encounter_ids:
             return False
         if monster.legendary_actions_max <= 0:
@@ -2715,6 +2718,8 @@ def _take_legendary_action(live: _LiveCombat, monster: Combatant) -> None:
 
 @dataclass(frozen=True)
 class _CharacterDamageInstance:
+    """Accumulate per-instance character damage for once-only zero-HP settlement."""
+
     hp_before: int
     event: DamageApplied
 
@@ -2762,6 +2767,9 @@ class _LiveCombat:
     movement_ledgers: dict[str, MovementLedger] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        """Initialize missing actor movement ledgers from the supplied working combat
+        state.
+        """
         for actor in self.initiative:
             self.movement_ledgers.setdefault(actor.entity_id, live_movement.ledger_for(self, actor))
 
@@ -3116,6 +3124,7 @@ _ENDED: deque[tuple[str, _LiveCombat]] = deque()
 
 
 def _get_live(handle: CombatHandle) -> _LiveCombat:
+    """Resolve the legacy combat handle, raising UnknownHandleError when absent."""
     live = _REGISTRY.get(handle.handle_id)
     if live is None:
         raise UnknownHandleError(f"No live combat for handle {handle.handle_id!r}")
@@ -3126,6 +3135,7 @@ def _get_live(handle: CombatHandle) -> _LiveCombat:
 # the engine's dispatch consume this snapshot view of the live state the engine
 # owns. Engine-internal callers use _get_live (the private _LiveCombat).
 def get_live(handle: CombatHandle) -> LiveCombatView:
+    """Read the legacy combat through its public read-only view boundary."""
     return LiveCombatView.from_live(_get_live(handle))
 
 
@@ -3197,6 +3207,7 @@ def get_actor_active_effects(handle: CombatHandle, entity_id: str) -> tuple[Acti
 
 
 def _current_actor(live: _LiveCombat) -> Combatant:
+    """Read the working actor at the current initiative cursor."""
     return live.initiative[live.current_turn_index]
 
 
@@ -4768,6 +4779,7 @@ def _resolve_damage_concentration(live: _LiveCombat, target_id: str, amount: int
 def _complete_character_damage_instance(
     live: _LiveCombat, target_id: str, instance_id: str, damage_after_temp: int
 ) -> None:
+    """Settle a tracked character's zero-HP outcome once the damage instance completes."""
     pending = live.character_damage_instances.pop((target_id, instance_id), None)
     if (
         pending is not None
@@ -4782,6 +4794,7 @@ def _complete_character_damage_instance(
 def _apply_zero_hp_to_character(
     live: _LiveCombat, event: DamageApplied, *, hp_before: int, damage_after_temp: int
 ) -> None:
+    """Apply shared zero-HP rules and fold their character/death evidence."""
     from dnd5e_engine.damage_rules import zero_hp_damage
 
     target = _find_combatant(live, event.target_id)
@@ -5092,6 +5105,7 @@ def _maybe_roll_death_save(live: _LiveCombat) -> None:
 
 
 def _hp_max_for(live: _LiveCombat, entity_id: str) -> int:
+    """Read an actor's HP maximum, returning zero for an absent identity."""
     for c in live.initiative:
         if c.entity_id == entity_id:
             return c.hp_max or c.hp_current
@@ -5099,6 +5113,7 @@ def _hp_max_for(live: _LiveCombat, entity_id: str) -> int:
 
 
 def _target_kind_for(live: _LiveCombat, entity_id: str) -> Literal["character", "npc", "monster"]:
+    """Classify a working target as character, NPC or monster."""
     for c in live.initiative:
         if c.entity_id == entity_id:
             if c.entity_type == "Character":
@@ -5941,6 +5956,9 @@ def _execute_nonspell_delivery(
     actx: ActivityResolutionContext,
     fetched_weapon: Weapon | None,
 ) -> ActivityResolutionContext:
+    """Resolve admitted nonspell activities and their persistent area/movement
+    consequences.
+    """
     register_item_areas(live, activities, actx, intent)
     for activity in activities:
         if not can_continue_resolution(live, current.entity_id):
@@ -7590,6 +7608,7 @@ def _own_pool_targets(activity: Any) -> list[Any]:
 
 
 def _literal_int(value: str) -> int | None:
+    """Parse a literal integer, returning None on invalid text."""
     try:
         return int(str(value).strip())
     except ValueError:
@@ -7718,6 +7737,7 @@ def _eval_consumption_max(expr: str, *, remaining: int, cap: int | None) -> int 
         return None
 
     def _term(tok: str) -> int | None:
+        """Resolve an item use expression term from literal, remaining or maximum values."""
         tok = tok.strip()
         if tok == "@item.uses.value":
             return remaining
@@ -8476,6 +8496,7 @@ def _validate_intent_preconditions(
 
 
 def _reject_missing_spell_identity(intent: PlayerIntent) -> None:
+    """Reject a cast intent lacking an explicit spell identity."""
     if intent.intent_type == "cast_spell" and not intent.spell_id:
         raise IntentRejectedError("spell_required", "cast_spell requires a spell identity")
 
@@ -9034,14 +9055,17 @@ def _summon_placement(
     def _free(cell: str) -> bool:
         # ``is_valid_cell`` parses with ``int()``, which also reads "1, 1": a
         # creature seated there would match no other position check.
+        """Check canonical in-bounds placement without an occupying entity."""
         return (
             grid.is_valid_cell(cell) and cell == cell_id(*parse_cell(cell)) and cell not in occupied
         )
 
     def _seen(cell: str) -> bool:
+        """Check whether blindness permits targeting the cell through blindsight."""
         return not blinded or _blindsight_reaches_zone(live, current, cell)
 
     def _in_sight(cell: str) -> bool:
+        """Check supported range, line of sight and blindness targeting prerequisites."""
         return (
             live.topology.distance_ft(caster_cell, cell) is not None
             and _in_range_with_los(live.topology, caster_cell, cell, range_ft)
@@ -9268,6 +9292,7 @@ def _apply_summon_requests(
 
 
 def _transform_of(live: _LiveCombat, entity_id: str) -> _Transform | None:
+    """Read the actor's active transformation, or return None."""
     return live.transforms.get(entity_id)
 
 
@@ -9952,6 +9977,7 @@ def _action_economy_gate_failure(
     is_reaction_cast: bool,
     action_type: ActionType | None = None,
 ) -> CombatEvent | None:
+    """Delegate action budget admission with explicit extra-action funding."""
     from dnd5e_engine.action_economy_rules import action_economy_gate_failure
 
     return action_economy_gate_failure(
@@ -11041,6 +11067,7 @@ def _prepare_feature_invocation(
     current: Combatant,
     intent: PlayerIntent,
 ) -> tuple[_FeatureInvocation | None, bool]:
+    """Prepare a supported feature invocation or emit the existing failure event."""
     actor_id = current.entity_id
     feature_invocation: _FeatureInvocation | None = None
     if intent.intent_type == "use_feature" or intent.feature_id:
@@ -12389,12 +12416,14 @@ async def narration_events(
 
 
 def _derive_ended_reason(live: _LiveCombat) -> Literal["victory", "defeat_tpk", "flee", "forced"]:
+    """Derive termination reason from the working roster and death state."""
     from dnd5e_engine.outcome_rules import derive_ended_reason
 
     return derive_ended_reason(live.initiative, live.party_ids, live.encounter_ids, live.dead_ids)
 
 
 def _project_outcome(live: _LiveCombat) -> CombatOutcome:
+    """Project the legacy combat's final mechanics into its host handoff outcome."""
     from dnd5e_engine.outcome_rules import project_outcome
 
     return project_outcome(

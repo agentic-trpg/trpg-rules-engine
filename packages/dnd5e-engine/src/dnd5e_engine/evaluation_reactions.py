@@ -38,6 +38,8 @@ from dnd5e_engine.spellcasting import spell_range_ft
 
 @dataclass(frozen=True)
 class CounterspellPlan:
+    """Retain the admitted Counterspell source, target and payment requirements."""
+
     declaration: PendingReactionState
     spell: Spell
     activity: SaveActivity
@@ -46,6 +48,7 @@ class CounterspellPlan:
 
 
 def reaction_dependencies(snapshot: CombatSnapshot, loader: AssetLoader) -> str | None:
+    """Check dependencies of the supplied reaction declarations."""
     declarations = snapshot.combat_state.pending_reactions
     if not declarations:
         return None
@@ -156,6 +159,7 @@ def resolve_counterspell(
     computation: CombatComputation, plan: CounterspellPlan, rng: random.Random
 ) -> bool:
     # Local computation only; caller publishes one complete delta or nothing.
+    """Resolve the admitted Counterspell interaction within the supplied candidate context."""
     from dnd5e_engine.evaluation_spells import spell_event
 
     pending = plan.declaration
@@ -210,6 +214,7 @@ def reaction_paid_delta(
     payments: tuple[ResourceUpdate, ...],
     ledgers: tuple[SlotSpendLedgerUpdate, ...],
 ) -> StateDelta:
+    """Project reaction payments into guarded Delta operations."""
     old, new = before.combat_state.pending_reactions, after.combat_state.pending_reactions
     operations: tuple[PendingReactionUpdate, ...] = ()
     if old != new:

@@ -1,3 +1,9 @@
+<!-- Current entry, 2026-10-27: dated NOT IMPLEMENTED/branch-only notes below
+retain their historical scope. Current SM main b9ae704 contains the scoped SessionMemory,
+instance-field and passage-index implementation; this prose batch does not close its
+remaining recovery/multiplayer limits. Resolve required sibling documents from the
+logical parallel workspace. -->
+
 # Development standards
 
 These instructions apply throughout this repository. Follow more explicit instructions
@@ -133,3 +139,15 @@ The user and ChatGPT review the branch; the user decides whether and when to mer
 - RE never reads SM SQL, mutates shared runtime objects, owns Session RAM lifecycle or restores an independent cross-request world/combat. In-process/read-only structure reuse requires demonstrated isolation; preserve typed/Schema/binding/RNG/dependency validation and FrozenRuleset safeguards.
 - Results/Delta/events/RNG transitions are uncommitted. SM validates and incrementally persists facts/versions/RNG/Receipt/Outbox/reliable work, then publishes RAM before normal success/current projections. Publication failure after durable commit pauses/reconciles SM; no new RE commit protocol or Legacy Stateful restoration is authorized.
 - Complete Session RAM integration remains NOT IMPLEMENTED; concrete structures, fine-grained versions and ABI details remain OPEN. Preserve current DTO/Schema and the single-player MVP. Future acceptance must cover SQL/current RAM/old references/indexes/caches/recovery and failure/retry boundaries; docs-only work runs the existing strict docs path, not unrelated runtime suites.
+
+## Source documentation maintenance (2026-10-27)
+
+- Follow [the shared source documentation standard](../agentic-trpg/docs/CODE_DOCUMENTATION.md).
+  New modules/classes/functions need proportionate docstrings; changed responsibilities,
+  inputs/outputs, side effects or constraints require synchronized explanations. Preserve
+  stronger existing constraints and review prose against implementation. Plans belong in
+  contracts; current docstrings are the future index's maintained functional explanation.
+- Use the applicable repository workflows in `.agents/skills/`: `trpg-code-documentation`.
+  Read each matching SKILL.md explicitly when needed; these mandatory requirements do
+  not depend on automatic triggering. Resolve sibling DOC paths from the logical workspace
+  root. Keep the SM/RE documentation workflow copies consistent with the one shared standard.

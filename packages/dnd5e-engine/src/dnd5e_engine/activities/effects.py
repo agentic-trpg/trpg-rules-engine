@@ -118,6 +118,7 @@ def applicable_condition_statuses(
 
 
 def _ordered_condition_statuses(statuses: Collection[str]) -> list[str]:
+    """Normalize condition statuses into deterministic order."""
     return sorted(statuses, key=lambda s: (not bool(project_condition_immunities([s])), s))
 
 
@@ -133,6 +134,7 @@ def applicable_effect_statuses(target: Combatant | None, statuses: Collection[st
 
 
 def _name_slug(name: str) -> str:
+    """Normalize an effect name into its identity slug."""
     return name.lower().replace(" ", "_")
 
 

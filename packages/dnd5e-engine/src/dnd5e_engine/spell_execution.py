@@ -69,6 +69,8 @@ MechanismCode = Literal[
 
 
 class ExecutionFailure(BaseModel):
+    """Describe why a spell/activity cannot execute under the supported profile."""
+
     model_config = ConfigDict(extra="forbid", frozen=True)
     code: Literal[
         "unreviewed_spell",
@@ -86,6 +88,8 @@ class ExecutionFailure(BaseModel):
 
 
 class ActivityReview(BaseModel):
+    """Classify one activity's executable support and any limiting reason."""
+
     model_config = ConfigDict(extra="forbid", frozen=True)
     activity_id: str
     kind: ActivityKind
@@ -96,6 +100,8 @@ class ActivityReview(BaseModel):
 
 
 class SpellReview(BaseModel):
+    """Group execution support findings for a spell's activities."""
+
     model_config = ConfigDict(extra="forbid", frozen=True)
     slug: str
     uuid: str
@@ -110,6 +116,8 @@ class SpellReview(BaseModel):
 
 
 class _ActivityIdentity(TypedDict):
+    """Describe the stable identity fields used to correlate activity review."""
+
     spell_id: str
     activity_id: str
 
@@ -135,6 +143,7 @@ def semantic_digest(spell: Spell) -> str:
 
 
 def spell_review(spell: Spell) -> SpellReview | None:
+    """Review the spell's activity execution support against the supplied context."""
     review = spell_reviews().get(spell.foundry_uuid)
     # UUID/slug identify the review, but only its exact validated payload is
     # admitted. Spell models are mutable, so recheck content on every lookup.

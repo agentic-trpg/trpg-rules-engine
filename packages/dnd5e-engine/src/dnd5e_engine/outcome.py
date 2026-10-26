@@ -34,6 +34,8 @@ LootSource = Literal["transfer", "created"]
 
 
 class DeathRecord(BaseModel):
+    """Carry victim, location and attribution facts for a resolved combat death."""
+
     model_config = ConfigDict(extra="forbid")
 
     target_id: str
@@ -44,6 +46,8 @@ class DeathRecord(BaseModel):
 
 
 class LootDrop(BaseModel):
+    """Describe loot offered by a resolved encounter outcome."""
+
     model_config = ConfigDict(extra="forbid")
 
     # ``from_id`` for transferred items (existing item moves out of a

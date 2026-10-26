@@ -32,19 +32,24 @@ ABILITY_ALIASES = {
 
 
 def slugify(name: str) -> str:
+    """Normalize a name into a lowercase hyphenated identity."""
     return _SLUG_RE.sub("-", name.strip().lower()).strip("-")
 
 
 def full_ability(name: str) -> str:
+    """Expand a recognized ability alias, preserving an unknown normalized name."""
     lowered = name.strip().lower()
     return ABILITY_ALIASES.get(lowered, lowered)
 
 
 def resolve_seed(seed: int | None) -> int:
+    """Use the explicit seed or generate a 32-bit seed from system entropy."""
     return seed if seed is not None else secrets.randbits(32)
 
 
 class AbilityScoresModel(BaseModel):
+    """Validate the ability scores received by Bridge build endpoints."""
+
     str_: int = Field(default=10, alias="str")
     dex: int = 10
     con: int = 10
@@ -56,6 +61,8 @@ class AbilityScoresModel(BaseModel):
 
 
 class BuildRequest(BaseModel):
+    """Validate character build choices received over Bridge transport."""
+
     species_slug: str
     size_choice: CreatureSize | None = None
     class_slug: str
@@ -66,6 +73,8 @@ class BuildRequest(BaseModel):
 
 
 class PartyValidateRequest(BaseModel):
+    """Validate a collection of party build requests."""
+
     name: str
     entity_id: str | None = None
     build: BuildRequest

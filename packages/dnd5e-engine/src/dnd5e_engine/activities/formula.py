@@ -108,6 +108,7 @@ _PAREN_DICE_COUNT_RE: Final = re.compile(r"\((\d+)\)(d\d)")
 
 
 def _normalize_paren_dice_count(expr: str) -> str:
+    """Normalize parenthesized dice counts into the supported formula syntax."""
     return _PAREN_DICE_COUNT_RE.sub(r"\1\2", expr)
 
 
@@ -145,6 +146,7 @@ def resolve_damage_block(
 
 
 def _resolve_token(token: str, ctx: ActivityResolutionContext, ability: str | None) -> int | str:
+    """Resolve one formula token from explicit activity inputs."""
     if token == _TOKEN_PROF:
         return ctx.caster_proficiency_bonus
     if token == _TOKEN_MOD:
@@ -229,6 +231,7 @@ def _resolve_skill_passive(code: str, ctx: ActivityResolutionContext, token: str
 
 
 def _spellcasting_ability(ctx: ActivityResolutionContext, token: str) -> str:
+    """Resolve the casting ability declared by the context."""
     spellcasting = ctx.spellcasting_ability
     if spellcasting is None:
         raise ValueError(f"{token!r} requires a spellcasting ability but the caster has none")

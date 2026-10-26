@@ -35,6 +35,7 @@ def character_state(
     actor: Combatant,
     version: Literal["engine-snapshot/17"] = "engine-snapshot/17",
 ) -> CharacterStateV2:
+    """Project a supplied actor into the fixed evaluation character representation."""
     value = actor.model_dump(mode="python")
     value["death_saves"] = value["death_saves"] or None
     value.update(
@@ -187,6 +188,9 @@ def capture_combat_snapshot(
 def capture_evaluation_snapshot(
     live: _LiveCombat, snapshot: CombatSnapshot, grid: GridScene
 ) -> CombatSnapshot:
+    """Create a detached evaluation snapshot preserving explicit inventory and actor
+    ordering.
+    """
     captured = capture_combat_snapshot(
         live,
         resource_state=snapshot.resource_state,

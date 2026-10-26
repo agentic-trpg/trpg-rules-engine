@@ -64,7 +64,14 @@ class CombatComputationResult:
 
 
 class CombatComputation:
+    """Resolve one fixed combat input into isolated working actors, events and stage
+    evidence.
+    """
+
     def __init__(self, snapshot: CombatSnapshot, rng: random.Random) -> None:
+        """Create isolated working actors, event/damage buffers and initially disabled
+        stage recording.
+        """
         self.snapshot = snapshot
         self.actors = {a.entity_id: combatant(a) for a in snapshot.character_states}
         self.state = snapshot.combat_state
@@ -77,6 +84,7 @@ class CombatComputation:
         self.stage_reason: StageReason = "operation_not_in_stage_profile"
 
     def enable_stages(self) -> None:
+        """Enable stage capture only for the audited computation profile."""
         reason = stage_profile_reason(self.snapshot)
         if type(self) is not CombatComputation:
             reason = "complex_effects_or_reactions"
@@ -86,10 +94,12 @@ class CombatComputation:
             self.stage_reason = reason
 
     def sample_stage(self, kind: StageKind, actor_ids: tuple[str, ...] | None = None) -> None:
+        """Capture a mechanical stage when a stage recorder is active."""
         if self.stage_recorder is not None:
             self.stage_recorder.sample(kind, len(self.events), self.actors, self.state, actor_ids)
 
     def sample_event(self, event: CombatEvent, index: int) -> None:
+        """Capture stage references for the emitted event's affected actors."""
         if self.stage_recorder is not None:
             ids = {
                 value
@@ -106,6 +116,7 @@ class CombatComputation:
             )
 
     def speed(self, actor: Combatant, mode: MovementMode = "walk") -> int:
+        """Project the actor's effective speed for the selected movement mode."""
         speeds = project_speeds(
             actor.base_speed,
             actor.movement_modes,
@@ -115,6 +126,13 @@ class CombatComputation:
         return speed_for_mode(speeds, mode)
 
     def emit(self, event: CombatEvent) -> None:
+        """Append an event and fold its mechanics into this computation's candidate state.
+
+        Condition immunity may suppress a condition event. Damage/healing, conditions,
+        death, turn/effect and resource consequences update working actors/components;
+        tracked damage instances defer once-only zero-HP settlement until completion.
+        Stage sampling records supported event points. No host persistence occurs here.
+        """
         if isinstance(event, ConditionApplied) and is_condition_immune(
             self.actors[event.target_id], event.condition
         ):
@@ -186,6 +204,7 @@ class CombatComputation:
         self.sample_event(event, index)
 
     def fold_death(self, event: Death, killer: str | None) -> None:
+        """Update candidate actor/death records, ignoring an already recorded death."""
         if event.target_id in self.state.dead_ids:
             return
         actor = self.actors[event.target_id]
@@ -201,6 +220,7 @@ class CombatComputation:
         )
 
     def record_death(self, event: Death, killer: str | None) -> None:
+        """Fold a candidate death and append its event-stage evidence."""
         self.fold_death(event, killer)
         index = len(self.events)
         self.events.append(event)
@@ -209,6 +229,7 @@ class CombatComputation:
     def next_damage_id(
         self, target_id: str, source_id: str | None, *, actor_id: str | None = None
     ) -> str:
+        """Advance candidate damage sequence and return a deterministic instance identity."""
         sequence = self.state.damage_instance_sequence + 1
         self.state = self.state.model_copy(update={"damage_instance_sequence": sequence})
         actor_id = (
@@ -220,10 +241,12 @@ class CombatComputation:
         return f"damage:{sequence}:{actor_id}:{target_id}"
 
     def damage_completed(self, damage: DamageInstanceContext) -> None:
+        """Finish a damage instance and capture the resulting mechanical stage."""
         self._damage_completed(damage)
         self.sample_stage("damage_instance_completed", (damage.target_id,))
 
     def _damage_completed(self, damage: DamageInstanceContext) -> None:
+        """Resolve completed damage's zero-HP consequences once per tracked instance."""
         pending = self.damage.pop((damage.target_id, damage.damage_instance_id), None)
         if pending is None or damage.target_id in self.state.dead_ids:
             return
@@ -254,12 +277,14 @@ class CombatComputation:
                 self.emit(ev)
 
     def death_save(self, actor_id: str) -> None:
+        """Resolve an eligible death save and capture its resulting stage."""
         cursor = len(self.events)
         self._death_save(actor_id)
         if len(self.events) != cursor:
             self.sample_stage("death_save_completed", (actor_id,))
 
     def _death_save(self, actor_id: str) -> None:
+        """Resolve an eligible actor's death save with explicit RNG and fold its events."""
         actor = self.actors[actor_id]
         if (
             actor.entity_type != "Character"
@@ -279,6 +304,9 @@ class CombatComputation:
     def finish_turn(
         self, actor_id: str, *, allow_movement: bool = False, force: bool = False
     ) -> None:
+        """Finish or retain the current turn and update candidate round, budgets and
+        lifecycle state.
+        """
         actor = self.actors[actor_id]
         # All other payment/windows are explicitly excluded by admission.
         if not force and (
@@ -366,6 +394,9 @@ class CombatComputation:
         self.death_save(next_actor)
 
     def candidate_state(self) -> CombatSnapshot:
+        """Project this computation's working actors and components into a new candidate
+        snapshot.
+        """
         return self.snapshot.model_copy(
             update={
                 "character_states": tuple(
@@ -376,6 +407,9 @@ class CombatComputation:
         )
 
     def result(self) -> CombatComputationResult:
+        """Return the candidate, ordered events and validated stage coverage without
+        persisting them.
+        """
         facts = (
             self.stage_recorder.finish(len(self.events), self.actors, self.state)
             if self.stage_recorder is not None

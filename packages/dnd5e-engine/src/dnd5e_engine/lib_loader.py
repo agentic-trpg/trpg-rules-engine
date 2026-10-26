@@ -29,6 +29,7 @@ _SCOPED_LIB_LOADER: ContextVar[AssetLoader | None] = ContextVar("combat_lib_load
 
 
 def get_lib_loader() -> AssetLoader:
+    """Return the loader selected by the current scope or the configured default."""
     scoped = _SCOPED_LIB_LOADER.get()
     if scoped is not None:
         return scoped

@@ -15,6 +15,8 @@ GrantedDie = Literal["feature_grant:bardic-inspiration"]
 
 
 class CheckRequest(BaseModel):
+    """Specify a typed ability check with explicit context and adjudication inputs."""
+
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     actor_id: str
@@ -33,12 +35,15 @@ class CheckRequest(BaseModel):
 
     @model_validator(mode="after")
     def one_proficiency(self) -> CheckRequest:
+        """Reject a check that declares conflicting proficiency sources."""
         if self.skill is not None and self.tool is not None:
             raise ValueError("a check uses one skill or tool, not both")
         return self
 
 
 class HelpCheckSpec(BaseModel):
+    """Describe the mechanical Help qualification requested for an ability check."""
+
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     beneficiary_id: str
@@ -52,6 +57,8 @@ class HelpCheckSpec(BaseModel):
 
 @dataclass(frozen=True)
 class HelpCheckGrant:
+    """Retain an admitted Help benefit for the matching check."""
+
     helper_id: str
     beneficiary_id: str
     skill: Skill

@@ -14,12 +14,15 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class Expression:
+    """Represent a parsed restricted arithmetic expression for scalar or dice evaluation."""
+
     op: str
     value: int = 0
     args: tuple[Expression, ...] = ()
 
     @property
     def has_dice(self) -> bool:
+        """Return whether the expression contains a dice term."""
         return self.op == "dice" or any(arg.has_dice for arg in self.args)
 
 
@@ -27,7 +30,12 @@ _TOKEN = re.compile(r"\s*(\d+|[A-Za-z_]+|[()+*,\-])")
 
 
 class _Parser:
+    """Parse restricted arithmetic tokens without evaluating arbitrary Python code."""
+
     def __init__(self, text: str) -> None:
+        """Tokenize restricted arithmetic with length/term budgets and initialize the read
+        cursor.
+        """
         self.tokens: list[str] = []
         position = 0
         text = text.strip()
@@ -44,9 +52,11 @@ class _Parser:
         self.index = 0
 
     def peek(self) -> str:
+        """Read the next parser token without consuming it."""
         return self.tokens[self.index] if self.index < len(self.tokens) else ""
 
     def take(self, expected: str | None = None) -> str:
+        """Consume the next parser token, checking an expected token when supplied."""
         token = self.peek()
         if not token or (expected is not None and token != expected):
             raise ValueError(f"Expected {expected or 'expression'}, got {token!r}")
@@ -54,6 +64,7 @@ class _Parser:
         return token
 
     def expression(self, depth: int = 0) -> Expression:
+        """Parse an additive expression from the current token position."""
         if depth > 64:
             raise ValueError("formula nesting is too deep")
         node = self.product(depth + 1)
@@ -63,6 +74,7 @@ class _Parser:
         return node
 
     def product(self, depth: int) -> Expression:
+        """Parse multiplicative terms from the current token position."""
         node = self.factor(depth + 1)
         while self.peek() == "*":
             self.take()
@@ -70,6 +82,7 @@ class _Parser:
         return node
 
     def factor(self, depth: int) -> Expression:
+        """Parse a literal, token, unary term or parenthesized arithmetic factor."""
         if depth > 64:
             raise ValueError("formula nesting is too deep")
         symbol = self.peek()
@@ -107,6 +120,7 @@ class _Parser:
 
 
 def parse_expression(text: str, *, allow_dice: bool = True) -> Expression:
+    """Parse a supported arithmetic expression into the restricted expression tree."""
     parser = _Parser(text)
     node = parser.expression()
     if parser.peek():
@@ -117,6 +131,7 @@ def parse_expression(text: str, *, allow_dice: bool = True) -> Expression:
 
 
 def scalar(node: Expression) -> int:
+    """Evaluate arithmetic that must not draw dice."""
     if node.has_dice:
         raise ValueError("formula must be scalar")
     return evaluate(node, None)
@@ -125,6 +140,7 @@ def scalar(node: Expression) -> int:
 def evaluate(
     node: Expression, rng: random.Random | None, *, crit: bool = False, die_floor: int | None = None
 ) -> int:
+    """Evaluate the parsed arithmetic expression with the supplied token and dice context."""
     if node.op == "int":
         return node.value
     if node.op == "dice":

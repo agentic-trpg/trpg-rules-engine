@@ -52,11 +52,13 @@ if TYPE_CHECKING:
 
 
 def _require(value: bool, reason: str) -> None:
+    """Raise an evaluation invariant error when the supplied condition fails."""
     if not value:
         raise ValueError(reason)
 
 
 def _initial(snapshot: CombatSnapshot) -> dict[str, StageActorFacts]:
+    """Project initial actor facts from the fixed snapshot."""
     state = snapshot.combat_state
     return {
         a.entity_id: actor_facts(
@@ -67,6 +69,7 @@ def _initial(snapshot: CombatSnapshot) -> dict[str, StageActorFacts]:
 
 
 def _fields(old: StageActorFacts, new: StageActorFacts) -> set[str]:
+    """Read the field set relevant to stage validation."""
     return {
         name for name in StageActorFacts.model_fields if getattr(old, name) != getattr(new, name)
     }
@@ -78,6 +81,7 @@ def _bounded_actor(
     fields: set[str],
     budget_fields: set[str] | None = None,
 ) -> None:
+    """Check actor facts against the audited stage profile."""
     _require(
         not (_fields(previous, update) - fields),
         "stage boundary contains unrelated actor mutations",
@@ -99,6 +103,7 @@ def _actor_changes(
     fields: set[str],
     budget_fields: set[str] | None = None,
 ) -> None:
+    """Validate the allowed actor fact changes between stages."""
     for update in stage.actor_updates:
         _require(
             update.actor_id in identities, "stage boundary contains unrelated participant mutations"
@@ -113,6 +118,7 @@ def _consistent(
     combat: StageCombatFacts,
     identities: Iterable[str],
 ) -> None:
+    """Check agreement between stage facts and their corresponding mechanical state."""
     for identity in identities:
         source = sources[identity]
         actor = actors[source.entity_id]
@@ -169,6 +175,7 @@ def _event(
     steps: dict[int, StageActorFacts],
     last_save: DeathSaveRolled | None,
 ) -> None:
+    """Validate one event against its referenced stage facts."""
     for name in ("actor_id", "attacker_id", "target_id", "source_actor_id"):
         identity = getattr(event, name, None)
         _require(
@@ -319,6 +326,7 @@ def _final_delta(
     combat: StageCombatFacts,
     initial: dict[str, StageActorFacts],
 ) -> None:
+    """Check final stage facts against the proposed Delta."""
     expected = dict(initial)
     first_combat = combat_facts(snapshot.combat_state)
     final_combat = first_combat
@@ -432,6 +440,14 @@ def verify_stage_result(
     events: tuple[CombatEvent, ...],
     state_delta: delta.StateDelta | None,
 ) -> None:
+    """Verify audited stage evidence against fixed input, proposed events and final Delta.
+
+    Check participant coverage and stage/reference ordering, replay the supported actor
+    and combat fact transitions, and validate event-specific semantics and movement
+    geometry. Compare the final projection with guarded Delta operations. Uncovered
+    metadata is handled explicitly; this check neither executes the action nor redraws
+    RNG.
+    """
     if facts.coverage == "uncovered":
         return
     from dnd5e_engine.evaluation_contracts import CombatIntentPayload

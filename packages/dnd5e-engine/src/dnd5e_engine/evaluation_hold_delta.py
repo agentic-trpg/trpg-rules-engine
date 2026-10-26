@@ -16,6 +16,8 @@ from dnd5e_engine.types.conditions import ActiveCondition
 
 
 class HoldPersonCreatedEntry(EvaluationModel):
+    """Represent one target entry created in the Hold Person graph."""
+
     effect: EffectState
     clock: LifecycleRecord | None
     lineage: ConditionLink
@@ -27,6 +29,8 @@ class HoldPersonCreatedEntry(EvaluationModel):
 
 
 class HoldPersonGraphCreate(EvaluationModel):
+    """Propose creation of the complete guarded Hold Person graph."""
+
     kind: Literal["combat.hold_person_graph_create"]
     combat_id: Annotated[str, Field(min_length=1)]
     source_id: Annotated[str, Field(min_length=1)]
@@ -51,6 +55,7 @@ class HoldPersonGraphCreate(EvaluationModel):
 
     @model_validator(mode="after")
     def closed_graph(self) -> Self:
+        """Validate the complete Hold Person graph and its identity relationships."""
         ids = set(self.actor_ids)
         targets = self.selected_target_ids
         identities = tuple((e.effect.target_id, e.effect.id, e.effect.origin) for e in self.entries)

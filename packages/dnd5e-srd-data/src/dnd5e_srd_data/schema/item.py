@@ -26,6 +26,8 @@ from dnd5e_srd_data.schema.feature import RecoveryRule
 
 
 class ItemRarity(StrEnum):
+    """Name the supported item rarity categories."""
+
     COMMON = "common"
     UNCOMMON = "uncommon"
     RARE = "rare"
@@ -35,6 +37,8 @@ class ItemRarity(StrEnum):
 
 
 class WeaponProperty(StrEnum):
+    """Name the supported weapon property identifiers."""
+
     AMMUNITION = "ammunition"
     FINESSE = "finesse"
     HEAVY = "heavy"
@@ -49,6 +53,8 @@ class WeaponProperty(StrEnum):
 
 
 class ArmorCategory(StrEnum):
+    """Name the supported armor categories."""
+
     LIGHT = "light"
     MEDIUM = "medium"
     HEAVY = "heavy"
@@ -102,6 +108,8 @@ class Item(BaseModel):
 
 
 class Weapon(Item):
+    """Validate item data with weapon attack, damage and mastery properties."""
+
     item_kind: Literal["weapon"] = "weapon"
     weapon_category: Literal["simple_melee", "simple_ranged", "martial_melee", "martial_ranged"]
     damage_parts: list[DamagePart]
@@ -128,10 +136,13 @@ class Weapon(Item):
     def _serialize_properties(self, value: frozenset[WeaponProperty]) -> list[str]:
         # frozenset → JSON list in deterministic (sorted) order so canonical
         # output is byte-stable across runs.
+        """Serialize properties using the explicit nested wire representation."""
         return sorted(v.value for v in value)
 
 
 class Armor(Item):
+    """Validate item data with armor category and protection properties."""
+
     item_kind: Literal["armor"] = "armor"
     armor_category: ArmorCategory
     base_ac: PositiveInt

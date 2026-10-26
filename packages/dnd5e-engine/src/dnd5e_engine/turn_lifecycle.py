@@ -74,6 +74,7 @@ class TurnLifecycle:
     """
 
     def __init__(self) -> None:
+        """Initialize ordered keyed hook collections for the supported turn phases."""
         self._hooks: dict[TurnPhaseName, list[tuple[str, TurnHook]]] = {
             phase: [] for phase in _PHASES
         }

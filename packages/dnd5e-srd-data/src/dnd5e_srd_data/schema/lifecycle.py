@@ -78,6 +78,7 @@ class EffectLifecycleSpec(BaseModel):
 
     @model_validator(mode="after")
     def _projection_group_required(self) -> EffectLifecycleSpec:
+        """Require the effect projection group used by this lifecycle profile."""
         if self.stacking == "latest_applies" and not self.stacking_group:
             raise ValueError("latest_applies requires an explicit stacking group")
         if len({entry.effect_id for entry in self.on_end}) != len(self.on_end):
@@ -86,6 +87,7 @@ class EffectLifecycleSpec(BaseModel):
 
     @model_serializer(mode="wrap")
     def _serialize_lifecycle(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """Serialize lifecycle using the explicit nested wire representation."""
         data: dict[str, Any] = handler(self)
         if not self.on_end:
             data.pop("on_end", None)

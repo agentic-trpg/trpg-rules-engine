@@ -13,6 +13,7 @@ from dnd5e_engine.types.combat import Combatant
 def derive_ended_reason(
     actors: Sequence[Combatant], party_ids: Set[str], encounter_ids: Set[str], dead_ids: Set[str]
 ) -> Literal["victory", "defeat_tpk", "flee", "forced"]:
+    """Classify encounter termination from living sides and recorded deaths."""
     if encounter_ids and all(eid in dead_ids for eid in encounter_ids):
         return "victory"
     if party_ids and all(eid in dead_ids for eid in party_ids):
@@ -39,6 +40,9 @@ def project_outcome(
     deaths: Sequence[DeathRecord],
     expended_resources: Mapping[str, Mapping[str, int]],
 ) -> CombatOutcome:
+    """Project final HP, resources, deaths, loot and experience into a host handoff
+    outcome.
+    """
     total_xp = sum(xp_values.get(eid, 0) for eid in dead_ids if eid in encounter_ids)
     survivors = [eid for eid in party_ids if eid not in dead_ids]
     per_pc = total_xp // len(survivors) if survivors and total_xp > 0 else 0

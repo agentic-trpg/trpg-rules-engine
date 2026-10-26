@@ -24,6 +24,8 @@ from dnd5e_engine.types.combat import Combatant
 
 
 class CheckEvaluation(TypedDict):
+    """Describe uncommitted check result fields returned to the evaluation envelope."""
+
     status: Literal["accepted", "rejected", "unsupported", "needs_choice"]
     state_delta: StateDelta | None
     proposed_events: tuple[CheckRolled, ...]
@@ -33,6 +35,7 @@ class CheckEvaluation(TypedDict):
 
 
 def _refuse(status: Literal["rejected", "unsupported"], code: str, reason: str) -> CheckEvaluation:
+    """Build a refusal with no Delta, proposed events or RNG transition."""
     return dict(
         status=status,
         state_delta=None,
@@ -50,6 +53,9 @@ def evaluate_check(
     tool_slug: str | None = None,
     tool_advantage: bool = False,
 ) -> CheckEvaluation:
+    """Evaluate an admitted noncombat check, returning uncommitted evidence and RNG
+    transition.
+    """
     if failure := check_support_failure(request, loader):
         return failure
     payload, snapshot = request.payload, request.state_snapshot
@@ -105,6 +111,7 @@ def evaluate_check(
 def check_support_failure(
     request: RuleEvaluationRequest, loader: AssetLoader
 ) -> CheckEvaluation | None:
+    """Return a refusal for unsupported check dependencies, or None when admitted."""
     snapshot, payload = request.state_snapshot, request.payload
     if not isinstance(snapshot, NonCombatSnapshot):
         return _refuse("unsupported", "check.snapshot", "checks require a noncombat snapshot")

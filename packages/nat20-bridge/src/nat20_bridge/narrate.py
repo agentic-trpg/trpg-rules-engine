@@ -24,7 +24,10 @@ _FORMATTERS: dict[str, _Formatter] = {}
 
 
 def _register(event_type: str) -> Callable[[_Formatter], _Formatter]:
+    """Register a formatter for the supplied event tag."""
+
     def decorator(fn: _Formatter) -> _Formatter:
+        """Store this event formatter and return it unchanged."""
         _FORMATTERS[event_type] = fn
         return fn
 
@@ -32,37 +35,44 @@ def _register(event_type: str) -> Callable[[_Formatter], _Formatter]:
 
 
 def _who(entity_id: str, names: dict[str, str]) -> str:
+    """Read a display name, falling back to the entity identity."""
     return names.get(entity_id, entity_id)
 
 
 @_register("round_started")
 def _fmt_round_started(e: Any, names: dict[str, str]) -> str:
+    """Format round started evidence for display using the supplied actor names."""
     return f"-- Round {e.round_number} --"
 
 
 @_register("round_ended")
 def _fmt_round_ended(e: Any, names: dict[str, str]) -> str:
+    """Format round ended evidence for display using the supplied actor names."""
     return f"-- End of Round {e.round_number} --"
 
 
 @_register("turn_started")
 def _fmt_turn_started(e: Any, names: dict[str, str]) -> str:
+    """Format turn started evidence for display using the supplied actor names."""
     return f"{_who(e.actor_id, names)}'s turn begins."
 
 
 @_register("turn_ended")
 def _fmt_turn_ended(e: Any, names: dict[str, str]) -> str:
+    """Format turn ended evidence for display using the supplied actor names."""
     return f"{_who(e.actor_id, names)}'s turn ends."
 
 
 @_register("intent_submitted")
 def _fmt_intent_submitted(e: Any, names: dict[str, str]) -> str:
+    """Format intent submitted evidence for display using the supplied actor names."""
     who = _who(e.actor_id, names)
     return f"{who} attempts {e.intent_type}."
 
 
 @_register("attack_rolled")
 def _fmt_attack_rolled(e: Any, names: dict[str, str]) -> str:
+    """Format attack rolled evidence for display using the supplied actor names."""
     attacker = _who(e.attacker_id, names)
     target = _who(e.target_id, names)
     if e.is_crit:
@@ -76,6 +86,7 @@ def _fmt_attack_rolled(e: Any, names: dict[str, str]) -> str:
 
 @_register("save_rolled")
 def _fmt_save_rolled(e: Any, names: dict[str, str]) -> str:
+    """Format save rolled evidence for display using the supplied actor names."""
     who = _who(e.target_id, names)
     outcome = "succeeds" if e.succeeded else "fails"
     return f"{who} rolls a {e.ability} save: {e.roll_total} vs DC {e.dc} — {outcome}."
@@ -83,6 +94,7 @@ def _fmt_save_rolled(e: Any, names: dict[str, str]) -> str:
 
 @_register("concentration_check")
 def _fmt_concentration_check(e: Any, names: dict[str, str]) -> str:
+    """Format concentration check evidence for display using the supplied actor names."""
     who = _who(e.target_id, names)
     outcome = "succeeds" if e.succeeded else "fails"
     return f"{who} rolls a concentration save: {e.roll_total} vs DC {e.dc} — {outcome}."
@@ -90,6 +102,7 @@ def _fmt_concentration_check(e: Any, names: dict[str, str]) -> str:
 
 @_register("check_rolled")
 def _fmt_check_rolled(e: Any, names: dict[str, str]) -> str:
+    """Format check rolled evidence for display using the supplied actor names."""
     who = _who(e.actor_id, names)
     skill = f" ({e.skill})" if e.skill else ""
     if e.succeeded is None:
@@ -101,6 +114,7 @@ def _fmt_check_rolled(e: Any, names: dict[str, str]) -> str:
 
 @_register("damage_applied")
 def _fmt_damage_applied(e: Any, names: dict[str, str]) -> str:
+    """Format damage applied evidence for display using the supplied actor names."""
     who = _who(e.target_id, names)
     overkill = " (overkill)" if e.is_overkill else ""
     return f"{who} takes {e.amount} {e.damage_type} damage{overkill}."
@@ -108,24 +122,28 @@ def _fmt_damage_applied(e: Any, names: dict[str, str]) -> str:
 
 @_register("healing_applied")
 def _fmt_healing_applied(e: Any, names: dict[str, str]) -> str:
+    """Format healing applied evidence for display using the supplied actor names."""
     who = _who(e.target_id, names)
     return f"{who} heals {e.amount} HP."
 
 
 @_register("condition_applied")
 def _fmt_condition_applied(e: Any, names: dict[str, str]) -> str:
+    """Format condition applied evidence for display using the supplied actor names."""
     who = _who(e.target_id, names)
     return f"{who} is now {e.condition}."
 
 
 @_register("condition_removed")
 def _fmt_condition_removed(e: Any, names: dict[str, str]) -> str:
+    """Format condition removed evidence for display using the supplied actor names."""
     who = _who(e.target_id, names)
     return f"{who} is no longer {e.condition}."
 
 
 @_register("area_targeted")
 def _fmt_area_targeted(e: Any, names: dict[str, str]) -> str:
+    """Format area targeted evidence for display using the supplied actor names."""
     who = _who(e.actor_id, names)
     caught = ", ".join(_who(i, names) for i in e.affected_ids) or "no one"
     spared = ", ".join(_who(i, names) for i in e.excluded_ids)
@@ -136,39 +154,48 @@ def _fmt_area_targeted(e: Any, names: dict[str, str]) -> str:
 
 @_register("cast_failed")
 def _fmt_cast_failed(e: Any, names: dict[str, str]) -> str:
+    """Format cast failed evidence for display using the supplied actor names."""
     who = _who(e.actor_id, names)
     return f"{who} fails to cast {e.spell_id} ({e.reason})."
 
 
 @_register("attack_failed")
 def _fmt_attack_failed(e: Any, names: dict[str, str]) -> str:
+    """Format attack failed evidence for display using the supplied actor names."""
     who = _who(e.actor_id, names)
     return f"{who}'s attack fails ({e.reason})."
 
 
 @_register("unconscious")
 def _fmt_unconscious(e: Any, names: dict[str, str]) -> str:
+    """Format unconscious evidence for display using the supplied actor names."""
     who = _who(e.target_id, names)
     return f"{who} falls unconscious."
 
 
 @_register("death")
 def _fmt_death(e: Any, names: dict[str, str]) -> str:
+    """Format death evidence for display using the supplied actor names."""
     who = _who(e.target_id, names)
     return f"{who} dies."
 
 
 @_register("combat_ended")
 def _fmt_combat_ended(e: Any, names: dict[str, str]) -> str:
+    """Format combat ended evidence for display using the supplied actor names."""
     return f"-- Combat ends ({e.reason}) --"
 
 
 def _fallback(event: Any, names: dict[str, str]) -> str:
+    """Format an unknown event as its tag and explicit field values."""
     dump = " ".join(f"{k}={v}" for k, v in event.model_dump().items() if k != "type")
     return f"[{event.type}] {dump}"
 
 
 def _render_one(event: Any, names: dict[str, str]) -> str:
+    """Render through the registered formatter, falling back safely on missing/failed
+    formatters.
+    """
     formatter = _FORMATTERS.get(event.type)
     if formatter is None:
         return _fallback(event, names)

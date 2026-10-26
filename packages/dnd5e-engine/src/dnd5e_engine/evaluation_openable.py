@@ -30,6 +30,8 @@ from dnd5e_engine.evaluation_ruleset import get_default_ruleset, verify_ruleset
 
 
 class OpenableCheckRequest(EvaluationModel):
+    """Bind a supported opening method to a fixed noncombat check input."""
+
     schema_version: Literal["engine-openable/1"]
     request: RuleEvaluationRequest
     operation: Literal["pick_lock", "force_open", "clear_jam"]
@@ -39,6 +41,7 @@ class OpenableCheckRequest(EvaluationModel):
 
     @model_validator(mode="after")
     def bounded_check(self) -> Self:
+        """Convert the opening request into its admitted noncombat check."""
         p = self.request.payload
         if self.request.operation_kind != "rules.check" or not isinstance(p, CheckPayload):
             raise ValueError("openable resolution requires an explicit check")
@@ -100,6 +103,7 @@ async def evaluate_openable(
 def openable_support_failure(
     spec: OpenableCheckRequest, *, loader: AssetLoader
 ) -> CheckEvaluation | None:
+    """Return the unsupported reason for the requested opening check, or None."""
     req = spec.request
     outcome = None
     if spec.required_tool is not None:

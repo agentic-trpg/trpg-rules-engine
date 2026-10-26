@@ -26,6 +26,7 @@ def class_dependencies(
     *,
     equipped: bool = False,
 ) -> str | None:
+    """Check the actor's class feature dependencies against the bound rules assets."""
     if actor.species_slug:
         return "subclass/species operation dependencies are not migrated"
     levels = actor.classes or (
@@ -105,6 +106,7 @@ def pool_dependencies(
     levels: dict[str, int],
     ability: str,
 ) -> str | None:
+    """Check owned resource pools against their class/feature definitions."""
     assert snapshot.resource_state is not None
     pools = [p for p in snapshot.resource_state.pools if p.owner_id == actor.entity_id]
     classes = levels
@@ -153,6 +155,7 @@ def pool_dependencies(
 
 
 def evoker_grants(loader: AssetLoader, canonical: AssetLoader, level: int) -> set[str] | None:
+    """Resolve the reviewed Evoker feature grants from the bound and canonical datasets."""
     subclass = loader.get_subclass("evoker")
     if (
         subclass is None
@@ -188,6 +191,7 @@ def operation_dependencies(
     canonical = get_default_ruleset()
 
     def dependencies(actor: CharacterStateV2) -> str | None:
+        """Check the complete rules dependency set for the enclosing operation."""
         if actor.trait_mechanics:
             return "unreviewed operation trait"
         if attack and actor.weapon_mastery_slugs:

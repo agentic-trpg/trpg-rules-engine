@@ -53,6 +53,7 @@ if TYPE_CHECKING:
 
 
 def _slugify(text: str) -> str:
+    """Normalize a name into a lowercase asset slug."""
     return re.sub(r"[^a-z0-9]+", "-", text.lower().strip()).strip("-")
 
 

@@ -14,6 +14,7 @@ from dnd5e_engine.events import CombatEvent, TurnPhase
 
 
 def hold_turn_support_failure(snapshot: CombatSnapshot, loader: AssetLoader) -> str | None:
+    """Check dependencies for the admitted Hold Person turn lifecycle."""
     sources = snapshot.combat_state.concentration_chain
     if len(sources) != 1:
         return "exactly one complete existing Hold Person source is reviewed"
@@ -25,7 +26,12 @@ def hold_turn_support_failure(snapshot: CombatSnapshot, loader: AssetLoader) -> 
 
 
 class HoldTurnComputation(ConcentrationComputation):
+    """Resolve the admitted Hold Person turn lifecycle in isolated candidate state."""
+
     def emit(self, event: CombatEvent) -> None:
+        """Append mechanical event evidence and fold its consequences into this candidate
+        computation.
+        """
         super().emit(event)
         if not isinstance(event, TurnPhase) or event.phase != "turn_end":
             return

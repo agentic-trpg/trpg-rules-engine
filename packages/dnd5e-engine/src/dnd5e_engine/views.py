@@ -31,6 +31,8 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class RestrictedActionGrantView:
+    """Expose an effective restricted action grant to availability consumers."""
+
     owner_id: str
     action_grant: tuple[str, str]
     actions: tuple[ActionType, ...]
@@ -39,6 +41,8 @@ class RestrictedActionGrantView:
 
 @dataclass(frozen=True)
 class OngoingSpellView:
+    """Expose an ongoing spell's supported activation and lifecycle information."""
+
     source_id: str
     spell_id: str
     owner_id: str
@@ -165,6 +169,14 @@ class LiveCombatView:
 
     @classmethod
     def from_live(cls, live: _LiveCombat) -> LiveCombatView:
+        """Project legacy combat into a consumer view with copied collection containers.
+
+        Include current budgets, positions, effects, grants, spells and supported
+        object/area/construct state with execution/event counters. Actor model values,
+        environment records and final outcome may remain shared and must be treated as
+        read-only. This projection is not an authoritative second combat or a claim of
+        zero-cost reuse.
+        """
         turn = TurnCombatView(attacks_remaining=0)
         if not live.ended and 0 <= live.current_turn_index < len(live.initiative):
             actor = live.initiative[live.current_turn_index]

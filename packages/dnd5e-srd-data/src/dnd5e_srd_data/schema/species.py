@@ -57,6 +57,8 @@ class CreatureTypeRef(BaseModel, frozen=True):
 
 
 class Species(BaseModel):
+    """Validate species traits, size and granted mechanics."""
+
     slug: str
     name: str
     description: str

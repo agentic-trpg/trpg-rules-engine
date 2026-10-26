@@ -79,12 +79,15 @@ class StageActorFacts(EvaluationModel):
 
     @model_validator(mode="after")
     def canonical_position(self) -> Self:
+        """Require a canonical cell identity for stage position evidence."""
         if canonical_cell_id(self.cell) != self.cell:
             raise ValueError("stage position must be canonical")
         return self
 
 
 class StageCombatFacts(EvaluationModel):
+    """Carry the combat workflow facts captured at a mechanical stage."""
+
     turn: TurnState
     dead_ids: frozenset[str]
     damage_instance_sequence: Annotated[int, Field(ge=0)]
@@ -92,10 +95,12 @@ class StageCombatFacts(EvaluationModel):
 
     @field_serializer("dead_ids", when_used="json")
     def ordered_deaths(self, value: frozenset[str]) -> tuple[str, ...]:
+        """Require stable ordering and uniqueness of stage death records."""
         return tuple(sorted(value))
 
     @field_serializer("processed_zero_hp_damage_instances", when_used="json")
     def ordered_instances(self, value: frozenset[tuple[str, str]]) -> tuple[tuple[str, str], ...]:
+        """Require stable ordering and uniqueness of instance identities."""
         return tuple(sorted(value))
 
 
@@ -111,14 +116,17 @@ class StageCombatUpdate(EvaluationModel):
 
     @field_serializer("dead_ids_added", "dead_ids_removed", when_used="json")
     def ordered_ids(self, value: frozenset[str]) -> tuple[str, ...]:
+        """Require stable ordering and uniqueness of referenced identities."""
         return tuple(sorted(value))
 
     @field_serializer("processed_instances_added", "processed_instances_removed", when_used="json")
     def ordered_instances(self, value: frozenset[tuple[str, str]]) -> tuple[tuple[str, str], ...]:
+        """Require stable ordering and uniqueness of instance identities."""
         return tuple(sorted(value))
 
     @model_validator(mode="after")
     def disjoint_changes(self) -> Self:
+        """Reject overlapping changes to the same stage fact."""
         if (
             self.dead_ids_added & self.dead_ids_removed
             or self.processed_instances_added & self.processed_instances_removed
@@ -140,6 +148,7 @@ class StageCombatUpdate(EvaluationModel):
         return self
 
     def apply(self, before: StageCombatFacts) -> StageCombatFacts:
+        """Apply validated stage changes to the supplied working fact projection."""
         if (
             self.dead_ids_added & before.dead_ids
             or not self.dead_ids_removed <= before.dead_ids
@@ -161,6 +170,7 @@ class StageCombatUpdate(EvaluationModel):
 
 
 def combat_change(before: StageCombatFacts, after: StageCombatFacts) -> StageCombatUpdate | None:
+    """Project the changed combat facts used by stage validation."""
     if before == after:
         return None
     return StageCombatUpdate(
@@ -178,6 +188,8 @@ def combat_change(before: StageCombatFacts, after: StageCombatFacts) -> StageCom
 
 
 class MechanicalStage(EvaluationModel):
+    """Describe an ordered mechanical fact transition within one evaluation."""
+
     sequence: Annotated[int, Field(ge=0)]
     kind: StageKind
     sample_point: SamplePoint
@@ -188,6 +200,7 @@ class MechanicalStage(EvaluationModel):
 
     @model_validator(mode="after")
     def unique_changes(self) -> Self:
+        """Reject duplicate change identities in the stage."""
         if self.sample_point != _SAMPLES[self.kind]:
             raise ValueError("stage kind and sample point disagree")
         if len({a.actor_id for a in self.actor_updates}) != len(self.actor_updates):
@@ -196,18 +209,23 @@ class MechanicalStage(EvaluationModel):
 
 
 class EventStageReference(EvaluationModel):
+    """Associate a proposed event with its relevant mechanical stages."""
+
     event_index: Annotated[int, Field(ge=0)]
     stage_sequences: Annotated[tuple[int, ...], Field(min_length=1)]
     event_role: Literal["mechanical_audit"]
 
     @model_validator(mode="after")
     def ordered_references(self) -> Self:
+        """Validate event-stage reference order and identity uniqueness."""
         if tuple(sorted(set(self.stage_sequences))) != self.stage_sequences:
             raise ValueError("duplicate or unordered stage reference")
         return self
 
 
 class EventStageFacts(EvaluationModel):
+    """Carry complete audited stage evidence or an explicit uncovered reason."""
+
     schema_version: Literal["engine-stage-facts/2"]
     input_reference: Literal["request.state_snapshot"]
     projection_scope: Literal["bounded_participant_mechanics"]
@@ -221,6 +239,7 @@ class EventStageFacts(EvaluationModel):
 
     @model_validator(mode="after")
     def structure(self) -> Self:
+        """Validate stage/event relationships and complete coverage structure."""
         if self.coverage == "uncovered":
             if self.reason is None or any(
                 (
@@ -286,6 +305,7 @@ class EventStageFacts(EvaluationModel):
 
     @classmethod
     def uncovered(cls, reason: StageReason) -> Self:
+        """Construct explicit uncovered stage metadata with its reason."""
         return cls(
             schema_version="engine-stage-facts/2",
             input_reference="request.state_snapshot",
@@ -370,6 +390,7 @@ def actor_facts(
 
 
 def combat_facts(state: CombatState) -> StageCombatFacts:
+    """Capture the combat facts included in mechanical stage evidence."""
     return StageCombatFacts(
         turn=TurnState.model_validate(
             {name: getattr(state, name) for name in TurnState.model_fields}

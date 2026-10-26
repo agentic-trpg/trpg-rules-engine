@@ -32,6 +32,9 @@ class MovementLedger(BaseModel):
     dash_count: int = Field(default=0, ge=0)
 
     def remaining(self, effective_speed: int) -> int:
+        """Compute nonnegative movement left from effective speed, Dash count and spent
+        feet.
+        """
         return max(0, effective_speed * (1 + self.dash_count) - self.spent_ft)
 
     def spend(
@@ -56,6 +59,7 @@ class MovementLedger(BaseModel):
         )
 
     def add_dash(self) -> MovementLedger:
+        """Record another Dash allowance in the movement ledger."""
         return self.model_copy(update={"dash_count": self.dash_count + 1})
 
 
@@ -73,6 +77,7 @@ class MovementGrant(BaseModel):
 
     @model_validator(mode="after")
     def _direction_has_target(self) -> MovementGrant:
+        """Validate input consistency; reject directed movement requires a target_id."""
         if self.direction != "any" and not self.target_id:
             raise ValueError("directed movement requires a target_id")
         return self
@@ -93,12 +98,16 @@ class MovementChoice(BaseModel):
     @field_validator("destination_cell")
     @classmethod
     def _canonical_cell(cls, value: str | None) -> str | None:
+        """Normalize a cell identity while preserving an optional absent value."""
         from dnd5e_engine.spatial import cell_id, parse_cell
 
         return cell_id(*parse_cell(value)) if value is not None else None
 
     @model_validator(mode="after")
     def _one_choice(self) -> MovementChoice:
+        """Validate input consistency; reject choose a movement destination or distance,
+        not both.
+        """
         if self.destination_cell is not None and self.distance_ft is not None:
             raise ValueError("choose a movement destination or distance, not both")
         return self
@@ -121,6 +130,7 @@ def can_enter_creature_space(
 
 
 def creature_space_is_difficult(occupant_size: CreatureSize, *, allied: bool = False) -> bool:
+    """Treat hostile nontiny creature space as difficult terrain."""
     return not allied and occupant_size != CreatureSize.TINY
 
 
@@ -158,6 +168,7 @@ class SpeedModifier:
     value: int | Fraction
 
     def __post_init__(self) -> None:
+        """Require add/reduce/multiply semantics and nonnegative reductions or multipliers."""
         if self.operation not in {"add", "reduce", "multiply"}:
             raise ValueError("unsupported speed modifier operation")
         if self.operation != "add" and self.value < 0:
@@ -177,6 +188,7 @@ class EffectiveSpeeds(BaseModel):
 
 
 def _modified_speed(speed: int, modifiers: Sequence[SpeedModifier]) -> int:
+    """Apply ordered speed multipliers/reductions/additions, clamping each result at zero."""
     for modifier in modifiers:
         if modifier.operation == "multiply":
             speed = int(speed * modifier.value)
@@ -208,6 +220,9 @@ def project_speeds(
     locked = project_speed(1, names) == 0
 
     def project(base: int | None) -> int | None:
+        """Project the supplied base speed with locks, conditions, exhaustion and
+        modifiers.
+        """
         if base is None:
             return None
         if locked:
@@ -225,6 +240,7 @@ def project_speeds(
 
 
 def speed_for_mode(speeds: EffectiveSpeeds, mode: MovementMode) -> int:
+    """Select an explicit climb/swim speed or fall back to walking speed."""
     if mode == "climb" and speeds.climb is not None:
         return speeds.climb
     if mode == "swim" and speeds.swim is not None:
@@ -233,6 +249,7 @@ def speed_for_mode(speeds: EffectiveSpeeds, mode: MovementMode) -> int:
 
 
 def has_special_speed(speeds: EffectiveSpeeds, mode: MovementMode) -> bool:
+    """Check for a positive explicit climb or swim speed."""
     return (mode == "climb" and (speeds.climb or 0) > 0) or (
         mode == "swim" and (speeds.swim or 0) > 0
     )

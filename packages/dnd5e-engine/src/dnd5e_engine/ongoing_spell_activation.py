@@ -24,9 +24,13 @@ if TYPE_CHECKING:
 
 
 def activate_spell(live: _LiveCombat, actor: Combatant, intent: PlayerIntent) -> None:
+    """Validate ownership and activation choice for an ongoing spell before applying it."""
     from dnd5e_engine import orchestrator as orch
 
     def refuse(detail: str) -> NoReturn:
+        """Raise invalid_spell_activation without converting the failure into a result
+        envelope.
+        """
         raise orch.IntentRejectedError("invalid_spell_activation", detail)
 
     area = next((a for a in live.persistent_areas.areas if a.id == intent.source_id), None)
@@ -153,6 +157,9 @@ def activate_spell(live: _LiveCombat, actor: Combatant, intent: PlayerIntent) ->
 def _relocate_area(
     live: _LiveCombat, actor: Combatant, intent: PlayerIntent, area: PersistentArea
 ) -> None:
+    """Validate and relocate the selected persistent area, reconciling environment and
+    shape locks.
+    """
     from dnd5e_engine import orchestrator as orch
     from dnd5e_engine.areas import has_line_of_effect
     from dnd5e_engine.environment import reconcile_environment
@@ -161,6 +168,7 @@ def _relocate_area(
     from dnd5e_engine.spatial import canonical_cell_id
 
     def refuse(detail: str) -> NoReturn:
+        """Raise invalid_spell_activation for an unsupported area relocation."""
         raise orch.IntentRejectedError("invalid_spell_activation", detail)
 
     destination = intent.target_zone_id

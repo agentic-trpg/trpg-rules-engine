@@ -70,6 +70,7 @@ class TimedActivityState:
     next_sequence: int = 0
 
     def observe(self, event: CombatEvent) -> None:
+        """Observe mechanical events relevant to the enclosing lifecycle state."""
         if isinstance(event, EffectExpired):
             identity = (event.target_id, event.effect_id, event.origin)
             self.pending[:] = [
@@ -93,9 +94,11 @@ class TimedActivityState:
             ]
 
     def owns_repeat(self, identity: EffectIdentity) -> bool:
+        """Check whether this timed activity owns the selected effect repeat."""
         return any(p.effect_identity == identity for p in self.pending)
 
     def waiting_for_next_turn(self, identity: EffectIdentity, turn: int) -> bool:
+        """Check whether the activity must wait for its next eligible turn."""
         return any(p.effect_identity == identity and p.not_before_turn > turn for p in self.pending)
 
 
@@ -244,6 +247,7 @@ def _linked_effect(
     target: Combatant | None,
     applied: list[ActiveEffect],
 ) -> ActiveEffect | None:
+    """Resolve the effect linked to a timed activity."""
     if timing.effect_id is None or target is None:
         return None
     source = next((p for p in spell.passive_effects if p.id == timing.effect_id), None)
@@ -265,6 +269,7 @@ def _linked_effect(
 
 
 def _eligible(live: _LiveCombat, pending: PendingTimedActivity, actor_id: str) -> bool:
+    """Check the enclosing lifecycle entry's current trigger and participant eligibility."""
     if pending.not_before_turn > live.turn_serial:
         return False
     subject = pending.caster.entity_id if pending.timing.subject == "caster" else pending.target_id
@@ -298,6 +303,7 @@ def run_timed_activities(live: _LiveCombat, phase: str, actor_id: str | None) ->
 def _execute(
     live: _LiveCombat, pending: PendingTimedActivity, target: Combatant, caster: Combatant
 ) -> None:
+    """Resolve the enclosing area's or timed activity's admitted effects in working combat."""
     from dnd5e_engine import orchestrator as orch
     from dnd5e_engine.live_reactions import attach_reaction_hooks
     from dnd5e_engine.live_spell_delivery import fold_forced_movement_requests
@@ -368,6 +374,7 @@ def _execute(
 
 
 def register_timed_activity_hooks(live: _LiveCombat) -> None:
+    """Register keyed timed activity callbacks on the existing lifecycle."""
     live.lifecycle.register(
         "turn_start",
         lambda combat, actor: run_timed_activities(combat, "turn_start", actor),

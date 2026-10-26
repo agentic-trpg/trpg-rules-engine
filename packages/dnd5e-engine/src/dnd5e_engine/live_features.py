@@ -18,6 +18,7 @@ if TYPE_CHECKING:
 def feature_target_failure(
     live: _LiveCombat, actor: Combatant, intent: PlayerIntent, invocation: FeatureInvocation
 ) -> CastFailed | None:
+    """Return a CastFailed event when feature targeting is unsupported or invalid."""
     from dnd5e_engine import orchestrator as orch
 
     activity = invocation.activities[0]
@@ -87,6 +88,7 @@ def feature_target_failure(
 def feature_state_failure(
     live: _LiveCombat, actor: Combatant, intent: PlayerIntent
 ) -> CastFailed | None:
+    """Return a failure for unsupported feature state/dependency combinations."""
     from dnd5e_engine import orchestrator as orch
 
     if (
@@ -116,6 +118,7 @@ def validate_feature_sidecars(live: _LiveCombat, actor: Combatant) -> None:
 def commit_feature_operation(
     live: _LiveCombat, actor_id: str, intent: PlayerIntent, invocation: FeatureInvocation | None
 ) -> None:
+    """Pay and apply the admitted feature operation in the existing working combat."""
     from dnd5e_engine import orchestrator as orch
 
     if invocation is None:

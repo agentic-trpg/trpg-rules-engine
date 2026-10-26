@@ -19,6 +19,8 @@ from dnd5e_engine.outcome_rules import derive_ended_reason, project_outcome
 
 
 class ClosureEvaluation(TypedDict):
+    """Describe uncommitted combat closure fields returned to the evaluation envelope."""
+
     status: Literal["accepted", "rejected", "unsupported"]
     state_delta: StateDelta | None
     proposed_events: tuple[CombatEnded, ...]
@@ -30,6 +32,7 @@ class ClosureEvaluation(TypedDict):
 def _refuse(
     status: Literal["rejected", "unsupported"], code: str, reason: str
 ) -> ClosureEvaluation:
+    """Build a refusal with no Delta, proposed events or RNG transition."""
     return dict(
         status=status,
         state_delta=None,
@@ -41,6 +44,13 @@ def _refuse(
 
 
 def evaluate_closure(request: RuleEvaluationRequest, loader: AssetLoader) -> ClosureEvaluation:
+    """Validate terminal combat and propose a supported victory or TPK closure.
+
+    Check roster, dependency/death consistency and representable resource ledgers,
+    derive the final outcome and return guarded closure changes/events. Nonterminal or
+    unsupported inputs return refusal. The outcome does not itself update authoritative
+    host character, world or encounter records.
+    """
     snapshot = request.state_snapshot
     if not isinstance(snapshot, CombatSnapshot):
         raise EvaluationInvariantError("closure requires a combat snapshot")

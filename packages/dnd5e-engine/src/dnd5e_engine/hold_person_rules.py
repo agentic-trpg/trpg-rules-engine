@@ -8,6 +8,7 @@ from dnd5e_engine.types.effects import ActiveEffect
 
 
 def hold_person_effect(spell: Spell, source: str, target: str, dc: int) -> ActiveEffect:
+    """Bind the reviewed Hold Person effect to its source, target and captured save DC."""
     activity = spell.activities[0]
     assert isinstance(activity, SaveActivity)
     binding = activity.effects[0]

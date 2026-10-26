@@ -49,12 +49,15 @@ _GETTERS: dict[str, str] = {
 
 
 def _check_category(category: str) -> Category:
+    """Require a supported content category or return HTTP 404."""
     if category not in _CATEGORIES:
         raise HTTPException(status_code=404, detail=f"unknown category: {category!r}")
     return category
 
 
 class _ForgeItemRequest(BaseModel):
+    """Validate the supported homebrew item forge request."""
+
     name: str
     base: str
     bonus: int = 0
@@ -62,6 +65,7 @@ class _ForgeItemRequest(BaseModel):
 
 
 def _forge_summary(name: str, slug: str, base: str, bonus: int, extra_damage: str | None) -> str:
+    """Format the forged item's base, bonus and optional damage contribution."""
     parts = [f"{base} base", f"+{bonus}"]
     if extra_damage is not None:
         dice, _, damage_type = extra_damage.partition(":")
@@ -70,6 +74,7 @@ def _forge_summary(name: str, slug: str, base: str, bonus: int, extra_damage: st
 
 
 def _browse(state: BridgeState, category: str, q: str | None) -> dict[str, Any]:
+    """List asset slugs, optionally filtered by the supplied substring."""
     checked = _check_category(category)
     assert state.loader is not None
     slugs = state.loader.list_slugs(checked)
@@ -79,6 +84,7 @@ def _browse(state: BridgeState, category: str, q: str | None) -> dict[str, Any]:
 
 
 def _get_entry(state: BridgeState, category: str, slug: str) -> dict[str, Any]:
+    """Load and serialize one typed asset or return HTTP 404."""
     checked = _check_category(category)
     assert state.loader is not None
     getter = getattr(state.loader, _GETTERS[checked])
@@ -90,6 +96,7 @@ def _get_entry(state: BridgeState, category: str, slug: str) -> dict[str, Any]:
 
 
 def _homebrew_add(state: BridgeState, category: str, raw: dict[str, Any]) -> dict[str, str]:
+    """Validate/persist a homebrew entry and refresh the effective loader."""
     checked = _check_category(category)
     _require_ruleset_update_allowed(state)
     assert state.homebrew_store is not None
@@ -103,12 +110,14 @@ def _homebrew_add(state: BridgeState, category: str, raw: dict[str, Any]) -> dic
 
 
 def _homebrew_list(state: BridgeState) -> dict[str, dict[str, str]]:
+    """List persisted homebrew identities and their categories."""
     assert state.homebrew_store is not None
     entries = state.homebrew_store.entries()
     return {"entries": {slug: entry["category"] for slug, entry in entries.items()}}
 
 
 def _homebrew_delete(state: BridgeState, slug: str) -> None:
+    """Remove a homebrew entry and refresh the effective loader, returning 404 if absent."""
     _require_ruleset_update_allowed(state)
     assert state.homebrew_store is not None
     assert state.refresh_loader is not None
@@ -119,6 +128,7 @@ def _homebrew_delete(state: BridgeState, slug: str) -> None:
 
 
 def _forge(state: BridgeState, req: _ForgeItemRequest) -> dict[str, str]:
+    """Create/persist a supported forged item and refresh the effective loader."""
     _require_ruleset_update_allowed(state)
     assert state.loader is not None
     assert state.homebrew_store is not None
@@ -140,37 +150,45 @@ def _forge(state: BridgeState, req: _ForgeItemRequest) -> dict[str, str]:
 
 
 def _require_ruleset_update_allowed(state: BridgeState) -> None:
+    """Reject content replacement while any Bridge combat remains open."""
     if state.combats:
         raise HTTPException(status_code=409, detail="end all open combats before updating homebrew")
 
 
 def build_content_router(state: BridgeState) -> APIRouter:
+    """Install content browse, homebrew and item-forge routes."""
     router = APIRouter()
 
     @router.get("/v1/srd/{category}")
     def browse(category: str, q: str | None = None) -> dict[str, Any]:
+        """Delegate content listing with an optional slug filter."""
         return _browse(state, category, q)
 
     @router.get("/v1/srd/{category}/{slug}")
     def get_entry(category: str, slug: str) -> dict[str, Any]:
+        """Delegate typed content lookup and HTTP error handling."""
         return _get_entry(state, category, slug)
 
     @router.post("/v1/homebrew/{category}")
     async def homebrew_add(category: str, raw: dict[str, Any]) -> dict[str, str]:
+        """Add homebrew while holding the ruleset update lock."""
         async with state.ruleset_lock:
             return _homebrew_add(state, category, raw)
 
     @router.get("/v1/homebrew")
     def homebrew_list() -> dict[str, dict[str, str]]:
+        """Return homebrew identity/category metadata."""
         return _homebrew_list(state)
 
     @router.delete("/v1/homebrew/{slug}", status_code=204)
     async def homebrew_delete(slug: str) -> None:
+        """Delete homebrew while holding the ruleset update lock."""
         async with state.ruleset_lock:
             _homebrew_delete(state, slug)
 
     @router.post("/v1/forge/item")
     async def forge(req: _ForgeItemRequest) -> dict[str, str]:
+        """Forge an item while holding the ruleset update lock."""
         async with state.ruleset_lock:
             return _forge(state, req)
 

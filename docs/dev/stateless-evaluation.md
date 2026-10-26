@@ -1,5 +1,14 @@
 # Stateless rule evaluation: current local contract
 
+## Current consumer baseline — 2026-10-27
+
+SM main `b9ae704` now includes scoped SessionMemory and instance-field consumers with
+post-COMMIT publication, as recorded by the coordinated [current source check](source-documentation-acceptance.md).
+The 2026-10-21 NOT IMPLEMENTED statements below describe their historical baseline.
+This source-documentation batch changes no RE ABI, dependency pin or supported operation
+and does not close remaining full recovery, Legacy migration or multiplayer acceptance.
+
+
 ## Session RAM consumer architecture (2026-10-21)
 
 Architecture Decision Status **[DECIDED]**. Implementation Status: the complete SM Session RAM integration is **[NOT IMPLEMENTED]**; RE already has bounded stateless evaluation and fixed ruleset reuse, while full Legacy conversion remains incomplete. Acceptance Status: **no runtime, fault or concurrency acceptance executed in this documentation batch**.
@@ -691,7 +700,7 @@ The reviewed ordinary Attack can target an existing canonical Hold Person caster
 Its typed completed damage instance drives one shared CON save after all post-defense
 damage types, including Temp HP absorption. The same result carries attack costs,
 HP/Temp HP, damage bookkeeping, full concentration lineage cleanup, events and RNG.
-See [the R23 boundary and evidence](stateless-migration-progress.md#r23-actual-attack-concentration-composition).
+See [the R23 boundary and evidence](stateless-migration-progress.md#r23-composition-evidence).
 Evaluator `/25` adds no public resolved-damage command or formal cross-repository ABI.
 
 ## R24 instant Save / Damage invocation
@@ -700,7 +709,7 @@ Canonical Sacred Flame joins the existing immediate invocation executor for comp
 Cleric 1 class sources. Shared Delivery/Save/Damage resolves its one target and Action;
 known Cantrips cost no Slot and need no prepared entry. Save success is accepted with
 no damage. Reviewed existing Concentration composes through R23 in that same result.
-The [R24 boundary](stateless-migration-progress.md#r24-existing-instant-save-damage-spell)
+The [R24 boundary](stateless-migration-progress.md#r24-save-damage-evidence)
 keeps new-spell reactions, unknown modifiers and wider geometry unsupported before RNG.
 Evaluator `/26` changes no formal source/continuation/commit contract.
 

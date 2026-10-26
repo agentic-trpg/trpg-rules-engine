@@ -47,6 +47,7 @@ _PHYSICAL_TYPES: Final[frozenset[str]] = frozenset({"bludgeoning", "piercing", "
 
 
 def _damage_immunities(target: Combatant, ctx: ActivityResolutionContext) -> set[str]:
+    """Collect damage immunity types from the target's mechanical input."""
     sidecar = ctx.passive_damage_modifiers.get(target.entity_id, {})
     return set(target.damage_immunities) | set(sidecar.get("immunities", ()))
 

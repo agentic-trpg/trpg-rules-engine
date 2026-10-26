@@ -49,6 +49,8 @@ class FeatPrerequisite(BaseModel, frozen=True):
 
 
 class Feat(BaseModel):
+    """Validate a feat's prerequisites, grants and activity/effect definitions."""
+
     slug: str
     name: str
     description: str

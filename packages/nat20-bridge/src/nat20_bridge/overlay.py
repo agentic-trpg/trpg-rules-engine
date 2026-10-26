@@ -29,73 +29,97 @@ class OverlayAssetLoader:
     """
 
     def __init__(self, *, base: AssetLoader, overlay: MemoryAssetLoader) -> None:
+        """Bind the base loader and its fallback in-memory homebrew loader."""
         self._base = base
         self._overlay = overlay
 
     def get_item(self, slug: str) -> Item | Weapon | Armor | MagicItem | None:
+        """Read the item by slug, using the base first and the overlay only when absent."""
         found = self._base.get_item(slug)
         return found if found is not None else self._overlay.get_item(slug)
 
     def get_weapon(self, slug: str) -> Weapon | None:
+        """Read the weapon by slug, using the base first and the overlay only when absent."""
         found = self._base.get_weapon(slug)
         return found if found is not None else self._overlay.get_weapon(slug)
 
     def get_armor(self, slug: str) -> Armor | None:
+        """Read the armor by slug, using the base first and the overlay only when absent."""
         found = self._base.get_armor(slug)
         return found if found is not None else self._overlay.get_armor(slug)
 
     def get_monster(self, slug: str) -> Monster | None:
+        """Read the monster by slug, using the base first and the overlay only when absent."""
         found = self._base.get_monster(slug)
         return found if found is not None else self._overlay.get_monster(slug)
 
     def get_spell(self, slug: str) -> Spell | None:
+        """Read the spell by slug, using the base first and the overlay only when absent."""
         found = self._base.get_spell(slug)
         return found if found is not None else self._overlay.get_spell(slug)
 
     def get_spell_by_uuid(self, uuid: str) -> Spell | None:
+        """Read the spell by UUID, using the base first and the overlay only when absent."""
         found = self._base.get_spell_by_uuid(uuid)
         return found if found is not None else self._overlay.get_spell_by_uuid(uuid)
 
     def get_species(self, slug: str) -> Species | None:
+        """Read the species by slug, using the base first and the overlay only when absent."""
         found = self._base.get_species(slug)
         return found if found is not None else self._overlay.get_species(slug)
 
     def get_class(self, slug: str) -> Class | None:
+        """Read the class by slug, using the base first and the overlay only when absent."""
         found = self._base.get_class(slug)
         return found if found is not None else self._overlay.get_class(slug)
 
     def get_subclass(self, slug: str) -> Subclass | None:
+        """Read the subclass by slug, using the base first and the overlay only when
+        absent.
+        """
         found = self._base.get_subclass(slug)
         return found if found is not None else self._overlay.get_subclass(slug)
 
     def get_background(self, slug: str) -> Background | None:
+        """Read the background by slug, using the base first and the overlay only when
+        absent.
+        """
         found = self._base.get_background(slug)
         return found if found is not None else self._overlay.get_background(slug)
 
     def get_feat(self, slug: str) -> Feat | None:
+        """Read the feat by slug, using the base first and the overlay only when absent."""
         found = self._base.get_feat(slug)
         return found if found is not None else self._overlay.get_feat(slug)
 
     def get_feature(self, slug: str) -> Feature | None:
+        """Read the feature by slug, using the base first and the overlay only when absent."""
         found = self._base.get_feature(slug)
         return found if found is not None else self._overlay.get_feature(slug)
 
     def get_condition(self, slug: str) -> Condition | None:
+        """Read the condition by slug, using the base first and the overlay only when
+        absent.
+        """
         found = self._base.get_condition(slug)
         return found if found is not None else self._overlay.get_condition(slug)
 
     def list_conditions(self) -> list[str]:
+        """List the available condition slugs through this loader."""
         return self.list_slugs("conditions")
 
     def get_trait(self, slug: str) -> MonsterTrait | None:
+        """Read the trait by slug, using the base first and the overlay only when absent."""
         found = self._base.get_trait(slug)
         return found if found is not None else self._overlay.get_trait(slug)
 
     def list_slugs(self, category: Category) -> list[str]:
+        """List effective asset identities in the requested category."""
         base_slugs = self._base.list_slugs(category)
         overlay_slugs = self._overlay.list_slugs(category)
         base_set = set(base_slugs)
         return [*base_slugs, *(s for s in overlay_slugs if s not in base_set)]
 
     def __contains__(self, key: tuple[Category, str]) -> bool:
+        """Return whether the requested asset identity exists in this loader."""
         return (key in self._base) or (key in self._overlay)

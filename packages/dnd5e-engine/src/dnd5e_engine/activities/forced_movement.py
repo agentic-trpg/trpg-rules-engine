@@ -17,6 +17,8 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class ForcedMovementRequest:
+    """Describe forced movement for later geometry-aware resolution."""
+
     source_actor_id: str
     target_id: str
     distance_ft: int

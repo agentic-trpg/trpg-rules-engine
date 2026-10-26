@@ -221,11 +221,19 @@ class _RecoveryRuleView(Protocol):
     """
 
     @property
-    def period(self) -> str: ...
+    def period(self) -> str:
+        """Expose the recovery period expected by shared recovery handling."""
+        ...
+
     @property
-    def type(self) -> str: ...
+    def type(self) -> str:
+        """Expose the recovery kind expected by shared recovery handling."""
+        ...
+
     @property
-    def formula(self) -> str: ...
+    def formula(self) -> str:
+        """Expose the recovery formula expected by shared recovery handling."""
+        ...
 
 
 def _recover_uses(

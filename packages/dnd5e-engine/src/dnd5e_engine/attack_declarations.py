@@ -24,6 +24,7 @@ AttackDeclaration = Literal["reckless_attack"]
 
 
 def declaration_feature(actor: Combatant, declaration: AttackDeclaration) -> Feature | None:
+    """Resolve the feature referenced by an attack declaration."""
     for owner in feature_repertoire(actor, get_lib_loader()):
         feature = get_lib_loader().get_feature(owner.slug)
         if (
@@ -37,6 +38,7 @@ def declaration_feature(actor: Combatant, declaration: AttackDeclaration) -> Fea
 
 
 def declaration_active(live: _LiveCombat, actor: Combatant, declaration: AttackDeclaration) -> bool:
+    """Check whether the declared feature is active for this actor."""
     feature = declaration_feature(actor, declaration)
     if feature is None:
         return False
@@ -53,6 +55,7 @@ def declaration_active(live: _LiveCombat, actor: Combatant, declaration: AttackD
 def validate_declaration(
     live: _LiveCombat, actor: Combatant, declaration: AttackDeclaration
 ) -> None:
+    """Check declaration eligibility before attack payment or resolution."""
     feature = declaration_feature(actor, declaration)
     if (
         feature is None
@@ -102,6 +105,7 @@ def apply_declaration(
     declaration: AttackDeclaration,
     ctx: ActivityResolutionContext,
 ) -> None:
+    """Apply the admitted declaration to the isolated attack state."""
     from dnd5e_engine import orchestrator as orch
 
     validate_declaration(live, actor, declaration)
@@ -134,6 +138,7 @@ def apply_declaration(
 
 
 def observe_attack_roll(live: _LiveCombat, event: AttackRolled) -> None:
+    """Update declaration lifecycle from attack-roll evidence."""
     from dnd5e_engine import orchestrator as orch
 
     if event.attacker_id != live.current_actor_id:

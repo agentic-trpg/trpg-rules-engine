@@ -49,10 +49,13 @@ class BackgroundAbilityChoice(BaseModel):
     def _serialize_options(self, value: frozenset[str]) -> list[str]:
         # frozenset → JSON list in deterministic (sorted) order so canonical
         # output is byte-stable across runs.
+        """Serialize options using the explicit nested wire representation."""
         return sorted(value)
 
 
 class Background(BaseModel):
+    """Validate a background's ability, proficiency and feature grants."""
+
     slug: str
     name: str
     description: str

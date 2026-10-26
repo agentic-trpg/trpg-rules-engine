@@ -114,6 +114,7 @@ def produce_end_effects(live: _LiveCombat, effect: ActiveEffect) -> None:
 
 
 def observe_modifier_consumption(live: _LiveCombat, event: CombatEvent) -> None:
+    """Record consumed one-use modifiers in the matching effect lifecycle."""
     if not isinstance(event, EffectModifiersConsumed):
         return
     identity = (event.target_id, event.effect_id, event.origin)
@@ -135,6 +136,7 @@ def observe_modifier_consumption(live: _LiveCombat, event: CombatEvent) -> None:
 
 
 def expire_effect(live: _LiveCombat, identity: EffectIdentity, reason: EffectExpiryReason) -> None:
+    """Remove an expired working effect and its linked lifecycle state."""
     from dnd5e_engine import orchestrator as orch
 
     if identity not in live.effect_lifecycles:
@@ -188,6 +190,7 @@ def roll_live_save(
 
 
 def run_repeats(live: _LiveCombat, actor_id: str) -> None:
+    """Resolve due captured repeat saves and update effect lifecycle state."""
     from dnd5e_engine import orchestrator as orch
 
     target = orch._find_combatant(live, actor_id)
@@ -234,6 +237,7 @@ def run_repeats(live: _LiveCombat, actor_id: str) -> None:
 def expire_at_boundary(
     live: _LiveCombat, actor_id: str | None, phase: Literal["start", "end"]
 ) -> None:
+    """Expire effect clocks due at the selected actor turn boundary."""
     if actor_id is None:
         return
     for identity, state in list(live.effect_lifecycles.items()):
@@ -252,6 +256,7 @@ def record_damage(live: _LiveCombat, target_id: str, instance_id: str | None, am
 
 
 def damage_instance_completed(live: _LiveCombat, damage: DamageInstanceContext) -> None:
+    """Resolve concentration and zero-HP consequences after one completed damage instance."""
     from dnd5e_engine import orchestrator as orch
 
     orch._resolve_damage_concentration(live, damage.target_id, damage.amount)
@@ -277,6 +282,7 @@ def damage_instance_completed(live: _LiveCombat, damage: DamageInstanceContext) 
 
 
 def expire_damaged(live: _LiveCombat, target_id: str) -> None:
+    """Expire target effects configured to end on positive damage."""
     for identity, state in list(live.effect_lifecycles.items()):
         if identity[0] == target_id and state.application.spec.expire_on_positive_damage:
             expire_effect(live, identity, "damaged")

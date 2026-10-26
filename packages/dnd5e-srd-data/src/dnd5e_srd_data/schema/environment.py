@@ -6,6 +6,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class EnvironmentalSpec(BaseModel):
+    """Validate the typed environmental mechanics declared by a rules asset."""
+
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     object_anchoring: bool = Field(default=False, strict=True, exclude_if=lambda v: not v)
@@ -22,6 +24,7 @@ class EnvironmentalSpec(BaseModel):
 
     @model_validator(mode="after")
     def coherent_mechanics(self) -> "EnvironmentalSpec":
+        """Require environment mechanics to agree with their declared contribution kind."""
         if self.kind == "fog":
             valid = (
                 self.light is None

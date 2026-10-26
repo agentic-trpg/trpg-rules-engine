@@ -5,6 +5,7 @@ from dnd5e_engine.types.combat import Combatant
 
 
 def combatant(state: CharacterStateV2) -> Combatant:
+    """Construct an isolated combatant working value from snapshot character state."""
     value = state.model_dump(mode="python")
     for field in ("spell_slots", "pact_slots", "spells_known", "custom_counters"):
         del value[field]
@@ -13,6 +14,7 @@ def combatant(state: CharacterStateV2) -> Combatant:
 
 
 def actor_state(actor: Combatant, original: CharacterStateV2) -> CharacterStateV2:
+    """Project the working combatant back into the supplied snapshot actor shape."""
     value = actor.model_dump(mode="python")
     value["death_saves"] = value["death_saves"] or None
     for field in ("spell_slots", "pact_slots", "spells_known", "custom_counters"):

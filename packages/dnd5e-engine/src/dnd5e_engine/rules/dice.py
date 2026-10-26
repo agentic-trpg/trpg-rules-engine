@@ -21,12 +21,15 @@ _Rng = random.Random
 
 @dataclass(frozen=True)
 class RollResult:
+    """Carry raw dice evidence and the computed roll total."""
+
     dice: list[int]
     modifier: int
     total: int
 
     @property
     def raw(self) -> int:
+        """Draw one raw die value from the explicit RNG."""
         return sum(self.dice)
 
 
@@ -42,30 +45,37 @@ def roll(sides: int, count: int = 1, modifier: int = 0, *, rng: _Rng | None = No
 
 
 def roll_d4(count: int = 1, modifier: int = 0, *, rng: _Rng | None = None) -> RollResult:
+    """Draw one d4 using the supplied RNG."""
     return roll(4, count, modifier, rng=rng)
 
 
 def roll_d6(count: int = 1, modifier: int = 0, *, rng: _Rng | None = None) -> RollResult:
+    """Draw one d6 using the supplied RNG."""
     return roll(6, count, modifier, rng=rng)
 
 
 def roll_d8(count: int = 1, modifier: int = 0, *, rng: _Rng | None = None) -> RollResult:
+    """Draw one d8 using the supplied RNG."""
     return roll(8, count, modifier, rng=rng)
 
 
 def roll_d10(count: int = 1, modifier: int = 0, *, rng: _Rng | None = None) -> RollResult:
+    """Draw one d10 using the supplied RNG."""
     return roll(10, count, modifier, rng=rng)
 
 
 def roll_d12(count: int = 1, modifier: int = 0, *, rng: _Rng | None = None) -> RollResult:
+    """Draw one d12 using the supplied RNG."""
     return roll(12, count, modifier, rng=rng)
 
 
 def roll_d20(modifier: int = 0, *, rng: _Rng | None = None) -> RollResult:
+    """Draw one d20 using the supplied RNG."""
     return roll(20, 1, modifier, rng=rng)
 
 
 def roll_d100(*, rng: _Rng | None = None) -> RollResult:
+    """Draw one d100 using the supplied RNG."""
     return roll(100, 1, 0, rng=rng)
 
 

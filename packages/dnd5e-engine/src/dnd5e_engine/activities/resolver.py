@@ -1,3 +1,9 @@
+"""Dispatch typed activities to their mechanical resolvers through a supplied context.
+
+The shared resolver computes effects/events; authoritative SM adoption remains outside
+this module.
+"""
+
 from __future__ import annotations
 
 import logging

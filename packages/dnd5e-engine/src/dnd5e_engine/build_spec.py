@@ -81,6 +81,8 @@ _LONG = set(_ABILITY_ALIASES.values())
 
 
 class AbilityScores(BaseModel):
+    """Validate the six supplied ability scores used by character or monster mechanics."""
+
     model_config = ConfigDict(frozen=True, extra="forbid")
     strength: int = 10
     dexterity: int = 10
@@ -136,6 +138,7 @@ class CharacterBuildSpec(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _reconcile_classes(cls, data: Any) -> Any:
+        """Check class-level choices and reconcile their derived grants."""
         if not isinstance(data, dict):
             return data
         data = dict(data)
@@ -198,6 +201,7 @@ class CombatInstance(BaseModel):
 
 
 def _normalize_abilities(raw: dict[str, int]) -> AbilityScores:
+    """Normalize supplied ability scores into the character build representation."""
     out: dict[str, int] = {}
     for k, v in raw.items():
         key = _ABILITY_ALIASES.get(k, k)
@@ -225,6 +229,9 @@ def make_build_spec(
     attuned_items: tuple[str, ...] = (),
     ability_score_method: AbilityScoreMethod | None = None,
 ) -> CharacterBuildSpec:
+    """Derive a character build specification from validated creation choices and rules
+    assets.
+    """
     payload: dict[str, Any] = {
         "species_slug": species_slug,
         "size_choice": size_choice,
@@ -251,6 +258,7 @@ def make_build_spec(
 def _progressions(
     classes: Mapping[str, int], loader: AssetLoader
 ) -> dict[str, tuple[SpellcastingProgression, int]]:
+    """Resolve level progressions for the selected class definitions."""
     out: dict[str, tuple[SpellcastingProgression, int]] = {}
     for slug, lvl in classes.items():
         cls = loader.get_class(slug)
@@ -337,6 +345,7 @@ class DerivedSheet(BaseModel):
 
 
 def _class_docs(classes: Mapping[str, int], loader: AssetLoader) -> dict[str, Class]:
+    """Load the effective class documents required by the build."""
     docs: dict[str, Class] = {}
     for slug in classes:
         cls = loader.get_class(slug)
@@ -347,6 +356,7 @@ def _class_docs(classes: Mapping[str, int], loader: AssetLoader) -> dict[str, Cl
 
 
 def _species(slug: str, loader: AssetLoader) -> Species:
+    """Resolve the selected species definition."""
     species = loader.get_species(slug)
     if species is None:
         raise ValueError(f"unknown species: {slug!r}")
@@ -404,6 +414,7 @@ def _hit_points(
     con_modifier: int,
     changes: Sequence[PassiveEffectChange],
 ) -> int:
+    """Derive build hit points from class progression and ability inputs."""
     if spec.hp_mode == "fixed" and spec.hp_rolls:
         raise ValueError("hp_rolls given with hp_mode='fixed'; set hp_mode='rolled' to use them")
     rolls = spec.hp_rolls if spec.hp_mode == "rolled" else None
@@ -413,6 +424,7 @@ def _hit_points(
 
 
 def _background(slug: str | None, loader: AssetLoader) -> Background | None:
+    """Resolve background choices and their grants."""
     if slug is None:
         return None
     background = loader.get_background(slug)
@@ -424,6 +436,7 @@ def _background(slug: str | None, loader: AssetLoader) -> Background | None:
 def _skills(
     grants: ProficiencyGrants, background: Background | None, choices: ParsedChoices
 ) -> tuple[frozenset[Skill], frozenset[Skill]]:
+    """Collect granted and selected skill proficiencies."""
     skills = set(grants.skills) | set(choices.skills)
     if background is not None:
         skills |= {
@@ -450,6 +463,7 @@ def _choice_options(level_sources: Sequence[_LeveledSource]) -> dict[str, str]:
 
 
 def _split_picks(picks: Sequence[str], options: Mapping[str, str]) -> tuple[list[str], list[str]]:
+    """Partition supplied progression choices by their supported kind."""
     features: list[str] = []
     feats: list[str] = []
     for slug in picks:
@@ -471,6 +485,7 @@ def _asi_slot(
     class_docs: Mapping[str, Class],
     used: set[tuple[str, int]],
 ) -> AdvancementEntry:
+    """Resolve the ability-score improvement slot for the selected progression."""
     token = f"{kind}:{class_slug}:{level}"
     if class_slug not in spec.classes:
         raise ValueError(
@@ -543,6 +558,7 @@ def _asi_level_feats(
     owned: set[str],
     loader: AssetLoader,
 ) -> list[str]:
+    """Collect feats selected at ability-score improvement levels."""
     feats: list[str] = []
     for pick in choices.feats:
         _asi_slot("feat", pick.class_slug, pick.level, spec, class_docs, used)
@@ -570,6 +586,8 @@ def _asi_level_feats(
 
 @dataclass(frozen=True)
 class _Worn:
+    """Carry selected worn equipment used in build derivation."""
+
     body: Armor | None
     body_bonus: int
     shield: Armor | None
@@ -579,6 +597,7 @@ class _Worn:
 def _attuned(
     spec: CharacterBuildSpec, loader: AssetLoader, changes: Sequence[PassiveEffectChange]
 ) -> frozenset[str]:
+    """Resolve the build's explicitly attuned items."""
     attuned = spec.attuned_items
     if len(set(attuned)) != len(attuned):
         raise ValueError(f"attuned_items repeats an item: {sorted(attuned)}")
@@ -621,6 +640,7 @@ def _worn(
         raise ValueError(f"equipment wields more than one Shield: {[a.slug for a in shields]}")
 
     def bonus(armor: Armor) -> int:
+        """Compute the applicable proficiency bonus for the supplied build inputs."""
         active = not armor.requires_attunement or armor.slug in attuned
         return armor.magical_bonus if active else 0
 
@@ -636,6 +656,7 @@ def _ac_mode(
     modifiers: Mapping[AbilityName, int],
     worn: _Worn,
 ) -> AcCalcMode:
+    """Resolve the selected armor-class calculation mode."""
     wearing, shielded = worn.body is not None, worn.shield is not None
     if explicit is not None:
         if not ac_mode_eligible(explicit, wearing_armor=wearing, wielding_shield=shielded):

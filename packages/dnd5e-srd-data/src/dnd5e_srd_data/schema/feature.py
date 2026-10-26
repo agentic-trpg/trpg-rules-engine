@@ -44,6 +44,8 @@ RiderEffectExpiry = Literal[
 
 
 class RiderEffectSpec(BaseModel, frozen=True):
+    """Describe a typed attack-rider effect and its qualification inputs."""
+
     model_config = ConfigDict(extra="forbid")
 
     effect_id: str
@@ -53,6 +55,7 @@ class RiderEffectSpec(BaseModel, frozen=True):
 
     @model_serializer(mode="wrap")
     def _serialize_binding(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """Serialize binding using the explicit nested wire representation."""
         data: dict[str, Any] = handler(self)
         if self.lifecycle is None:
             data.pop("lifecycle", None)
@@ -60,6 +63,8 @@ class RiderEffectSpec(BaseModel, frozen=True):
 
 
 class RiderForcedMovement(BaseModel, frozen=True):
+    """Describe the forced movement consequence of an admitted rider."""
+
     model_config = ConfigDict(extra="forbid")
 
     max_distance_ft: NonNegativeInt
@@ -131,6 +136,7 @@ class AttackRiderSemantics(BaseModel, frozen=True):
 
     @model_serializer(mode="wrap")
     def _serialize_rider(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """Serialize rider using the explicit nested wire representation."""
         data: dict[str, Any] = handler(self)
         if self.target_size_max is None:
             data.pop("target_size_max", None)
@@ -192,6 +198,8 @@ class FeatureUses(BaseModel):
 
 
 class Feature(BaseModel):
+    """Validate a feature's grants, costs, activities and mechanical sidecars."""
+
     slug: str
     name: str
     description: str = ""
@@ -227,6 +235,7 @@ class Feature(BaseModel):
 
     @model_serializer(mode="wrap")
     def _serialize_feature(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """Serialize feature using the explicit nested wire representation."""
         data: dict[str, Any] = handler(self)
         if not self.runtime_operations:
             data.pop("runtime_operations", None)

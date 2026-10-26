@@ -9,6 +9,8 @@ from dnd5e_engine.events import Ability
 
 
 class ClassSpellSource(EvaluationModel):
+    """Describe a class-owned spell repertoire and its casting resource source."""
+
     source_id: Annotated[str, Field(min_length=1)]
     class_slug: Annotated[str, Field(min_length=1)]
     ability: Ability
@@ -17,6 +19,7 @@ class ClassSpellSource(EvaluationModel):
 
     @model_validator(mode="after")
     def repertoire(self) -> Self:
+        """Validate the casting source's explicit spell repertoire."""
         if (
             any(not slug for slug in self.known_spells)
             or len(set(self.known_spells)) != len(self.known_spells)
@@ -37,6 +40,8 @@ class HoldPersonMaterial(EvaluationModel):
 
 
 class ActorCastingState(EvaluationModel):
+    """Collect the explicit spell sources supplied for one actor."""
+
     actor_id: Annotated[str, Field(min_length=1)]
     verbal_available: bool
     sources: tuple[ClassSpellSource, ...]
@@ -44,6 +49,7 @@ class ActorCastingState(EvaluationModel):
 
     @model_validator(mode="after")
     def identities(self) -> Self:
+        """Validate unique identities and referenced ownership in the supplied component."""
         if len({s.source_id for s in self.sources}) != len(self.sources):
             raise ValueError("duplicate actor spell source")
         if len({s.class_slug for s in self.sources}) != len(self.sources):
@@ -56,10 +62,13 @@ class ActorCastingState(EvaluationModel):
 
 
 class CastingState(EvaluationModel):
+    """Group actor casting inputs within the fixed mechanical snapshot."""
+
     actors: tuple[ActorCastingState, ...]
 
     @model_validator(mode="after")
     def identities(self) -> Self:
+        """Validate unique identities and referenced ownership in the supplied component."""
         if len({a.actor_id for a in self.actors}) != len(self.actors):
             raise ValueError("duplicate casting actor")
         return self

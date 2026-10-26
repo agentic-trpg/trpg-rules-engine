@@ -12,6 +12,7 @@ from dnd5e_engine.monster_rules import monster_rule_facts
 def npc_initialization_failure(
     snapshot: NonCombatSnapshot, data_revision: str, loader: AssetLoader
 ) -> str | None:
+    """Check the supported NPC initialization dependency profile."""
     setup = snapshot.combat_setup
     assert setup is not None
     actors = {a.entity_id: a for a in snapshot.character_states}

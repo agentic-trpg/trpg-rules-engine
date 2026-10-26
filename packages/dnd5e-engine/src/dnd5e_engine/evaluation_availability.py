@@ -16,6 +16,8 @@ from dnd5e_engine.lib_loader import scoped_lib_loader
 
 
 class ActionAvailabilityRequest(EvaluationModel):
+    """Bind a read-only availability query to explicit snapshot and rules identity."""
+
     schema_version: Literal["engine-availability/13"]
     session_id: Annotated[str, Field(min_length=1)]
     operation_kind: Literal["combat.intent"]
@@ -26,6 +28,7 @@ class ActionAvailabilityRequest(EvaluationModel):
 
     @model_validator(mode="after")
     def identities(self) -> Self:
+        """Validate unique identities and referenced ownership in the supplied component."""
         if self.session_id != self.state_snapshot.session_id or (
             self.payload.source_id is not None and self.payload.source_id != self.actor_id
         ):
@@ -34,6 +37,8 @@ class ActionAvailabilityRequest(EvaluationModel):
 
 
 class ActionAvailabilityResult(EvaluationModel):
+    """Return supported action options and refusal/choice information without payment."""
+
     schema_version: Literal["engine-availability/13"]
     session_id: str
     actor_id: str

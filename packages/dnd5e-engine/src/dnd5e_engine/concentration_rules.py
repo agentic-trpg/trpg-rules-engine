@@ -6,6 +6,7 @@ from dnd5e_engine.types.effects import ActiveEffect
 
 
 def concentration_anchor(spell: Spell, caster_id: str) -> ActiveEffect:
+    """Construct the source effect anchoring a concentration spell."""
     return ActiveEffect(
         id=f"effect:{spell.slug}",
         name=spell.name,
@@ -16,6 +17,7 @@ def concentration_anchor(spell: Spell, caster_id: str) -> ActiveEffect:
 
 
 def concentration_max_rounds(spell: Spell | None) -> int | None:
+    """Derive the supported concentration duration in rounds."""
     if spell is None or not spell.concentration or spell.duration.value is None:
         return None
     per_unit = {

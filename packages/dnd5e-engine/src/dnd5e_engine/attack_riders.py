@@ -63,6 +63,8 @@ class AttackRiderRequest(BaseModel):
 
 @dataclass(frozen=True)
 class AttackRiderOptionPlan:
+    """Retain one validated rider option and its mechanical consequences."""
+
     option_id: str
     feature: Feature
     semantics: AttackRiderOptionSemantics
@@ -70,6 +72,8 @@ class AttackRiderOptionPlan:
 
 @dataclass(frozen=True)
 class AttackRiderPlan:
+    """Group admitted rider choices, qualifications and payments for an attack."""
+
     request: AttackRiderRequest
     feature: Feature
     activity: Activity
@@ -90,6 +94,7 @@ def sneak_dice_budget(ctx: ActivityResolutionContext) -> int:
 def _validate_effects(
     feature: Feature, semantics: AttackRiderSemantics, ctx: ActivityResolutionContext
 ) -> None:
+    """Reject attack rider effects outside the supported typed profile."""
     effects = {effect.id: effect for effect in feature.passive_effects}
     for binding in semantics.effects:
         if binding.effect_id not in effects:
@@ -126,6 +131,7 @@ def _validate_effects(
 def _requested_rider(
     owned: Mapping[str, Feature | None], request: AttackRiderRequest
 ) -> tuple[Feature, Activity, AttackRiderSemantics]:
+    """Resolve the rider requested by the attack choice."""
     feature = owned.get(request.feature_id)
     if feature is None:
         raise FeaturePreflightError("rider feature is not in the validated repertoire")
@@ -138,6 +144,7 @@ def _requested_rider(
 
 
 def _validate_rider_carrier(activity: Activity, semantics: AttackRiderSemantics) -> None:
+    """Check that the selected attack can carry this rider."""
     if not isinstance(activity, (SaveActivity, UtilityActivity, DamageActivity)):
         raise FeaturePreflightError("unsupported rider activity")
     if (
@@ -222,6 +229,7 @@ def _validate_rider_carrier(activity: Activity, semantics: AttackRiderSemantics)
 def _potential_attack_qualification(
     qualification: AttackRiderQualification, weapon: Weapon | None, origin: AttackOrigin
 ) -> bool:
+    """Check rider prerequisites that can be established before the attack roll."""
     from dnd5e_engine.activities.attack import _is_monk_weapon
 
     unarmed = weapon is not None and weapon.slug == "unarmed-strike"
@@ -240,6 +248,7 @@ def _potential_attack_qualification(
 
 
 def _choice_limits(owned: Mapping[str, Feature | None]) -> dict[str, int]:
+    """Read the bounded choice limits for the rider."""
     limits: dict[str, int] = {}
     for feature in owned.values():
         if feature is not None:
@@ -257,6 +266,7 @@ def _validate_choice(
     limits: Mapping[str, int],
     cell_size_ft: int,
 ) -> None:
+    """Validate selected rider options against their limits and qualifications."""
     identity = (request.feature_id, request.activity_id)
     if identity in seen:
         raise FeaturePreflightError("duplicate rider option")
@@ -292,6 +302,7 @@ def _validated_payments(
     loader: AssetLoader,
     repertoire: tuple[str, ...],
 ) -> tuple[ResourcePayment, ...]:
+    """Validate and collect the rider's required resource payments."""
     try:
         validate_feature_formulas(feature, activity, ctx)
         _validate_effects(feature, semantics, ctx)
@@ -303,6 +314,7 @@ def _validated_payments(
 def _validate_required_items(
     actor: Combatant, semantics: AttackRiderSemantics, loader: AssetLoader
 ) -> None:
+    """Check the item dependencies required by the rider."""
     for item_slug in semantics.requires_carried_items:
         if loader.get_item(item_slug) is None:
             raise FeaturePreflightError("required carried item has no canonical identity")
@@ -316,6 +328,7 @@ def _option_plans(
     semantics: AttackRiderSemantics,
     ctx: ActivityResolutionContext,
 ) -> tuple[AttackRiderOptionPlan, ...]:
+    """Prepare the admitted rider option plans."""
     if not semantics.option_ids:
         if request.option_ids:
             raise FeaturePreflightError("this rider has no option pool")
@@ -379,6 +392,7 @@ def _damage_provider(
     semantics: AttackRiderSemantics,
     ctx: ActivityResolutionContext,
 ) -> tuple[Feature | None, DamageActivity | None]:
+    """Build the damage contribution supplied by the admitted rider."""
     if semantics.shared_damage_group:
         providers = [
             (owner, candidate)
@@ -541,6 +555,7 @@ def automatic_attack_riders(
 def _actual_attack_qualification(
     qualification: AttackRiderQualification, attack: AttackResolutionContext
 ) -> bool:
+    """Check rider qualification using the resolved attack evidence."""
     if qualification == "strength":
         return attack.governing_ability == "str" and (
             attack.weapon_slug is not None or attack.unarmed

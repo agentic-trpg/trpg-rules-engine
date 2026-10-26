@@ -1,3 +1,8 @@
+"""Explicit activity resolution inputs and callback hooks shared by activity resolvers.
+
+Contexts carry working actors and RNG; they do not own authoritative host persistence.
+"""
+
 from __future__ import annotations
 
 import random
@@ -36,6 +41,7 @@ class SourceUses:
 
     @property
     def current(self) -> int:
+        """Return the active activity resolution context."""
         return max(0, self.maximum - self.spent)
 
 
@@ -764,10 +770,12 @@ class ActivityResolutionContext:
     is_opportunity_attack: bool = False
 
     def next_damage_instance_id(self, target_id: str, source_id: str | None) -> str:
+        """Allocate the next damage identity within the supplied resolution context."""
         if self.damage_instance_id_provider is not None:
             return self.damage_instance_id_provider(target_id, source_id)
         self.damage_sequence[0] += 1
         return f"damage:{self.caster.entity_id}:{target_id}:{self.damage_sequence[0]}"
 
     def ability_mod(self, ability: str) -> int:
+        """Read the caster ability modifier from explicit context inputs."""
         return (self.caster_abilities.get(ability, 10) - 10) // 2

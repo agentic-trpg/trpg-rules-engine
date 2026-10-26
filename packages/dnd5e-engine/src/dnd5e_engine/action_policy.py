@@ -18,6 +18,7 @@ if TYPE_CHECKING:
 
 
 def policies(live: "_LiveCombat", actor_id: str) -> tuple["ActionPolicy", ...]:
+    """Collect action policies affecting the supplied actor and active effects."""
     return tuple(
         e.action_policy
         for e in effective_effects(live.active_effects.get(actor_id, ()))
@@ -32,6 +33,7 @@ def denial(
     *,
     attack: bool = False,
 ) -> bool:
+    """Find the policy reason preventing the requested action."""
     for policy in policies(live, actor.entity_id):
         own_turn = live.current_actor_id == actor.entity_id
         if cost == "reaction" and policy.deny_reactions:
@@ -108,6 +110,7 @@ def classify_intent(intent: "PlayerIntent") -> ActionType | None:
 
 
 def grant_group(effect: "ActiveEffect") -> str | None:
+    """Resolve the restricted action grant group for the action."""
     return effect.lifecycle.spec.stacking_group if effect.lifecycle else None
 
 
@@ -156,6 +159,7 @@ def validate_grant(live: "_LiveCombat", actor: "Combatant", intent: "PlayerInten
 def grant_payment(
     live: "_LiveCombat", actor: "Combatant", grant: tuple[str, str]
 ) -> dict[str, object]:
+    """Determine payment against a restricted action grant."""
     effect = next(e for e in live.active_effects[actor.entity_id] if (e.id, e.origin) == grant)
     group = grant_group(effect)
     return {
@@ -174,6 +178,7 @@ def enforce(
     *,
     attack: bool = False,
 ) -> None:
+    """Reject an action disallowed by the actor's effective policies."""
     from dnd5e_engine.orchestrator import IntentRejectedError
 
     if denial(live, actor, cost, attack=attack):
@@ -233,21 +238,25 @@ def preflight_intent_policy(
 
 
 def attack_cap(live: "_LiveCombat", actor_id: str) -> int | None:
+    """Derive the allowed attack count from the actor's effective action policy."""
     caps = [p.attack_count_cap for p in policies(live, actor_id) if p.attack_count_cap is not None]
     return min(caps) if caps else None
 
 
 def needs_new_attack_action(live: "_LiveCombat", actor: "Combatant") -> bool:
+    """Determine whether another attack requires starting a new Attack action."""
     cap = attack_cap(live, actor.entity_id)
     return cap is not None and actor.attack_action_attacks_made >= cap
 
 
 def attack_budget(live: "_LiveCombat", actor: "Combatant", base: int) -> int:
+    """Read the actor's effective attack budget under action policies."""
     cap = attack_cap(live, actor.entity_id)
     return min(cap, base) if cap is not None else base
 
 
 def has_action_grant(live: "_LiveCombat", actor: "Combatant") -> bool:
+    """Return whether a matching restricted action grant is available."""
     return not denial(live, actor, "action") and any(
         not e.disabled
         and e.action_policy is not None
@@ -263,6 +272,7 @@ def has_action_grant(live: "_LiveCombat", actor: "Combatant") -> bool:
 
 
 def record_budget_changes(live: "_LiveCombat", before: "Combatant | None") -> None:
+    """Update working action/bonus-action usage markers from the actor budget transition."""
     from dnd5e_engine import orchestrator as orch
 
     if before is None:
@@ -283,6 +293,7 @@ def record_budget_changes(live: "_LiveCombat", before: "Combatant | None") -> No
 
 
 def somatic_chance(live: "_LiveCombat", actor_id: str, spell: "Spell") -> int:
+    """Read the effective chance of failing a somatic spell attempt."""
     return (
         max((p.somatic_failure_percent for p in policies(live, actor_id)), default=0)
         if "S" in spell.components
@@ -291,6 +302,7 @@ def somatic_chance(live: "_LiveCombat", actor_id: str, spell: "Spell") -> int:
 
 
 def fail_somatic_attempt(live: "_LiveCombat", actor_id: str, spell: "Spell", chance: int) -> bool:
+    """Consume the failed somatic attempt and emit its mechanical evidence."""
     from dnd5e_engine import orchestrator as orch
     from dnd5e_engine.events import CastFailed, SomaticSpellRolled
 

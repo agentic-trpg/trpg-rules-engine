@@ -47,6 +47,8 @@ ReactionTriggerCompatibility = (
 
 @dataclass(frozen=True)
 class PendingReaction:
+    """Retain a legacy runtime reaction declaration and its captured response."""
+
     owner_id: str
     spell_id: str
     activity_id: str
@@ -58,6 +60,8 @@ class PendingReaction:
 
 @dataclass(frozen=True)
 class ReactionOpportunity:
+    """Describe a candidate reaction trigger and its resolution context."""
+
     kind: ReactionTriggerKind
     triggering_actor_id: str | None
     affected_target_id: str | None = None
@@ -70,6 +74,8 @@ class ReactionOpportunity:
 
 @dataclass(frozen=True)
 class ReactionResult:
+    """Return the outcome and continuation effects of a reaction."""
+
     cancel_cast: bool = False
     negated_damage_targets: frozenset[str] = frozenset()
 
@@ -119,6 +125,7 @@ def reaction_support(activity: Activity, *, source_kind: str = "spell") -> str |
 def compatible_trigger(
     trigger: ReactionTriggerCompatibility | None, conditions: tuple[ReactionCondition, ...]
 ) -> bool:
+    """Check whether a reaction declaration matches the opportunity trigger."""
     if trigger is None:
         return True
     if trigger == "cast_spell":
@@ -160,6 +167,7 @@ def matching_conditions(
 
 
 def reaction_target_id(pending: PendingReaction, opportunity: ReactionOpportunity) -> str | None:
+    """Resolve the reaction target from the declared response and opportunity."""
     role = pending.semantics.target_role
     if role == "self":
         return pending.owner_id

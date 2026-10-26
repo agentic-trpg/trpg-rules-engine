@@ -50,6 +50,8 @@ from dnd5e_engine.types.objects import CombatObject
 
 
 class DeathSaveRecord(EvaluationModel):
+    """Represent explicit death-save counters and stabilization state."""
+
     successes: Annotated[int, Field(ge=0, le=3)]
     failures: Annotated[int, Field(ge=0, le=4)]
     is_stable: bool
@@ -66,6 +68,8 @@ class ClosureDeath(EvaluationModel):
 
 
 class ConditionRecord(EvaluationModel):
+    """Represent a typed actor condition in the fixed snapshot."""
+
     condition: str
     source_entity_id: str
     scope: ConditionScope
@@ -77,6 +81,8 @@ class ConditionRecord(EvaluationModel):
 
 
 class SensesState(EvaluationModel):
+    """Represent the actor's explicit mechanical sense capabilities."""
+
     darkvision: int | None
     blindsight: int | None
     tremorsense: int | None
@@ -84,6 +90,8 @@ class SensesState(EvaluationModel):
 
 
 class MovementModesState(EvaluationModel):
+    """Represent explicit movement speeds available to the actor."""
+
     climb: int | None
     swim: int | None
     fly: int | None
@@ -104,11 +112,15 @@ class MovementLedgerState(MovementLedger):
 
 
 class TimedActivitiesState(EvaluationModel):
+    """Represent current timed activity records supplied to evaluation."""
+
     pending: list[PendingTimedActivity]
     next_sequence: Annotated[int, Field(ge=0)]
 
 
 class MechanicalGrid(EvaluationModel):
+    """Represent the explicit scene geometry required by mechanical evaluation."""
+
     width: Annotated[int, Field(ge=1)]
     height: Annotated[int, Field(ge=1)]
     cell_size_ft: Annotated[int, Field(ge=1)]
@@ -123,6 +135,8 @@ class MechanicalGrid(EvaluationModel):
 
 
 class CharacterState(EvaluationModel):
+    """Represent fixed actor mechanics supplied by the authoritative host."""
+
     entity_id: str
     entity_type: Literal["Character", "Monster", "NPC"]
     name: str
@@ -214,6 +228,7 @@ class CharacterState(EvaluationModel):
 
     @model_validator(mode="after")
     def mechanical_bounds(self) -> Self:
+        """Validate actor identity, HP, counters and spell slot bounds."""
         if not self.entity_id or self.hp_max <= 0 or not 0 <= self.hp_current <= self.hp_max:
             raise ValueError("invalid actor identity or HP bounds")
         numeric = (
@@ -237,6 +252,8 @@ class CharacterState(EvaluationModel):
 
 
 class CharacterStateV2(CharacterState):
+    """Extend actor input with explicit equipment and hand/grip facts."""
+
     weapon_in_hands: Annotated[str, Field(min_length=1)] | None
     weapon_grip: Literal["none", "one_handed", "two_handed"]
     other_hand_occupied: bool
@@ -244,6 +261,7 @@ class CharacterStateV2(CharacterState):
 
     @model_validator(mode="after")
     def equipment_consistency(self) -> Self:
+        """Check held weapon/grip, carried identity and hand/shield consistency."""
         if (self.weapon_in_hands is None) != (self.weapon_grip == "none"):
             raise ValueError("weapon identity and declared grip disagree")
         if self.weapon_in_hands is not None and self.weapon_in_hands not in self.carried_item_slugs:
@@ -256,22 +274,29 @@ class CharacterStateV2(CharacterState):
 
 
 class SceneState(EvaluationModel):
+    """Associate mechanical scene identity with its supplied grid."""
+
     scene_id: Annotated[str, Field(min_length=1)]
     grid: MechanicalGrid
 
 
 class ConditionLink(EvaluationModel):
+    """Associate a condition with its originating effect identity."""
+
     identity: tuple[str, str, str]
     statuses: list[str]
 
 
 class LifecycleRecord(EvaluationModel):
+    """Associate an effect identity with its explicit lifecycle clock."""
+
     identity: tuple[str, str, str]
     state: OngoingEffectLifecycle
 
     @field_validator("state", mode="before", json_schema_input_type=OngoingEffectLifecycleState)
     @classmethod
     def complete_clock(cls, value: Any, info: ValidationInfo) -> Any:
+        """Require explicit nested lifecycle fields and restore the runtime clock."""
         if isinstance(value, OngoingEffectLifecycle):
             value = {
                 field.name: explicit_effect_fields(getattr(value, field.name))
@@ -307,6 +332,7 @@ class LifecycleRecord(EvaluationModel):
 
     @field_serializer("state")
     def explicit_clock(self, value: OngoingEffectLifecycle) -> OngoingEffectLifecycleState:
+        """Serialize every lifecycle clock field into the explicit wire model."""
         return OngoingEffectLifecycleState.model_validate(
             {
                 field.name: explicit_effect_fields(getattr(value, field.name))
@@ -316,22 +342,30 @@ class LifecycleRecord(EvaluationModel):
 
 
 class EffectTurnRecord(EvaluationModel):
+    """Record the current turn lifecycle facts needed by effect resolution."""
+
     identity: tuple[str, str, str]
     turn: int
 
 
 class PersistentAreasState(EvaluationModel):
+    """Represent persistent area mechanics included in the fixed snapshot."""
+
     areas: list[PersistentArea]
     next_sequence: int
     next_turn_start_effects: tuple[EffectTurnRecord, ...]
 
 
 class ObjectState(EvaluationModel):
+    """Represent explicit combat object mechanics supplied by the host."""
+
     objects: list[CombatObject]
     used_ids: set[str]
 
 
 class ConstructState(EvaluationModel):
+    """Represent construct mechanics in the supplied snapshot."""
+
     construct_id: str
     owner_id: str
     spell_id: str
@@ -342,6 +376,8 @@ class ConstructState(EvaluationModel):
 
 
 class TransformState(EvaluationModel):
+    """Represent active transformation mechanics in the supplied snapshot."""
+
     entity_id: str
     form_slug: str
     source: TransformSource
@@ -357,6 +393,8 @@ class TransformState(EvaluationModel):
 
 
 class SummonState(EvaluationModel):
+    """Represent summon mechanics in the supplied snapshot."""
+
     entity_id: str
     owner_id: str
     spell_id: str
@@ -368,6 +406,10 @@ class SummonState(EvaluationModel):
 
 
 class CombatState(EvaluationModel):
+    """Represent current encounter workflow and mechanical component state without audit
+    history.
+    """
+
     combat_id: Annotated[str, Field(min_length=1)]
     initiative_ids: tuple[str, ...]
     party_ids: set[str]
@@ -418,6 +460,7 @@ class CombatState(EvaluationModel):
     @field_validator("deaths_recorded", mode="before")
     @classmethod
     def explicit_deaths(cls, value: object) -> object:
+        """Restore complete typed death records from supplied death entries."""
         if isinstance(value, list):
             return [
                 DeathRecord.model_validate(
@@ -431,6 +474,7 @@ class CombatState(EvaluationModel):
 
     @model_validator(mode="after")
     def turn_bounds(self) -> Self:
+        """Check initiative uniqueness, turn bounds, serials and disjoint combat sides."""
         if not self.initiative_ids or len(set(self.initiative_ids)) != len(self.initiative_ids):
             raise ValueError("initiative must contain unique actor identities")
         if not 0 <= self.current_turn_index < len(self.initiative_ids):
@@ -460,12 +504,15 @@ class InventoryState(EvaluationModel):
 
     @model_validator(mode="after")
     def unique_instances(self) -> Self:
+        """Reject duplicate inventory instance identities."""
         if len({entry.instance_id for entry in self.entries}) != len(self.entries):
             raise ValueError("duplicate inventory instance identity")
         return self
 
 
 class SnapshotBase(EvaluationModel):
+    """Validate shared fixed-input actor, effect, inventory and dependency closure."""
+
     snapshot_schema_version: Literal["engine-snapshot/17"]
     session_id: Annotated[str, Field(min_length=1)]
     world_version: Annotated[int, Field(ge=0)]
@@ -478,6 +525,7 @@ class SnapshotBase(EvaluationModel):
 
     @model_validator(mode="after")
     def identities(self) -> Self:
+        """Validate unique identities and referenced ownership in the supplied component."""
         ids = [actor.entity_id for actor in self.character_states]
         if len(set(ids)) != len(ids):
             raise ValueError("duplicate snapshot actor identity")
@@ -490,6 +538,7 @@ class SnapshotBase(EvaluationModel):
 
     @model_validator(mode="after")
     def casting_closure(self) -> Self:
+        """Require casting owners/repertoires to agree with the snapshot actor mirrors."""
         if self.casting_state is not None:
             actors = {a.entity_id: a for a in self.character_states}
             if any(a.actor_id not in actors for a in self.casting_state.actors):
@@ -502,6 +551,7 @@ class SnapshotBase(EvaluationModel):
 
     @model_validator(mode="after")
     def owned_resource_closure(self) -> Self:
+        """Validate owned resource pools against the supplied actor closure."""
         if self.resource_state is None:
             return self
         actors = {a.entity_id: a for a in self.character_states}
@@ -532,11 +582,14 @@ class SnapshotBase(EvaluationModel):
 
 
 class CombatSnapshot(SnapshotBase):
+    """Supply complete necessary combat mechanics for one stateless evaluation."""
+
     snapshot_kind: Literal["combat"]
     combat_state: CombatState
 
     @model_validator(mode="after")
     def dependency_closure(self) -> Self:
+        """Validate complete mechanical references among snapshot components."""
         ids = {actor.entity_id for actor in self.character_states}
         state = self.combat_state
         if any(p.owner_id not in ids for p in state.pending_reactions) or len(
@@ -587,6 +640,7 @@ class CombatSetupState(EvaluationModel):
 
     @model_validator(mode="after")
     def closure(self) -> Self:
+        """Validate complete component references and cross-field invariants."""
         from dnd5e_engine.spatial import canonical_cell_id
 
         ids = set(self.roll_order)
@@ -611,11 +665,14 @@ class CombatSetupState(EvaluationModel):
 
 
 class NonCombatSnapshot(SnapshotBase):
+    """Supply explicit noncombat mechanics and optional fresh-combat setup inputs."""
+
     snapshot_kind: Literal["non_combat"]
     combat_setup: CombatSetupState | None
 
     @model_validator(mode="after")
     def setup_actors(self) -> Self:
+        """Validate setup actor identity and required initialization relationships."""
         if self.combat_setup is not None and set(self.combat_setup.roll_order) != {
             a.entity_id for a in self.character_states
         }:

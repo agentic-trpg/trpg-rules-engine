@@ -471,6 +471,7 @@ def _prepare_attack_roll(
 def _merge_roll_modifier(
     sources: AdvantageSources, modifier: AttackRollModifier
 ) -> AdvantageSources:
+    """Combine attack roll modifiers while retaining advantage/disadvantage semantics."""
     return AdvantageSources(
         advantage=()
         if modifier.forgo_all_advantage
@@ -482,6 +483,7 @@ def _merge_roll_modifier(
 
 
 def _attack_origin(ctx: ActivityResolutionContext) -> AttackOrigin:
+    """Resolve the position from which the attack is delivered."""
     return (
         "opportunity"
         if ctx.is_opportunity_attack and ctx.attack_origin == "default"
@@ -723,6 +725,7 @@ def attacker_advantage_flags(ctx: ActivityResolutionContext) -> tuple[bool, bool
 
 
 def _active_attack_flags(ctx: ActivityResolutionContext, actor_id: str) -> set[str]:
+    """Collect attack qualification flags supplied by active effects."""
     effects = (
         ctx.attack_active_effects(actor_id)
         if ctx.attack_active_effects is not None
@@ -816,6 +819,7 @@ def _is_monk_weapon(weapon: Weapon | None) -> bool:
 
 
 def _martial_arts_applies(ctx: ActivityResolutionContext, weapon: Weapon | None) -> bool:
+    """Check whether the supplied attack meets Martial Arts prerequisites."""
     return ctx.martial_arts and _is_monk_weapon(weapon)
 
 
@@ -1085,6 +1089,7 @@ def _attack_rider_plan(
     sources: AdvantageSources,
     advantage_mode: AdvantageMode,
 ) -> AttackResolutionContext:
+    """Prepare the requested attack rider choices for this resolution context."""
     damage_types: list[str] = []
     if activity.damage.include_base and weapon is not None:
         parts = (
@@ -1302,6 +1307,7 @@ def _apply_on_hit_damage(
 def _prepare_attack_rider(
     ctx: ActivityResolutionContext, plan: AttackResolutionContext
 ) -> AttackResolutionContext:
+    """Validate and prepare the rider before resolving the attack."""
     prepared = ctx.attack_rider_prepare(plan) if ctx.attack_rider_prepare is not None else 0
     preparation = (
         prepared
@@ -1371,11 +1377,13 @@ def _roll_damage_contributions(
 def _sneak_damage_context(
     ctx: ActivityResolutionContext, plan: AttackResolutionContext, damage_type: str | None
 ) -> ActivityResolutionContext:
+    """Build the damage context for an admitted Sneak Attack rider."""
     if not plan.sneak_will_fire:
         return ctx
     landed = False
 
     def observe_damage(event: CombatEvent) -> None:
+        """Forward damage evidence to the active resolution observer."""
         nonlocal landed
         if (
             isinstance(event, DamageApplied)
@@ -1387,6 +1395,7 @@ def _sneak_damage_context(
         ctx.event_emitter(event)
 
     def complete_damage(instance: DamageInstanceContext) -> None:
+        """Notify the context that this damage instance has finished."""
         if landed or plan.sneak_dice_sacrificed:
             ctx.sneak_attack_spent[plan.attacker_id] = True
             if ctx.sneak_attack_commit is not None:

@@ -32,6 +32,8 @@ from dnd5e_engine.lib_loader import scoped_lib_loader
 
 
 class _ResultIdentity(TypedDict):
+    """Describe request-associated identity fields copied into an evaluation result."""
+
     schema_version: EvaluationVersion
     session_id: str
     command_id: str
@@ -55,6 +57,7 @@ def _turn_result(common: _ResultIdentity, outcome: TurnEvaluation) -> RuleEvalua
 
 
 def _stage_coverage(status: str, facts: EventStageFacts | None = None) -> EventStageFacts | None:
+    """Select complete or explicitly uncovered event-stage metadata for this result."""
     if status != "accepted":
         return None
     return (

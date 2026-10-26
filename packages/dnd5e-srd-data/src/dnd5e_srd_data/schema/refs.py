@@ -13,6 +13,8 @@ so the ref stays typed-honest (separate canonical owners)."""
 
 
 class GrantRef(BaseModel, frozen=True):
+    """Refer to a granted rules asset at the declared progression level."""
+
     ref_type: GrantRefType
     slug: str
     level: int = 0

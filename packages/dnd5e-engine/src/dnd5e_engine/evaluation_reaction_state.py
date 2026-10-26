@@ -15,6 +15,8 @@ from dnd5e_engine.reactions import PendingReaction
 
 
 class ReactionConditionState(EvaluationModel):
+    """Represent explicit predicates qualifying a reaction declaration."""
+
     kind: ReactionTriggerKind
     max_range_ft: Annotated[int, Field(ge=0)] | None
     target_spell_slug: Annotated[str, Field(min_length=1)] | None
@@ -22,17 +24,23 @@ class ReactionConditionState(EvaluationModel):
 
 
 class ReactionResponseState(EvaluationModel):
+    """Represent the response mechanics selected by a reaction declaration."""
+
     kind: Literal["negate_triggering_spell_damage", "cancel_triggering_spell_on_failed_save"]
     trigger_kind: ReactionTriggerKind | None
 
 
 class ReactionSemanticsState(EvaluationModel):
+    """Represent captured reaction trigger and response semantics."""
+
     target_role: Literal["self", "triggering_actor", "damage_source", "affected_creature"]
     responses: tuple[ReactionResponseState, ...]
     effect_expiry: Literal["owner_next_turn_start"] | None
 
 
 class PendingReactionState(EvaluationModel):
+    """Represent a supplied pending reaction without introducing a separate runtime owner."""
+
     owner_id: Annotated[str, Field(min_length=1)]
     spell_id: Annotated[str, Field(min_length=1)]
     activity_id: Annotated[str, Field(min_length=1)]

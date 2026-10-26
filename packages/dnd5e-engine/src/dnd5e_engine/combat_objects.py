@@ -23,16 +23,20 @@ if TYPE_CHECKING:
 
 
 def object_position(obj: CombatObject, positions: Mapping[str, str]) -> str | None:
+    """Resolve an object's position from its single declared placement authority."""
     return obj.position if obj.holder_id is None else positions.get(obj.holder_id)
 
 
 @dataclass
 class CombatObjectState:
+    """Maintain working combat object mechanics within the enclosing runtime/candidate."""
+
     objects: dict[str, CombatObject] = field(default_factory=dict)
     # Identity is never reused, even after departure/removal, within this combat.
     used_ids: set[str] = field(default_factory=set)
 
     def views(self, live: _LiveCombat) -> tuple[CombatObjectView, ...]:
+        """Project current combat objects into read-only object views."""
         from dnd5e_engine.persistent_areas import FollowObjectEmanation
 
         return tuple(
@@ -53,6 +57,7 @@ class CombatObjectState:
     def remove(
         self, live: _LiveCombat, obj: CombatObject, source_id: str, reason: ObjectChangeOperation
     ) -> None:
+        """Remove the referenced combat object from the working object state."""
         from dnd5e_engine import orchestrator as orch
         from dnd5e_engine.persistent_areas import FollowObjectEmanation
 
@@ -68,6 +73,7 @@ class CombatObjectState:
                     orch._drop_concentration(live, area.source_entity_id)
 
     def observe(self, live: _LiveCombat, event: CombatEvent) -> None:
+        """Observe mechanical events relevant to the enclosing lifecycle state."""
         from dnd5e_engine.events import CombatantLeft, CombatEnded, Death
 
         if not isinstance(event, (Death, CombatantLeft, CombatEnded)):
@@ -113,6 +119,7 @@ def _changed(
     source_id: str,
     operation: ObjectChangeOperation,
 ) -> None:
+    """Build event evidence describing the object mutation."""
     from dnd5e_engine import orchestrator as orch
     from dnd5e_engine.events import CombatObjectChanged
 
@@ -131,6 +138,7 @@ def _changed(
 
 
 def _position_valid(live: _LiveCombat, position: str | None) -> bool:
+    """Check object position against the supplied scene geometry."""
     from dnd5e_engine.spatial import canonical_cell_id
 
     try:
@@ -144,6 +152,7 @@ def _position_valid(live: _LiveCombat, position: str | None) -> bool:
 
 
 def _holder_valid(live: _LiveCombat, holder_id: str | None) -> bool:
+    """Check that a referenced object holder exists and is eligible."""
     return (
         any(
             c.entity_id == holder_id and c.is_alive and c.entity_id not in live.dead_ids

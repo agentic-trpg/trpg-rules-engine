@@ -94,10 +94,13 @@ def _sanitize_name(name: str, max_len: int = _MAX_NAME_LEN) -> str:
 
 
 def _ability_mod(score: int) -> int:
+    """Convert an ability score to its signed modifier."""
     return (score - 10) // 2
 
 
 class _CombatStartRequest(BaseModel):
+    """Validate the Bridge combat start party, encounter and scene inputs."""
+
     model_config = ConfigDict(extra="forbid")
     party: list[PartyValidateRequest]
     monsters: list[str]
@@ -109,6 +112,7 @@ _IntentRequest = IntentRequest
 
 
 def _get_handle(state: BridgeState, cid: str) -> CombatHandle:
+    """Read the Bridge combat handle or raise a not-executed HTTP 404."""
     handle = state.combats.get(cid)
     if handle is None:
         raise HTTPException(
@@ -159,6 +163,7 @@ async def _pump_until_stable(state: BridgeState, cid: str) -> None:
 def _envelope(
     cid: str, events: list[CombatEvent], names: dict[str, str], over: bool
 ) -> dict[str, Any]:
+    """Build a Bridge response with ordered events, narration and completion status."""
     return {
         "combat_id": cid,
         "events": [e.model_dump() for e in events],
@@ -170,6 +175,7 @@ def _envelope(
 def _build_party_specs(
     state: BridgeState, party: list[PartyValidateRequest], rng: random.Random
 ) -> tuple[list[Any], dict[str, str]]:
+    """Validate party builds and derive named mechanical combat participants."""
     assert state.loader is not None
     loader = state.loader
     party_specs = []
@@ -207,6 +213,7 @@ def _build_party_specs(
 def _build_encounter_specs(
     state: BridgeState, monster_slugs: list[str], rng: random.Random
 ) -> tuple[list[EncounterMemberSpec], dict[str, str]]:
+    """Load monster definitions and derive encounter participants with seeded initiative."""
     assert state.loader is not None
     loader = state.loader
     encounter_specs = []
@@ -245,6 +252,7 @@ def _build_encounter_specs(
 
 
 async def _start_route(state: BridgeState, req: _CombatStartRequest) -> dict[str, Any]:
+    """Create a seeded Bridge combat and register its handles, map and event collection."""
     seed = resolve_seed(req.seed)
     rng = random.Random(seed)
 
@@ -279,10 +287,12 @@ async def _start_route(state: BridgeState, req: _CombatStartRequest) -> dict[str
 
 
 def _player_intent_from_request(req: _IntentRequest) -> PlayerIntent:
+    """Convert the validated Bridge request into the shared PlayerIntent."""
     return req.intent()
 
 
 async def _intent_route(state: BridgeState, cid: str, req: _IntentRequest) -> dict[str, Any]:
+    """Submit the intent, pump resolution to stability and return newly collected events."""
     handle = _get_handle(state, cid)
     names = state.names.get(cid, {})
     start_idx = get_live(handle).event_count
@@ -297,6 +307,7 @@ async def _intent_route(state: BridgeState, cid: str, req: _IntentRequest) -> di
 
 
 async def _advance_monster_route(state: BridgeState, cid: str) -> dict[str, Any]:
+    """Advance the monster turn and return the resulting event envelope."""
     handle = _get_handle(state, cid)
     names = state.names.get(cid, {})
     start_idx = get_live(handle).event_count
@@ -310,6 +321,7 @@ async def _advance_monster_route(state: BridgeState, cid: str) -> dict[str, Any]
 
 
 def _order_row(combatant: Any, names: dict[str, str], live_view: Any) -> dict[str, Any]:
+    """Project one initiative entry's current HP, conditions and position for transport."""
     eid = combatant.entity_id
     return {
         "entity_id": eid,
@@ -323,6 +335,7 @@ def _order_row(combatant: Any, names: dict[str, str], live_view: Any) -> dict[st
 
 
 async def _view_route(state: BridgeState, cid: str) -> dict[str, Any]:
+    """Read the Bridge combat's current initiative, spatial and completion view."""
     handle = _get_handle(state, cid)
     names = state.names.get(cid, {})
     try:
@@ -349,6 +362,7 @@ async def _view_route(state: BridgeState, cid: str) -> dict[str, Any]:
 
 
 async def _stop_collector(state: BridgeState, cid: str) -> None:
+    """Wait briefly for the combat collector, cancelling it on timeout."""
     task = state.collectors.pop(cid, None)
     if task is None:
         return
@@ -359,6 +373,7 @@ async def _stop_collector(state: BridgeState, cid: str) -> None:
 
 
 async def _end_route(state: BridgeState, cid: str) -> dict[str, Any]:
+    """End the combat, drain/stop collection and release completed runtime registrations."""
     handle = _get_handle(state, cid)
     names = state.names.get(cid, {})
     try:
@@ -379,6 +394,7 @@ async def _end_route(state: BridgeState, cid: str) -> dict[str, Any]:
 
 
 def _host_owner(state: BridgeState, authorization: str | None) -> str:
+    """Authenticate the trusted Host bearer token using constant-time comparison."""
     supplied = (authorization or "").removeprefix("Bearer ")
     for token, owner in state.host_tokens.items():
         if (
@@ -395,11 +411,15 @@ def _host_owner(state: BridgeState, authorization: str | None) -> str:
 
 
 def build_combat_router(state: BridgeState) -> APIRouter:
+    """Install combat routes using shared request identity and execution/retry handling."""
     router = APIRouter()
 
     @router.post("/v1/combat")
     async def start(req: _CombatStartRequest) -> JSONResponse:
+        """Execute a Bridge combat-start request through the shared retry envelope."""
+
         async def opening() -> dict[str, Any]:
+            """Create combat while holding the ruleset lock and selected loader scope."""
             async with state.ruleset_lock:
                 assert state.loader is not None
                 with scoped_lib_loader(state.loader):
@@ -417,6 +437,7 @@ def build_combat_router(state: BridgeState) -> APIRouter:
 
     @router.post("/v1/combat/{cid}/intent")
     async def intent(cid: str, req: _IntentRequest) -> JSONResponse:
+        """Execute a guarded Bridge intent request through the shared retry/event envelope."""
         return await execute(
             state,
             cid,
@@ -429,6 +450,7 @@ def build_combat_router(state: BridgeState) -> APIRouter:
 
     @router.post("/v1/combat/{cid}/advance-monster")
     async def advance_monster(cid: str, req: MutationRequest | None = None) -> JSONResponse:
+        """Execute a guarded Bridge monster advancement request."""
         req = req or MutationRequest()
         return await execute(
             state,
@@ -442,11 +464,13 @@ def build_combat_router(state: BridgeState) -> APIRouter:
 
     @router.get("/v1/combat/{cid}")
     async def view(cid: str) -> dict[str, Any]:
+        """Read the combat view while holding its Bridge lock."""
         async with state.combat_locks.setdefault(cid, asyncio.Lock()):
             return await _view_route(state, cid)
 
     @router.post("/v1/combat/{cid}/end")
     async def end(cid: str, req: MutationRequest | None = None) -> JSONResponse:
+        """Execute a guarded Bridge combat-end request."""
         req = req or MutationRequest()
         return await execute(
             state,
@@ -463,13 +487,17 @@ def build_combat_router(state: BridgeState) -> APIRouter:
 
 
 def _add_host_routes(state: BridgeState, router: APIRouter) -> None:
+    """Install authorized Host object/wind mutation routes."""
+
     @router.post("/v1/combat/{cid}/host/objects")
     async def objects(
         cid: str, req: RegisterObjectsRequest, authorization: str | None = Header(default=None)
     ) -> JSONResponse:
+        """Authorize and execute combat object registration for the trusted Host."""
         owner = _host_owner(state, authorization)
 
         async def register() -> dict[str, Any]:
+            """Register the supplied objects under the authenticated Host owner."""
             await register_combat_objects(
                 _get_handle(state, cid), owner_id=owner, objects=tuple(req.objects)
             )
@@ -489,9 +517,11 @@ def _add_host_routes(state: BridgeState, router: APIRouter) -> None:
     async def object_mutation(
         cid: str, req: MutateObjectRequest, authorization: str | None = Header(default=None)
     ) -> JSONResponse:
+        """Authorize and execute the trusted Host object mutation."""
         owner = _host_owner(state, authorization)
 
         async def mutate() -> dict[str, Any]:
+            """Apply the supplied object mutation under the authenticated Host owner."""
             await mutate_combat_object(
                 _get_handle(state, cid), owner_id=owner, mutation=req.mutation
             )
@@ -511,9 +541,11 @@ def _add_host_routes(state: BridgeState, router: APIRouter) -> None:
     async def wind(
         cid: str, req: WindRequest, authorization: str | None = Header(default=None)
     ) -> JSONResponse:
+        """Authorize and execute a trusted Host wind mutation."""
         owner = _host_owner(state, authorization)
 
         async def apply() -> dict[str, Any]:
+            """Apply the authorized Host wind mutation through the shared engine interface."""
             await apply_strong_wind(_get_handle(state, cid), req.wind)
             return {}
 

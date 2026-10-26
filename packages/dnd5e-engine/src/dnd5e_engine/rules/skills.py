@@ -105,6 +105,8 @@ SKILL_DISPLAY_NAMES: dict[str, str] = {
 
 @dataclass(frozen=True)
 class SkillCheckResult:
+    """Carry the resolved skill check roll, modifier and success outcome."""
+
     roll: RollResult
     skill: str
     ability: str

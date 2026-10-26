@@ -37,6 +37,7 @@ class CombatObject(BaseModel):
 
     @model_validator(mode="after")
     def one_position_authority(self) -> "CombatObject":
+        """Require exactly one supported object position authority."""
         if self.disposition == "unattended":
             valid = self.position is not None and self.holder_id is None
         else:
@@ -58,6 +59,7 @@ class ObjectMutation(BaseModel):
 
     @model_validator(mode="after")
     def operation_inputs(self) -> "ObjectMutation":
+        """Require mutation fields to match the declared object operation."""
         if (self.position is not None) != (self.operation == "move"):
             raise ValueError("only move requires a position")
         if (self.holder_id is not None) != (self.operation in ("pickup", "wear")):
@@ -66,6 +68,8 @@ class ObjectMutation(BaseModel):
 
 
 class CombatObjectView(BaseModel):
+    """Expose a combat object's read-only identity, placement and capabilities."""
+
     model_config = ConfigDict(extra="forbid", frozen=True)
     object: CombatObject
     position: str

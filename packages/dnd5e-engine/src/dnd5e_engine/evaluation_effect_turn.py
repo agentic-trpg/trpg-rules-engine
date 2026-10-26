@@ -30,6 +30,7 @@ POISON_ACTIVITY = "n64fvJMT9fPUy7DH"
 
 
 def _definition_failure(effect: EffectState, loader: AssetLoader) -> str | None:
+    """Return the reason an effect definition is outside the reviewed turn profile."""
     app = effect.lifecycle
     if app is None or (
         app.source_kind != "feature"
@@ -83,6 +84,7 @@ def _definition_failure(effect: EffectState, loader: AssetLoader) -> str | None:
 
 
 def _clock_failure(snapshot: CombatSnapshot, effect: EffectState) -> str | None:
+    """Return the reason an effect clock cannot be represented by the admitted profile."""
     state = snapshot.combat_state
     if len(state.effect_lifecycles) != 1 or len(state.conditions_by_effect) != 1:
         return "exactly one lifecycle and condition lineage record is required"
@@ -116,6 +118,7 @@ def _clock_failure(snapshot: CombatSnapshot, effect: EffectState) -> str | None:
 
 
 def effect_turn_support_failure(snapshot: CombatSnapshot, loader: AssetLoader) -> str | None:
+    """Check effect/clock dependencies before candidate turn resolution."""
     if len(snapshot.effect_states) != 1:
         return "only one reviewed ongoing effect is migrated"
     effect = snapshot.effect_states[0]
@@ -224,18 +227,22 @@ class EffectTurnComputation(CombatComputation):
     """Per-call selected effect record; all other turn calculations are R11's core."""
 
     def emit(self, event: CombatEvent) -> None:
+        """Append mechanical event evidence and fold its consequences into this candidate
+        computation.
+        """
         super().emit(event)
         if isinstance(event, TurnPhase) and event.phase == "turn_end":
             assert event.actor_id is not None
             self.effect_boundary(event.actor_id)
 
     def effect_boundary(self, actor_id: str) -> None:
+        """Process the effect lifecycle boundary in the isolated candidate."""
         run_snapshot_effect_boundary(self, actor_id, self.expire_effect)
 
     def expire_effect(
         self, identity: EffectIdentity, reason: Literal["duration", "save_succeeded"]
     ) -> None:
-
+        """Remove an expired working effect and its linked lifecycle state."""
         effect = self.snapshot.effect_states[0]
         assert identity == (effect.target_id, effect.id, effect.origin)
         self.events.append(
@@ -260,6 +267,9 @@ class EffectTurnComputation(CombatComputation):
         self.emit(ConditionRemoved(target_id=effect.target_id, condition="poisoned"))
 
     def candidate_state(self) -> CombatSnapshot:
+        """Project this computation's working actors and components into a new candidate
+        snapshot.
+        """
         return (
             super()
             .candidate_state()
@@ -274,6 +284,7 @@ class EffectTurnComputation(CombatComputation):
 
 
 def effect_turn_delta(before: CombatSnapshot, after: CombatSnapshot) -> StateDelta:
+    """Project effect turn changes into guarded, uncommitted Delta operations."""
     old, new = before.combat_state, after.combat_state
     normalized = after.model_copy(
         update={

@@ -28,6 +28,8 @@ from dnd5e_engine.types.combat import Combatant
 
 @dataclass(frozen=True)
 class AttackAdmission:
+    """Retain validated attack inputs before payment and RNG consumption."""
+
     status: Literal["accepted", "rejected", "needs_choice", "unsupported"]
     error: RuleError | None = None
     choice: PreflightChoice | None = None
@@ -36,6 +38,8 @@ class AttackAdmission:
 
 @dataclass(frozen=True)
 class AttackPlan:
+    """Group admitted attack inputs with their execution/payment plan."""
+
     actor: Combatant
     target: Combatant
     weapon: Weapon | None
@@ -44,6 +48,7 @@ class AttackPlan:
 
 
 def refused(status: Literal["rejected", "unsupported"], code: str, reason: str) -> AttackAdmission:
+    """Build a preflight refusal from the supplied failure code and reason."""
     return AttackAdmission(status=status, error=RuleError(code=code, reason=reason))
 
 
@@ -58,6 +63,7 @@ def snapshot_support_failure(
     reviewed_sap: bool = False,
     reviewed_conditions: bool = False,
 ) -> str | None:
+    """Return a reason when snapshot mechanics exceed the supported operation profile."""
     state = snapshot.combat_state
     failure = death_consistency(snapshot, allow_dying=turn_lifecycle)
     if failure is None and turn_lifecycle:
@@ -157,6 +163,7 @@ def snapshot_support_failure(
 def activity_support_failure(
     activity: AttackActivity, *, stat_block: bool = False, weapon: Weapon | None = None
 ) -> str | None:
+    """Check the typed activity and its required mechanical dependencies."""
     basic = AttackActivity(id=activity.id, activation=ActivationBlock(type="action", value=1))
     metadata = {"id", "name", "img", "sort", "description", "activation", "duration", "target"}
     if stat_block or weapon is not None:
@@ -198,6 +205,7 @@ def activity_support_failure(
 
 
 def _weapon_activity_failure(activity: AttackActivity, weapon: Weapon) -> str | None:
+    """Check the supported weapon activity shape and dependencies."""
     attack, damage, reach = activity.attack, activity.damage, activity.range
     category = "ranged" if weapon.weapon_category.endswith("ranged") else "melee"
     bands = attack_rules.weapon_attack_range_ft(weapon)
@@ -226,6 +234,7 @@ def _weapon_activity_failure(activity: AttackActivity, weapon: Weapon) -> str | 
 
 
 def _stat_activity_failure(activity: AttackActivity) -> str | None:
+    """Check the supported stat-block activity shape and dependencies."""
     attack, damage, reach = activity.attack, activity.damage, activity.range
     if (
         attack.type.value not in ("melee", "ranged")
@@ -265,6 +274,7 @@ def _stat_activity_failure(activity: AttackActivity) -> str | None:
 
 
 def template_support_failure(snapshot: CombatSnapshot, loader: AssetLoader) -> str | None:
+    """Check supplied actor templates against the bound rules definitions."""
     for slug in snapshot.combat_state.monster_slug_by_entity.values():
         monster = loader.get_monster(slug)
         if monster is None:
@@ -288,6 +298,7 @@ def template_support_failure(snapshot: CombatSnapshot, loader: AssetLoader) -> s
 def stat_block_admission(
     snapshot: CombatSnapshot, current: Combatant, intent: CombatIntentPayload, loader: AssetLoader
 ) -> AttackAdmission | None:
+    """Validate and prepare an admitted stat-block attack."""
     if (
         current.entity_type not in ("Monster", "NPC")
         or current.entity_id not in snapshot.combat_state.encounter_ids
@@ -339,6 +350,7 @@ def weapon_admission(
     *,
     common_weapons: bool = False,
 ) -> AttackAdmission | None:
+    """Validate and prepare an admitted weapon attack."""
     if not intent.weapon_id:
         known = tuple(slug for slug in current.carried_item_slugs if loader.get_weapon(slug))
         choices = tuple(
@@ -467,6 +479,7 @@ def prepare_attack(
     *,
     common_weapons: bool = False,
 ) -> AttackAdmission:
+    """Prepare attack qualification, target, payment and resolution inputs before RNG use."""
     from dnd5e_engine.evaluation_class_dependencies import operation_dependencies
     from dnd5e_engine.evaluation_shield import has_shield, shield_support_failure
 

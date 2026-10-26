@@ -32,6 +32,7 @@ class ForgeError(Exception):
 
 
 def _slugify(name: str) -> str:
+    """Normalize a name into a lowercase asset slug."""
     sanitized = _SLUG_SANITIZE_RE.sub("-", name.strip().lower()).strip("-")
     if not sanitized:
         raise ForgeError(f"name {name!r} does not yield a usable slug")
@@ -39,6 +40,7 @@ def _slugify(name: str) -> str:
 
 
 def _parse_extra_damage(extra_damage: str) -> DamagePart:
+    """Parse the supported additional damage dice/type expression."""
     match = _EXTRA_DAMAGE_RE.match(extra_damage)
     if match is None:
         raise ForgeError(

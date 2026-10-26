@@ -40,6 +40,7 @@ def _entity_names(scenario: Scenario) -> dict[str, str]:
 
 
 def _current_actor_id(out: ReplayOutcome) -> str | None:
+    """Read the actor at the replayed initiative cursor, or None for an empty roster."""
     view = out.view
     if not view.initiative:
         return None
@@ -48,6 +49,7 @@ def _current_actor_id(out: ReplayOutcome) -> str | None:
 
 
 def _cell_kind(grid: GridScene, blocked: set[str], difficult: set[str], cid: str) -> str:
+    """Classify a rendered cell by blocking, terrain and cover priority."""
     if cid in blocked:
         return "blocked"
     if cid in difficult:
@@ -64,6 +66,7 @@ def _cell_token(
     current_actor_id: str | None,
     occupant_id: str | None,
 ) -> dict[str, Any] | None:
+    """Build the occupant token's name, side and turn/death presentation state."""
     if occupant_id is None:
         return None
     return {
@@ -278,6 +281,7 @@ def actions_context(scenario: Scenario, out: ReplayOutcome) -> dict[str, Any]:
 
 
 def _friendly_attack_rolled(e: Any, names: dict[str, str]) -> str:
+    """Format attack rolled evidence for display using the supplied actor names."""
     attacker = names.get(e.attacker_id, e.attacker_id)
     target = names.get(e.target_id, e.target_id)
     result = "crit" if e.is_crit and e.is_hit else ("hit" if e.is_hit else "miss")
@@ -285,93 +289,111 @@ def _friendly_attack_rolled(e: Any, names: dict[str, str]) -> str:
 
 
 def _friendly_save_rolled(e: Any, names: dict[str, str]) -> str:
+    """Format save rolled evidence for display using the supplied actor names."""
     target = names.get(e.target_id, e.target_id)
     outcome = "success" if e.succeeded else "failure"
     return f"{target} rolls a {e.ability.upper()} save: {e.roll_total} vs DC {e.dc} — {outcome}"
 
 
 def _friendly_damage_applied(e: Any, names: dict[str, str]) -> str:
+    """Format damage applied evidence for display using the supplied actor names."""
     target = names.get(e.target_id, e.target_id)
     suffix = " (overkill)" if e.is_overkill else ""
     return f"{target} takes {e.amount} {e.damage_type} damage{suffix}"
 
 
 def _friendly_healing_applied(e: Any, names: dict[str, str]) -> str:
+    """Format healing applied evidence for display using the supplied actor names."""
     target = names.get(e.target_id, e.target_id)
     return f"{target} heals {e.amount} HP"
 
 
 def _friendly_temphp_applied(e: Any, names: dict[str, str]) -> str:
+    """Format temphp applied evidence for display using the supplied actor names."""
     target = names.get(e.target_id, e.target_id)
     return f"{target} gains {e.amount} temporary HP"
 
 
 def _friendly_effect_applied(e: Any, names: dict[str, str]) -> str:
+    """Format effect applied evidence for display using the supplied actor names."""
     target = names.get(e.effect.target_id, e.effect.target_id)
     return f"{target} gains {e.effect.name}"
 
 
 def _friendly_condition_applied(e: Any, names: dict[str, str]) -> str:
+    """Format condition applied evidence for display using the supplied actor names."""
     target = names.get(e.target_id, e.target_id)
     return f"{target} is now {e.condition}"
 
 
 def _friendly_concentration_check(e: Any, names: dict[str, str]) -> str:
+    """Format concentration check evidence for display using the supplied actor names."""
     target = names.get(e.target_id, e.target_id)
     outcome = "success" if e.succeeded else "failure"
     return f"{target} concentration check vs DC {e.dc}: {outcome}"
 
 
 def _friendly_concentration_dropped(e: Any, names: dict[str, str]) -> str:
+    """Format concentration dropped evidence for display using the supplied actor names."""
     target = names.get(e.target_id, e.target_id)
     return f"{target} loses concentration on {e.effect_name}"
 
 
 def _friendly_death_save_rolled(e: Any, names: dict[str, str]) -> str:
+    """Format death save rolled evidence for display using the supplied actor names."""
     target = names.get(e.target_id, e.target_id)
     return f"{target} death save: {e.roll_total} — {e.outcome}"
 
 
 def _friendly_unconscious(e: Any, names: dict[str, str]) -> str:
+    """Format unconscious evidence for display using the supplied actor names."""
     target = names.get(e.target_id, e.target_id)
     return f"{target} is unconscious"
 
 
 def _friendly_death(e: Any, names: dict[str, str]) -> str:
+    """Format death evidence for display using the supplied actor names."""
     target = names.get(e.target_id, e.target_id)
     return f"{target} dies ({e.reason})"
 
 
 def _friendly_actor_moved(e: Any, names: dict[str, str]) -> str:
+    """Format actor moved evidence for display using the supplied actor names."""
     actor = names.get(e.actor_id, e.actor_id)
     return f"{actor} moves to {e.to_zone}"
 
 
 def _friendly_dash_taken(e: Any, names: dict[str, str]) -> str:
+    """Format dash taken evidence for display using the supplied actor names."""
     actor = names.get(e.actor_id, e.actor_id)
     return f"{actor} dashes"
 
 
 def _friendly_turn_started(e: Any, names: dict[str, str]) -> str:
+    """Format turn started evidence for display using the supplied actor names."""
     actor = names.get(e.actor_id, e.actor_id)
     return f"{actor}'s turn begins"
 
 
 def _friendly_round_started(e: Any, names: dict[str, str]) -> str:
+    """Format round started evidence for display using the supplied actor names."""
     return f"Round {e.round_number} begins"
 
 
 def _friendly_cast_failed(e: Any, names: dict[str, str]) -> str:
+    """Format cast failed evidence for display using the supplied actor names."""
     actor = names.get(e.actor_id, e.actor_id)
     return f"{actor} fails to cast {e.spell_id}: {e.reason}"
 
 
 def _friendly_attack_failed(e: Any, names: dict[str, str]) -> str:
+    """Format attack failed evidence for display using the supplied actor names."""
     actor = names.get(e.actor_id, e.actor_id)
     return f"{actor} fails to attack: {e.reason}"
 
 
 def _friendly_combat_ended(e: Any, names: dict[str, str]) -> str:
+    """Format combat ended evidence for display using the supplied actor names."""
     return f"Combat ends: {e.reason}"
 
 

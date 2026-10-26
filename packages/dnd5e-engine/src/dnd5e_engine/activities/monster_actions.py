@@ -49,6 +49,7 @@ class MonsterActionPlan:
 
     @property
     def activities(self) -> tuple[Activity, ...]:
+        """Collect supported activities for the selected monster action."""
         return tuple(a for step in self.executions for a in step.activities)
 
 
@@ -103,6 +104,7 @@ _COUNT_BEFORE_TOKEN_RE = re.compile(
 
 
 def _activity_is_offensive(activity: Activity) -> bool:
+    """Return whether the typed activity performs a supported offensive action."""
     return isinstance(activity, (AttackActivity, SaveActivity))
 
 
@@ -114,6 +116,7 @@ def _activity_is_offensive_or_cast(activity: Activity) -> bool:
 
 
 def _action_has_offense(action: MonsterAction) -> bool:
+    """Check whether a monster action contains an offensive activity."""
     return any(_activity_is_offensive(a) for a in action.activities)
 
 
@@ -211,6 +214,7 @@ def _attack_siblings(monster: Monster, exclude: MonsterAction) -> list[MonsterAc
 
 
 def _first_offensive_activity(action: MonsterAction) -> Activity | None:
+    """Select the first offensive activity from the monster action."""
     for activity in action.activities:
         if _activity_is_offensive(activity):
             return activity
@@ -391,6 +395,7 @@ def _distribute_any_combination(
     otherwise alternate over the candidates in list order."""
 
     def _reach(sibling: MonsterAction) -> int | None:
+        """Read the action's effective attack reach."""
         activity = _first_offensive_activity(sibling)
         return _activity_range_ft(activity, melee_reach_ft) if activity is not None else None
 
@@ -440,6 +445,8 @@ def _direct_activities(
 
 @dataclass(frozen=True)
 class _MultiattackReference:
+    """Identify a referenced action and count within a multiattack sequence."""
+
     source_action: MonsterAction
     count: int
     preceding: str
@@ -483,6 +490,7 @@ def _select_referenced_sequence(
     references: Sequence[_MultiattackReference],
     is_available: Callable[[MonsterAction], bool],
 ) -> list[MonsterAction]:
+    """Resolve a multiattack's referenced action sequence."""
     selected: list[MonsterAction] = []
     skip_next = False
     for index, ref in enumerate(references):

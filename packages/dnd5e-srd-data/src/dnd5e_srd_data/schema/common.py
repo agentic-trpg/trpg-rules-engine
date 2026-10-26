@@ -60,6 +60,7 @@ class Provenance(BaseModel, frozen=True):
     def _serialize_srd_version(self, value: frozenset[str]) -> list[str]:
         # frozenset → JSON list in deterministic (sorted) order so canonical
         # output is byte-stable across runs without external post-processing.
+        """Serialize srd version using the explicit nested wire representation."""
         return sorted(value)
 
 
@@ -83,6 +84,8 @@ class ReviewState(BaseModel):
 
 
 class RangeUnits(StrEnum):
+    """Name the supported units used by activity range definitions."""
+
     FEET = "ft"
     MILES = "miles"
     SQUARES = "squares"
@@ -99,6 +102,8 @@ class Range(BaseModel, frozen=True):
 
 
 class TargetTemplateShape(StrEnum):
+    """Name supported target template geometries."""
+
     CIRCLE = "circle"
     CONE = "cone"
     CUBE = "cube"
@@ -145,6 +150,8 @@ class DamagePart(BaseModel, frozen=True):
 
 
 class ActivityKind(StrEnum):
+    """Name the admitted tagged activity variants."""
+
     ATTACK = "attack"
     CAST = "cast"
     CHECK = "check"
@@ -213,6 +220,7 @@ class ReactionSemantics(BaseModel, frozen=True):
 
     @model_serializer(mode="wrap")
     def _serialize_reaction(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """Serialize reaction using the explicit nested wire representation."""
         data: dict[str, Any] = handler(self)
         if self.effect_expiry is None:
             data.pop("effect_expiry", None)
@@ -488,6 +496,7 @@ class AppliedEffectRef(BaseModel, frozen=True):
 
     @model_serializer(mode="wrap")
     def _serialize_effect_ref(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """Serialize effect ref using the explicit nested wire representation."""
         data: dict[str, Any] = handler(self)
         if self.lifecycle is None:
             data.pop("lifecycle", None)
@@ -751,6 +760,7 @@ class OngoingActivationSpec(BaseModel, frozen=True):
 
     @model_validator(mode="after")
     def _unique_ids(self) -> OngoingActivationSpec:
+        """Reject duplicate identities in the activity definition."""
         if any(not value for value in self.activity_ids) or len(set(self.activity_ids)) != len(
             self.activity_ids
         ):
@@ -783,6 +793,7 @@ class PersistentAreaSpec(BaseModel, frozen=True):
 
     @model_validator(mode="after")
     def _source_geometry(self) -> PersistentAreaSpec:
+        """Require source geometry fields to agree with the selected targeting shape."""
         if (
             self.ongoing_activation is not None
             and self.ongoing_activation.relocation is not None
@@ -847,6 +858,7 @@ class _ActivityBase(BaseModel):
     def _serialize_activity(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
         # Keep existing immediate canonical documents byte-stable; omitted
         # timing validates to the explicit immediate default on every activity.
+        """Serialize activity using the explicit nested wire representation."""
         data: dict[str, Any] = handler(self)
         if self.timing == ActivityTiming():
             data.pop("timing", None)

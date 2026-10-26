@@ -88,6 +88,7 @@ class EffectLifecycleApplication(BaseModel):
 
     @model_validator(mode="after")
     def _repeat_has_captured_save(self) -> EffectLifecycleApplication:
+        """Check whether repeat-save mechanics have the required captured inputs."""
         if self.spec.repeat_save is not None and (
             self.save_ability is None or self.save_dc is None
         ):
@@ -121,6 +122,7 @@ class OngoingEffectLifecycle:
         turn_serial: int,
         round_number: int,
     ) -> OngoingEffectLifecycle:
+        """Build lifecycle state from the captured effect application."""
         spec = application.spec
         boundary = spec.expiry_boundary
         return cls(
@@ -138,6 +140,7 @@ class OngoingEffectLifecycle:
         )
 
     def repeats_at(self, actor_id: str, turn_serial: int) -> bool:
+        """Check whether the effect repeats at this turn boundary."""
         return (
             self.identity[0] == actor_id
             and self.application.spec.repeat_save is not None
@@ -145,11 +148,13 @@ class OngoingEffectLifecycle:
         )
 
     def repeated(self, turn_serial: int) -> OngoingEffectLifecycle:
+        """Return lifecycle state with the completed repeat recorded."""
         return replace(self, last_repeat_turn_serial=turn_serial)
 
     def expires_at(
         self, actor_id: str, phase: Literal["start", "end"], turn_serial: int, round_number: int
     ) -> bool:
+        """Check whether the effect expires at the supplied lifecycle boundary."""
         boundary = self.application.spec.expiry_boundary
         if (
             boundary is not None

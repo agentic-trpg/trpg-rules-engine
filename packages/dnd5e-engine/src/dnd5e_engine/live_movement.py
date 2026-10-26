@@ -85,6 +85,7 @@ def ledger_for(live: _LiveCombat, actor: Combatant) -> MovementLedger:
 
 
 def project_remaining(live: _LiveCombat, actor_id: str) -> int:
+    """Refresh the actor's movement remaining from its maintained expenditure ledger."""
     from dnd5e_engine import orchestrator as o
 
     actor = o._find_combatant(live, actor_id)
@@ -97,6 +98,7 @@ def project_remaining(live: _LiveCombat, actor_id: str) -> int:
 
 
 def add_dash(live: _LiveCombat, actor: Combatant) -> int:
+    """Record another Dash allowance in the movement ledger."""
     live.movement_ledgers[actor.entity_id] = ledger_for(live, actor).add_dash()
     return project_remaining(live, actor.entity_id)
 
@@ -104,6 +106,7 @@ def add_dash(live: _LiveCombat, actor: Combatant) -> int:
 def pay_movement(
     live: _LiveCombat, actor: Combatant, cost: int, distance: int, mode: MovementMode
 ) -> None:
+    """Debit traveled distance from the actor's movement ledger."""
     live.movement_ledgers[actor.entity_id] = ledger_for(live, actor).spend(
         cost_ft=cost,
         distance_ft=distance,
@@ -114,6 +117,7 @@ def pay_movement(
 
 
 def occupants(live: _LiveCombat, *, exclude: Sequence[str] = ()) -> dict[str, Combatant]:
+    """Build occupied-cell lookup from the other living actors."""
     return {
         live.actor_zone[c.entity_id]: c
         for c in live.initiative
@@ -125,6 +129,7 @@ def occupants(live: _LiveCombat, *, exclude: Sequence[str] = ()) -> dict[str, Co
 
 
 def grapple_victims(live: _LiveCombat, actor_id: str) -> list[Combatant]:
+    """Read actors currently grappled by this actor."""
     from dnd5e_engine import orchestrator as o
 
     return [
@@ -223,6 +228,7 @@ def drag_positions(
 
 
 def reconcile_grapple_range(live: _LiveCombat) -> None:
+    """End grapples whose participants no longer meet range constraints."""
     from dnd5e_engine import orchestrator as o
 
     for victim in list(live.initiative):
@@ -247,7 +253,7 @@ def reconcile_grapple_range(live: _LiveCombat) -> None:
 
 
 def post_position_steps(live: _LiveCombat, previous: dict[str, str]) -> None:
-
+    """Reconcile position-dependent grapples, auras and area triggers after movement."""
     from dnd5e_engine.persistent_areas import after_movement_step
 
     for actor_id, cell in previous.items():
@@ -302,6 +308,7 @@ def _step_plan(
 
 
 def _route_from_reached(reached: dict[str, tuple[int, str | None]], goal: str) -> list[str]:
+    """Reconstruct the selected route from predecessor links."""
     route = [goal]
     while (previous := reached[route[-1]][1]) is not None:
         route.append(previous)
@@ -338,6 +345,7 @@ def _route_static_valid(
 
 
 def _walk_route(live: _LiveCombat, actor_id: str, route: Sequence[str]) -> None:
+    """Resolve the walked route while respecting costs, blockers and reactions."""
     for index, next_cell in enumerate(route[1:], start=1):
         if take_step(live, actor_id, next_cell, end_move=index == len(route) - 1) is None:
             return
@@ -373,6 +381,7 @@ def take_step(
     grant_remaining_ft: int | None = None,
     provokes_opportunity_attacks: bool = True,
 ) -> tuple[int, dict[str, str]] | None:
+    """Apply one admitted step and process its movement-triggered consequences."""
     from dnd5e_engine import orchestrator as o
 
     actor, start = o._find_combatant(live, actor_id), live.actor_zone.get(actor_id)
@@ -448,6 +457,7 @@ def take_step(
 
 
 def _grant_destination_route(live: _LiveCombat, actor: Combatant, destination: str) -> list[str]:
+    """Select a route to the explicit movement grant destination."""
     start = live.actor_zone[actor.entity_id]
     return live.topology.lowest_cost_path(
         start, destination, step_cost=lambda a, b: movement_cost(live, actor, a, b, "walk")
@@ -574,6 +584,7 @@ def execute_movement_grant(
 
 
 def handle_move(live: _LiveCombat, actor: Combatant, intent: PlayerIntent) -> None:
+    """Resolve the actor's movement intent through the shared geometry/payment path."""
     from dnd5e_engine import orchestrator as o
 
     mode, actor_id = intent.movement_mode, actor.entity_id
@@ -621,6 +632,7 @@ def handle_move(live: _LiveCombat, actor: Combatant, intent: PlayerIntent) -> No
     run_path, run_cost = [start], 0
 
     def flush() -> None:
+        """Emit accumulated movement evidence at the enclosing resolution boundary."""
         nonlocal run_path, run_cost
         if len(run_path) > 1:
             o._emit(
@@ -721,12 +733,14 @@ def push(
 
 
 def flee(live: _LiveCombat, actor: Combatant, enemies: Sequence[Combatant]) -> None:
+    """Resolve supported flee movement for the working combat actor."""
     start = live.actor_zone.get(actor.entity_id)
     threats = [live.actor_zone[c.entity_id] for c in enemies if c.entity_id in live.actor_zone]
     if start is None or not threats:
         return
 
     def nearest(cell: str) -> int:
+        """Choose the candidate nearest to the selected movement target."""
         return min(live.topology.distance_ft(cell, threat) or 0 for threat in threats)
 
     reached = live.topology.reachable_cells(

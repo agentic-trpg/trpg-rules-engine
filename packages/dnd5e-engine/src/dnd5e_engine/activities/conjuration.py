@@ -351,6 +351,7 @@ def evaluate_summon_formula(expr: str, roll_data: SummonRollData) -> int:
     }
 
     def _value(match: re.Match[str]) -> str:
+        """Resolve a configured value from the supplied activity context."""
         token = match.group(0)
         if token not in values:
             raise ValueError(f"Unhandled summon roll-data token {token!r} in {expr!r}")
@@ -367,6 +368,7 @@ def evaluate_summon_formula(expr: str, roll_data: SummonRollData) -> int:
 
 
 def _fold_summon_node(node: ast.expr, expr: str) -> Fraction:
+    """Resolve a supported summon expression against the resolution context."""
     if isinstance(node, ast.Constant) and type(node.value) is int:
         return Fraction(node.value)
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):

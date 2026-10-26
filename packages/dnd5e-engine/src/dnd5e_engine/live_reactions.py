@@ -57,6 +57,7 @@ if TYPE_CHECKING:
 
 
 def can_take_reaction(live: _LiveCombat, actor: Combatant, *, spell: bool = False) -> bool:
+    """Check actor life, conditions and available reaction budget."""
     from dnd5e_engine import orchestrator as orch
     from dnd5e_engine.action_policy import denial
 
@@ -78,6 +79,7 @@ def can_take_reaction(live: _LiveCombat, actor: Combatant, *, spell: bool = Fals
 
 
 def pay_reaction(live: _LiveCombat, actor: Combatant) -> Combatant:
+    """Consume the actor's reaction budget and record the payment."""
     from dnd5e_engine import orchestrator as orch
 
     orch._update_combatant(live, actor.entity_id, reaction_available=False)
@@ -85,6 +87,7 @@ def pay_reaction(live: _LiveCombat, actor: Combatant) -> Combatant:
 
 
 def _activity(spell: Spell, activity_id: str | None) -> Activity:
+    """Validate input consistency; reject reaction declaration requires one typed activity."""
     candidates = [a for a in spell.activities if a.activation.reaction_conditions]
     if activity_id is not None:
         candidates = [a for a in candidates if a.id == activity_id]
@@ -106,6 +109,7 @@ def _context(
     *,
     draw_free: bool = False,
 ) -> ActivityResolutionContext:
+    """Build the enclosing operation's activity context from current working mechanics."""
     from dnd5e_engine import orchestrator as orch
 
     payload = orch._build_hydration_payload(live, caster=reactor)
@@ -157,6 +161,9 @@ def _context(
 
 
 def _validate_payload(spell: Spell, activity: Activity, ctx: ActivityResolutionContext) -> None:
+    """Validate input consistency; reject reaction save requires one ability; reaction
+    references a missing effect.
+    """
     failure = admission_failure(spell, [activity])
     if failure is not None:
         raise ValueError(failure.code)
@@ -187,6 +194,9 @@ def _validate_payload(spell: Spell, activity: Activity, ctx: ActivityResolutionC
 
 
 def _declaration(live: _LiveCombat, actor: Combatant, intent: PlayerIntent) -> PendingReaction:
+    """Validate input consistency; reject unknown reaction spell; compatibility trigger
+    does not match canonical conditions; invalid reaction slot level.
+    """
     spell = get_lib_loader().get_spell(intent.spell_id or "")
     if spell is None:
         raise ValueError("unknown reaction spell")
@@ -212,6 +222,7 @@ def _declaration(live: _LiveCombat, actor: Combatant, intent: PlayerIntent) -> P
 
 
 def prearm_failure(live: _LiveCombat, actor: Combatant, intent: PlayerIntent) -> CastFailed | None:
+    """Return a reason preventing this reaction declaration from being armed."""
     if intent.intent_type == "ready":
         try:
             _declaration(live, actor, intent)
@@ -236,6 +247,7 @@ def prearm_failure(live: _LiveCombat, actor: Combatant, intent: PlayerIntent) ->
 
 
 def register_pending_reaction(live: _LiveCombat, actor_id: str, intent: PlayerIntent) -> None:
+    """Validate input consistency; reject reaction owner is not in combat."""
     from dnd5e_engine import orchestrator as orch
 
     if intent.intent_type != "ready":
@@ -255,6 +267,7 @@ def _condition_eligible(
     condition: ReactionCondition,
     opportunity: ReactionOpportunity,
 ) -> bool:
+    """Check the declared reaction's captured trigger predicates."""
     from dnd5e_engine import orchestrator as orch
 
     subject_id = (
@@ -292,6 +305,7 @@ def _eligible(
     pending: PendingReaction,
     opportunity: ReactionOpportunity,
 ) -> tuple[Spell, Activity, Combatant] | None:
+    """Check the enclosing lifecycle entry's current trigger and participant eligibility."""
     from dnd5e_engine import orchestrator as orch
     from dnd5e_engine.live_spell_delivery import plan_activity_delivery
 
@@ -332,6 +346,7 @@ def _eligible(
 
 
 def _delivery_spec(activity: Activity, target_id: str) -> SpellDeliverySpec:
+    """Build the captured delivery specification for the reaction response."""
     return SpellDeliverySpec(
         primary_target_id=target_id,
         source_kind="reaction_cast",
@@ -340,6 +355,13 @@ def _delivery_spec(activity: Activity, target_id: str) -> SpellDeliverySpec:
 
 
 def fire_reaction(live: _LiveCombat, opportunity: ReactionOpportunity) -> ReactionResult:
+    """Select, pay and resolve an eligible legacy runtime reaction.
+
+    Recheck declaration eligibility, remove the selected pending entry and apply its
+    captured response using shared cast/activity machinery. Record response effects and
+    return cancellation/negation outcomes for the interrupted resolution. This mutates
+    the enclosing legacy working combat, not authoritative SM persisted facts.
+    """
     from dnd5e_engine import orchestrator as orch
     from dnd5e_engine.live_spell_delivery import (
         execute_activity_delivery,
@@ -447,6 +469,7 @@ def record_reaction_effects(
     activity: Activity,
     emitted: list[CombatEvent],
 ) -> None:
+    """Retain the response effect identities needed by reaction lifecycle handling."""
     semantics = activity.reaction
     if semantics is None:
         return
@@ -481,6 +504,7 @@ def record_reaction_effects(
 
 
 def spell_cast_opportunity(live: _LiveCombat, caster: Combatant, spell: Spell) -> bool:
+    """Construct a reaction opportunity from spell-cast evidence."""
     from dnd5e_engine import orchestrator as orch
 
     result = fire_reaction(
@@ -501,6 +525,7 @@ def spell_cast_opportunity(live: _LiveCombat, caster: Combatant, spell: Spell) -
 def targeted_spell_opportunities(
     live: _LiveCombat, caster: Combatant, spell: Spell, targets: list[Combatant]
 ) -> frozenset[str]:
+    """Construct reaction opportunities for the spell's actual selected targets."""
     negated: set[str] = set()
     for target in targets:
         for active in live.active_reaction_responses:
@@ -530,6 +555,7 @@ def targeted_spell_opportunities(
 
 
 def observe_reaction_lifecycle(live: _LiveCombat, event: CombatEvent) -> None:
+    """Update pending reaction lifecycle state from emitted mechanical evidence."""
     if isinstance(event, EffectExpired):
         identity = (event.target_id, event.effect_id, event.origin)
         live.active_reaction_responses[:] = [
@@ -546,6 +572,7 @@ def observe_reaction_lifecycle(live: _LiveCombat, event: CombatEvent) -> None:
 
 
 def can_continue_resolution(live: _LiveCombat, actor_id: str) -> bool:
+    """Check whether the actor can continue after intervening reactions."""
     from dnd5e_engine import orchestrator as orch
 
     actor = orch._find_combatant(live, actor_id)
@@ -559,12 +586,14 @@ def can_continue_resolution(live: _LiveCombat, actor_id: str) -> bool:
 
 
 def _ac_changes(effects: list[ActiveEffect]) -> Counter[str]:
+    """Read supported armor-class changes from the reaction effect."""
     return effect_ac_changes(effects)
 
 
 def _attack_opportunity(
     live: _LiveCombat, attack: AttackHitContext, baseline: dict[str, Counter[str]]
 ) -> int:
+    """Construct attack-triggered reaction context from the current attack evidence."""
     before = baseline.get(attack.target_id, Counter())
     fire_reaction(
         live,
@@ -583,6 +612,7 @@ def _attack_opportunity(
 
 
 def _damage_opportunity(live: _LiveCombat, damage: DamageInstanceContext) -> None:
+    """Construct damage-triggered reaction context from completed damage evidence."""
     from dnd5e_engine.live_effect_lifecycle import damage_instance_completed
 
     damage_instance_completed(live, damage)
@@ -604,6 +634,7 @@ def _damage_opportunity(live: _LiveCombat, damage: DamageInstanceContext) -> Non
 def attach_reaction_hooks(
     live: _LiveCombat, ctx: ActivityResolutionContext
 ) -> ActivityResolutionContext:
+    """Attach reaction callbacks to the supplied activity context."""
     from dnd5e_engine.live_attack_riders import attach_attack_riders
     from dnd5e_engine.live_save_modifiers import consume_next_save_modifier
 
@@ -613,6 +644,9 @@ def attach_reaction_hooks(
     }
 
     def next_instance(target_id: str, source_id: str | None) -> str:
+        """Allocate the next deterministic damage instance identity for this reaction
+        context.
+        """
         live.damage_instance_sequence += 1
         return f"damage:{live.damage_instance_sequence}:{ctx.caster.entity_id}:{target_id}"
 

@@ -28,6 +28,8 @@ from dnd5e_engine.types.combat import Combatant
 
 @dataclass(frozen=True)
 class OpportunityPlan:
+    """Retain an admitted opportunity attack and its triggering movement context."""
+
     declaration: OpportunityAttackState | StatBlockOpportunityAttackState
     weapon: Weapon | None
     activity: AttackActivity
@@ -259,6 +261,7 @@ def resolve_opportunity(
 
 
 def walk_stopped(computation: CombatComputation, mover: Combatant, from_cell: str) -> bool:
+    """Return whether the reaction outcome prevents further walking."""
     return (
         mover.entity_id in computation.state.dead_ids
         or mover.hp_current <= 0

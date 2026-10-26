@@ -103,6 +103,7 @@ class DeathSaveState:
     # ------------------------------------------------------------------
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize death save state into its dictionary representation."""
         return {
             "successes": self.successes,
             "failures": self.failures,
@@ -111,6 +112,7 @@ class DeathSaveState:
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> DeathSaveState:
+        """Restore death save state from its dictionary representation."""
         return cls(
             successes=d.get("successes", 0),
             failures=d.get("failures", 0),
@@ -122,6 +124,7 @@ class DeathSaveState:
     # ------------------------------------------------------------------
 
     def _check_outcome(self) -> str:
+        """Classify accumulated death save successes and failures."""
         if self.failures >= 3:
             return "dead"
         if self.successes >= 3:

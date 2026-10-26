@@ -85,6 +85,8 @@ class ConditionEffect(BaseModel, frozen=True):
 
 
 class Condition(BaseModel):
+    """Validate a condition definition and its declared mechanical modifiers."""
+
     slug: str
     name: str
     description: str

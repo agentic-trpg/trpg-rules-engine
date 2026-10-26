@@ -25,6 +25,7 @@ from dnd5e_engine.reactions import SUPPORTED_OPPORTUNITY_KINDS, reaction_support
 
 
 def _source_documents(loader: AssetLoader) -> Iterator[tuple[str, str, BaseModel]]:
+    """Enumerate rules documents inspected by the explicit reaction audit."""
     getters: tuple[tuple[str, Category, Callable[[str], BaseModel | None]], ...] = (
         ("feature", "features", loader.get_feature),
         ("item", "items", loader.get_item),
@@ -53,6 +54,7 @@ def _activities(value: object, path: str = "") -> Iterator[tuple[Activity, str]]
 
 
 def _audit_activity(source_kind: str, slug: str, activity: Activity, path: str) -> dict[str, Any]:
+    """Classify one activity's reaction trigger/response support."""
     conditions = activity.activation.reaction_conditions
     kinds = list(dict.fromkeys(condition.kind.value for condition in conditions))
     producer_exists = bool(conditions) and all(
@@ -144,6 +146,7 @@ def audit_document(loader: AssetLoader) -> dict[str, Any]:
 
 
 def main() -> None:
+    """Parse command-line options and run this module's command entrypoint."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()

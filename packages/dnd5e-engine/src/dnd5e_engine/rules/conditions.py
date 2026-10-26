@@ -23,6 +23,8 @@ if TYPE_CHECKING:
 
 
 class Condition(StrEnum):
+    """Name the supported mechanical condition identities."""
+
     BLINDED = "blinded"
     CHARMED = "charmed"
     DEAFENED = "deafened"
@@ -429,12 +431,14 @@ def conditions_cannot_attack_charmer(conditions: list[str]) -> bool:
 
 
 def conditions_auto_fail_check(conditions: list[str], sense: str) -> bool:
+    """Check whether active conditions force this ability check to fail."""
     return sense in ("sight", "hearing") and projected_boolean_flag(
         _project_condition_changes(conditions), f"flags.auto_fail.check.{sense}"
     )
 
 
 def conditions_charmer_social_advantage(conditions: list[str]) -> bool:
+    """Check the supported charmer/target social advantage relationship."""
     return projected_boolean_flag(
         _project_condition_changes(conditions), "flags.advantage.check.charmer_social"
     )

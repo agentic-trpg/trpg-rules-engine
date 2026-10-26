@@ -45,6 +45,8 @@ nav:
   - Comparison: comparison.md
   - Design notes:
       - Validation and CI: dev/validation.md
+      - Source documentation: dev/source-documentation.md
+      - Source documentation evidence: dev/source-documentation-acceptance.md
       - Stateless evaluation inventory: dev/stateless-evaluation-inventory.md
       - Stateless evaluation contracts: dev/stateless-evaluation.md
       - Stateless migration progress: dev/stateless-migration-progress.md

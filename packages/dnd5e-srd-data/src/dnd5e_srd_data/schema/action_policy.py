@@ -8,6 +8,8 @@ ActionType = Literal["attack", "dash", "disengage", "hide", "utilize", "magic", 
 
 
 class RestrictedActionGrant(BaseModel):
+    """Define the permitted actions and limits of an additional action grant."""
+
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     actions: tuple[Literal["attack", "dash", "disengage", "hide", "utilize"], ...] = Field(
@@ -17,12 +19,15 @@ class RestrictedActionGrant(BaseModel):
 
     @model_validator(mode="after")
     def unique_actions(self) -> "RestrictedActionGrant":
+        """Reject duplicate action identities in the policy."""
         if len(set(self.actions)) != len(self.actions):
             raise ValueError("action grant candidates must be unique")
         return self
 
 
 class ActionPolicy(BaseModel):
+    """Define effect-derived restrictions and grants on actor actions."""
+
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     deny_actions: bool = False

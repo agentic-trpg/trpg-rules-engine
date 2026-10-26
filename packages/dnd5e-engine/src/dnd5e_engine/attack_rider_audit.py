@@ -31,6 +31,7 @@ def _row(
     option: AttackRiderOptionSemantics | None = None,
     deferred_reason: str | None = None,
 ) -> dict[str, Any]:
+    """Build an audit result row for the inspected rules asset."""
     reason = deferred_reason or semantics.deferred_reason
     executable = semantics.inventory_role == "rider" and reason is None and activity is not None
     foundation = semantics.inventory_role == "foundation" and reason is None
@@ -116,6 +117,7 @@ def _row(
 
 
 def audit_document(loader: AssetLoader) -> dict[str, Any]:
+    """Assemble the audit report from the inspected asset corpus."""
     rows: list[dict[str, Any]] = []
     activity_count = 0
     source_count = 0
@@ -183,6 +185,7 @@ def audit_document(loader: AssetLoader) -> dict[str, Any]:
 
 
 def main() -> None:
+    """Parse command-line options and run this module's command entrypoint."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()

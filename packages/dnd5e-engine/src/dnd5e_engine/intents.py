@@ -91,6 +91,7 @@ class PlayerIntent(BaseModel):
     @field_validator("target_zone_id")
     @classmethod
     def _canonical_target_zone(cls, value: str | None) -> str | None:
+        """Normalize a supplied target cell while preserving None."""
         return None if value is None else cell_id(*parse_cell(value))
 
     # C16 — SRD 5.2 §Areas of Effect: a Cone / Line / Cube "extends … in a
@@ -158,6 +159,7 @@ class PlayerIntent(BaseModel):
     @field_validator("direction")
     @classmethod
     def _direction_nonzero(cls, value: tuple[int, int] | None) -> tuple[int, int] | None:
+        """Reject a zero vector for a directional delivery choice."""
         if value is not None and value == (0, 0):
             raise ValueError("direction must be a nonzero grid vector")
         return value
@@ -165,6 +167,7 @@ class PlayerIntent(BaseModel):
     @field_validator("excluded_target_ids")
     @classmethod
     def _excluded_ids_distinct(cls, value: tuple[str, ...] | None) -> tuple[str, ...] | None:
+        """Reject duplicate excluded target identities."""
         if value is not None and ("" in value or len(set(value)) != len(value)):
             raise ValueError("excluded_target_ids must be distinct, non-empty ids")
         return value
@@ -214,6 +217,7 @@ class IntentRejectedError(CombatSeamError):
     ]
 
     def __init__(self, reason: RejectionReason, detail: str) -> None:
+        """Retain structured rejection reason and detail in the exception."""
         super().__init__(f"{reason}: {detail}")
         self.reason = reason
         self.detail = detail

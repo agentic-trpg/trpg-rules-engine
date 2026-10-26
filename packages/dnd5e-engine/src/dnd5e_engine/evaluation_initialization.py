@@ -48,6 +48,8 @@ from dnd5e_engine.turn_rules import reset_turn_budget
 
 
 class CombatInitializationCandidatePayload(EvaluationModel):
+    """Select the fresh-combat initialization candidate operation."""
+
     kind: Literal["combat.init.local-candidate"]
 
 
@@ -64,6 +66,7 @@ class CombatInitializationCandidateRequest(EvaluationModel):
 
     @model_validator(mode="after")
     def identities(self) -> Self:
+        """Validate unique identities and referenced ownership in the supplied component."""
         if (
             self.session_id != self.state_snapshot.session_id
             or self.state_snapshot.combat_setup is None
@@ -75,6 +78,8 @@ class CombatInitializationCandidateRequest(EvaluationModel):
 
 
 class InitializationIdentity(TypedDict):
+    """Describe request identity fields retained in initialization results."""
+
     schema_version: EvaluationVersion
     session_id: str
     command_id: str
@@ -86,6 +91,14 @@ class InitializationIdentity(TypedDict):
 def evaluate_combat_initialization_candidate(
     request: CombatInitializationCandidateRequest, *, loader: AssetLoader | None = None
 ) -> RuleEvaluationResult:
+    """Validate explicit combat setup and compute an uncommitted fresh-combat candidate.
+
+    Require the supplied actor/dependency roster and bound rules profile to be complete,
+    then resolve supported initialization with explicit RNG and guarded initial
+    component updates. Unsupported input returns a refusal without a Delta or RNG
+    transition. No legacy world is loaded and no host state is persisted by this
+    function.
+    """
     request = CombatInitializationCandidateRequest.model_validate(copy.deepcopy(request))
     loader = loader if loader is not None else get_default_ruleset()
     verify_ruleset(request.ruleset_binding, loader)
@@ -104,6 +117,9 @@ def evaluate_combat_initialization_candidate(
     )
 
     def refuse(code: str, reason: str) -> RuleEvaluationResult:
+        """Build the enclosing operation's structured refusal without adopting candidate
+        changes.
+        """
         return RuleEvaluationResult(
             **common,
             status="unsupported",

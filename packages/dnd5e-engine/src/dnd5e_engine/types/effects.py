@@ -172,6 +172,7 @@ class ActiveEffect(BaseModel):
         # A set iterates in the order of the process's string hash seed, so an
         # unsorted dump gives a multi-status effect a different order in every
         # process; sorted, a replayed stream stays byte-stable in any dump mode.
+        """Normalize effect statuses into deterministic order."""
         return sorted(statuses)
 
 

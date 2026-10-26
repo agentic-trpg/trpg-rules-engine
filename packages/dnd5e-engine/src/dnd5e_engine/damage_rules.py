@@ -12,6 +12,7 @@ from dnd5e_engine.types.conditions import ActiveCondition
 
 
 def damage_balances(hp: int, temp_hp: int, amount: int) -> tuple[int, int, int]:
+    """Apply damage to temporary and current HP and return the resulting balances."""
     absorbed = min(temp_hp, amount)
     remaining = amount - absorbed
     return max(0, hp - remaining), temp_hp - absorbed, remaining
@@ -19,6 +20,8 @@ def damage_balances(hp: int, temp_hp: int, amount: int) -> tuple[int, int, int]:
 
 @dataclass(frozen=True)
 class ZeroHPResult:
+    """Return the updated actor, emitted events and processed damage identities at zero HP."""
+
     actor: Combatant
     events: tuple[CombatEvent, ...]
     processed: frozenset[tuple[str, str]]
@@ -78,6 +81,7 @@ def zero_hp_damage(
 def death_record(
     actor: Combatant, event: Death, *, location_id: str, killer_id: str | None
 ) -> DeathRecord:
+    """Construct a death record from the actor and resolved death evidence."""
     kind: Literal["character", "npc", "monster"] = (
         "character"
         if actor.entity_type == "Character"
@@ -102,6 +106,7 @@ def with_event_condition(
     save_dc: int | None = None,
     source_effect_id: str | None = None,
 ) -> Combatant:
+    """Update actor condition state from a condition event."""
     if any(c.condition == condition for c in actor.conditions):
         return actor
     return actor.model_copy(

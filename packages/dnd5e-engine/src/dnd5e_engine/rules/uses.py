@@ -58,6 +58,7 @@ def evaluate_uses_formula(expr: str, roll_data: UsesRollData) -> int | None:
 
 
 def _token_value(ref: str, roll_data: UsesRollData) -> int:
+    """Resolve a use-formula token from explicit resource context."""
     value: int | str | None = None
     if ref == "@prof":
         value = roll_data.proficiency_bonus
@@ -73,6 +74,7 @@ def _token_value(ref: str, roll_data: UsesRollData) -> int:
 
 
 def _evaluate(node: ast.expr) -> int:
+    """Evaluate the supported resource use expression."""
     if isinstance(node, ast.Constant) and type(node.value) is int:
         return node.value
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):

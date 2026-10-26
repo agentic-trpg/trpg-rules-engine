@@ -67,13 +67,18 @@ class SpellDeliverySpec(BaseModel):
 
 
 class DeliveryPlanningError(ValueError):
+    """Signal a delivery shape, target or geometry planning failure."""
+
     def __init__(self, message: str, reason: str = "target_invalid") -> None:
+        """Retain the delivery failure message and its rejection reason."""
         super().__init__(message)
         self.reason = reason
 
 
 @dataclass(frozen=True)
 class ActivityDeliveryPlan:
+    """Retain validated geometry and targets for one typed activity."""
+
     activity_id: str
     target_ids: tuple[str, ...]
     template: AreaTemplate | None = None
@@ -85,10 +90,13 @@ class ActivityDeliveryPlan:
 
 @dataclass(frozen=True)
 class DeliveryPlan:
+    """Group admitted spell activity deliveries and target selections."""
+
     activities: tuple[ActivityDeliveryPlan, ...]
 
     @property
     def target_ids(self) -> tuple[str, ...]:
+        """Return the target identities selected by this delivery plan."""
         return tuple(dict.fromkeys(i for plan in self.activities for i in plan.target_ids))
 
 
@@ -100,6 +108,7 @@ def _origin(
     template: AreaTemplate,
     range_ft: int | None,
 ) -> str:
+    """Resolve the selected delivery origin from the explicit specification and geometry."""
     actor_cell = positions.get(actor_id)
     if actor_cell is None:
         raise DeliveryPlanningError("source has no position")
@@ -134,6 +143,7 @@ def _direction(
     spec: SpellDeliverySpec,
     template: AreaTemplate,
 ) -> tuple[int, int] | None:
+    """Resolve the supported area direction from delivery choices."""
     if not template.directional:
         return None
     direction = spec.direction
@@ -152,6 +162,7 @@ def _direction(
 
 
 def _filtered(activity: Activity, creatures: Sequence[Combatant]) -> list[Combatant]:
+    """Filter selected targets through the activity's creature/geometry constraints."""
     rule = activity.target.creature_filter
     if rule is None:
         if area_activity([activity]) is not None and activity.target.affects.special.strip():
@@ -184,6 +195,7 @@ def _area_selection(
     live_ids: set[str],
     actor_id: str,
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Construct the admitted template area selection."""
     candidates = _filtered(activity, in_area)
     eligible = {c.entity_id for c in candidates}
     all_ids = tuple(c.entity_id for c in in_area)

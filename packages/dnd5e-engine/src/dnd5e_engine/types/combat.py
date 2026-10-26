@@ -56,6 +56,8 @@ class MonsterActionUses:
 
 
 class Combatant(BaseModel):
+    """Represent mutable working actor mechanics inside the enclosing combat resolution."""
+
     entity_id: str
     entity_type: str  # "Character" | "Monster" | "NPC"
     name: str

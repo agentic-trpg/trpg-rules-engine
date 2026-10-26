@@ -52,6 +52,7 @@ from dnd5e_engine.spellcasting import spell_component_failure
 
 
 def has_shield(snapshot: CombatSnapshot) -> bool:
+    """Check whether the actor has the reviewed Shield effect."""
     state = snapshot.combat_state
     return bool(
         state.active_reaction_responses
@@ -65,6 +66,7 @@ def has_shield(snapshot: CombatSnapshot) -> bool:
 
 
 def shield_graph(snapshot: CombatSnapshot) -> ShieldGraphValue | None:
+    """Resolve the complete Shield effect and lineage graph."""
     state = snapshot.combat_state
     if not snapshot.effect_states:
         if (
@@ -98,6 +100,7 @@ def shield_graph(snapshot: CombatSnapshot) -> ShieldGraphValue | None:
 
 
 def plain_shield(snapshot: CombatSnapshot) -> CombatSnapshot:
+    """Check that the effect matches the reviewed Shield profile."""
     return snapshot.model_copy(
         update={
             "effect_states": (),
@@ -115,6 +118,7 @@ def plain_shield(snapshot: CombatSnapshot) -> CombatSnapshot:
 def shield_source_failure(
     snapshot: CombatSnapshot, owner_id: str, source_id: str | None, loader: AssetLoader
 ) -> str | None:
+    """Check source identity and dependencies for the Shield reaction."""
     actor = next((a for a in snapshot.character_states if a.entity_id == owner_id), None)
     if actor is None:
         return "Shield owner is absent"
@@ -149,6 +153,7 @@ def shield_source_failure(
 
 
 def shield_source_id(snapshot: CombatSnapshot, owner_id: str) -> str | None:
+    """Resolve the admitted Shield source identity."""
     entry = (
         next((e for e in snapshot.casting_state.actors if e.actor_id == owner_id), None)
         if snapshot.casting_state
@@ -161,6 +166,7 @@ def shield_source_id(snapshot: CombatSnapshot, owner_id: str) -> str | None:
 def shield_support_failure(
     snapshot: CombatSnapshot, loader: AssetLoader, *, turn: bool = False
 ) -> str | None:
+    """Return a reason for unsupported Shield dependencies."""
     spell = loader.get_spell("shield")
     if spell is None or spell != get_default_ruleset().get_spell("shield"):
         return "canonical Shield definition is required"
@@ -213,13 +219,21 @@ def shield_support_failure(
 
 
 class ShieldComputation(CombatComputation):
+    """Resolve the admitted Shield reaction in isolated combat candidate state."""
+
     def __init__(self, snapshot: CombatSnapshot, rng: random.Random, loader: AssetLoader) -> None:
+        """Initialize isolated Shield candidate effects and a separate resource payment
+        list.
+        """
         super().__init__(snapshot, rng)
         self.effects = list(snapshot.effect_states)
         self.loader = loader
         self.payments: list[ResourceUpdate] = []
 
     def emit(self, event: CombatEvent) -> None:
+        """Append mechanical event evidence and fold its consequences into this candidate
+        computation.
+        """
         if isinstance(event, EffectApplied):
             effect = event.effect
             self.effects.append(effect_state(effect))
@@ -273,6 +287,9 @@ class ShieldComputation(CombatComputation):
                 )
 
     def record_death(self, event: Death, killer: str | None) -> None:
+        """Record candidate death and remove the dead owner's pending reactions and
+        responses.
+        """
         super().record_death(event, killer)
         self.state = self.state.model_copy(
             update={
@@ -286,11 +303,13 @@ class ShieldComputation(CombatComputation):
         )
 
     def ac_bonus(self, target_id: str) -> int:
+        """Read the candidate armor-class bonus applicable to the actor."""
         return scalar_ac_change_delta(
             Counter(), effect_ac_changes([e for e in self.effects if e.target_id == target_id])
         )
 
     def hit_reaction(self, attack: AttackHitContext) -> int:
+        """Resolve a supported hit-triggered reaction against the candidate attack."""
         from dnd5e_engine.evaluation_spells import spell_event
 
         if not self.state.pending_reactions:
@@ -375,11 +394,15 @@ class ShieldComputation(CombatComputation):
         return attack.effective_ac + scalar_ac_change_delta(before, after)
 
     def candidate_state(self) -> CombatSnapshot:
+        """Project this computation's working actors and components into a new candidate
+        snapshot.
+        """
         value = super().candidate_state().model_copy(update={"effect_states": tuple(self.effects)})
         return payment_post_state(value, tuple(self.payments))
 
 
 def shield_delta(before: CombatSnapshot, after: CombatSnapshot) -> StateDelta:
+    """Project Shield graph changes into guarded Delta operations."""
     old, new = shield_graph(before), shield_graph(after)
     pending = before.combat_state.pending_reactions
     payments: tuple[ResourceUpdate, ...] = ()

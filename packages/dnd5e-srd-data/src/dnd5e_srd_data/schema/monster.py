@@ -19,6 +19,8 @@ _Int = int
 
 
 class CreatureType(StrEnum):
+    """Name the supported creature type categories."""
+
     ABERRATION = "aberration"
     BEAST = "beast"
     CELESTIAL = "celestial"
@@ -36,6 +38,8 @@ class CreatureType(StrEnum):
 
 
 class CreatureSize(StrEnum):
+    """Name the supported ordered creature size categories."""
+
     TINY = "tiny"
     SMALL = "small"
     MEDIUM = "medium"
@@ -45,6 +49,8 @@ class CreatureSize(StrEnum):
 
 
 class AbilityScores(BaseModel, frozen=True):
+    """Validate the six supplied ability scores used by character or monster mechanics."""
+
     str: PositiveInt
     dex: PositiveInt
     con: PositiveInt
@@ -91,6 +97,8 @@ class SkillProficiencies(BaseModel):
 
 
 class MonsterActionKind(StrEnum):
+    """Name supported monster action categories."""
+
     ACTION = "action"
     BONUS_ACTION = "bonus_action"
     REACTION = "reaction"
@@ -127,6 +135,8 @@ class MonsterTraitMechanic(StrEnum):
 
 
 class MonsterAction(BaseModel):
+    """Validate one monster action and its typed activities."""
+
     slug: str
     name: str
     kind: MonsterActionKind
@@ -154,6 +164,8 @@ class MonsterTrait(BaseModel):
 
 
 class Monster(BaseModel):
+    """Validate a monster stat block and its mechanical action/trait definitions."""
+
     slug: str
     name: str
     description: str

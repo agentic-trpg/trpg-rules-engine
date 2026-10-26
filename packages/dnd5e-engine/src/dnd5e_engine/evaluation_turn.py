@@ -17,6 +17,8 @@ from dnd5e_engine.events import CombatEvent, IntentSubmitted
 
 
 class TurnEvaluation(TypedDict):
+    """Describe uncommitted turn result fields returned to the evaluation envelope."""
+
     status: Literal["accepted", "rejected", "unsupported"]
     state_delta: StateDelta | None
     proposed_events: tuple[CombatEvent, ...]
@@ -27,6 +29,7 @@ class TurnEvaluation(TypedDict):
 
 
 def _refuse(status: Literal["rejected", "unsupported"], code: str, reason: str) -> TurnEvaluation:
+    """Build a refusal with no Delta, proposed events or RNG transition."""
     return dict(
         status=status,
         state_delta=None,
@@ -38,6 +41,13 @@ def _refuse(status: Literal["rejected", "unsupported"], code: str, reason: str) 
 
 
 def evaluate_turn(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEvaluation:
+    """Evaluate the admitted explicit plain-Pass turn advance.
+
+    Require the current actor/turn and supported mechanical dependency closure, then
+    choose the appropriate isolated effect/concentration computation and shared turn
+    lifecycle. Return projected guarded changes, ordered events, stage coverage and RNG
+    successor. This is not a host clock advance or an authoritative combat commit.
+    """
     snapshot, intent = request.state_snapshot, request.payload
     if not isinstance(snapshot, CombatSnapshot) or not isinstance(intent, CombatIntentPayload):
         raise EvaluationInvariantError("turn evaluation requires a combat intent")

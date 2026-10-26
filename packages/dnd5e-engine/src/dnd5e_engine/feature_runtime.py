@@ -47,26 +47,36 @@ FeatureOperation = Literal["activity"] | FeatureRuntimeOperation
 
 
 class DrawFreeRandom(random.Random):
+    """Reject random draws in preflight paths that must remain deterministic and draw-free."""
+
     def random(self) -> float:
+        """Reject RNG draws during draw-free feature preflight."""
         raise AssertionError("feature preflight attempted an RNG draw")
 
     def getrandbits(self, k: int) -> int:
+        """Reject RNG bit draws during draw-free feature preflight."""
         raise AssertionError("feature preflight attempted an RNG draw")
 
     def randint(self, a: int, b: int) -> int:
+        """Reject random integer draws during draw-free feature preflight."""
         raise AssertionError("feature preflight attempted an RNG draw")
 
 
 class FeaturePreflightError(ValueError):
+    """Signal unsupported or invalid feature invocation before execution/payment."""
+
     def __init__(
         self, detail: str, *, classification: AuditClassification = "unsupported_preflight"
     ) -> None:
+        """Retain the failure detail and its audit classification."""
         super().__init__(detail)
         self.classification = classification
 
 
 @dataclass(frozen=True)
 class ResourcePayment:
+    """Describe an admitted owned resource debit required by a feature."""
+
     feature_slug: str
     cost: int
     maximum: int
@@ -74,6 +84,8 @@ class ResourcePayment:
 
 @dataclass(frozen=True)
 class FeatureInvocation:
+    """Retain a preflighted feature operation and its execution inputs."""
+
     activities: list[Activity]
     passive_effects: list[PassiveEffect]
     is_bonus_action: bool
@@ -158,6 +170,9 @@ _SPECIAL: dict[str, str] = {
 
 
 def feature_operation(feature: Feature, activity: Activity) -> FeatureOperation:
+    """Classify a standalone feature operation, rejecting riders and semantic special
+    cases.
+    """
     if rider := feature.attack_riders.get(activity.id):
         classification: AuditClassification = (
             "attack_rider_deferred" if rider.deferred_reason else "attack_rider_executable"
@@ -215,6 +230,7 @@ def resource_identity(reference: str, source: Feature, loader: AssetLoader) -> s
 
 
 def scalar_formula(expr: str, ctx: ActivityResolutionContext) -> int:
+    """Resolve a formula using explicit context and reject dice-based arithmetic."""
     return scalar(
         parse_expression(
             resolve_roll_data(expr, ctx, ability=ctx.spellcasting_ability), allow_dice=False
@@ -229,6 +245,7 @@ def resource_payments(
     loader: AssetLoader,
     repertoire: tuple[str, ...],
 ) -> tuple[ResourcePayment, ...]:
+    """Validate owned feature resource costs and collect their payment requirements."""
     costs: dict[str, int] = {}
     for target in activity.consumption.targets:
         if target.type != "itemUses":
@@ -348,6 +365,7 @@ def preflight_feature(
     repertoire: tuple[str, ...],
     spent: Mapping[str, int],
 ) -> FeatureInvocation:
+    """Validate feature activation, dependencies and costs before payment or random draws."""
     activity = invocation.activities[0]
     if activity.id in feature.attack_riders:
         feature_operation(feature, activity)
@@ -392,11 +410,13 @@ def preflight_feature(
 
 
 def _validate_maximum(cap: int | None) -> None:
+    """Reject a negative declared feature use maximum."""
     if cap is not None and cap < 0:
         raise FeaturePreflightError("negative feature use maximum")
 
 
 def _scaling_maximum(activity: Activity, ctx: ActivityResolutionContext) -> int | None:
+    """Resolve and validate an optional scaling maximum without drawing dice."""
     if activity.consumption.scaling.max:
         maximum = scalar_formula(activity.consumption.scaling.max, ctx)
         _validate_maximum(maximum)

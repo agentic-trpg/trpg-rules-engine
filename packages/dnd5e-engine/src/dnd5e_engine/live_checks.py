@@ -39,6 +39,7 @@ ACTION_CHECKS = {
 
 
 def project_check_states(live: _LiveCombat) -> dict[str, CheckActorState]:
+    """Project active effects, senses, fear and Help inputs for each working actor."""
     from dnd5e_engine import orchestrator as orch
 
     return {
@@ -80,6 +81,7 @@ def project_check_states(live: _LiveCombat) -> dict[str, CheckActorState]:
 
 
 def _dim_for_viewer(live: _LiveCombat, viewer: Combatant, cell: str) -> bool:
+    """Check perceived dim light after visibility, blindsight and darkvision handling."""
     origin = live.actor_zone.get(viewer.entity_id, "")
     if not origin or not cell:
         return False  # Existing nonpositional contexts impose no spatial penalty.
@@ -100,12 +102,16 @@ def _dim_for_viewer(live: _LiveCombat, viewer: Combatant, cell: str) -> bool:
 
 
 def _reject(message: str) -> Never:
+    """Signal an invalid or unsupported operation through this path's existing failure
+    mechanism.
+    """
     from dnd5e_engine.orchestrator import IntentRejectedError
 
     raise IntentRejectedError("target_invalid", message)
 
 
 def validate_check_surface(live: _LiveCombat, actor: Combatant, intent: PlayerIntent) -> None:
+    """Validate the intent's typed check association and supported action surface."""
     from dnd5e_engine import orchestrator as orch
 
     request = intent.check
@@ -183,6 +189,7 @@ def validate_check_surface(live: _LiveCombat, actor: Combatant, intent: PlayerIn
 
 
 def validate_live_request(live: _LiveCombat, request: CheckRequest) -> None:
+    """Require living referenced actors and supported check context in the working combat."""
     from dnd5e_engine import orchestrator as orch
 
     actor = orch._find_combatant(live, request.actor_id)
@@ -201,6 +208,7 @@ def validate_live_request(live: _LiveCombat, request: CheckRequest) -> None:
 def resolve_live_check(
     live: _LiveCombat, request: CheckRequest, *, cost_owner: CheckCostOwner = "action"
 ) -> CheckRolled:
+    """Resolve the check with working RNG and apply its declared action cost."""
     from dnd5e_engine import orchestrator as orch
 
     actor = orch._find_combatant(live, request.actor_id)
@@ -219,6 +227,7 @@ def resolve_live_check(
 
 
 def observe_check(live: _LiveCombat, event: CheckRolled) -> None:
+    """Consume Help and inspiration benefits recorded by the resolved check."""
     from dnd5e_engine import orchestrator as orch
 
     if "help" in event.advantage_sources:
@@ -296,6 +305,7 @@ def validate_activity_checks(
 def preflight_activity_checks(
     live: _LiveCombat, actor: Combatant, intent: PlayerIntent, invocation: _FeatureInvocation | None
 ) -> None:
+    """Validate activity checks before item, feature or spell execution."""
     from dnd5e_engine import orchestrator as orch
 
     if intent.intent_type not in ("use_item", "use_feature", "cast_spell"):

@@ -20,6 +20,8 @@ RULESET_ID = "dnd-2024-srd-5.2.1"
 
 
 class RulesetBinding(EvaluationModel):
+    """Pin rules identity, effective content revision and evaluator semantics."""
+
     ruleset_id: Annotated[str, Field(min_length=1)]
     data_revision: Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
     evaluator_version: Annotated[str, Field(min_length=1)]
@@ -30,6 +32,7 @@ class RulesetBindingError(ValueError):
 
 
 def _canonical(value: Any) -> Any:
+    """Convert bound rules values to the canonical content representation."""
     if isinstance(value, BaseModel):
         return {key: _canonical(getattr(value, key)) for key in type(value).model_fields}
     if isinstance(value, Mapping):
@@ -46,6 +49,7 @@ def _canonical(value: Any) -> Any:
 
 
 def _encode(value: Any) -> str:
+    """Encode canonical rules content deterministically for hashing."""
     return json.dumps(
         value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False
     )
@@ -115,6 +119,12 @@ class FrozenRuleset(FrozenAssetLoader):
     __binding: RulesetBinding
 
     def __init__(self, source: AssetLoader) -> None:
+        """Capture a detached effective dataset and compute its trusted rules binding.
+
+        Invalid corpus/identity input becomes RulesetBindingError before the binding is
+        published. The base loader retains private parsed assets and returns defensive
+        copies; freezing does not create a cache of action evaluation results.
+        """
         try:
             super().__init__(source)
             binding = _compute_binding(self)
@@ -124,6 +134,7 @@ class FrozenRuleset(FrozenAssetLoader):
 
     @property
     def binding(self) -> RulesetBinding:
+        """Return the fixed dataset's validated three-field rules binding."""
         return self.__binding
 
 
@@ -167,5 +178,8 @@ def ruleset_binding(loader: AssetLoader | None = None) -> RulesetBinding:
 
 
 def verify_ruleset(binding: RulesetBinding, loader: AssetLoader) -> None:
+    """Verify all binding fields, using trusted frozen identity or the mutable-loader
+    safeguards.
+    """
     if binding != ruleset_binding(loader):
         raise RulesetBindingError("request binding does not match the effective rules/evaluator")

@@ -26,6 +26,7 @@ from dnd5e_engine.types.effects import ActiveEffect, ActiveEffectChange, ChangeM
 
 
 def _model_field_schema(schema: CoreSchema) -> CoreSchema:
+    """Build the schema for an explicitly represented model field."""
     value = {key: item for key, item in schema.items() if key != "serialization"}
     if value.get("type") in {"function-after", "function-before", "function-wrap"}:
         value["schema"] = _model_field_schema(value["schema"])
@@ -33,6 +34,8 @@ def _model_field_schema(schema: CoreSchema) -> CoreSchema:
 
 
 class EffectDurationState(EvaluationModel):
+    """Represent an effect's explicit duration in the evaluation contract."""
+
     rounds: int | None
     turns: int | None
     seconds: int | None
@@ -41,6 +44,8 @@ class EffectDurationState(EvaluationModel):
 
 
 class EffectChangeState(ActiveEffectChange):
+    """Represent a typed active effect change within fixed evaluation inputs."""
+
     model_config = EvaluationModel.model_config
     key: str = Field(...)
     mode: ChangeMode = Field(...)
@@ -49,11 +54,15 @@ class EffectChangeState(ActiveEffectChange):
 
 
 class RestrictedActionGrantState(RestrictedActionGrant):
+    """Represent an explicit restricted action grant in fixed effect inputs."""
+
     model_config = EvaluationModel.model_config
     attacks: Literal[1] = Field(...)
 
 
 class ActionPolicyState(ActionPolicy):
+    """Represent effect-derived action policy in the evaluation contract."""
+
     model_config = EvaluationModel.model_config
     deny_actions: bool = Field(...)
     deny_bonus_actions: bool = Field(...)
@@ -65,6 +74,8 @@ class ActionPolicyState(ActionPolicy):
 
 
 class RepeatSaveState(RepeatSaveSpec):
+    """Represent captured repeat-save requirements with explicit wire fields."""
+
     model_config = EvaluationModel.model_config
     phase: Literal["target_turn_end"] = Field(...)
     save_source: Literal["triggering_activity"] = Field(...)
@@ -72,10 +83,14 @@ class RepeatSaveState(RepeatSaveSpec):
 
 
 class EffectEndFollowUpState(EffectEndFollowUp):
+    """Represent the configured consequence of an effect ending."""
+
     model_config = EvaluationModel.model_config
 
 
 class EffectLifecycleSpecState(EffectLifecycleSpec):
+    """Represent all lifecycle rules needed to reconstruct a captured effect clock."""
+
     model_config = EvaluationModel.model_config
     repeat_save: RepeatSaveState | None = Field(...)
     maximum_rounds: int | None = Field(..., gt=0)
@@ -91,6 +106,7 @@ class EffectLifecycleSpecState(EffectLifecycleSpec):
     @model_serializer(mode="wrap")
     def _serialize_lifecycle(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
         # Snapshot nulls/empty values attest state and cannot be omitted.
+        """Serialize lifecycle using the explicit nested wire representation."""
         data: dict[str, Any] = handler(self)
         return data
 
@@ -101,10 +117,13 @@ class EffectLifecycleSpecState(EffectLifecycleSpec):
         # The wrap serializer preserves exactly these model fields. Its dict
         # return annotation must not erase their serialization schema. Copy the
         # schema metadata only; runtime validation/serialization remain intact.
+        """Expose the explicit lifecycle representation in the generated JSON Schema."""
         return handler(_model_field_schema(schema))
 
 
 class EffectLifecycleApplicationState(EffectLifecycleApplication):
+    """Represent the captured application inputs of a lifecycle clock."""
+
     model_config = EvaluationModel.model_config
     spec: EffectLifecycleSpecState = Field(...)
     save_ability: Literal["str", "dex", "con", "int", "wis", "cha"] | None = Field(...)
@@ -129,12 +148,15 @@ class OngoingEffectLifecycleState(EvaluationModel):
     remaining_one_use_modifiers: tuple[OneUseModifier, ...]
 
     def clock(self) -> OngoingEffectLifecycle:
+        """Restore the runtime lifecycle clock from its explicit wire representation."""
         return OngoingEffectLifecycle(
             **{name: getattr(self, name) for name in type(self).model_fields}
         )
 
 
 class EffectState(EvaluationModel):
+    """Describe a supplied active effect independently of authoritative host persistence."""
+
     id: str
     name: str
     origin: str
@@ -151,6 +173,7 @@ class EffectState(EvaluationModel):
 
     @field_serializer("statuses")
     def sorted_statuses(self, statuses: set[str]) -> list[str]:
+        """Require deterministic ordering and uniqueness of condition statuses."""
         return sorted(statuses)
 
 

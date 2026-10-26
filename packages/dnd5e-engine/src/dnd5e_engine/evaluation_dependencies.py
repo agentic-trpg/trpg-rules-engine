@@ -10,6 +10,7 @@ _DAMAGE_SAVE_NEUTRAL = {"spellcasting", "arcane-recovery", "second-wind"}
 
 
 def damage_save_identity_failure(actor: CharacterStateV2, loader: AssetLoader) -> str | None:
+    """Check the damage/save source identity dependencies for the admitted snapshot."""
     if actor.granted_features is None:
         return "complete explicit feature repertoire is required"
     classes = actor.classes or (

@@ -18,6 +18,8 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class EnvironmentalSource:
+    """Describe an active environmental contribution to the working combat projection."""
+
     area_id: str
     source_id: str
     source_entity_id: str
@@ -35,10 +37,12 @@ class EnvironmentalSource:
 
     @property
     def illuminated_cells(self) -> frozenset[str]:
+        """Resolve cells illuminated by the supplied environment sources."""
         return self.cells | self.dim_cells if self.spec.kind == "light" else frozenset()
 
 
 def refresh_environment(live: "_LiveCombat") -> None:
+    """Refresh the working combat environment projection from its active sources."""
     from dnd5e_engine.persistent_areas import FollowObjectEmanation
 
     sources = []

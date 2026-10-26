@@ -29,6 +29,9 @@ def derive_sheet(
     zone_id: str = "0,0",
     initiative: int = 0,
 ) -> PartyMemberSpec:
+    """Validate selected spells and derive a combat party member from build and instance
+    inputs.
+    """
     known = list(spells_known or [])
     for slug in known:
         if loader.get_spell(slug) is None:

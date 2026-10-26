@@ -62,6 +62,9 @@ class StageRecorder:
     """Cache bounded immutable values once, then retain only changed projections."""
 
     def __init__(self, snapshot: CombatSnapshot) -> None:
+        """Capture initial participants, actor/combat facts and the first fixed-input
+        stage.
+        """
         self.snapshot = snapshot
         self.participants = tuple(sorted(a.entity_id for a in snapshot.character_states))
         state = snapshot.combat_state
@@ -94,6 +97,7 @@ class StageRecorder:
         state: CombatState,
         actor_ids: Iterable[str] | None = None,
     ) -> int:
+        """Capture the current working mechanical facts at the requested stage."""
         changed = []
         for key in sorted(set(self.participants if actor_ids is None else actor_ids)):
             value = actor_facts(actors[key], state.actor_zone[key], state.movement_ledgers[key])
@@ -130,6 +134,7 @@ class StageRecorder:
         attack_roll: bool = False,
         movement: bool = False,
     ) -> None:
+        """Associate an emitted event with its before/after mechanical stages."""
         sequence = self.sample("event", index + 1, actors, state, actor_ids)
         points: tuple[int, ...] = (
             (self.execution, sequence)
@@ -150,6 +155,7 @@ class StageRecorder:
     def finish(
         self, cursor: int, actors: Mapping[str, Combatant], state: CombatState
     ) -> EventStageFacts:
+        """Finalize stage capture with the complete candidate projection."""
         self.sample("operation_completed", cursor, actors, state)
         value = EventStageFacts(
             schema_version="engine-stage-facts/2",

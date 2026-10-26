@@ -1,3 +1,5 @@
+"""Command-line launcher for the Bridge HTTP service."""
+
 from __future__ import annotations
 
 import argparse
@@ -10,6 +12,7 @@ from nat20_bridge.state import BridgeState
 
 
 def main() -> None:
+    """Parse command-line options and run this module's command entrypoint."""
     parser = argparse.ArgumentParser(prog="nat20-bridge")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8020)

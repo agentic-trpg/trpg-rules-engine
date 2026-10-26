@@ -1,5 +1,14 @@
 # Stateful → Stateless migration progress
 
+## Current consumer baseline — 2026-10-27
+
+SM main `b9ae704` now includes scoped SessionMemory and instance-field consumers with
+post-COMMIT publication, as recorded by the coordinated [current source check](source-documentation-acceptance.md).
+The 2026-10-21 NOT IMPLEMENTED statements below describe their historical baseline.
+This source-documentation batch changes no RE ABI, dependency pin or supported operation
+and does not close remaining full recovery, Legacy migration or multiplayer acceptance.
+
+
 ## 2026-10-21 consumer architecture decision — docs only
 
 Architecture Decision Status **[DECIDED]**; complete SM Session memory integration **[NOT IMPLEMENTED]**; runtime Acceptance Status **not executed**. The consumer now targets fixed-version inputs assembled from SM's unified RAM facts (isolated candidate inputs when appropriate), incremental SQLite commit then RAM publication by SM. RE remains stateless and never owns, reads from SQL or restores that world. See [the input/ownership contract](stateless-evaluation.md#session-ram-consumer-architecture-2026-10-21).
@@ -926,6 +935,8 @@ all selected Ruff/format/Mypy, examples and strict MkDocs passed. Integration do
 run Full's coverage/security/wheel gates; the requested final R25 Full must run them.
 This is local evidence, not a GitHub Actions result.
 
+<a id="r23-composition-evidence"></a>
+
 ## R23 actual Attack / Concentration composition
 
 Base: `b503f4e89c68a5d6f124735d29609680e7792dea`; branch:
@@ -969,6 +980,8 @@ they are not passing-gate evidence. The final docs-only edit corrects a reported
 and records results, followed by another strict docs build. Existing untracked
 `.evaluation-worktree/` broadened selection and remains unstaged. This is local
 Integration evidence; coverage/security/wheel checks await the requested final Full.
+
+<a id="r24-save-damage-evidence"></a>
 
 ## R24 existing instant Save / Damage spell
 

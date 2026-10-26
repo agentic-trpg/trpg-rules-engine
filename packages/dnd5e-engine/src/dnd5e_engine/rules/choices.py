@@ -34,6 +34,8 @@ _SLUG: Final = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 @dataclass(frozen=True)
 class AsiPick:
+    """Represent an ability-score improvement choice at a progression slot."""
+
     class_slug: str
     level: int
     increases: dict[AbilityName, int]
@@ -41,6 +43,8 @@ class AsiPick:
 
 @dataclass(frozen=True)
 class FeatPick:
+    """Represent a selected feat and its progression association."""
+
     class_slug: str
     level: int
     feat_slug: str
@@ -48,6 +52,8 @@ class FeatPick:
 
 @dataclass(frozen=True)
 class ParsedChoices:
+    """Group normalized character progression choices for build derivation."""
+
     skills: tuple[Skill, ...] = ()
     expertise: tuple[Skill, ...] = ()
     background: dict[AbilityName, int] | None = None
@@ -57,6 +63,7 @@ class ParsedChoices:
 
 
 def _skill(raw: str, token: str) -> Skill:
+    """Normalize a selected skill into its canonical slug."""
     slug = raw.strip().lower().replace(" ", "_").replace("-", "_")
     if slug not in SKILL_ABILITIES:
         raise ValueError(f"selected_choices token {token!r}: unknown skill {raw!r}")
@@ -64,6 +71,7 @@ def _skill(raw: str, token: str) -> Skill:
 
 
 def _increases(raw: str, token: str) -> dict[AbilityName, int]:
+    """Parse ability-score increase choices for the progression slot."""
     increases: dict[AbilityName, int] = {}
     for part in raw.split(","):
         match = _INCREASE.match(part.strip().lower())
@@ -83,6 +91,7 @@ def _increases(raw: str, token: str) -> dict[AbilityName, int]:
 
 
 def _slot(parts: list[str], token: str) -> tuple[str, int]:
+    """Resolve the selected progression choice slot."""
     class_slug, level = parts[1], parts[2]
     if not _SLUG.match(class_slug) or not level.isdigit():
         raise ValueError(f"selected_choices token {token!r}: expected <class>:<level>")

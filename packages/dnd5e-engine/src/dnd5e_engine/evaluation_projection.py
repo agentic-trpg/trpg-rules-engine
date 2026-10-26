@@ -14,6 +14,13 @@ def attack_delta(
     *,
     position_paths: dict[str, tuple[str, ...]] | None = None,
 ) -> delta.StateDelta:
+    """Project before/after candidate mechanics into the closed guarded Delta.
+
+    Compare actor facts, budgets and the supported combat components, retaining original
+    values and expected world version. Unsupported component changes raise an invariant
+    error rather than being silently omitted. Returned operations remain proposals for
+    authoritative host validation and commit.
+    """
     operations: list[delta.StateDeltaOperation] = []
     if (
         before.snapshot_kind != after.snapshot_kind
@@ -212,11 +219,13 @@ def attack_delta(
 
 
 def sap_delta(before: CombatSnapshot, after: CombatSnapshot) -> list[delta.SapMarksUpdate]:
+    """Project Sap mark changes into the Delta component."""
     old_state, new_state = before.combat_state, after.combat_state
     if old_state.sap_marks == new_state.sap_marks:
         return []
 
     def marks(values: dict[str, str]) -> tuple[delta.SapMark, ...]:
+        """Project the ordered Sap marks from the candidate state."""
         return tuple(
             delta.SapMark(
                 target_id=target,

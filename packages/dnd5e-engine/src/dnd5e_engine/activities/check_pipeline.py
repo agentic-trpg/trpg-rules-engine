@@ -53,6 +53,7 @@ def activity_check_modifier(
 def _sources(
     request: CheckRequest, actor: Combatant, ctx: ActivityResolutionContext, state: CheckActorState
 ) -> AdvantageSources:
+    """Collect the mechanical modifier sources applicable to the check."""
     adv: list[AdvantageSource] = list(request.advantage)
     dis: list[AdvantageSource] = list(request.disadvantage)
     legacy = ctx.check_modifiers.get(actor.entity_id, {})
@@ -125,6 +126,7 @@ def _effect_bonus(
 ) -> int:
     # Normalize audited Foundry aliases once, then use the existing effect
     # arithmetic. Projection remains draw-free; bonus dice roll AFTER the d20.
+    """Evaluate an applicable effect bonus through the check's resolution context."""
     aliases = {
         "abilities.check": "check.bonus",
         "system.bonuses.abilities.check": "check.bonus",
@@ -165,6 +167,7 @@ def resolve_check_request(
     tool_slug: str | None = None,
     tool_advantage: bool = False,
 ) -> CheckRolled:
+    """Resolve a typed check with the supplied actors, modifiers and explicit RNG."""
     actor = next((c for c in [ctx.caster, *ctx.targets] if c.entity_id == request.actor_id), None)
     if actor is None:
         raise ValueError("rolling actor is absent from the check context")

@@ -45,6 +45,8 @@ from dnd5e_engine.turn_rules import bonus_action_payment, record_budget_changes
 
 
 class ItemEvaluation(TypedDict):
+    """Describe uncommitted item result fields returned to the evaluation envelope."""
+
     status: Literal["accepted", "rejected", "unsupported"]
     state_delta: StateDelta | None
     proposed_events: tuple[CombatEvent, ...]
@@ -54,6 +56,7 @@ class ItemEvaluation(TypedDict):
 
 
 def _refuse(status: Literal["rejected", "unsupported"], code: str, reason: str) -> ItemEvaluation:
+    """Build a refusal with no Delta, proposed events or RNG transition."""
     return dict(
         status=status,
         state_delta=None,
@@ -66,6 +69,7 @@ def _refuse(status: Literal["rejected", "unsupported"], code: str, reason: str) 
 
 def _item_support_failure(item: Item) -> str | None:
     # Explicit reviewed identity; execution semantics still come from typed fields.
+    """Return a reason unless the item fits the reviewed single-use healing profile."""
     if item.slug != "potion-of-healing" or item.item_kind != "item":
         return "only the reviewed single-use healing item is admitted"
     if (
@@ -112,6 +116,7 @@ def _item_support_failure(item: Item) -> str | None:
 def _equipment_failure(
     snapshot: CombatSnapshot, actor_id: str, item: Item, loader: AssetLoader
 ) -> ItemEvaluation | None:
+    """Check carried item dependencies, charge authority and the declared free hand."""
     for actor in snapshot.character_states:
         for slug in actor.carried_item_slugs:
             equipment = loader.get_item(slug)
@@ -141,6 +146,13 @@ def _equipment_failure(
 
 
 async def evaluate_item(request: RuleEvaluationRequest, loader: AssetLoader) -> ItemEvaluation:
+    """Evaluate the reviewed owned single-use healing item and propose its consequences.
+
+    Check instance identity, ownership/access, quantity/charges, target, free hand,
+    bound asset and supported snapshot/action prerequisites before drawing RNG. Return
+    guarded inventory/HP/budget changes with events and RNG successor; refusal does not
+    pay or consume a unit. Other item profiles remain explicitly unsupported.
+    """
     snapshot, payload = request.state_snapshot, request.payload
     if not isinstance(snapshot, CombatSnapshot) or not isinstance(payload, ItemUsePayload):
         raise EvaluationInvariantError("item evaluation requires the inventory contract")

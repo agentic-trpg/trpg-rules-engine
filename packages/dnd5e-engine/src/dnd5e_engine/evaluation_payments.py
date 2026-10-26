@@ -13,6 +13,7 @@ from dnd5e_engine.resource_rules import choose_spell_slot, consume_resource
 
 
 def spell_payment(resources: ResourceState, owner_id: str, level: int) -> ResourceUpdate:
+    """Determine the owned spell slot payment for the invocation."""
     if not 1 <= level <= 9:
         raise ValueError("invalid spell slot level")
     slots = [p for p in resources.pools if isinstance(p, SlotResource) and p.owner_id == owner_id]
@@ -38,6 +39,7 @@ def spell_payment(resources: ResourceState, owner_id: str, level: int) -> Resour
 def feature_payments(
     resources: ResourceState, owner_id: str, payments: tuple[ResourcePayment, ...]
 ) -> tuple[ResourceUpdate, ...]:
+    """Determine the owned resource payments for the selected feature."""
     if len({p.feature_slug for p in payments}) != len(payments):
         raise ValueError("duplicate priced feature payment")
     updates = []

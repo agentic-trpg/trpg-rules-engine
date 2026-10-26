@@ -39,6 +39,8 @@ class SpellSchool(StrEnum):
 
 
 class SpellComponent(StrEnum):
+    """Name verbal, somatic and material spell components."""
+
     VOCAL = "V"
     SOMATIC = "S"
     MATERIAL = "M"
@@ -57,6 +59,8 @@ class CastingTimeUnit(StrEnum):
 
 
 class CastingTime(BaseModel, frozen=True):
+    """Represent spell activation timing and its trigger context."""
+
     unit: CastingTimeUnit
     value: NonNegativeInt = 1
     condition: str = ""
@@ -75,6 +79,8 @@ class SpellRangeUnits(StrEnum):
 
 
 class SpellRange(BaseModel, frozen=True):
+    """Represent spell range magnitude and units."""
+
     units: SpellRangeUnits
     value: NonNegativeInt | None = None
     special: str | None = None
@@ -98,6 +104,8 @@ class SpellDurationUnits(StrEnum):
 
 
 class SpellDuration(BaseModel, frozen=True):
+    """Represent spell duration and concentration requirements."""
+
     units: SpellDurationUnits
     value: NonNegativeInt | None = None
 
@@ -164,4 +172,5 @@ class Spell(BaseModel):
         # (PYTHONHASHSEED). Sort so the regen-clean gate (PR A task A7) is
         # stable run-over-run. Same pattern as Provenance.srd_version /
         # Class.saving_throws / Weapon.properties.
+        """Serialize components using the explicit nested wire representation."""
         return sorted(value)

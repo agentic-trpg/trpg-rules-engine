@@ -41,7 +41,12 @@ from dnd5e_engine.turn_rules import ordinary_action_payment, record_budget_chang
 
 
 class HoldCastComputation(HoldTurnComputation):
+    """Compute the admitted Hold Person creation using isolated concentration machinery."""
+
     def emit(self, event: CombatEvent) -> None:
+        """Append mechanical event evidence and fold its consequences into this candidate
+        computation.
+        """
         if isinstance(event, EffectApplied):
             effect = event.effect
             identity = (effect.target_id, effect.id, effect.origin)
@@ -82,6 +87,7 @@ class HoldCastComputation(HoldTurnComputation):
 def hold_cast_source_failure(
     snapshot: CombatSnapshot, intent: CombatIntentPayload, actor_id: str, loader: AssetLoader
 ) -> str | None:
+    """Check the bound source required by the admitted Hold Person cast."""
     spell = loader.get_spell("hold-person")
     assert spell is not None
     actor = next(a for a in snapshot.character_states if a.entity_id == actor_id)
@@ -148,6 +154,7 @@ def hold_create_delta(
     ledgers: tuple[SlotSpendLedgerUpdate, ...],
     dc: int,
 ) -> StateDelta:
+    """Project the new Hold Person graph into guarded Delta operations."""
     assert intent.source_id is not None
     assert intent.spell_source_id is not None
     assert intent.target_id is not None
@@ -252,6 +259,7 @@ def hold_create_delta(
 
 
 def evaluate_hold_cast(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEvaluation:
+    """Evaluate the admitted Hold Person cast and return an uncommitted graph candidate."""
     from dnd5e_engine.evaluation_spells import spell_event
 
     snapshot, intent = request.state_snapshot, request.payload

@@ -122,6 +122,7 @@ def validate_feature_picks(
     capacities = [capacity for _, capacity in pools]
 
     def assign(index: int) -> bool:
+        """Accumulate the supplied proficiency grant in its target category."""
         if index == len(selected):
             return True
         for pool_index, (options, _) in enumerate(pools):
@@ -374,6 +375,8 @@ _ARMOR_PROF_KEY: Final = "system.traits.armorProf.value"
 
 @dataclass(frozen=True)
 class ProficiencyGrants:
+    """Group proficiencies derived from the selected character creation inputs."""
+
     saves: frozenset[Ability]
     skills: frozenset[Skill]
     weapons: frozenset[str]
@@ -381,6 +384,7 @@ class ProficiencyGrants:
 
 
 def _weapon_tokens(token: str) -> tuple[str, ...]:
+    """Normalize weapon identifiers for proficiency matching."""
     parts = token.split(":")
     if len(parts) == 2:
         return _WEAPON_CATEGORY_TOKENS.get(parts[1], ())
@@ -425,6 +429,7 @@ def proficiency_grants(
 
 
 def _values(changes: Iterable[PassiveEffectChange], key: str) -> list[str]:
+    """Normalize scalar or collection grant values for proficiency derivation."""
     return [
         c.value.strip().strip('"').strip() for c in changes if c.key == key and c.mode == _MODE_ADD
     ]

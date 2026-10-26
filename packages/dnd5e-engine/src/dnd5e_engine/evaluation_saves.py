@@ -73,6 +73,7 @@ def save_actor_failure(
     reviewed_concentration: bool = False,
     reviewed_equipment: bool = False,
 ) -> str | None:
+    """Check actor prerequisites for the admitted saving throw."""
     if (
         any(not 1 <= getattr(state, field) <= 30 for field in _SCORE_ATTR.values())
         or not 1 <= state.character_level <= 20
@@ -113,6 +114,9 @@ def save_actor_failure(
 
 
 def evaluate_save(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEvaluation:
+    """Evaluate the admitted saving throw with explicit RNG and return uncommitted
+    evidence.
+    """
     snapshot, payload = request.state_snapshot, request.payload
     assert isinstance(payload, SavePayload)
     if not isinstance(snapshot, NonCombatSnapshot) or snapshot.combat_setup is not None:

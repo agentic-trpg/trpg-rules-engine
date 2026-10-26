@@ -77,6 +77,7 @@ def _context(
     *,
     preflight: bool = False,
 ) -> ActivityResolutionContext:
+    """Build the enclosing operation's activity context from current working mechanics."""
     from dnd5e_engine import orchestrator as orch
 
     payload = orch._build_hydration_payload(live, caster=actor)
@@ -116,6 +117,7 @@ def _movement_grant(
     plan: AttackRiderPlan,
     semantics: RiderMovementGrant,
 ) -> MovementGrant:
+    """Build the rider's bounded movement grant from effective speed and direction."""
     from dnd5e_engine.live_movement import effective_speed
 
     return MovementGrant(
@@ -134,6 +136,7 @@ def preflight_attack_riders(
     weapon: Weapon | None,
     origin: AttackOrigin,
 ) -> tuple[AttackRiderPlan, ...]:
+    """Validate rider declarations, choices and dependencies before attack resolution."""
     from dnd5e_engine import orchestrator as orch
 
     if not intent.attack_riders and not intent.reckless_attack:
@@ -206,6 +209,7 @@ def preflight_attack_riders(
 def attack_origin(
     intent: PlayerIntent, weapon: Weapon | None, funding: AttackFunding, actor: Combatant
 ) -> AttackOrigin:
+    """Classify the attack's mechanical origin from intent, funding and equipment."""
     if funding == "construct_bonus":
         return "construct"
     if funding == "light_bonus":
@@ -225,6 +229,9 @@ def attack_origin(
 
 
 def _reject(live: _LiveCombat, actor_id: str, intent: PlayerIntent) -> None:
+    """Signal an invalid or unsupported operation through this path's existing failure
+    mechanism.
+    """
     from dnd5e_engine import orchestrator as orch
 
     orch._emit(
@@ -234,6 +241,7 @@ def _reject(live: _LiveCombat, actor_id: str, intent: PlayerIntent) -> None:
 
 
 def reject_nonattack_riders(live: _LiveCombat, actor_id: str, intent: PlayerIntent) -> bool:
+    """Emit failure when rider choices are attached to a nonattack intent."""
     if (intent.attack_riders or intent.reckless_attack) and intent.intent_type != "attack":
         _reject(live, actor_id, intent)
         return True
@@ -247,6 +255,9 @@ def prepare_intent_riders(
     weapon: Weapon | None,
     origin: AttackOrigin,
 ) -> tuple[AttackRiderPlan, ...] | None:
+    """Preflight riders, translating validation/arithmetic failures to an unsupported-rider
+    event.
+    """
     try:
         return preflight_attack_riders(live, actor, intent, weapon, origin)
     except (ValueError, ZeroDivisionError):
@@ -255,6 +266,7 @@ def prepare_intent_riders(
 
 
 def _enabled(value: bool | int | str) -> bool:
+    """Recognize the supported true flag representations."""
     return value is True or value == "true"
 
 
@@ -275,6 +287,7 @@ def rider_speed(live: _LiveCombat, actor_id: str, speed: int) -> int:
 
 
 def prevents_opportunity_attacks(live: _LiveCombat, actor_id: str) -> bool:
+    """Read active effect flags prohibiting opportunity attacks."""
     return any(
         change.key == "flags.cannot_make_opportunity_attacks"
         and change.mode == "override"
@@ -286,6 +299,7 @@ def prevents_opportunity_attacks(live: _LiveCombat, actor_id: str) -> bool:
 
 
 def observe_rider_event(live: _LiveCombat, event: CombatEvent) -> None:
+    """Remove effect modifiers consumed by resolved rider evidence."""
     if not isinstance(event, EffectModifiersConsumed):
         return
     effects = live.active_effects.get(event.target_id, [])
@@ -302,6 +316,7 @@ def observe_rider_event(live: _LiveCombat, event: CombatEvent) -> None:
 def expire_rider_effects(
     live: _LiveCombat, actor_id: str | None, phase: Literal["start", "end"]
 ) -> None:
+    """Expire matching rider effects at a later configured actor turn boundary."""
     from dnd5e_engine import orchestrator as orch
 
     for target_id, effects in list(live.active_effects.items()):
@@ -324,6 +339,7 @@ def expire_rider_effects(
 
 
 def register_rider_hooks(live: _LiveCombat) -> None:
+    """Register keyed rider expiry handling on the existing turn lifecycle."""
     live.lifecycle.register(
         "turn_end",
         lambda combat, actor: expire_rider_effects(combat, actor, "end"),
@@ -332,6 +348,7 @@ def register_rider_hooks(live: _LiveCombat) -> None:
 
 
 def _roll_modifier(live: _LiveCombat, attacker_id: str, target_id: str) -> AttackRollModifier:
+    """Collect and consume applicable next-attack modifier effects."""
     from dnd5e_engine import orchestrator as orch
 
     advantage = False
@@ -376,6 +393,7 @@ def _roll_modifier(live: _LiveCombat, attacker_id: str, target_id: str) -> Attac
 def _pay(
     live: _LiveCombat, attack: AttackResolutionContext | AttackPreRollContext, plan: AttackRiderPlan
 ) -> bool:
+    """Check rider use/resource limits and debit admitted costs in working state."""
     from dnd5e_engine import orchestrator as orch
 
     key = (
@@ -404,6 +422,7 @@ def _resolve(
     *,
     emit_trigger: bool = True,
 ) -> None:
+    """Resolve a qualified rider's mechanical consequences in the enclosing working combat."""
     from dnd5e_engine import orchestrator as orch
     from dnd5e_engine.activities.effects import bind_effect_lifecycle
     from dnd5e_engine.live_reactions import attach_reaction_hooks
@@ -561,6 +580,7 @@ def _execute_grant(
     plan: AttackRiderPlan,
     semantics: RiderMovementGrant,
 ) -> None:
+    """Execute a selected rider movement grant through the shared movement resolver."""
     from dnd5e_engine import orchestrator as orch
     from dnd5e_engine.live_movement import execute_movement_grant
 
@@ -575,6 +595,7 @@ def _execute_grant(
 
 
 def _rider_gates(live: _LiveCombat, plan: AttackRiderPlan, attacker: Combatant) -> bool:
+    """Check own-turn, Reckless Attack and Rage prerequisites for the rider."""
     from dnd5e_engine import orchestrator as orch
 
     semantics = plan.semantics
@@ -589,6 +610,8 @@ def _rider_gates(live: _LiveCombat, plan: AttackRiderPlan, attacker: Combatant) 
 
 @dataclass
 class _PreRollChoices:
+    """Retain rider choices admitted before the attack roll."""
+
     live: _LiveCombat
     source_ctx: ActivityResolutionContext
     plans: tuple[AttackRiderPlan, ...]
@@ -597,6 +620,9 @@ class _PreRollChoices:
     current_roll_committed: bool = False
 
     def __call__(self, attack: AttackPreRollContext) -> AttackRollModifier:
+        """Admit and commit pre-roll rider choices once, returning the attack roll
+        modifier.
+        """
         from dnd5e_engine import orchestrator as orch
         from dnd5e_engine.activities.attack import attack_effect_sources
 
@@ -668,6 +694,9 @@ def attach_attack_riders(
     )
 
     def prepare(attack: AttackResolutionContext) -> AttackRiderPreparation:
+        """Qualify/pay riders, deduplicate shared damage contributions and retain deferred
+        consequences.
+        """
         current_attack[:] = [attack]
         selected = []
         contributions = []
@@ -713,10 +742,12 @@ def attach_attack_riders(
         )
 
     def resolved(attack: AttackResolutionContext) -> None:
+        """Resolve riders retained for this activity/target after attack resolution."""
         for plan in pending.pop((attack.source_activity_id, attack.target_id), []):
             _resolve(live, attack, plan)
 
     def commit_sneak(attacker_id: str, target_id: str) -> None:
+        """Mark Sneak Attack spent and update the matching shared rider-use group."""
         orch._update_combatant(live, attacker_id, sneak_attack_spent_this_turn=True)
         actor = orch._find_combatant(live, attacker_id)
         if actor is None:

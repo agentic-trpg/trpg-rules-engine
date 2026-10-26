@@ -7,6 +7,7 @@ from dnd5e_engine.types.combat import Combatant
 
 
 def reset_turn_budget(c: Combatant, *, effective_speed: int, attacks: int) -> Combatant:
+    """Reset actor action counters for the beginning of a turn."""
     return c.model_copy(
         update={
             "action_available": True,
@@ -56,6 +57,7 @@ def reset_turn_budget(c: Combatant, *, effective_speed: int, attacks: int) -> Co
 
 
 def next_turn_index(ids: Sequence[str], dead: Set[str], start: int) -> tuple[int, bool] | None:
+    """Find the next living initiative entry and whether it starts a new round."""
     if not ids:
         return None
     index = start
@@ -69,6 +71,7 @@ def next_turn_index(ids: Sequence[str], dead: Set[str], start: int) -> tuple[int
 def spend_attack_budget(
     c: Combatant, *, new_action: bool, attacks: int, payment: dict[str, Any]
 ) -> Combatant:
+    """Debit the attack from its admitted action funding source."""
     if new_action:
         update = {
             **payment,
@@ -84,6 +87,7 @@ def spend_attack_budget(
 
 
 def ordinary_action_payment(c: Combatant, *, extra_action: bool = False) -> dict[str, Any]:
+    """Determine whether the operation consumes the ordinary action budget."""
     if extra_action:
         return {
             "extra_actions_remaining": c.extra_actions_remaining - 1,
@@ -95,6 +99,9 @@ def ordinary_action_payment(c: Combatant, *, extra_action: bool = False) -> dict
 
 
 def record_budget_changes(before: Combatant, after: Combatant) -> Combatant:
+    """Return an actor copy with action/bonus-action usage markers derived from budget
+    changes.
+    """
     fields = {}
     if (
         before.action_available and not after.action_available

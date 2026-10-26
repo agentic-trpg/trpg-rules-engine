@@ -1,3 +1,5 @@
+"""Namespace for typed SRD asset schemas consumed by loaders and mechanical evaluation."""
+
 from __future__ import annotations
 
 from dnd5e_srd_data.schema.advancement import AdvancementEntry, AdvancementType

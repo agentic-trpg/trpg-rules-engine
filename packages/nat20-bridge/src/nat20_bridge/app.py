@@ -1,3 +1,8 @@
+"""Construct the Bridge HTTP application and its dice, check, rest and build endpoints.
+
+Content and combat routes use the existing Bridge state and shared engine interfaces.
+"""
+
 from __future__ import annotations
 
 import dataclasses
@@ -38,6 +43,7 @@ from nat20_bridge.state import BridgeState
 
 
 def _do_roll(req: _RollRequest) -> dict[str, Any]:
+    """Resolve the Bridge dice request with its explicit or generated seed."""
     seed = resolve_seed(req.seed)
     try:
         total = roll_dice_str(req.dice, rng=random.Random(seed))
@@ -49,6 +55,7 @@ def _do_roll(req: _RollRequest) -> dict[str, Any]:
 
 
 def _check_summary(result: Any) -> str:
+    """Format a compact human-readable check result summary."""
     label = result.skill or result.ability
     if result.dc is None:
         return f"{label} check: {result.roll_total}"
@@ -57,6 +64,7 @@ def _check_summary(result: Any) -> str:
 
 
 def _do_check(req: _CheckRequest) -> dict[str, Any]:
+    """Validate and resolve the Bridge ability check request."""
     seed = resolve_seed(req.seed)
     short_scores = req.ability_scores.model_dump(by_alias=True)
     ability_scores = {full: short_scores[short] for short, full in ABILITY_ALIASES.items()}
@@ -85,6 +93,7 @@ def _do_check(req: _CheckRequest) -> dict[str, Any]:
 
 
 def _do_rest_short(req: _ShortRestRequest) -> dict[str, Any]:
+    """Resolve Bridge short-rest recovery from the supplied pools and spends."""
     seed = resolve_seed(req.seed)
     pool = HitDicePool(
         hit_die_size=req.hit_die_size,
@@ -108,6 +117,7 @@ def _do_rest_short(req: _ShortRestRequest) -> dict[str, Any]:
 
 
 def _do_rest_long(req: _LongRestRequest) -> dict[str, Any]:
+    """Resolve Bridge long-rest recovery from the supplied state."""
     seed = resolve_seed(req.seed)
     pool = HitDicePool(
         hit_die_size=req.hit_die_size,
@@ -125,11 +135,15 @@ def _do_rest_long(req: _LongRestRequest) -> dict[str, Any]:
 
 
 class _RollRequest(BaseModel):
+    """Validate Bridge dice-roll transport input."""
+
     dice: str
     seed: int | None = None
 
 
 class _CheckRequest(BaseModel):
+    """Validate Bridge ability-check transport input."""
+
     kind: Literal["skill", "ability", "saving_throw"]
     ability: str | None = None
     skill: str | None = None
@@ -144,6 +158,8 @@ class _CheckRequest(BaseModel):
 
 
 class _ShortRestRequest(BaseModel):
+    """Validate Bridge short-rest pool and spending input."""
+
     hit_die_size: int
     dice_remaining: int
     dice_total: int
@@ -155,6 +171,8 @@ class _ShortRestRequest(BaseModel):
 
 
 class _LongRestRequest(BaseModel):
+    """Validate Bridge long-rest recovery input."""
+
     hit_die_size: int
     dice_remaining: int
     dice_total: int
@@ -164,6 +182,9 @@ class _LongRestRequest(BaseModel):
 
 
 def create_app(state: BridgeState) -> FastAPI:
+    """Construct the FastAPI application and install its configured routes and
+    collaborators.
+    """
     app = FastAPI(title="nat20-bridge", version=__version__)
     # The ST extension fetches cross-origin from the SillyTavern page; the
     # bridge binds loopback so permissive CORS is acceptable here.
@@ -180,6 +201,7 @@ def create_app(state: BridgeState) -> FastAPI:
     state.homebrew_store = store
 
     def _refresh_loader() -> None:
+        """Replace the effective content overlay after a controlled homebrew change."""
         if state.combats:
             raise RuntimeError("end all open combats before refreshing the ruleset")
         loader = OverlayAssetLoader(base=get_default_ruleset(), overlay=store.as_memory_loader())
@@ -191,6 +213,7 @@ def create_app(state: BridgeState) -> FastAPI:
 
     @app.get("/v1/health")
     def health() -> dict[str, str]:
+        """Return Bridge service health information."""
         return {
             "bridge": __version__,
             "engine": version("dnd5e-engine"),
@@ -199,6 +222,7 @@ def create_app(state: BridgeState) -> FastAPI:
 
     @app.post("/v1/party/validate")
     def party_validate(req: PartyValidateRequest) -> dict[str, Any]:
+        """Validate/derive party build requests and return their mechanical projection."""
         entity_id = req.entity_id or f"char:{slugify(req.name)}"
         assert state.loader is not None
         try:
@@ -232,18 +256,22 @@ def create_app(state: BridgeState) -> FastAPI:
 
     @app.post("/v1/roll")
     def roll(req: _RollRequest) -> dict[str, Any]:
+        """Delegate the validated dice request to Bridge resolution."""
         return _do_roll(req)
 
     @app.post("/v1/check")
     def check(req: _CheckRequest) -> dict[str, Any]:
+        """Delegate the validated ability-check request to Bridge resolution."""
         return _do_check(req)
 
     @app.post("/v1/rest/short")
     def rest_short(req: _ShortRestRequest) -> dict[str, Any]:
+        """Delegate the validated short-rest request to Bridge resolution."""
         return _do_rest_short(req)
 
     @app.post("/v1/rest/long")
     def rest_long(req: _LongRestRequest) -> dict[str, Any]:
+        """Delegate the validated long-rest request to Bridge resolution."""
         return _do_rest_long(req)
 
     app.include_router(build_combat_router(state))

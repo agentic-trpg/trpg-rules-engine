@@ -26,6 +26,8 @@ from dnd5e_engine.outcome import DeathRecord
 
 
 class AttackBudgetState(EvaluationModel):
+    """Represent guarded action and attack counters for a budget transition."""
+
     action_available: bool
     bonus_action_available: bool
     reaction_available: bool
@@ -52,6 +54,7 @@ class AttackBudgetState(EvaluationModel):
 
     @model_validator(mode="after")
     def bounds(self) -> Self:
+        """Reject negative counters or values outside the component's mechanical bounds."""
         counts = (
             self.attack_action_attacks_made,
             self.attack_rolls_made_this_turn,
@@ -66,11 +69,15 @@ class AttackBudgetState(EvaluationModel):
 
 
 class DeathState(EvaluationModel):
+    """Represent actor death-save and life-state facts in a guarded change."""
+
     is_alive: bool
     death_saves: DeathSaveRecord | None
 
 
 class TurnState(EvaluationModel):
+    """Represent the combat turn/round facts guarded by a turn update."""
+
     current_turn_index: Annotated[int, Field(ge=0)]
     round_number: Annotated[int, Field(ge=1)]
     turn_serial: Annotated[int, Field(ge=0)]
@@ -81,6 +88,8 @@ class TurnState(EvaluationModel):
 
 
 class HPDelta(EvaluationModel):
+    """Propose an HP change with checked original/result arithmetic."""
+
     kind: Literal["actor.hp_delta"]
     target_id: Annotated[str, Field(min_length=1)]
     expected_hp: Annotated[int, Field(ge=0)]
@@ -89,12 +98,15 @@ class HPDelta(EvaluationModel):
 
     @model_validator(mode="after")
     def arithmetic(self) -> Self:
+        """Require the HP Delta result to equal original HP plus the proposed amount."""
         if self.expected_hp + self.amount != self.resulting_hp:
             raise ValueError("HP delta arithmetic mismatch")
         return self
 
 
 class TempHPSet(EvaluationModel):
+    """Propose a guarded temporary-HP replacement."""
+
     kind: Literal["actor.temp_hp_set"]
     target_id: Annotated[str, Field(min_length=1)]
     expected_temp_hp: Annotated[int, Field(ge=0)]
@@ -102,6 +114,8 @@ class TempHPSet(EvaluationModel):
 
 
 class DeathStateUpdate(EvaluationModel):
+    """Propose a guarded death-save/life-state replacement."""
+
     kind: Literal["actor.death_state_update"]
     target_id: Annotated[str, Field(min_length=1)]
     expected: DeathState
@@ -109,6 +123,8 @@ class DeathStateUpdate(EvaluationModel):
 
 
 class ConditionsUpdate(EvaluationModel):
+    """Propose replacement of an actor's guarded condition collection."""
+
     kind: Literal["actor.conditions_update"]
     target_id: Annotated[str, Field(min_length=1)]
     expected: tuple[ConditionRecord, ...]
@@ -116,6 +132,8 @@ class ConditionsUpdate(EvaluationModel):
 
 
 class DamageAttributionUpdate(EvaluationModel):
+    """Propose a guarded update to last-damage attribution."""
+
     kind: Literal["actor.damage_attribution_update"]
     target_id: Annotated[str, Field(min_length=1)]
     expected: str | None
@@ -123,6 +141,8 @@ class DamageAttributionUpdate(EvaluationModel):
 
 
 class ActionBudgetUpdate(EvaluationModel):
+    """Propose replacement of guarded action/attack budgets."""
+
     kind: Literal["combat.action_budget_update"]
     actor_id: Annotated[str, Field(min_length=1)]
     expected: AttackBudgetState
@@ -130,6 +150,8 @@ class ActionBudgetUpdate(EvaluationModel):
 
 
 class TurnUpdate(EvaluationModel):
+    """Propose a guarded turn/round transition."""
+
     kind: Literal["combat.turn_update"]
     combat_id: Annotated[str, Field(min_length=1)]
     expected: TurnState
@@ -137,6 +159,8 @@ class TurnUpdate(EvaluationModel):
 
 
 class MovementLedgerUpdate(EvaluationModel):
+    """Propose a guarded movement expenditure ledger transition."""
+
     kind: Literal["combat.movement_ledger_update"]
     actor_id: Annotated[str, Field(min_length=1)]
     expected: MovementLedgerState
@@ -156,6 +180,9 @@ class PositionUpdate(EvaluationModel):
 
     @model_validator(mode="after")
     def route_identity(self) -> Self:
+        """Validate route endpoints and canonical cells against the guarded position
+        change.
+        """
         from dnd5e_engine.spatial import canonical_cell_id
 
         if (
@@ -170,6 +197,8 @@ class PositionUpdate(EvaluationModel):
 
 
 class DamageSequenceUpdate(EvaluationModel):
+    """Propose advancement of the guarded damage-instance sequence."""
+
     kind: Literal["combat.damage_sequence_update"]
     combat_id: Annotated[str, Field(min_length=1)]
     expected: Annotated[int, Field(ge=0)]
@@ -177,6 +206,8 @@ class DamageSequenceUpdate(EvaluationModel):
 
 
 class ProcessedDamageUpdate(EvaluationModel):
+    """Propose a guarded processed-damage identity set replacement."""
+
     kind: Literal["combat.processed_damage_update"]
     combat_id: Annotated[str, Field(min_length=1)]
     expected: frozenset[tuple[str, str]]
@@ -184,6 +215,8 @@ class ProcessedDamageUpdate(EvaluationModel):
 
 
 class DeathLedgerUpdate(EvaluationModel):
+    """Propose a guarded combat death ledger replacement."""
+
     kind: Literal["combat.death_ledger_update"]
     combat_id: Annotated[str, Field(min_length=1)]
     expected_dead_ids: frozenset[str]
@@ -215,6 +248,8 @@ class CombatClose(EvaluationModel):
 
 
 class InventoryConsume(EvaluationModel):
+    """Propose consuming a unit while preserving inventory identity and ownership."""
+
     kind: Literal["inventory.consume"]
     expected: InventoryEntry
     value: InventoryEntry
@@ -222,6 +257,9 @@ class InventoryConsume(EvaluationModel):
 
     @model_validator(mode="after")
     def consume_one_unit(self) -> Self:
+        """Require item consumption to preserve identity, ownership, access and remaining
+        charges.
+        """
         if self.expected.quantity < 1 or self.expected.charges_remaining_per_unit != 1:
             raise ValueError("consume requires an available single-use unit")
         if not self.expected.accessible or self.value != self.expected.model_copy(
@@ -234,11 +272,15 @@ class InventoryConsume(EvaluationModel):
 
 
 class InitialActorState(EvaluationModel):
+    """Describe actor mechanics produced by fresh combat initialization."""
+
     initiative: int
     budget: AttackBudgetState
 
 
 class InitialActorUpdate(EvaluationModel):
+    """Propose an actor's guarded initialization transition."""
+
     actor_id: Annotated[str, Field(min_length=1)]
     expected: InitialActorState
     value: InitialActorState
@@ -255,6 +297,7 @@ class CombatCreationCandidate(EvaluationModel):
 
     @model_validator(mode="after")
     def initial_components(self) -> Self:
+        """Require a complete fresh combat component consistent with initialization inputs."""
         from dnd5e_engine.evaluation_initial_state import initial_combat_state
 
         ids = self.expected_setup.roll_order
@@ -271,6 +314,8 @@ class CombatCreationCandidate(EvaluationModel):
 
 
 class ResourceUpdate(EvaluationModel):
+    """Propose a resource balance change preserving pool identity and capacity."""
+
     kind: Literal["resource.update"]
     owner_id: Annotated[str, Field(min_length=1)]
     pool_id: Annotated[str, Field(min_length=1)]
@@ -280,6 +325,9 @@ class ResourceUpdate(EvaluationModel):
 
     @model_validator(mode="after")
     def owned_transition(self) -> Self:
+        """Require a resource transition to preserve identity/capacity and valid
+        arithmetic.
+        """
         if (
             self.owner_id != self.expected.owner_id
             or self.pool_id != self.expected.pool_id
@@ -306,6 +354,7 @@ class EffectLifecycleUpdate(EvaluationModel):
 
     @model_validator(mode="after")
     def complete_identity(self) -> Self:
+        """Require atomic, identity-consistent effect, clock and lineage transitions."""
         effect = self.expected_effect
         if self.expected_lifecycle is None:
             from dnd5e_engine.concentration_rules import concentration_anchor
@@ -371,6 +420,7 @@ class ConcentrationUpdate(EvaluationModel):
 
     @model_validator(mode="after")
     def closed_transition(self) -> Self:
+        """Validate the enclosing component's guarded, closed state transition."""
         if (
             not self.expected_chain
             or len(set(self.expected_chain)) != len(self.expected_chain)
@@ -406,6 +456,7 @@ class SlotSpendLedgerUpdate(EvaluationModel):
 
     @model_validator(mode="after")
     def one_spend(self) -> Self:
+        """Require the slot ledger to record exactly one additional owned slot spend."""
         prior = dict(self.expected or {})
         key = f"{self.slot_kind}:{self.level}"
         prior[key] = prior.get(key, 0) + 1
@@ -425,12 +476,15 @@ class PendingReactionUpdate(EvaluationModel):
 
     @model_validator(mode="after")
     def one_existing_declaration(self) -> Self:
+        """Require consumption of exactly one guarded reaction declaration."""
         if len(self.expected) != 1 or self.expected[0].owner_id != self.owner_id or self.value:
             raise ValueError("bounded reaction update consumes exactly one guarded declaration")
         return self
 
 
 class SapMark(EvaluationModel):
+    """Associate a Sap source with its target in the mechanical state."""
+
     target_id: Annotated[str, Field(min_length=1)]
     source_id: Annotated[str, Field(min_length=1)]
     expires: Literal["source_next_turn_start"]
@@ -448,6 +502,7 @@ class SapMarksUpdate(EvaluationModel):
 
     @model_validator(mode="after")
     def closure(self) -> Self:
+        """Validate complete component references and cross-field invariants."""
         ids = set(self.actor_ids)
         if not ids or len(ids) != len(self.actor_ids):
             raise ValueError("Sap requires a unique nonempty actor roster")
@@ -492,5 +547,7 @@ StateDeltaOperation = Annotated[
 
 
 class StateDelta(EvaluationModel):
+    """Group closed, guarded operations for the host to validate and commit later."""
+
     operations: tuple[StateDeltaOperation, ...]
     expected_world_version: Annotated[int, Field(ge=0)]

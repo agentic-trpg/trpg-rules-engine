@@ -72,6 +72,7 @@ def _bump_first_die_count(formula: str, die_increase: int) -> str:
     """
 
     def _bump(match: re.Match[str]) -> str:
+        """Update the tracked dice counter for the current context."""
         return f"{int(match.group(1)) + die_increase}d"
 
     return re.sub(r"^(\d+)d", _bump, formula, count=1)

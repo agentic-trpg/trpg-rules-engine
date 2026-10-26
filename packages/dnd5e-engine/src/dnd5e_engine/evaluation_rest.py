@@ -28,6 +28,13 @@ from dnd5e_engine.rules.dice import ability_modifier
 
 
 def evaluate_rest(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEvaluation:
+    """Admit explicit noncombat rest inputs and return their uncommitted recovery result.
+
+    Check actor readiness, owned resource capacities, declared spends and complete
+    supported class/feature/item recovery dependencies before resolution. Dispatch
+    supported short or long rest computation; refuse unsupported lifecycle assumptions
+    rather than filling resource capacity from inferred actor mirrors.
+    """
     snapshot, payload = request.state_snapshot, request.payload
     assert isinstance(payload, RestPayload)
     if not isinstance(snapshot, NonCombatSnapshot) or snapshot.combat_setup is not None:
@@ -191,6 +198,7 @@ def _compute_rest(
     feature_pools: list[FeatureResource],
     feature_recovery: dict[str, list[RecoveryRule]],
 ) -> TurnEvaluation:
+    """Compute short-rest recovery from explicit owned pools and RNG without persisting it."""
     snapshot, payload = request.state_snapshot, request.payload
     assert isinstance(payload, RestPayload)
     # All identity/capacity/cost validation completes before restoring RNG.
@@ -310,6 +318,7 @@ def _compute_long_rest(
     feature_pools: list[FeatureResource],
     feature_recovery: dict[str, list[RecoveryRule]],
 ) -> TurnEvaluation:
+    """Compute admitted long-rest HP/resource recovery as uncommitted operations."""
     snapshot = request.state_snapshot
     assert snapshot.resource_state is not None
     spell = [
@@ -412,6 +421,7 @@ def _long_rest_failure(
     loader: AssetLoader,
     inventory: InventoryState,
 ) -> str | None:
+    """Check complete item, class and feature recovery dependencies for long rest."""
     from dnd5e_engine.activities.actor_stats import _SCORE_ATTR
     from dnd5e_engine.activities.context import ActivityResolutionContext
     from dnd5e_engine.activities.scale import build_scale_values

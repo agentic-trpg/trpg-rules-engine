@@ -102,6 +102,7 @@ async def _play_response(
     seed: int | None,
     log: str | None,
 ) -> HTMLResponse:
+    """Replay the selected demo fight and render its page, returning input errors as HTML."""
     try:
         scenario = get_scenario(scenario_id)
     except KeyError:
@@ -162,6 +163,7 @@ def _act_repro_message(scenario_id: str, seed: int, log: str) -> str:
     # reproduction block the brief asks for) -- callers must run this
     # through ``_error_fragment``, which HTML-escapes the whole message,
     # so a malicious scenario_id/log can never inject markup here.
+    """Build a reproducible issue message containing scenario, seed and fight log."""
     return (
         "Something went wrong replaying this fight. Copy this block into "
         "a GitHub issue — it reproduces the bug exactly: "
@@ -257,6 +259,7 @@ async def _act_response(
     log: str,
     command: str,
 ) -> HTMLResponse:
+    """Validate/replay the submitted demo command and render the updated fight fragment."""
     try:
         scenario = get_scenario(scenario_id)
     except KeyError:
@@ -338,12 +341,16 @@ async def _act_response(
 
 
 def create_app() -> FastAPI:
+    """Construct the FastAPI application and install its configured routes and
+    collaborators.
+    """
     app = FastAPI(title="Nat20 demo")
     app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
     templates = Jinja2Templates(directory=_TEMPLATES_DIR)
 
     @app.get("/", response_class=HTMLResponse)
     async def catalog(request: Request) -> HTMLResponse:
+        """Render the demo scenario catalog."""
         return templates.TemplateResponse(request, "catalog.html", {"scenarios": all_scenarios()})
 
     @app.get("/play/{scenario_id}", response_class=HTMLResponse)
@@ -353,10 +360,12 @@ def create_app() -> FastAPI:
         seed: int | None = None,
         log: str | None = None,
     ) -> HTMLResponse:
+        """Render the requested seeded or replayed demo fight."""
         return await _play_response(templates, request, scenario_id, seed, log)
 
     @app.get("/about", response_class=HTMLResponse)
     async def about(request: Request) -> HTMLResponse:
+        """Render the demo information page."""
         return templates.TemplateResponse(request, "about.html", {})
 
     @app.post("/play/{scenario_id}/act", response_class=HTMLResponse)
@@ -367,6 +376,7 @@ def create_app() -> FastAPI:
         log: str = Form(...),
         command: str = Form(...),
     ) -> HTMLResponse:
+        """Delegate submitted demo fight commands to validation and replay rendering."""
         return await _act_response(templates, request, scenario_id, seed, log, command)
 
     return app

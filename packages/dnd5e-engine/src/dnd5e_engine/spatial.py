@@ -144,13 +144,21 @@ class SpatialTopology(Protocol):
     cell ids.
     """
 
-    def is_adjacent(self, a: str, b: str) -> bool: ...
+    def is_adjacent(self, a: str, b: str) -> bool:
+        """Check adjacency under this topology's distance rules."""
+        ...
 
-    def edge_distance(self, a: str, b: str) -> int | None: ...
+    def edge_distance(self, a: str, b: str) -> int | None:
+        """Compute the topology distance between the selected positions."""
+        ...
 
-    def within_range(self, caster: str, target: str, range_ft: int) -> bool: ...
+    def within_range(self, caster: str, target: str, range_ft: int) -> bool:
+        """Check whether the topology distance is within the supplied range."""
+        ...
 
-    def shortest_path(self, a: str, b: str, *, avoid: Collection[str] = ()) -> list[str]: ...
+    def shortest_path(self, a: str, b: str, *, avoid: Collection[str] = ()) -> list[str]:
+        """Find an unweighted legal route under the topology's supplied constraints."""
+        ...
 
     def lowest_cost_path(
         self,
@@ -160,7 +168,9 @@ class SpatialTopology(Protocol):
         avoid: Collection[str] = (),
         step_cost: StepCostOracle | None = None,
         budget_ft: int | None = None,
-    ) -> list[str]: ...
+    ) -> list[str]:
+        """Find a legal route minimizing the supplied movement cost."""
+        ...
 
     def reachable_cells(
         self,
@@ -169,23 +179,37 @@ class SpatialTopology(Protocol):
         *,
         avoid: Collection[str] = (),
         step_cost: StepCostOracle | None = None,
-    ) -> dict[str, tuple[int, str | None]]: ...
+    ) -> dict[str, tuple[int, str | None]]:
+        """Enumerate cells reachable within the supplied movement budget."""
+        ...
 
-    def has_line_of_sight(self, a: str, b: str) -> bool: ...
+    def has_line_of_sight(self, a: str, b: str) -> bool:
+        """Check visibility geometry between the supplied cells."""
+        ...
 
-    def cover_between(
-        self, a: str, b: str, occupied_cells: Collection[str] = ()
-    ) -> CoverDegree: ...
+    def cover_between(self, a: str, b: str, occupied_cells: Collection[str] = ()) -> CoverDegree:
+        """Resolve cover supplied by geometry between origin and target."""
+        ...
 
-    def cover_on_cell(self, cell: str) -> CoverDegree: ...
+    def cover_on_cell(self, cell: str) -> CoverDegree:
+        """Read the cell's configured cover value."""
+        ...
 
-    def obscurement_on_cell(self, cell: str) -> Literal["none", "light", "heavy"]: ...
+    def obscurement_on_cell(self, cell: str) -> Literal["none", "light", "heavy"]:
+        """Read the cell's effective obscurement."""
+        ...
 
-    def light_on_cell(self, cell: str) -> LightLevel: ...
+    def light_on_cell(self, cell: str) -> LightLevel:
+        """Read the cell's effective illumination level."""
+        ...
 
-    def can_see(self, a: str, b: str, senses: CombatantSenses | None = None) -> bool: ...
+    def can_see(self, a: str, b: str, senses: CombatantSenses | None = None) -> bool:
+        """Combine geometry, light, obscurement and explicit senses for visibility."""
+        ...
 
-    def distance_ft(self, a: str, b: str) -> int | None: ...
+    def distance_ft(self, a: str, b: str) -> int | None:
+        """Return topology distance in feet, or None for an invalid/unconnected position."""
+        ...
 
 
 class GridTopology:
@@ -199,6 +223,7 @@ class GridTopology:
     """
 
     def __init__(self, scene: GridScene) -> None:
+        """Copy scene geometry and environment inputs into this working topology."""
         self._width = scene.width
         self._height = scene.height
         self._cell_size_ft = scene.cell_size_ft
@@ -223,6 +248,7 @@ class GridTopology:
         return canonical_cell_id(cid) in self._difficult
 
     def _in_bounds(self, cid: str) -> bool:
+        """Check whether the supplied cell lies within the map dimensions."""
         try:
             col, row = parse_cell(cid)
         except ValueError:
@@ -230,6 +256,7 @@ class GridTopology:
         return 0 <= col < self._width and 0 <= row < self._height
 
     def _chebyshev(self, a: str, b: str) -> int | None:
+        """Compute the maximum-axis coordinate distance."""
         if not self._in_bounds(a) or not self._in_bounds(b):
             return None
         ac, ar = parse_cell(a)
@@ -237,6 +264,7 @@ class GridTopology:
         return max(abs(ac - bc), abs(ar - br))
 
     def is_adjacent(self, a: str, b: str) -> bool:
+        """Check adjacency under this topology's distance rules."""
         if a == b or b in self._blocked:
             return False
         dist = self._chebyshev(a, b)
@@ -278,6 +306,7 @@ class GridTopology:
         return cost
 
     def within_range(self, caster: str, target: str, range_ft: int) -> bool:
+        """Check whether the topology distance is within the supplied range."""
         dist = self._chebyshev(caster, target)
         if dist is None:
             return False
@@ -408,16 +437,19 @@ class GridTopology:
         return "light" if physical == "light" or light == "dim" else "none"
 
     def _physical_obscurement(self, cell: str) -> Literal["none", "light", "heavy"]:
+        """Read physical obscurement independently of magical darkness."""
         if any(s.spec.obscurement == "heavy" and cell in s.cells for s in self.environment_sources):
             return "heavy"
         return self._obscurement.get(cell) or "none"
 
     def magical_darkness_on_cell(self, cell: str) -> bool:
+        """Return whether magical darkness applies on the selected cell."""
         return self.light_on_cell(cell) == "dark" and any(
             s.spec.kind == "magical_darkness" and cell in s.cells for s in self.environment_sources
         )
 
     def sunlight_on_cell(self, cell: str) -> bool:
+        """Return whether the selected cell is in sunlight."""
         if self.magical_darkness_on_cell(cell):
             return False
         return self._sunlight or any(
@@ -477,6 +509,7 @@ class GridTopology:
         distance_ft = distance * self._cell_size_ft
 
         def reaches(range_ft: int | None) -> bool:
+            """Check whether the supplied sense range reaches the target distance."""
             return range_ft is not None and range_ft >= distance_ft
 
         if senses is not None and reaches(senses.blindsight):
@@ -676,6 +709,7 @@ class GridTopology:
         return cube_cells
 
     def _neighbors(self, cid: str) -> list[str]:
+        """Enumerate valid adjacent topology cells."""
         col, row = parse_cell(cid)
         out: list[str] = []
         for dc in (-1, 0, 1):

@@ -55,23 +55,75 @@ _CATEGORIES: tuple[str, ...] = (
 
 @runtime_checkable
 class AssetLoader(Protocol):
-    def get_item(self, slug: str) -> Item | Weapon | Armor | MagicItem | None: ...
-    def get_weapon(self, slug: str) -> Weapon | None: ...
-    def get_armor(self, slug: str) -> Armor | None: ...
-    def get_monster(self, slug: str) -> Monster | None: ...
-    def get_spell(self, slug: str) -> Spell | None: ...
-    def get_spell_by_uuid(self, uuid: str) -> Spell | None: ...
-    def get_species(self, slug: str) -> Species | None: ...
-    def get_class(self, slug: str) -> Class | None: ...
-    def get_subclass(self, slug: str) -> Subclass | None: ...
-    def get_background(self, slug: str) -> Background | None: ...
-    def get_feat(self, slug: str) -> Feat | None: ...
-    def get_feature(self, slug: str) -> Feature | None: ...
-    def get_condition(self, slug: str) -> Condition | None: ...
-    def list_conditions(self) -> list[str]: ...
-    def get_trait(self, slug: str) -> MonsterTrait | None: ...
-    def list_slugs(self, category: Category) -> list[str]: ...
-    def __contains__(self, key: tuple[Category, str]) -> bool: ...
+    """Declare typed rules asset lookup/enumeration without owning world state."""
+
+    def get_item(self, slug: str) -> Item | Weapon | Armor | MagicItem | None:
+        """Read the typed item by slug, returning None when absent."""
+        ...
+
+    def get_weapon(self, slug: str) -> Weapon | None:
+        """Read the typed weapon by slug, returning None when absent."""
+        ...
+
+    def get_armor(self, slug: str) -> Armor | None:
+        """Read the typed armor by slug, returning None when absent."""
+        ...
+
+    def get_monster(self, slug: str) -> Monster | None:
+        """Read the typed monster by slug, returning None when absent."""
+        ...
+
+    def get_spell(self, slug: str) -> Spell | None:
+        """Read the typed spell by slug, returning None when absent."""
+        ...
+
+    def get_spell_by_uuid(self, uuid: str) -> Spell | None:
+        """Read the typed spell by UUID, returning None when absent."""
+        ...
+
+    def get_species(self, slug: str) -> Species | None:
+        """Read the typed species by slug, returning None when absent."""
+        ...
+
+    def get_class(self, slug: str) -> Class | None:
+        """Read the typed class by slug, returning None when absent."""
+        ...
+
+    def get_subclass(self, slug: str) -> Subclass | None:
+        """Read the typed subclass by slug, returning None when absent."""
+        ...
+
+    def get_background(self, slug: str) -> Background | None:
+        """Read the typed background by slug, returning None when absent."""
+        ...
+
+    def get_feat(self, slug: str) -> Feat | None:
+        """Read the typed feat by slug, returning None when absent."""
+        ...
+
+    def get_feature(self, slug: str) -> Feature | None:
+        """Read the typed feature by slug, returning None when absent."""
+        ...
+
+    def get_condition(self, slug: str) -> Condition | None:
+        """Read the typed condition by slug, returning None when absent."""
+        ...
+
+    def list_conditions(self) -> list[str]:
+        """List the available condition slugs through this loader."""
+        ...
+
+    def get_trait(self, slug: str) -> MonsterTrait | None:
+        """Read the typed trait by slug, returning None when absent."""
+        ...
+
+    def list_slugs(self, category: Category) -> list[str]:
+        """List effective asset identities in the requested category."""
+        ...
+
+    def __contains__(self, key: tuple[Category, str]) -> bool:
+        """Return whether the requested asset identity exists in this loader."""
+        ...
 
 
 class MemoryAssetLoader:
@@ -92,6 +144,7 @@ class MemoryAssetLoader:
         conditions: Sequence[Condition] = (),
         traits: Sequence[MonsterTrait] = (),
     ) -> None:
+        """Index the supplied typed asset objects by slug in their category collections."""
         self._items: dict[str, Item | Weapon | Armor | MagicItem] = {i.slug: i for i in items}
         self._monsters: dict[str, Monster] = {m.slug: m for m in monsters}
         self._spells: dict[str, Spell] = {s.slug: s for s in spells}
@@ -105,23 +158,29 @@ class MemoryAssetLoader:
         self._traits: dict[str, MonsterTrait] = {t.slug: t for t in traits}
 
     def get_item(self, slug: str) -> Item | Weapon | Armor | MagicItem | None:
+        """Read the typed item by slug, returning None when absent."""
         return self._items.get(slug)
 
     def get_weapon(self, slug: str) -> Weapon | None:
+        """Read the typed weapon by slug, returning None when absent."""
         candidate = self._items.get(slug)
         return candidate if isinstance(candidate, Weapon) else None
 
     def get_armor(self, slug: str) -> Armor | None:
+        """Read the typed armor by slug, returning None when absent."""
         candidate = self._items.get(slug)
         return candidate if isinstance(candidate, Armor) else None
 
     def get_monster(self, slug: str) -> Monster | None:
+        """Read the typed monster by slug, returning None when absent."""
         return self._monsters.get(slug)
 
     def get_spell(self, slug: str) -> Spell | None:
+        """Read the typed spell by slug, returning None when absent."""
         return self._spells.get(slug)
 
     def get_spell_by_uuid(self, uuid: str) -> Spell | None:
+        """Read the typed spell by UUID, returning None when absent."""
         if not uuid:
             return None
         for slug in self.list_slugs("spells"):
@@ -131,33 +190,43 @@ class MemoryAssetLoader:
         return None
 
     def get_species(self, slug: str) -> Species | None:
+        """Read the typed species by slug, returning None when absent."""
         return self._species.get(slug)
 
     def get_class(self, slug: str) -> Class | None:
+        """Read the typed class by slug, returning None when absent."""
         return self._classes.get(slug)
 
     def get_subclass(self, slug: str) -> Subclass | None:
+        """Read the typed subclass by slug, returning None when absent."""
         return self._subclasses.get(slug)
 
     def get_background(self, slug: str) -> Background | None:
+        """Read the typed background by slug, returning None when absent."""
         return self._backgrounds.get(slug)
 
     def get_feat(self, slug: str) -> Feat | None:
+        """Read the typed feat by slug, returning None when absent."""
         return self._feats.get(slug)
 
     def get_feature(self, slug: str) -> Feature | None:
+        """Read the typed feature by slug, returning None when absent."""
         return self._features.get(slug)
 
     def get_condition(self, slug: str) -> Condition | None:
+        """Read the typed condition by slug, returning None when absent."""
         return self._conditions.get(slug)
 
     def list_conditions(self) -> list[str]:
+        """List the available condition slugs through this loader."""
         return sorted(self._conditions)
 
     def get_trait(self, slug: str) -> MonsterTrait | None:
+        """Read the typed trait by slug, returning None when absent."""
         return self._traits.get(slug)
 
     def list_slugs(self, category: Category) -> list[str]:
+        """List effective asset identities in the requested category."""
         by_category: dict[str, Mapping[str, object]] = {
             "items": self._items,
             "monsters": self._monsters,
@@ -174,6 +243,7 @@ class MemoryAssetLoader:
         return sorted(by_category.get(category, {}))
 
     def __contains__(self, key: object) -> bool:
+        """Return whether the requested asset identity exists in this loader."""
         if not (isinstance(key, tuple) and len(key) == 2):
             return False
         category, slug = key
@@ -193,6 +263,7 @@ class BundledAssetLoader:
     """
 
     def __init__(self, *, root: Path | None = None) -> None:
+        """Retain the optional data root and initialize lazy model/UUID lookup state."""
         self._root: Path | None = root
         self._spell_uuid_index: dict[str, str] | None = None
         self._models: dict[tuple[Category, str], BaseModel | None] | None = None
@@ -205,6 +276,7 @@ class BundledAssetLoader:
         return result
 
     def _model(self, category: Category, slug: str, model: type[_Model]) -> _Model | None:
+        """Resolve the typed schema model for the asset category."""
         key = (category, slug)
         if self._models is not None and key in self._models:
             return cast("_Model | None", self._models[key])
@@ -224,12 +296,14 @@ class BundledAssetLoader:
         return result
 
     def _category_dir(self, category: Category) -> Path:
+        """Resolve the bundled data directory for the asset category."""
         if self._root is not None:
             return self._root / category
         # importlib.resources path for packaged canonical/
         return Path(str(resources.files("dnd5e_srd_data") / "canonical" / category))
 
     def _load_json(self, category: Category, slug: str) -> dict[str, Any] | None:
+        """Read and decode the selected bundled asset JSON."""
         path = self._category_dir(category) / f"{slug}.json"
         if not path.is_file():
             return None
@@ -239,23 +313,29 @@ class BundledAssetLoader:
         return loaded
 
     def get_item(self, slug: str) -> Item | Weapon | Armor | MagicItem | None:
+        """Read the typed item by slug, returning None when absent."""
         return self._model("items", slug, Item)
 
     def get_weapon(self, slug: str) -> Weapon | None:
+        """Read the typed weapon by slug, returning None when absent."""
         candidate = self.get_item(slug)
         return candidate if isinstance(candidate, Weapon) else None
 
     def get_armor(self, slug: str) -> Armor | None:
+        """Read the typed armor by slug, returning None when absent."""
         candidate = self.get_item(slug)
         return candidate if isinstance(candidate, Armor) else None
 
     def get_monster(self, slug: str) -> Monster | None:
+        """Read the typed monster by slug, returning None when absent."""
         return self._model("monsters", slug, Monster)
 
     def get_spell(self, slug: str) -> Spell | None:
+        """Read the typed spell by slug, returning None when absent."""
         return self._model("spells", slug, Spell)
 
     def get_spell_by_uuid(self, uuid: str) -> Spell | None:
+        """Read the typed spell by UUID, returning None when absent."""
         if not uuid:
             return None
         if self._spell_uuid_index is None:
@@ -269,39 +349,50 @@ class BundledAssetLoader:
         return self.get_spell(resolved_slug) if resolved_slug is not None else None
 
     def get_species(self, slug: str) -> Species | None:
+        """Read the typed species by slug, returning None when absent."""
         return self._model("species", slug, Species)
 
     def get_class(self, slug: str) -> Class | None:
+        """Read the typed class by slug, returning None when absent."""
         return self._model("classes", slug, Class)
 
     def get_subclass(self, slug: str) -> Subclass | None:
+        """Read the typed subclass by slug, returning None when absent."""
         return self._model("subclasses", slug, Subclass)
 
     def get_background(self, slug: str) -> Background | None:
+        """Read the typed background by slug, returning None when absent."""
         return self._model("backgrounds", slug, Background)
 
     def get_feat(self, slug: str) -> Feat | None:
+        """Read the typed feat by slug, returning None when absent."""
         return self._model("feats", slug, Feat)
 
     def get_feature(self, slug: str) -> Feature | None:
+        """Read the typed feature by slug, returning None when absent."""
         return self._model("features", slug, Feature)
 
     def get_condition(self, slug: str) -> Condition | None:
+        """Read the typed condition by slug, returning None when absent."""
         return self._model("conditions", slug, Condition)
 
     def list_conditions(self) -> list[str]:
+        """List the available condition slugs through this loader."""
         return self.list_slugs("conditions")
 
     def get_trait(self, slug: str) -> MonsterTrait | None:
+        """Read the typed trait by slug, returning None when absent."""
         return self._model("traits", slug, MonsterTrait)
 
     def list_slugs(self, category: Category) -> list[str]:
+        """List effective asset identities in the requested category."""
         d = self._category_dir(category)
         if not d.is_dir():
             return []
         return sorted(p.stem for p in d.glob("*.json"))
 
     def __contains__(self, key: object) -> bool:
+        """Return whether the requested asset identity exists in this loader."""
         if not (isinstance(key, tuple) and len(key) == 2):
             return False
         category, slug = key

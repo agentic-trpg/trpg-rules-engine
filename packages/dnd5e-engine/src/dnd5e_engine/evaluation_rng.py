@@ -16,18 +16,22 @@ Version = Annotated[int, Field(ge=0)]
 
 
 class RNGState(EvaluationModel):
+    """Validate and restore a detached random-generator state."""
+
     encoding: Literal["stdlib-mt19937/1"]
     words: Annotated[tuple[Word, ...], Field(min_length=624, max_length=624)]
     index: Annotated[int, Field(ge=0, le=624)]
     gaussian: Annotated[float, Field(allow_inf_nan=False)] | None
 
     def restore(self) -> random.Random:
+        """Validate and restore an isolated random generator from encoded state."""
         rng = random.Random(0)
         rng.setstate((3, (*self.words, self.index), self.gaussian))
         return rng
 
     @classmethod
     def capture(cls, rng: random.Random) -> Self:
+        """Capture the supplied random generator's explicit state."""
         version, internal, gaussian = rng.getstate()
         if version != 3:
             raise ValueError("unsupported stdlib RNG state version")
@@ -37,12 +41,16 @@ class RNGState(EvaluationModel):
 
 
 class RNGContext(EvaluationModel):
+    """Associate explicit RNG state with host stream identity and version."""
+
     stream_id: Annotated[str, Field(min_length=1)]
     version: Version
     state: RNGState
 
 
 class RNGTransition(EvaluationModel):
+    """Describe the guarded before/after RNG state returned by one evaluation."""
+
     stream_id: Annotated[str, Field(min_length=1)]
     input_version: Version
     input_state: RNGState
@@ -51,11 +59,15 @@ class RNGTransition(EvaluationModel):
 
     @model_validator(mode="after")
     def validate_change(self) -> Self:
+        """Require state_changed to agree with the explicit before/after RNG states."""
         if self.state_changed != (self.input_state != self.next_state):
             raise ValueError("RNG state_changed contradicts explicit states")
         return self
 
     def verify_input(self, context: RNGContext) -> None:
+        """Require the transition stream, input version and input state to match the
+        supplied RNG context.
+        """
         if (self.stream_id, self.input_version, self.input_state) != (
             context.stream_id,
             context.version,
@@ -65,6 +77,7 @@ class RNGTransition(EvaluationModel):
 
     @classmethod
     def between(cls, context: RNGContext, rng: random.Random) -> Self:
+        """Construct an RNG transition from the original context and resulting generator."""
         successor = RNGState.capture(rng)
         return cls(
             stream_id=context.stream_id,

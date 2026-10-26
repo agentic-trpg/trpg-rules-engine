@@ -4,6 +4,7 @@ from dnd5e_engine.evaluation_state import CombatSnapshot
 
 
 def death_consistency(snapshot: CombatSnapshot, *, allow_dying: bool = False) -> str | None:
+    """Check actor, death-save and combat death records for supported consistency."""
     state = snapshot.combat_state
     actors = {actor.entity_id: actor for actor in snapshot.character_states}
     records = state.deaths_recorded

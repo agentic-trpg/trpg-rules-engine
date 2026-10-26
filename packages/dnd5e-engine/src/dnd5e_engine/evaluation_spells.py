@@ -56,6 +56,8 @@ from dnd5e_engine.turn_rules import (
 
 @dataclass(frozen=True)
 class InvocationPlan:
+    """Retain an admitted spell/feature delivery plan and its payment inputs."""
+
     activity: HealActivity | SaveActivity
     target_id: str
     ability: str | None
@@ -71,6 +73,7 @@ def invocation_context(
     actor_id: str,
     rng: random.Random,
 ) -> ActivityResolutionContext:
+    """Construct an isolated activity context for the admitted invocation."""
     actor = computation.actors[actor_id]
     levels = actor.classes or (
         {actor.class_slug: actor.character_level} if actor.class_slug else {}
@@ -124,6 +127,7 @@ def invocation_context(
 def source_failure(
     snapshot: CombatSnapshot, actor_id: str, source_id: str | None, spell: Spell
 ) -> str | None:
+    """Check that the invocation source is present and supported by the bound dataset."""
     component = snapshot.casting_state
     actor = next(a for a in snapshot.character_states if a.entity_id == actor_id)
     entry = (
@@ -154,6 +158,7 @@ def source_failure(
 
 
 def spell_event(actor_id: str, spell: Spell, slot_level: int | None) -> SpellCast:
+    """Construct event evidence for the selected spell invocation."""
     components, material, consumed, cost = spell_component_metadata(spell)
     review = spell_review(spell)
     return SpellCast(
@@ -172,6 +177,7 @@ def spell_event(actor_id: str, spell: Spell, slot_level: int | None) -> SpellCas
 def spell_plan(
     request: RuleEvaluationRequest, loader: AssetLoader
 ) -> InvocationPlan | TurnEvaluation:
+    """Prepare the admitted spell delivery and payment plan."""
     snapshot, intent = request.state_snapshot, request.payload
     assert isinstance(snapshot, CombatSnapshot)
     assert isinstance(intent, CombatIntentPayload)
@@ -263,6 +269,7 @@ def spell_plan(
 def feature_plan(
     request: RuleEvaluationRequest, loader: AssetLoader
 ) -> InvocationPlan | TurnEvaluation:
+    """Prepare the admitted feature invocation and payment plan."""
     snapshot, intent = request.state_snapshot, request.payload
     assert isinstance(snapshot, CombatSnapshot)
     assert isinstance(intent, CombatIntentPayload)
@@ -321,6 +328,14 @@ def feature_plan(
 
 
 def evaluate_invocation(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEvaluation:
+    """Admit and evaluate a supported spell or feature against fixed combat input.
+
+    Check actor/turn, targets, action funding and complete bound source/dependency
+    profile before payment and RNG. Resolve through shared activity/candidate machinery,
+    with the reviewed Hold Person path delegated explicitly. Return guarded Delta,
+    ordered events and RNG transition; unsupported mechanics are refused rather than
+    approximated.
+    """
     snapshot, intent = request.state_snapshot, request.payload
     assert isinstance(snapshot, CombatSnapshot)
     assert isinstance(intent, CombatIntentPayload)

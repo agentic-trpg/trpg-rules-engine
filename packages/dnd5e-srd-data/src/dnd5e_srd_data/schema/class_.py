@@ -20,6 +20,8 @@ from dnd5e_srd_data.schema.refs import FeatureChoice, GrantRef
 
 
 class HitDie(StrEnum):
+    """Name supported class hit-die denominations."""
+
     D6 = "d6"
     D8 = "d8"
     D10 = "d10"
@@ -67,10 +69,13 @@ class PrimaryAbility(BaseModel, frozen=True):
         # (PYTHONHASHSEED). Sort so the regen-clean gate (PR A task A7) is
         # stable run-over-run. Same pattern as Provenance.srd_version /
         # Class.saving_throws / Weapon.properties.
+        """Serialize value using the explicit nested wire representation."""
         return sorted(value)
 
 
 class Class(BaseModel):
+    """Validate class progression and its feature, resource and proficiency definitions."""
+
     slug: str
     name: str
     description: str
@@ -103,10 +108,13 @@ class Class(BaseModel):
 
     @field_serializer("saving_throws")
     def _serialize_saving_throws(self, value: frozenset[str]) -> list[str]:
+        """Serialize saving throws using the explicit nested wire representation."""
         return sorted(value)
 
 
 class Subclass(BaseModel):
+    """Validate subclass progression and its granted mechanics."""
+
     slug: str
     name: str
     description: str

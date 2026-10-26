@@ -85,3 +85,42 @@ Final static checks also include the installed verifier's Ruff lint/format. All 
 changed/new Markdown files across the coordinated batch pass local path/anchor, table
 and fence checks. Working/staged `git diff --check` is the commit gate. These are local
 results; actual automatic Skill triggering and remote CI remain unverified.
+
+## 2026-10-27 follow-up: system and interface overview
+
+Starting HEAD: `f1a3235b2c636156e90a7a7192d980a62f949070`, same existing
+`docs/source-docstrings-and-skills` worktree. Fetch confirmed the remote task branch
+matches, without later commits; origin/main remains `7bb02b9`. Started clean; no new
+branch, merge, unrelated changes, experiment edits, Pages or paid model API calls.
+
+Added [docs/SYSTEM_OVERVIEW.md](../SYSTEM_OVERVIEW.md), 143 lines. Existing concept/API
+pages remain detailed references; none supplied the requested compact repository-wide
+Codex navigation, so this is the single new structure/interface entrypoint.
+It covers Stateless evaluate and availability, explicit Snapshot/binding/RNG, admission,
+candidate computation and uncommitted Delta/events/RNG, SRD/FrozenRuleset, rule module
+collaboration and the separate Legacy/Bridge/Demo local-state boundaries. Supporting
+candidate APIs are distinguished from evaluate dispatch; schema values remain linked
+to current definitions rather than hard-coded as permanent constraints.
+
+Changed files: `AGENTS.md`, `README.md`, `docs/index.md`, `mkdocs.yml`,
+`docs/SYSTEM_OVERVIEW.md`, `docs/dev/source-documentation.md`, this acceptance record,
+and `.agents/skills/trpg-code-documentation/SKILL.md`.
+The overview is in MkDocs navigation. AGENTS requires it for structure/ownership/interface
+changes, followed by relevant authority/source; small local function edits do not require
+reading all architecture docs. The shared documentation workflow matches SM byte-for-byte
+and separates function detail, module background and repository overview maintenance.
+No production Python source, public contract, rule, dependency or database changed here.
+
+Static source navigation verifies 107 file/symbol references across the three overviews;
+20 changed Markdown files pass local path/anchor, table and fence checks. Six Skill
+installations validate with the bundled quick checker in UTF-8 mode, and the shared copies
+match. `uv run --locked --no-sync python -m mkdocs build --strict` passes (exit 0) in the
+existing locked environment; working/staged `git diff --check` gates also pass (exit 0).
+The read-only validation planner is inspected against the exact start SHA and selects
+documentation only: no runtime packages/tests and no integration escalation.
+
+No Mermaid/images are included, so no diagram rendering verification is applicable.
+Complete Stateless migration, general SM integration, full recovery, multiplayer or a
+complete Agent Host/UI remain outside the claimed acceptance. No game tests, new runtime
+measurements, automatic Skill trigger checks or remote CI checks ran in this continuation;
+the earlier 128 tests and Schema comparison remain the initial batch's evidence.

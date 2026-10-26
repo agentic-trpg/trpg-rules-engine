@@ -1,5 +1,8 @@
 # Nat20 — a pure-Python D&D 5e SRD rules engine
 
+For repository structure, Stateless/Legacy boundaries and source navigation, read
+the [system and interface overview](SYSTEM_OVERVIEW.md).
+
 **Nat20** is an open-source **Python D&D 5e engine**: a host-agnostic,
 zero-I/O **5e SRD 5.2 rules engine** plus a typed content **dataset**. It
 resolves combat, skill checks, saving throws, effects, and grid movement

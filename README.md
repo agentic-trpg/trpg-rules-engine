@@ -1,5 +1,8 @@
 # Nat20 — Pure-Python D&D 5e SRD 5.2 rules engine
 
+Start with the [system and interface overview](docs/SYSTEM_OVERVIEW.md) for repository
+responsibilities, current public paths, state ownership and task-based source navigation.
+
 [![Engine: MIT](https://img.shields.io/badge/engine-MIT-blue.svg)](packages/dnd5e-engine/LICENSE)
 [![Data: CC-BY-4.0](https://img.shields.io/badge/data-CC--BY--4.0-lightgrey.svg)](packages/dnd5e-srd-data/LICENSE)
 [![Python: 3.12+](https://img.shields.io/badge/python-3.12%2B-green.svg)](https://www.python.org/)

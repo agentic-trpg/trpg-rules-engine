@@ -25,3 +25,8 @@ python .agents/skills/trpg-code-documentation/scripts/verify_docstrings.py --bas
 
 Coverage, evidence limits and selected checks are recorded in
 [the batch report](source-documentation-acceptance.md).
+
+Read [the system overview](../SYSTEM_OVERVIEW.md) for structure, ownership and interface
+changes. Keep function detail, module background and repository relationships at their
+respective levels; a local explanation change does not automatically require editing
+the overview.

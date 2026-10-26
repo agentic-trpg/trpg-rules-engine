@@ -29,6 +29,7 @@ plugins:
             docstring_style: google
 nav:
   - Home: index.md
+  - System and interface overview: SYSTEM_OVERVIEW.md
   - Quickstart: quickstart.md
   - Concepts:
       - Combat model: concepts/combat.md

@@ -27,8 +27,9 @@ in the current user task when they differ. Keep changes scoped to the requested 
 
 This Rules Engine is one repository in the Agentic TRPG project. The sibling
 `agentic-trpg` repository holds the authoritative cross-module architecture.
-From this repository root, read these documents before designing or modifying
-implementation, contracts, state handling, or validation behavior:
+For structural, ownership or cross-repository interface changes, first read
+[the system overview](docs/SYSTEM_OVERVIEW.md), then the relevant documents below,
+resolved from this repository root:
 
 - `../agentic-trpg/docs/MODULE_CONTRACTS.md` (primary cross-module authority;
   especially the state ownership, runtime data reuse / snapshot principles in
@@ -151,3 +152,12 @@ The user and ChatGPT review the branch; the user decides whether and when to mer
   Read each matching SKILL.md explicitly when needed; these mandatory requirements do
   not depend on automatic triggering. Resolve sibling DOC paths from the logical workspace
   root. Keep the SM/RE documentation workflow copies consistent with the one shared standard.
+
+## System overview navigation
+
+For changes to system structure, cross-module responsibilities, state ownership or
+cross-repository interfaces, first read [this repository's system overview](docs/SYSTEM_OVERVIEW.md),
+then the relevant authoritative contracts and current source. Update the overview when
+those relationships change. Local function/docstring edits require the relevant source
+and necessary context; they do not require rereading all architecture documents or
+mechanically changing the overview.

@@ -24,8 +24,8 @@ from dnd5e_engine.intents import PlayerIntent
 from dnd5e_engine.rules.skills import Skill
 from dnd5e_engine.types.checks import CheckRequest, GrantedDie
 
-SCHEMA_VERSION = "engine-evaluation/24"
-EvaluationVersion = Literal["engine-evaluation/24"]
+SCHEMA_VERSION = "engine-evaluation/25"
+EvaluationVersion = Literal["engine-evaluation/24", "engine-evaluation/25"]
 
 
 class ItemUsePayload(EvaluationModel):
@@ -97,6 +97,9 @@ class CombatIntentPayload(PlayerIntent):
 
     stat_block_action_id: Annotated[str, Field(strict=True, min_length=1)] | None = None
     spell_source_id: Annotated[str, Field(strict=True, min_length=1)] | None = None
+    weapon_instance_id: Annotated[str, Field(min_length=1)] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
 
 class RuleEvaluationRequest(EvaluationModel):
@@ -147,6 +150,10 @@ class RuleEvaluationRequest(EvaluationModel):
         """Require the payload type and shape matching the operation tag."""
         if self.session_id != self.state_snapshot.session_id:
             raise ValueError("request and snapshot session identities differ")
+        if (self.schema_version == "engine-evaluation/25") != (
+            self.state_snapshot.snapshot_schema_version == "engine-snapshot/18"
+        ):
+            raise ValueError("evaluation and snapshot versions differ")
         if self.operation_kind == "rules.rest":
             if not isinstance(self.payload, RestPayload) or self.payload.target_id != self.actor_id:
                 raise ValueError("rules.rest requires the actual resting actor")
@@ -198,14 +205,20 @@ class PreflightChoice(EvaluationModel):
 
     kind: Literal["attack.weapon"]
     actor_id: Annotated[str, Field(min_length=1)]
-    allowed_weapon_ids: Annotated[tuple[str, ...], Field(min_length=1)]
+    allowed_weapon_ids: Annotated[tuple[str, ...], Field(min_length=1)] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    allowed_weapon_instance_ids: Annotated[tuple[str, ...], Field(min_length=1)] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
     @model_validator(mode="after")
     def unique_options(self) -> Self:
         """Reject duplicate option identities."""
-        if any(not option for option in self.allowed_weapon_ids) or len(
-            set(self.allowed_weapon_ids)
-        ) != len(self.allowed_weapon_ids):
+        if (self.allowed_weapon_ids is None) == (self.allowed_weapon_instance_ids is None):
+            raise ValueError("supply exactly one weapon identity vocabulary")
+        options = self.allowed_weapon_ids or self.allowed_weapon_instance_ids or ()
+        if any(not option for option in options) or len(set(options)) != len(options):
             raise ValueError("choice options must be nonempty and unique")
         return self
 

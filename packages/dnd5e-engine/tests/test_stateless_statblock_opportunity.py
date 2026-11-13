@@ -13,7 +13,6 @@ from pydantic_core import to_json
 from dnd5e_engine import evaluation_opportunity, live_reactions
 from dnd5e_engine import orchestrator as orch
 from dnd5e_engine.evaluation_contracts import (
-    SCHEMA_VERSION,
     CombatIntentPayload,
     RuleEvaluationRequest,
     RuleEvaluationResult,
@@ -125,7 +124,7 @@ def ogre_case(*, seed=0, npc=False, hp=40, temp=0, ac=1, defense=None, destinati
         }
     )
     request = RuleEvaluationRequest(
-        schema_version=SCHEMA_VERSION,
+        schema_version="engine-evaluation/24",
         session_id=live.session_id,
         command_id="command:r29",
         operation_kind="combat.intent",

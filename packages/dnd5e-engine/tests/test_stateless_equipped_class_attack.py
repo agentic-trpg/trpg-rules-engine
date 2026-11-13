@@ -14,7 +14,7 @@ from dnd5e_engine.evaluation_contracts import CombatIntentPayload, RuleEvaluatio
 from dnd5e_engine.evaluation_rng import RNGState
 from dnd5e_engine.evaluation_ruleset import ruleset_binding
 from dnd5e_engine.evaluation_snapshot import capture_combat_snapshot
-from dnd5e_engine.evaluation_state import InventoryEntry, InventoryState
+from dnd5e_engine.evaluation_state import CombatSnapshot, InventoryEntry, InventoryState
 from dnd5e_engine.events import AttackRolled, DamageApplied
 from dnd5e_engine.specs import GridScene
 from tests.evaluation_support import FOE, HERO
@@ -109,6 +109,47 @@ def equipped_case(
         }
     )
     return request, loader, handle, live
+
+
+def test_reviewed_equipment_uses_held_instance_with_an_identical_spare():
+    request, loader, _, _ = equipped_case()
+    prior = request.state_snapshot
+    held = next(e for e in prior.inventory_state.entries if e.instance_id == "hero:mace")
+    snapshot = CombatSnapshot.model_validate(
+        prior.model_copy(
+            update={
+                "snapshot_schema_version": "engine-snapshot/18",
+                "character_states": tuple(
+                    actor.model_copy(update={"held_weapon_instance_id": held.instance_id})
+                    if actor.entity_id == HERO
+                    else actor
+                    for actor in prior.character_states
+                ),
+                "inventory_state": InventoryState(
+                    entries=(
+                        *prior.inventory_state.entries,
+                        held.model_copy(update={"instance_id": "hero:spare-mace"}),
+                    )
+                ),
+            }
+        )
+    )
+    result = execute(
+        request.model_copy(
+            update={
+                "schema_version": "engine-evaluation/25",
+                "state_snapshot": snapshot,
+                "payload": CombatIntentPayload(
+                    intent_type="attack", weapon_instance_id=held.instance_id, target_id=FOE
+                ),
+            }
+        ),
+        loader,
+    )
+    baseline = execute(request, loader)
+    assert result.status == baseline.status == "accepted"
+    assert result.state_delta == baseline.state_delta
+    assert result.rng_transition == baseline.rng_transition
 
 
 @pytest.mark.parametrize("npc", [False, True])

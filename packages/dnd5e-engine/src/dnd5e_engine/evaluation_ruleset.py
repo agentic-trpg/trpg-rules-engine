@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 
 from dnd5e_engine.evaluation_base import EvaluationModel
 
-EVALUATOR_VERSION = "dnd5e-evaluation/37"
+EVALUATOR_VERSION = "dnd5e-evaluation/38"
 RULESET_ID = "dnd-2024-srd-5.2.1"
 
 

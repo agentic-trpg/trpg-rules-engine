@@ -507,8 +507,12 @@ def prepare_attack(
     if state.initiative_ids[state.current_turn_index] != actor_id:
         return refused("rejected", "not_actor_turn", "actor does not own this turn")
     current = actors[actor_id]
+    instance_protocol = snapshot.snapshot_schema_version == "engine-snapshot/18"
     basic = CombatIntentPayload(intent_type="attack")
     allowed = {"intent_type", "source_id", "weapon_id", "target_id", "stat_block_action_id"}
+    if instance_protocol:
+        allowed.remove("weapon_id")
+        allowed.add("weapon_instance_id")
     if common_weapons:
         allowed.add("two_handed")
     if intent.intent_type != "attack" or any(
@@ -520,11 +524,35 @@ def prepare_attack(
             "unsupported", "intent.capability", "only a single ordinary Attack is admitted"
         )
     if intent.stat_block_action_id is not None:
+        if intent.weapon_instance_id is not None:
+            return refused("rejected", "action_unavailable", "supply one attack source")
         input_admission = stat_block_admission(snapshot, current, intent, loader)
         weapon = None
     else:
-        input_admission = weapon_admission(current, intent, loader, common_weapons=common_weapons)
-        weapon = loader.get_weapon(intent.weapon_id) if intent.weapon_id else None
+        weapon_intent = intent
+        held = None
+        if instance_protocol:
+            actor_state = next(
+                actor for actor in snapshot.character_states if actor.entity_id == actor_id
+            )
+            held = actor_state.held_weapon_instance_id
+            if held is None or intent.weapon_instance_id not in (None, held):
+                return refused(
+                    "rejected", "weapon_not_held", "select the current held weapon instance"
+                )
+            # Snapshot validation ties this type to the exact owned, accessible instance.
+            weapon_intent = intent.model_copy(update={"weapon_id": actor_state.weapon_in_hands})
+        input_admission = weapon_admission(
+            current, weapon_intent, loader, common_weapons=common_weapons
+        )
+        if input_admission is None and held is not None and intent.weapon_instance_id is None:
+            return AttackAdmission(
+                status="needs_choice",
+                choice=PreflightChoice(
+                    kind="attack.weapon", actor_id=actor_id, allowed_weapon_instance_ids=(held,)
+                ),
+            )
+        weapon = loader.get_weapon(weapon_intent.weapon_id) if weapon_intent.weapon_id else None
     if input_admission is not None:
         return input_admission
     target = actors.get(intent.target_id or "")

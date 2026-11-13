@@ -203,12 +203,21 @@ def capture_evaluation_snapshot(
         grid=grid,
         world_version=snapshot.world_version,
         combat_id=snapshot.combat_state.combat_id,
-        snapshot_schema_version=snapshot.snapshot_schema_version,
+        snapshot_schema_version="engine-snapshot/17",
         inventory_state=snapshot.inventory_state,
     )
     by_id = {actor.entity_id: actor for actor in captured.character_states}
-    return captured.model_copy(
-        update={
-            "character_states": tuple(by_id[actor.entity_id] for actor in snapshot.character_states)
-        }
+    actors = tuple(
+        by_id[actor.entity_id].model_copy(
+            update={"held_weapon_instance_id": actor.held_weapon_instance_id}
+        )
+        for actor in snapshot.character_states
+    )
+    return CombatSnapshot.model_validate(
+        captured.model_copy(
+            update={
+                "snapshot_schema_version": snapshot.snapshot_schema_version,
+                "character_states": actors,
+            }
+        )
     )

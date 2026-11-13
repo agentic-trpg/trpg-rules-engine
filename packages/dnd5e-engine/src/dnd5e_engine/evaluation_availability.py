@@ -18,7 +18,7 @@ from dnd5e_engine.lib_loader import scoped_lib_loader
 class ActionAvailabilityRequest(EvaluationModel):
     """Bind a read-only availability query to explicit snapshot and rules identity."""
 
-    schema_version: Literal["engine-availability/13"]
+    schema_version: Literal["engine-availability/13", "engine-availability/14"]
     session_id: Annotated[str, Field(min_length=1)]
     operation_kind: Literal["combat.intent"]
     actor_id: Annotated[str, Field(min_length=1)]
@@ -33,13 +33,17 @@ class ActionAvailabilityRequest(EvaluationModel):
             self.payload.source_id is not None and self.payload.source_id != self.actor_id
         ):
             raise ValueError("query actor/session identity mismatch")
+        if (self.schema_version == "engine-availability/14") != (
+            self.state_snapshot.snapshot_schema_version == "engine-snapshot/18"
+        ):
+            raise ValueError("availability and snapshot versions differ")
         return self
 
 
 class ActionAvailabilityResult(EvaluationModel):
     """Return supported action options and refusal/choice information without payment."""
 
-    schema_version: Literal["engine-availability/13"]
+    schema_version: Literal["engine-availability/13", "engine-availability/14"]
     session_id: str
     actor_id: str
     operation_kind: Literal["combat.intent"]

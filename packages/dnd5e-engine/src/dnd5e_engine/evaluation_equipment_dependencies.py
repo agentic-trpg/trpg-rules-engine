@@ -38,6 +38,13 @@ def equipped_dependencies(
         return "equipped profile requires a reviewed simple weapon and chain shirt"
     slugs = {weapon_slug, "chain-shirt"} | ({"shield"} if actor.shield_equipped else set())
     entries = [e for e in snapshot.inventory_state.entries if e.owner_id == actor.entity_id]
+    if snapshot.snapshot_schema_version == "engine-snapshot/18":
+        # Only the explicitly held weapon contributes to the reviewed equipment profile.
+        entries = [
+            e
+            for e in entries
+            if e.item_slug != weapon_slug or e.instance_id == actor.held_weapon_instance_id
+        ]
     if (
         len(entries) != len(slugs)
         or {e.item_slug for e in entries} != slugs

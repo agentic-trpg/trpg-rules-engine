@@ -1,5 +1,5 @@
 {
-  "schema_version": "engine-evaluation/24",
+  "schema_version": "engine-evaluation/25",
   "session_id": "synthetic-evaluation",
   "command_id": "command:synthetic",
   "operation_kind": "combat.intent",
@@ -15,7 +15,7 @@
     "effect_selections": [],
     "willing_target_ids": [],
     "item_id": null,
-    "weapon_id": "rapier",
+    "weapon_instance_id": "item:held-rapier",
     "feature_id": null,
     "activity_id": null,
     "attack_riders": [],
@@ -40,7 +40,7 @@
     "spell_source_id": null
   },
   "state_snapshot": {
-    "snapshot_schema_version": "engine-snapshot/17",
+    "snapshot_schema_version": "engine-snapshot/18",
     "session_id": "synthetic-evaluation",
     "world_version": 7,
     "character_states": [
@@ -148,6 +148,7 @@
         "spells_known": [],
         "custom_counters": {},
         "weapon_in_hands": "rapier",
+        "held_weapon_instance_id": "item:held-rapier",
         "weapon_grip": "one_handed",
         "other_hand_occupied": false,
         "weapon_mastery_slugs": []
@@ -261,7 +262,14 @@
     "casting_state": null,
     "effect_states": [],
     "inventory_state": {
-      "entries": []
+      "entries": [{
+        "instance_id": "item:held-rapier",
+        "owner_id": "char:synthetic",
+        "item_slug": "rapier",
+        "quantity": 1,
+        "charges_remaining_per_unit": 0,
+        "accessible": true
+      }]
     },
     "scene_state": {
       "scene_id": "loc:unknown",
@@ -369,7 +377,7 @@
   "ruleset_binding": {
     "ruleset_id": "dnd-2024-srd-5.2.1",
     "data_revision": "sha256:f1f2b8d5e9bef154940cb14c615f2f4ac7301a4ab9d869841bc1b86e9664c44e",
-    "evaluator_version": "dnd5e-evaluation/37"
+    "evaluator_version": "dnd5e-evaluation/38"
   },
   "rng_context": {
     "stream_id": "main",

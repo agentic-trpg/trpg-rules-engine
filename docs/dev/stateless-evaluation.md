@@ -1,5 +1,16 @@
 # Stateless rule evaluation: current local contract
 
+## Ordinary attack by item instance
+
+Snapshot `engine-snapshot/18` identifies a held weapon through
+`held_weapon_instance_id`. The supplied inventory must prove ownership, availability
+and the weapon type. Evaluation `engine-evaluation/25` and availability
+`engine-availability/14` take `weapon_instance_id` for ordinary item weapon attacks.
+Both run the same preflight. A different item of the same type cannot stand in for
+the held item. Stat-block actions retain their action identity. The earlier typed
+snapshot and request versions retain their existing shape for callers not using the
+instance protocol. The current evaluator binding is `dnd5e-evaluation/38`.
+
 ## Current consumer baseline — 2026-10-27
 
 SM main `b9ae704` now includes scoped SessionMemory and instance-field consumers with

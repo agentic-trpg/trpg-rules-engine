@@ -255,6 +255,9 @@ class CharacterStateV2(CharacterState):
     """Extend actor input with explicit equipment and hand/grip facts."""
 
     weapon_in_hands: Annotated[str, Field(min_length=1)] | None
+    held_weapon_instance_id: Annotated[str, Field(min_length=1)] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     weapon_grip: Literal["none", "one_handed", "two_handed"]
     other_hand_occupied: bool
     weapon_mastery_slugs: tuple[Annotated[str, Field(min_length=1)], ...]
@@ -513,7 +516,7 @@ class InventoryState(EvaluationModel):
 class SnapshotBase(EvaluationModel):
     """Validate shared fixed-input actor, effect, inventory and dependency closure."""
 
-    snapshot_schema_version: Literal["engine-snapshot/17"]
+    snapshot_schema_version: Literal["engine-snapshot/17", "engine-snapshot/18"]
     session_id: Annotated[str, Field(min_length=1)]
     world_version: Annotated[int, Field(ge=0)]
     character_states: tuple[CharacterStateV2, ...]
@@ -534,6 +537,24 @@ class SnapshotBase(EvaluationModel):
             raise ValueError("duplicate effect identity or absent effect target")
         if any(entry.owner_id not in ids for entry in self.inventory_state.entries):
             raise ValueError("inventory owner is absent from snapshot")
+        if self.snapshot_schema_version == "engine-snapshot/18":
+            entries = {entry.instance_id: entry for entry in self.inventory_state.entries}
+            for actor in self.character_states:
+                held = actor.held_weapon_instance_id
+                if (held is None) != (actor.weapon_in_hands is None):
+                    raise ValueError("held weapon requires an explicit inventory instance")
+                if held is not None:
+                    entry = entries.get(held)
+                    if (
+                        entry is None
+                        or entry.owner_id != actor.entity_id
+                        or entry.item_slug != actor.weapon_in_hands
+                        or entry.quantity != 1
+                        or not entry.accessible
+                    ):
+                        raise ValueError("held weapon conflicts with the supplied inventory")
+        elif any(actor.held_weapon_instance_id is not None for actor in self.character_states):
+            raise ValueError("held weapon instances require the current snapshot version")
         return self
 
     @model_validator(mode="after")

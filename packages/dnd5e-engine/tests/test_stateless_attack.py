@@ -14,6 +14,7 @@ from dnd5e_engine import orchestrator as orch
 from dnd5e_engine.evaluation import evaluate
 from dnd5e_engine.evaluation_contracts import (
     CombatIntentPayload,
+    PreflightChoice,
     RuleEvaluationRequest,
     RuleEvaluationResult,
 )
@@ -22,7 +23,7 @@ from dnd5e_engine.evaluation_projection import EvaluationInvariantError, attack_
 from dnd5e_engine.evaluation_rng import RNGContext, RNGState
 from dnd5e_engine.evaluation_ruleset import RulesetBindingError, ruleset_binding
 from dnd5e_engine.evaluation_snapshot import capture_combat_snapshot
-from dnd5e_engine.evaluation_state import CombatSnapshot, InventoryState
+from dnd5e_engine.evaluation_state import CombatSnapshot, InventoryEntry, InventoryState
 from dnd5e_engine.events import AttackRolled
 from dnd5e_engine.specs import GridScene
 from dnd5e_engine.types.effects import ActiveEffect
@@ -56,6 +57,79 @@ def request_and_live(**kwargs):
 
 def execute(request, loader=None):
     return asyncio.run(evaluate(request, loader=loader or synthetic_loader()))
+
+
+def test_slug_based_attack_wire_shape_omits_instance_fields():
+    """Keep older strict readers able to parse an earlier typed attack."""
+    request, _, _ = request_and_live()
+    wire = request.model_dump(mode="json")
+    assert "weapon_instance_id" not in wire["payload"]
+    assert all(
+        "held_weapon_instance_id" not in actor
+        for actor in wire["state_snapshot"]["character_states"]
+    )
+    choice = PreflightChoice(kind="attack.weapon", actor_id=HERO, allowed_weapon_ids=(WEAPON,))
+    assert choice.model_dump(mode="json") == {
+        "kind": "attack.weapon",
+        "actor_id": HERO,
+        "allowed_weapon_ids": [WEAPON],
+    }
+
+
+@pytest.mark.parametrize("selection", ["weapon:held", "weapon:spare", "weapon:missing", None])
+def test_instance_attack_preflight_selects_only_the_held_weapon(selection):
+    """Ordinary attack identifies the held unit before applying the existing rules."""
+    request, _, live = request_and_live()
+    prior = request.state_snapshot
+    held = InventoryEntry(
+        instance_id="weapon:held",
+        owner_id=HERO,
+        item_slug=WEAPON,
+        quantity=1,
+        charges_remaining_per_unit=0,
+        accessible=True,
+    )
+    actors = tuple(
+        actor.model_copy(update={"held_weapon_instance_id": held.instance_id})
+        if actor.entity_id == HERO
+        else actor
+        for actor in prior.character_states
+    )
+    spare = held.model_copy(update={"instance_id": "weapon:spare"})
+    snapshot = CombatSnapshot.model_validate(
+        prior.model_copy(
+            update={
+                "snapshot_schema_version": "engine-snapshot/18",
+                "character_states": actors,
+                "inventory_state": InventoryState(entries=(held, spare)),
+            }
+        )
+    )
+    result = execute(
+        request.model_copy(
+            update={
+                "schema_version": "engine-evaluation/25",
+                "state_snapshot": snapshot,
+                "payload": CombatIntentPayload(
+                    intent_type="attack", weapon_instance_id=selection, target_id=FOE
+                ),
+            }
+        ),
+        live.ruleset_loader,
+    )
+    if selection == held.instance_id:
+        baseline = execute(request, live.ruleset_loader)
+        assert result.status == baseline.status == "accepted"
+        assert result.state_delta == baseline.state_delta
+        assert result.rng_transition == baseline.rng_transition
+    elif selection is None:
+        assert result.status == "needs_choice"
+        assert result.choice.allowed_weapon_instance_ids == (held.instance_id,)
+        assert result.rng_transition is None
+    else:
+        assert result.status == "rejected"
+        assert result.error.code == "weapon_not_held"
+        assert result.rng_transition is None
 
 
 def apply_delta(snapshot, result):

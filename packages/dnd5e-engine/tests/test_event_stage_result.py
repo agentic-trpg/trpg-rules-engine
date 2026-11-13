@@ -268,26 +268,31 @@ def test_interleaved_sessions_requests_rng_and_frozen_stage_values_are_isolated(
 
 
 @pytest.mark.parametrize("mode", ["validation", "serialization"])
-def test_exported_schema_includes_required_stages_without_snapshot_availability_version_churn(mode):
+def test_exported_schema_requires_stages_and_advertises_both_attack_protocols(mode):
     from dnd5e_engine.evaluation_availability import ActionAvailabilityRequest
     from dnd5e_engine.evaluation_state import CombatSnapshot
 
     schema = RuleEvaluationResult.model_json_schema(mode=mode)
     assert "stage_facts" in schema["required"]
-    assert schema["properties"]["schema_version"]["const"] == "engine-evaluation/24"
+    assert schema["properties"]["schema_version"]["enum"] == [
+        "engine-evaluation/24",
+        "engine-evaluation/25",
+    ]
     assert (
         schema["$defs"]["EventStageFacts"]["properties"]["schema_version"]["const"]
         == "engine-stage-facts/2"
     )
     assert schema["$defs"]["StageCombatUpdate"]["additionalProperties"] is False
-    assert (
-        CombatSnapshot.model_json_schema()["properties"]["snapshot_schema_version"]["const"]
-        == "engine-snapshot/17"
-    )
-    assert (
-        ActionAvailabilityRequest.model_json_schema()["properties"]["schema_version"]["const"]
-        == "engine-availability/13"
-    )
+    snapshot_schema = CombatSnapshot.model_json_schema(mode=mode)
+    assert snapshot_schema["properties"]["snapshot_schema_version"]["enum"] == [
+        "engine-snapshot/17",
+        "engine-snapshot/18",
+    ]
+    availability_schema = ActionAvailabilityRequest.model_json_schema(mode=mode)
+    assert availability_schema["properties"]["schema_version"]["enum"] == [
+        "engine-availability/13",
+        "engine-availability/14",
+    ]
 
 
 def test_existing_attack_with_unaligned_input_budget_keeps_rule_outcome_and_reports_gap():

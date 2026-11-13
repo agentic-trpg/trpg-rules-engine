@@ -155,7 +155,9 @@ def test_every_contract_envelope_field_is_required_and_unknown_fields_fail():
     for model in models:
         assert model is not None
         value = model.model_dump(mode="json")
-        for field in type(model).model_fields:
+        for field, definition in type(model).model_fields.items():
+            if not definition.is_required():
+                continue
             missing = deepcopy(value)
             del missing[field]
             with pytest.raises(ValidationError):

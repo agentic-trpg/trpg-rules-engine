@@ -252,10 +252,19 @@ class CharacterState(EvaluationModel):
 
 
 class CharacterStateV2(CharacterState):
-    """Extend actor input with explicit equipment and hand/grip facts."""
+    """Extend actor input with explicit equipment instances and hand/grip facts."""
 
     weapon_in_hands: Annotated[str, Field(min_length=1)] | None
     held_weapon_instance_id: Annotated[str, Field(min_length=1)] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    worn_armor_instance_id: Annotated[str, Field(min_length=1)] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    equipped_shield_instance_id: Annotated[str, Field(min_length=1)] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    offhand_item_instance_id: Annotated[str, Field(min_length=1)] | None = Field(
         default=None, exclude_if=lambda value: value is None
     )
     weapon_grip: Literal["none", "one_handed", "two_handed"]
@@ -516,7 +525,9 @@ class InventoryState(EvaluationModel):
 class SnapshotBase(EvaluationModel):
     """Validate shared fixed-input actor, effect, inventory and dependency closure."""
 
-    snapshot_schema_version: Literal["engine-snapshot/17", "engine-snapshot/18"]
+    snapshot_schema_version: Literal[
+        "engine-snapshot/17", "engine-snapshot/18", "engine-snapshot/19"
+    ]
     session_id: Annotated[str, Field(min_length=1)]
     world_version: Annotated[int, Field(ge=0)]
     character_states: tuple[CharacterStateV2, ...]
@@ -537,7 +548,7 @@ class SnapshotBase(EvaluationModel):
             raise ValueError("duplicate effect identity or absent effect target")
         if any(entry.owner_id not in ids for entry in self.inventory_state.entries):
             raise ValueError("inventory owner is absent from snapshot")
-        if self.snapshot_schema_version == "engine-snapshot/18":
+        if self.snapshot_schema_version in ("engine-snapshot/18", "engine-snapshot/19"):
             entries = {entry.instance_id: entry for entry in self.inventory_state.entries}
             for actor in self.character_states:
                 held = actor.held_weapon_instance_id
@@ -553,7 +564,51 @@ class SnapshotBase(EvaluationModel):
                         or not entry.accessible
                     ):
                         raise ValueError("held weapon conflicts with the supplied inventory")
-        elif any(actor.held_weapon_instance_id is not None for actor in self.character_states):
+                equipment_ids = (
+                    actor.worn_armor_instance_id,
+                    actor.equipped_shield_instance_id,
+                    actor.offhand_item_instance_id,
+                )
+                if self.snapshot_schema_version == "engine-snapshot/18":
+                    if any(identity is not None for identity in equipment_ids):
+                        raise ValueError("additional equipment instances require snapshot/19")
+                    continue
+                if (actor.worn_armor_instance_id is None) != (actor.worn_armor is None):
+                    raise ValueError("worn armor requires an explicit inventory instance")
+                if (actor.equipped_shield_instance_id is None) != (not actor.shield_equipped):
+                    raise ValueError("equipped shield requires an explicit inventory instance")
+                if actor.other_hand_occupied != (
+                    actor.shield_equipped or actor.offhand_item_instance_id is not None
+                ) or (actor.shield_equipped and actor.offhand_item_instance_id is not None):
+                    raise ValueError("offhand occupancy conflicts with equipped instances")
+                bound_ids = (held, *equipment_ids)
+                if len({identity for identity in bound_ids if identity is not None}) != sum(
+                    identity is not None for identity in bound_ids
+                ):
+                    raise ValueError("equipped instances must be distinct")
+                for identity in equipment_ids:
+                    if identity is None:
+                        continue
+                    entry = entries.get(identity)
+                    if (
+                        entry is None
+                        or entry.owner_id != actor.entity_id
+                        or entry.quantity != 1
+                        or not entry.accessible
+                    ):
+                        raise ValueError("equipped instance conflicts with the supplied inventory")
+        elif any(
+            any(
+                identity is not None
+                for identity in (
+                    actor.held_weapon_instance_id,
+                    actor.worn_armor_instance_id,
+                    actor.equipped_shield_instance_id,
+                    actor.offhand_item_instance_id,
+                )
+            )
+            for actor in self.character_states
+        ):
             raise ValueError("held weapon instances require the current snapshot version")
         return self
 

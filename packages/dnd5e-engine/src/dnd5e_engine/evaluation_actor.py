@@ -14,6 +14,9 @@ def combatant(state: CharacterStateV2) -> Combatant:
             "spells_known",
             "custom_counters",
             "held_weapon_instance_id",
+            "worn_armor_instance_id",
+            "equipped_shield_instance_id",
+            "offhand_item_instance_id",
         },
     )
     value["death_saves"] = value["death_saves"] or {}
@@ -30,6 +33,9 @@ def actor_state(actor: Combatant, original: CharacterStateV2) -> CharacterStateV
         "spells_known",
         "custom_counters",
         "held_weapon_instance_id",
+        "worn_armor_instance_id",
+        "equipped_shield_instance_id",
+        "offhand_item_instance_id",
     ):
         value[field] = getattr(original, field)
     return CharacterStateV2.model_validate(value)

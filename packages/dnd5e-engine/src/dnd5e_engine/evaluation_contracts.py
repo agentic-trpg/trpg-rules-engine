@@ -24,8 +24,8 @@ from dnd5e_engine.intents import PlayerIntent
 from dnd5e_engine.rules.skills import Skill
 from dnd5e_engine.types.checks import CheckRequest, GrantedDie
 
-SCHEMA_VERSION = "engine-evaluation/25"
-EvaluationVersion = Literal["engine-evaluation/24", "engine-evaluation/25"]
+SCHEMA_VERSION = "engine-evaluation/26"
+EvaluationVersion = Literal["engine-evaluation/24", "engine-evaluation/25", "engine-evaluation/26"]
 
 
 class ItemUsePayload(EvaluationModel):
@@ -150,9 +150,12 @@ class RuleEvaluationRequest(EvaluationModel):
         """Require the payload type and shape matching the operation tag."""
         if self.session_id != self.state_snapshot.session_id:
             raise ValueError("request and snapshot session identities differ")
-        if (self.schema_version == "engine-evaluation/25") != (
-            self.state_snapshot.snapshot_schema_version == "engine-snapshot/18"
-        ):
+        version_pairs = {
+            "engine-evaluation/24": "engine-snapshot/17",
+            "engine-evaluation/25": "engine-snapshot/18",
+            "engine-evaluation/26": "engine-snapshot/19",
+        }
+        if self.state_snapshot.snapshot_schema_version != version_pairs[self.schema_version]:
             raise ValueError("evaluation and snapshot versions differ")
         if self.operation_kind == "rules.rest":
             if not isinstance(self.payload, RestPayload) or self.payload.target_id != self.actor_id:

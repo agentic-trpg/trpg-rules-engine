@@ -1,5 +1,14 @@
 # Stateful → Stateless migration progress
 
+## Equipment instance binding — 2026-11-14
+
+The local RE branch adds bounded `engine-snapshot/19`, `engine-evaluation/26`,
+`engine-availability/15` and `dnd5e-evaluation/39` inputs. Explicit worn armor,
+shield and offhand inventory IDs now select the instances behind derived category,
+AC and occupancy facts. Same-type spares are inert in the reviewed equipped
+attack profile. This remains a local RE implementation; SM adoption, shared
+commit/recovery and cross-repository integration require separate evidence.
+
 ## Current consumer baseline — 2026-10-27
 
 SM main `b9ae704` now includes scoped SessionMemory and instance-field consumers with

@@ -1,5 +1,21 @@
 # Stateless rule evaluation: current local contract
 
+## Equipped item instance binding
+
+Snapshot `engine-snapshot/19`, evaluation `engine-evaluation/26`, availability
+`engine-availability/15` and evaluator binding `dnd5e-evaluation/39` add
+`worn_armor_instance_id`, `equipped_shield_instance_id` and
+`offhand_item_instance_id`. The fixed snapshot binds each equipped ID to one
+distinct owned, accessible inventory unit. Its armor category, shield status and
+other-hand occupancy agree with the selected instances; the bound loader checks
+actual armor and shield kinds for every actor. The reviewed Cleric/Fighter attack
+profile still checks canonical chain shirt, shield, AC, stealth, training and grip.
+An ordinary offhand item or weapon can occupy the hand without enabling an
+offhand attack; passive, attunement and use mechanics remain outside that reviewed
+profile. Same-type spare instances do not count as equipped. No runtime equip
+action or opportunity-attack support is added here. Older wire version pairs
+remain accepted with their prior shape and validation.
+
 ## Ordinary attack by item instance
 
 Snapshot `engine-snapshot/18` identifies a held weapon through
@@ -9,7 +25,7 @@ and the weapon type. Evaluation `engine-evaluation/25` and availability
 Both run the same preflight. A different item of the same type cannot stand in for
 the held item. Stat-block actions retain their action identity. The earlier typed
 snapshot and request versions retain their existing shape for callers not using the
-instance protocol. The current evaluator binding is `dnd5e-evaluation/38`.
+instance protocol. The current evaluator binding is `dnd5e-evaluation/39`.
 
 ## Current consumer baseline — 2026-10-27
 

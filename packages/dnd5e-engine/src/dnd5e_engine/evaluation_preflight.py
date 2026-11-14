@@ -507,7 +507,10 @@ def prepare_attack(
     if state.initiative_ids[state.current_turn_index] != actor_id:
         return refused("rejected", "not_actor_turn", "actor does not own this turn")
     current = actors[actor_id]
-    instance_protocol = snapshot.snapshot_schema_version == "engine-snapshot/18"
+    instance_protocol = snapshot.snapshot_schema_version in (
+        "engine-snapshot/18",
+        "engine-snapshot/19",
+    )
     basic = CombatIntentPayload(intent_type="attack")
     allowed = {"intent_type", "source_id", "weapon_id", "target_id", "stat_block_action_id"}
     if instance_protocol:

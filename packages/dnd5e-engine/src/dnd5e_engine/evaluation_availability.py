@@ -8,17 +8,22 @@ from pydantic import Field, model_validator
 
 from dnd5e_engine.evaluation_base import EvaluationModel
 from dnd5e_engine.evaluation_contracts import CombatIntentPayload, RuleError
+from dnd5e_engine.evaluation_equipment_dependencies import snapshot_equipment_kind_failure
 from dnd5e_engine.evaluation_preflight import prepare_attack
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError
 from dnd5e_engine.evaluation_ruleset import RulesetBinding, get_default_ruleset, verify_ruleset
 from dnd5e_engine.evaluation_state import CombatSnapshot
 from dnd5e_engine.lib_loader import scoped_lib_loader
 
+AvailabilityVersion = Literal[
+    "engine-availability/13", "engine-availability/14", "engine-availability/15"
+]
+
 
 class ActionAvailabilityRequest(EvaluationModel):
     """Bind a read-only availability query to explicit snapshot and rules identity."""
 
-    schema_version: Literal["engine-availability/13", "engine-availability/14"]
+    schema_version: AvailabilityVersion
     session_id: Annotated[str, Field(min_length=1)]
     operation_kind: Literal["combat.intent"]
     actor_id: Annotated[str, Field(min_length=1)]
@@ -33,9 +38,12 @@ class ActionAvailabilityRequest(EvaluationModel):
             self.payload.source_id is not None and self.payload.source_id != self.actor_id
         ):
             raise ValueError("query actor/session identity mismatch")
-        if (self.schema_version == "engine-availability/14") != (
-            self.state_snapshot.snapshot_schema_version == "engine-snapshot/18"
-        ):
+        version_pairs = {
+            "engine-availability/13": "engine-snapshot/17",
+            "engine-availability/14": "engine-snapshot/18",
+            "engine-availability/15": "engine-snapshot/19",
+        }
+        if self.state_snapshot.snapshot_schema_version != version_pairs[self.schema_version]:
             raise ValueError("availability and snapshot versions differ")
         return self
 
@@ -43,7 +51,7 @@ class ActionAvailabilityRequest(EvaluationModel):
 class ActionAvailabilityResult(EvaluationModel):
     """Return supported action options and refusal/choice information without payment."""
 
-    schema_version: Literal["engine-availability/13", "engine-availability/14"]
+    schema_version: AvailabilityVersion
     session_id: str
     actor_id: str
     operation_kind: Literal["combat.intent"]
@@ -64,6 +72,17 @@ def query_action_availability(
     request = ActionAvailabilityRequest.model_validate(copy.deepcopy(request))
     assets = loader if loader is not None else get_default_ruleset()
     verify_ruleset(request.ruleset_binding, assets)
+    if failure := snapshot_equipment_kind_failure(request.state_snapshot, assets):
+        return ActionAvailabilityResult(
+            schema_version=request.schema_version,
+            session_id=request.session_id,
+            actor_id=request.actor_id,
+            operation_kind=request.operation_kind,
+            snapshot_world_version=request.state_snapshot.world_version,
+            ruleset_binding=request.ruleset_binding,
+            status="unknown",
+            reason=RuleError(code="snapshot.capability", reason=failure),
+        )
     with scoped_lib_loader(assets):
         admission = prepare_attack(
             request.state_snapshot,

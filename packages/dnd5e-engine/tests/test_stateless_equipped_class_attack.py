@@ -41,7 +41,10 @@ def equipped_case(
         features=[old.get_feature(s) for s in old.list_slugs("features")]
         + [canonical.get_feature("divine-order-protector")],
         spells=[old.get_spell("cure-wounds")],
-        items=[canonical.get_item(s) for s in ("mace", "quarterstaff", "chain-shirt", "shield")],
+        items=[
+            canonical.get_item(s)
+            for s in ("mace", "quarterstaff", "chain-shirt", "shield", "component-pouch")
+        ],
     )
     slugs = (weapon, "chain-shirt") + (("shield",) if shield else ())
     hero, foe = live.initiative

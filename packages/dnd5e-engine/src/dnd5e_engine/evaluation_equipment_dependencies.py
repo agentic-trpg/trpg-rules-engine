@@ -1,9 +1,16 @@
 """Reviewed complete Cleric/Fighter equipment closure for bounded operations."""
 
-from dnd5e_srd_data.loader import AssetLoader
-from dnd5e_srd_data.schema.item import Armor
+from collections.abc import Mapping
 
-from dnd5e_engine.evaluation_state import CharacterStateV2, CombatSnapshot, NonCombatSnapshot
+from dnd5e_srd_data.loader import AssetLoader
+from dnd5e_srd_data.schema.item import Armor, ArmorCategory, Item
+
+from dnd5e_engine.evaluation_state import (
+    CharacterStateV2,
+    CombatSnapshot,
+    InventoryEntry,
+    NonCombatSnapshot,
+)
 from dnd5e_engine.rules.character import (
     armor_class,
     armor_training_from_changes,
@@ -36,23 +43,37 @@ def equipped_dependencies(
         or actor.worn_armor != "medium"
     ):
         return "equipped profile requires a reviewed simple weapon and chain shirt"
-    slugs = {weapon_slug, "chain-shirt"} | ({"shield"} if actor.shield_equipped else set())
-    entries = [e for e in snapshot.inventory_state.entries if e.owner_id == actor.entity_id]
-    if snapshot.snapshot_schema_version == "engine-snapshot/18":
-        # Only the explicitly held weapon contributes to the reviewed equipment profile.
-        entries = [
-            e
-            for e in entries
-            if e.item_slug != weapon_slug or e.instance_id == actor.held_weapon_instance_id
-        ]
-    if (
-        len(entries) != len(slugs)
-        or {e.item_slug for e in entries} != slugs
-        or len(actor.carried_item_slugs) != len(slugs)
-        or set(actor.carried_item_slugs) != slugs
-        or any(e.quantity != 1 or not e.accessible or e.charges_remaining_per_unit for e in entries)
-    ):
-        return "equipped profile requires unique accessible owned equipment instances"
+    by_id: dict[str, InventoryEntry] = {}
+    if snapshot.snapshot_schema_version == "engine-snapshot/19":
+        owned = []
+        for entry in snapshot.inventory_state.entries:
+            by_id[entry.instance_id] = entry
+            if entry.owner_id == actor.entity_id:
+                owned.append(entry)
+        failure = instance_equipment_dependencies(actor, owned, by_id, loader, canonical)
+        if failure:
+            return failure
+        slugs = {weapon_slug, "chain-shirt"} | ({"shield"} if actor.shield_equipped else set())
+    else:
+        slugs = {weapon_slug, "chain-shirt"} | ({"shield"} if actor.shield_equipped else set())
+        entries = [e for e in snapshot.inventory_state.entries if e.owner_id == actor.entity_id]
+        if snapshot.snapshot_schema_version == "engine-snapshot/18":
+            # Only the explicitly held weapon contributes to the reviewed equipment profile.
+            entries = [
+                e
+                for e in entries
+                if e.item_slug != weapon_slug or e.instance_id == actor.held_weapon_instance_id
+            ]
+        if (
+            len(entries) != len(slugs)
+            or {e.item_slug for e in entries} != slugs
+            or len(actor.carried_item_slugs) != len(slugs)
+            or set(actor.carried_item_slugs) != slugs
+            or any(
+                e.quantity != 1 or not e.accessible or e.charges_remaining_per_unit for e in entries
+            )
+        ):
+            return "equipped profile requires unique accessible owned equipment instances"
     if any(loader.get_item(s) != canonical.get_item(s) for s in slugs):
         return "equipment differs from reviewed canonical definitions"
     if (
@@ -60,7 +81,10 @@ def equipped_dependencies(
         or (actor.fighting_styles != ("defense",) if fighter else bool(actor.fighting_styles))
         or actor.attack_bonus is not None
         or actor.proficiency_bonus_override not in (None, 2)
-        or actor.other_hand_occupied != actor.shield_equipped
+        or (
+            snapshot.snapshot_schema_version != "engine-snapshot/19"
+            and actor.other_hand_occupied != actor.shield_equipped
+        )
         or actor.weapon_grip not in ("one_handed", "two_handed")
         or (actor.weapon_grip == "two_handed" and (actor.shield_equipped or weapon_slug == "mace"))
     ):
@@ -96,8 +120,19 @@ def equipped_dependencies(
         or (actor.shield_equipped and "shield" not in armor_training)
     ):
         return "explicit equipment proficiencies must match canonical class grants"
-    armor = loader.get_item("chain-shirt")
-    shield = loader.get_item("shield") if actor.shield_equipped else None
+    if snapshot.snapshot_schema_version == "engine-snapshot/19":
+        assert actor.worn_armor_instance_id is not None
+        armor_slug = by_id[actor.worn_armor_instance_id].item_slug
+        shield_slug = (
+            by_id[actor.equipped_shield_instance_id].item_slug
+            if actor.equipped_shield_instance_id is not None
+            else None
+        )
+    else:
+        armor_slug = "chain-shirt"
+        shield_slug = "shield" if actor.shield_equipped else None
+    armor = loader.get_item(armor_slug)
+    shield = loader.get_item(shield_slug) if shield_slug is not None else None
     assert isinstance(armor, Armor)
     assert shield is None or isinstance(shield, Armor)
     expected = armor_class(
@@ -110,6 +145,105 @@ def equipped_dependencies(
     expected += defense_ac_bonus(actor.fighting_styles, wearing_armor=True)
     if actor.ac != expected or actor.stealth_disadvantage != armor.stealth_disadvantage:
         return "armor/shield AC or stealth facts contradict shared armor rules"
+    return None
+
+
+def instance_equipment_dependencies(
+    actor: CharacterStateV2,
+    owned: list[InventoryEntry],
+    entries: Mapping[str, InventoryEntry],
+    loader: AssetLoader,
+    canonical: AssetLoader,
+) -> str | None:
+    """Check only bound equipped instances; identical inventory spares are inert."""
+    if actor.worn_armor_instance_id is None or actor.held_weapon_instance_id is None:
+        return "equipped profile requires bound armor and held weapon instances"
+    armor_entry = entries[actor.worn_armor_instance_id]  # Snapshot validates presence and owner.
+    armor = loader.get_item(armor_entry.item_slug)
+    if (
+        armor_entry.item_slug != "chain-shirt"
+        or not isinstance(armor, Armor)
+        or armor.armor_category != ArmorCategory.MEDIUM
+        or armor != canonical.get_item("chain-shirt")
+    ):
+        return "worn armor instance is outside the reviewed medium armor profile"
+    if actor.equipped_shield_instance_id is not None:
+        shield_entry = entries[actor.equipped_shield_instance_id]
+        shield = loader.get_item(shield_entry.item_slug)
+        if (
+            shield_entry.item_slug != "shield"
+            or not isinstance(shield, Armor)
+            or shield.armor_category != ArmorCategory.SHIELD
+            or shield != canonical.get_item("shield")
+        ):
+            return "shield instance is outside the reviewed shield profile"
+    if actor.offhand_item_instance_id is not None:
+        offhand_entry = entries[actor.offhand_item_instance_id]
+        offhand = loader.get_item(offhand_entry.item_slug)
+        if (
+            offhand is None
+            or not isinstance(offhand, Item)
+            or isinstance(offhand, Armor)
+            or offhand.passive_effects
+            or offhand.requires_attunement
+            or offhand.uses is not None
+        ):
+            return "offhand item has unreviewed active equipment mechanics"
+    held_entry = entries[actor.held_weapon_instance_id]
+    if (
+        held_entry.item_slug != actor.weapon_in_hands
+        or set(actor.carried_item_slugs) != {entry.item_slug for entry in owned}
+        or any(entry.item_slug not in actor.carried_item_slugs for entry in owned)
+        or any(entry.charges_remaining_per_unit for entry in owned)
+    ):
+        return "supplied equipment and inventory identities disagree"
+    reviewed = {actor.weapon_in_hands, "chain-shirt", "shield"}
+    if actor.offhand_item_instance_id is not None:
+        reviewed.add(entries[actor.offhand_item_instance_id].item_slug)
+    if any(
+        entry.item_slug not in reviewed and entry.instance_id != actor.offhand_item_instance_id
+        for entry in owned
+    ):
+        return "inventory contains an unreviewed equipment type"
+    return None
+
+
+def instance_equipment_kind_failure(
+    actor: CharacterStateV2,
+    snapshot: CombatSnapshot | NonCombatSnapshot,
+    loader: AssetLoader,
+    entries: Mapping[str, InventoryEntry],
+) -> str | None:
+    """Validate /19 equipped kinds against the bound loader for every actor."""
+    if snapshot.snapshot_schema_version != "engine-snapshot/19":
+        return None
+    if actor.worn_armor_instance_id is not None:
+        armor = loader.get_item(entries[actor.worn_armor_instance_id].item_slug)
+        if not isinstance(armor, Armor) or armor.armor_category != actor.worn_armor:
+            return "worn armor instance has the wrong item category"
+    if actor.equipped_shield_instance_id is not None:
+        shield = loader.get_item(entries[actor.equipped_shield_instance_id].item_slug)
+        if not isinstance(shield, Armor) or shield.armor_category != ArmorCategory.SHIELD:
+            return "equipped shield instance has the wrong item category"
+    if actor.offhand_item_instance_id is not None:
+        offhand = loader.get_item(entries[actor.offhand_item_instance_id].item_slug)
+        if offhand is None or (
+            isinstance(offhand, Armor) and offhand.armor_category == ArmorCategory.SHIELD
+        ):
+            return "offhand instance has no valid ordinary item definition"
+    return None
+
+
+def snapshot_equipment_kind_failure(
+    snapshot: CombatSnapshot | NonCombatSnapshot, loader: AssetLoader
+) -> str | None:
+    """Check bound equipped kinds once per new-protocol evaluation or query."""
+    if snapshot.snapshot_schema_version != "engine-snapshot/19":
+        return None
+    entries = {entry.instance_id: entry for entry in snapshot.inventory_state.entries}
+    for actor in snapshot.character_states:
+        if failure := instance_equipment_kind_failure(actor, snapshot, loader, entries):
+            return failure
     return None
 
 

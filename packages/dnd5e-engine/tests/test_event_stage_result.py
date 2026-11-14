@@ -277,6 +277,7 @@ def test_exported_schema_requires_stages_and_advertises_both_attack_protocols(mo
     assert schema["properties"]["schema_version"]["enum"] == [
         "engine-evaluation/24",
         "engine-evaluation/25",
+        "engine-evaluation/26",
     ]
     assert (
         schema["$defs"]["EventStageFacts"]["properties"]["schema_version"]["const"]
@@ -287,11 +288,13 @@ def test_exported_schema_requires_stages_and_advertises_both_attack_protocols(mo
     assert snapshot_schema["properties"]["snapshot_schema_version"]["enum"] == [
         "engine-snapshot/17",
         "engine-snapshot/18",
+        "engine-snapshot/19",
     ]
     availability_schema = ActionAvailabilityRequest.model_json_schema(mode=mode)
     assert availability_schema["properties"]["schema_version"]["enum"] == [
         "engine-availability/13",
         "engine-availability/14",
+        "engine-availability/15",
     ]
 
 

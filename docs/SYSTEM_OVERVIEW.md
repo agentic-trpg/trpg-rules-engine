@@ -47,7 +47,9 @@ Stateless 接口或 SM pin／采用白名单支持它；完整迁移与跨仓库
 ## 3. 代表性处理流程
 
 普通武器攻击的实例协议由请求提供 `weapon_instance_id`，固定快照提供
-`held_weapon_instance_id` 和对应库存事实。可用性查询和正式求值共用预检，
+`held_weapon_instance_id` 和对应库存事实。`engine-snapshot/19` 另以护甲、盾牌、
+副手物品实例 ID 绑定装备事实；RE 根据绑定素材校验装备类型、派生类别与占手关系，
+同类型备用件不作为已装备物品。可用性查询和正式求值共用攻击预检，
 随后按已验证的物品类型加载武器规则。
 
 ### 一次 Stateless 求值

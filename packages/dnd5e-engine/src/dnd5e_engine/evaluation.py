@@ -16,6 +16,7 @@ from dnd5e_engine.evaluation_contracts import (
     RuleEvaluationRequest,
     RuleEvaluationResult,
 )
+from dnd5e_engine.evaluation_equipment_dependencies import snapshot_equipment_kind_failure
 from dnd5e_engine.evaluation_items import evaluate_item
 from dnd5e_engine.evaluation_movement import evaluate_movement
 from dnd5e_engine.evaluation_preflight import prepare_attack
@@ -91,6 +92,17 @@ async def evaluate(
             ),
         ),
     )
+    if failure := snapshot_equipment_kind_failure(request.state_snapshot, assets):
+        return RuleEvaluationResult(
+            **common,
+            status="unsupported",
+            state_delta=None,
+            proposed_events=(),
+            stage_facts=None,
+            rng_transition=None,
+            choice=None,
+            error=RuleError(code="snapshot.capability", reason=failure),
+        )
     if request.operation_kind == "combat.item":
         item = await evaluate_item(request, assets)
         result = RuleEvaluationResult(**common, **item, stage_facts=_stage_coverage(item["status"]))

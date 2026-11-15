@@ -83,7 +83,23 @@ def execution_context(
     for actor in snapshot.character_states:
         live.spell_slots_by_entity[actor.entity_id] = copy.deepcopy(actor.spell_slots)
         live.pact_slots_by_entity[actor.entity_id] = copy.deepcopy(actor.pact_slots)
-        live.spells_known_by_entity[actor.entity_id] = list(actor.spells_known)
+        if snapshot.snapshot_schema_version == "engine-snapshot/20" and snapshot.casting_state:
+            casting_actor = next(
+                (
+                    entry
+                    for entry in snapshot.casting_state.actors
+                    if entry.actor_id == actor.entity_id
+                ),
+                None,
+            )
+            known = (
+                [spell for source in casting_actor.sources for spell in source.known_spells]
+                if casting_actor
+                else []
+            )
+        else:
+            known = actor.spells_known
+        live.spells_known_by_entity[actor.entity_id] = list(known)
         live.custom_counters_by_entity[actor.entity_id] = copy.deepcopy(actor.custom_counters)
     orch._register_default_turn_hooks(live)
     return live

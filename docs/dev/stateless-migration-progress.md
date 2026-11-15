@@ -1,5 +1,14 @@
 # Stateful → Stateless migration progress
 
+## Canonical spell source boundary — 2026-11-16
+
+The local RE branch adds `/20` snapshot, `/27` evaluation, `/16` availability
+and `/40` evaluator binding for ordered source-owned spell records. The old
+actor spell mirror and actor-level material list are absent from the new wire;
+existing `/17`–`/19` casting inputs remain accepted. This is an RE contract
+implementation, not evidence of SM adoption, spell storage migration or
+end-to-end commit/recovery acceptance.
+
 ## Equipment instance binding — 2026-11-14
 
 The local RE branch adds bounded `engine-snapshot/19`, `engine-evaluation/26`,

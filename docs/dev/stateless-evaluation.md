@@ -1,5 +1,26 @@
 # Stateless rule evaluation: current local contract
 
+## Canonical spell source wire — 2026-11-16
+
+Snapshot `engine-snapshot/20`, evaluation `engine-evaluation/27`, availability
+`engine-availability/16` and evaluator binding `dnd5e-evaluation/40` accept
+source-owned casting records. Each actor has `actor_id`, `verbal_available` and
+ordered `sources`; each source has `source_id`, `class_slug`, `ability` and ordered
+`spells`. A spell record has `spell_id`, nullable zero-based `prepared_order` and
+nullable `material`. The only reviewed material attestation remains Hold Person's
+`{inventory_instance_id, available}` component pouch binding. Non-Hold Person
+material attestations are refused; other material/focus profiles are not added.
+
+The `/20` wire omits actor `spells_known`, source `known_spells` and
+`prepared_spells`, and actor-level `materials`. Repeated spell IDs, repeated
+preparation positions and mixed old/new representations are invalid. The
+existing `/17`–`/19` wire retains its actor mirror, separate known/prepared
+lists and actor-level material attestations, including formerly accepted
+material facts that do not correspond to a known spell. These facts cannot be
+expressed as a material-only `/20` record; callers must retain the legacy pair
+until their authoritative source facts are converted. Evaluators read the
+source-owned repertoire and material fact without a second wire authority.
+
 ## Equipped item instance binding
 
 Snapshot `engine-snapshot/19`, evaluation `engine-evaluation/26`, availability

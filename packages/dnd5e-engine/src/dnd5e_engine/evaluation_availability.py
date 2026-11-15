@@ -16,7 +16,10 @@ from dnd5e_engine.evaluation_state import CombatSnapshot
 from dnd5e_engine.lib_loader import scoped_lib_loader
 
 AvailabilityVersion = Literal[
-    "engine-availability/13", "engine-availability/14", "engine-availability/15"
+    "engine-availability/13",
+    "engine-availability/14",
+    "engine-availability/15",
+    "engine-availability/16",
 ]
 
 
@@ -42,6 +45,7 @@ class ActionAvailabilityRequest(EvaluationModel):
             "engine-availability/13": "engine-snapshot/17",
             "engine-availability/14": "engine-snapshot/18",
             "engine-availability/15": "engine-snapshot/19",
+            "engine-availability/16": "engine-snapshot/20",
         }
         if self.state_snapshot.snapshot_schema_version != version_pairs[self.schema_version]:
             raise ValueError("availability and snapshot versions differ")

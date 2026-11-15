@@ -24,7 +24,7 @@ from pydantic_core import to_json
 from dnd5e_engine.activities.conjuration import StatBlockMagnitudes, TransformSource
 from dnd5e_engine.effect_lifecycle import OngoingEffectLifecycle
 from dnd5e_engine.evaluation_base import EvaluationModel
-from dnd5e_engine.evaluation_casting import CastingState
+from dnd5e_engine.evaluation_casting import CastingState, CastingStateV20
 from dnd5e_engine.evaluation_effects import (
     EffectLifecycleApplicationState,
     EffectLifecycleSpecState,
@@ -223,7 +223,7 @@ class CharacterState(EvaluationModel):
     action_surge_used_this_turn: bool
     spell_slots: dict[int, int]
     pact_slots: dict[int, int]
-    spells_known: list[str]
+    spells_known: list[str] = Field(default_factory=list)
     custom_counters: dict[str, dict[str, int]]
 
     @model_validator(mode="after")
@@ -526,16 +526,26 @@ class SnapshotBase(EvaluationModel):
     """Validate shared fixed-input actor, effect, inventory and dependency closure."""
 
     snapshot_schema_version: Literal[
-        "engine-snapshot/17", "engine-snapshot/18", "engine-snapshot/19"
+        "engine-snapshot/17", "engine-snapshot/18", "engine-snapshot/19", "engine-snapshot/20"
     ]
     session_id: Annotated[str, Field(min_length=1)]
     world_version: Annotated[int, Field(ge=0)]
     character_states: tuple[CharacterStateV2, ...]
     resource_state: ResourceState | None
-    casting_state: CastingState | None
+    casting_state: CastingState | CastingStateV20 | None
     effect_states: tuple[EffectState, ...]
     inventory_state: InventoryState
     scene_state: SceneState
+
+    @field_serializer("character_states")
+    def canonical_actor_serialization(
+        self, actors: tuple[CharacterStateV2, ...]
+    ) -> tuple[dict[str, Any], ...]:
+        """Serialize /20 actors without a second spell repertoire representation."""
+        excluded = (
+            {"spells_known"} if self.snapshot_schema_version == "engine-snapshot/20" else set()
+        )
+        return tuple(actor.model_dump(exclude=excluded) for actor in actors)
 
     @model_validator(mode="after")
     def identities(self) -> Self:
@@ -548,7 +558,11 @@ class SnapshotBase(EvaluationModel):
             raise ValueError("duplicate effect identity or absent effect target")
         if any(entry.owner_id not in ids for entry in self.inventory_state.entries):
             raise ValueError("inventory owner is absent from snapshot")
-        if self.snapshot_schema_version in ("engine-snapshot/18", "engine-snapshot/19"):
+        if self.snapshot_schema_version in (
+            "engine-snapshot/18",
+            "engine-snapshot/19",
+            "engine-snapshot/20",
+        ):
             entries = {entry.instance_id: entry for entry in self.inventory_state.entries}
             for actor in self.character_states:
                 held = actor.held_weapon_instance_id
@@ -615,13 +629,27 @@ class SnapshotBase(EvaluationModel):
     @model_validator(mode="after")
     def casting_closure(self) -> Self:
         """Require casting owners/repertoires to agree with the snapshot actor mirrors."""
+        mirrors = ["spells_known" in actor.model_fields_set for actor in self.character_states]
+        if self.snapshot_schema_version == "engine-snapshot/20" and any(mirrors):
+            raise ValueError("snapshot /20 forbids actor spells_known mirror")
+        if self.snapshot_schema_version != "engine-snapshot/20" and not all(mirrors):
+            raise ValueError("legacy snapshot requires actor spells_known mirror")
+        if self.snapshot_schema_version == "engine-snapshot/20":
+            if self.casting_state is not None and not isinstance(
+                self.casting_state, CastingStateV20
+            ):
+                raise ValueError("snapshot /20 requires canonical casting sources")
+        elif isinstance(self.casting_state, CastingStateV20):
+            raise ValueError("legacy snapshot requires legacy casting sources")
         if self.casting_state is not None:
             actors = {a.entity_id: a for a in self.character_states}
             if any(a.actor_id not in actors for a in self.casting_state.actors):
                 raise ValueError("casting source owner is absent")
             for entry in self.casting_state.actors:
                 known = {s for source in entry.sources for s in source.known_spells}
-                if known != set(actors[entry.actor_id].spells_known):
+                if self.snapshot_schema_version != "engine-snapshot/20" and known != set(
+                    actors[entry.actor_id].spells_known
+                ):
                     raise ValueError("casting repertoire contradicts actor mirror")
         return self
 

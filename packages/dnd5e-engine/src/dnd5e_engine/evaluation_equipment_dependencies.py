@@ -44,7 +44,7 @@ def equipped_dependencies(
     ):
         return "equipped profile requires a reviewed simple weapon and chain shirt"
     by_id: dict[str, InventoryEntry] = {}
-    if snapshot.snapshot_schema_version == "engine-snapshot/19":
+    if snapshot.snapshot_schema_version in ("engine-snapshot/19", "engine-snapshot/20"):
         owned = []
         for entry in snapshot.inventory_state.entries:
             by_id[entry.instance_id] = entry
@@ -82,7 +82,7 @@ def equipped_dependencies(
         or actor.attack_bonus is not None
         or actor.proficiency_bonus_override not in (None, 2)
         or (
-            snapshot.snapshot_schema_version != "engine-snapshot/19"
+            snapshot.snapshot_schema_version not in ("engine-snapshot/19", "engine-snapshot/20")
             and actor.other_hand_occupied != actor.shield_equipped
         )
         or actor.weapon_grip not in ("one_handed", "two_handed")
@@ -120,7 +120,7 @@ def equipped_dependencies(
         or (actor.shield_equipped and "shield" not in armor_training)
     ):
         return "explicit equipment proficiencies must match canonical class grants"
-    if snapshot.snapshot_schema_version == "engine-snapshot/19":
+    if snapshot.snapshot_schema_version in ("engine-snapshot/19", "engine-snapshot/20"):
         assert actor.worn_armor_instance_id is not None
         armor_slug = by_id[actor.worn_armor_instance_id].item_slug
         shield_slug = (
@@ -215,7 +215,7 @@ def instance_equipment_kind_failure(
     entries: Mapping[str, InventoryEntry],
 ) -> str | None:
     """Validate /19 equipped kinds against the bound loader for every actor."""
-    if snapshot.snapshot_schema_version != "engine-snapshot/19":
+    if snapshot.snapshot_schema_version not in ("engine-snapshot/19", "engine-snapshot/20"):
         return None
     if actor.worn_armor_instance_id is not None:
         armor = loader.get_item(entries[actor.worn_armor_instance_id].item_slug)
@@ -238,7 +238,7 @@ def snapshot_equipment_kind_failure(
     snapshot: CombatSnapshot | NonCombatSnapshot, loader: AssetLoader
 ) -> str | None:
     """Check bound equipped kinds once per new-protocol evaluation or query."""
-    if snapshot.snapshot_schema_version != "engine-snapshot/19":
+    if snapshot.snapshot_schema_version not in ("engine-snapshot/19", "engine-snapshot/20"):
         return None
     entries = {entry.instance_id: entry for entry in snapshot.inventory_state.entries}
     for actor in snapshot.character_states:

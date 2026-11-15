@@ -17,6 +17,10 @@ Stateless 转换仍是受限能力集。Legacy 和 Demo 中可运行的能力，
 Stateless 接口或 SM pin／采用白名单支持它；完整迁移与跨仓库 ABI 批准单独跟踪。
 本库的 Bridge HTTP 和 Demo 也不代表 Agentic TRPG 已交付完整 Host／玩家 UI。
 
+2026-11-16 本地候选版本以 Snapshot `/20` 的 `casting_state` 来源记录承载已知、
+准备顺序与已审定材料绑定，移除新线上的角色法术镜像。旧 `/17`–`/19` 协议仍按
+旧形状解析；SM 是否采用新版本需单独按依赖 pin 与真实调用验证。
+
 ## 2. 包和主要规则模块
 
 下表中 Engine 文件均相对 `packages/dnd5e-engine/src/dnd5e_engine/`；其他包写完整路径。

@@ -24,8 +24,10 @@ from dnd5e_engine.intents import PlayerIntent
 from dnd5e_engine.rules.skills import Skill
 from dnd5e_engine.types.checks import CheckRequest, GrantedDie
 
-SCHEMA_VERSION = "engine-evaluation/26"
-EvaluationVersion = Literal["engine-evaluation/24", "engine-evaluation/25", "engine-evaluation/26"]
+SCHEMA_VERSION = "engine-evaluation/27"
+EvaluationVersion = Literal[
+    "engine-evaluation/24", "engine-evaluation/25", "engine-evaluation/26", "engine-evaluation/27"
+]
 
 
 class ItemUsePayload(EvaluationModel):
@@ -154,6 +156,7 @@ class RuleEvaluationRequest(EvaluationModel):
             "engine-evaluation/24": "engine-snapshot/17",
             "engine-evaluation/25": "engine-snapshot/18",
             "engine-evaluation/26": "engine-snapshot/19",
+            "engine-evaluation/27": "engine-snapshot/20",
         }
         if self.state_snapshot.snapshot_schema_version != version_pairs[self.schema_version]:
             raise ValueError("evaluation and snapshot versions differ")

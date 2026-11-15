@@ -510,6 +510,7 @@ def prepare_attack(
     instance_protocol = snapshot.snapshot_schema_version in (
         "engine-snapshot/18",
         "engine-snapshot/19",
+        "engine-snapshot/20",
     )
     basic = CombatIntentPayload(intent_type="attack")
     allowed = {"intent_type", "source_id", "weapon_id", "target_id", "stat_block_action_id"}

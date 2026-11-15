@@ -16,7 +16,6 @@ from dnd5e_engine.evaluation_snapshot import capture_evaluation_snapshot
 from dnd5e_engine.events import HealingApplied
 from dnd5e_engine.specs import GridScene
 from tests.test_stateless_attack import execute
-from tests.test_stateless_equipped_spells import equipped_spell_case
 from tests.test_stateless_spell_feature import healing_case
 
 
@@ -67,16 +66,59 @@ def test_empty_casting_state_selects_versioned_shape() -> None:
 
 def test_snapshot_recapture_preserves_canonical_casting_and_equipment() -> None:
     """The Legacy parity adapter retains /20 sources without restoring the actor mirror."""
-    legacy, _, _, live = equipped_spell_case()
+    legacy, _, _, live = healing_case()
     wire, _ = canonical_healing_wire(legacy)
+    actor = wire["state_snapshot"]["character_states"][0]
+    actor.update(
+        weapon_in_hands="mace",
+        weapon_grip="one_handed",
+        carried_item_slugs=["mace", "chain-shirt", "shield"],
+        worn_armor="medium",
+        shield_equipped=True,
+        other_hand_occupied=True,
+        held_weapon_instance_id="item:mace",
+        worn_armor_instance_id="item:armor",
+        equipped_shield_instance_id="item:shield",
+    )
+    wire["state_snapshot"]["inventory_state"]["entries"] = [
+        {
+            "instance_id": instance_id,
+            "owner_id": actor["entity_id"],
+            "item_slug": slug,
+            "quantity": 1,
+            "charges_remaining_per_unit": 0,
+            "accessible": True,
+        }
+        for instance_id, slug in (
+            ("item:mace", "mace"),
+            ("item:armor", "chain-shirt"),
+            ("item:shield", "shield"),
+        )
+    ]
+    live.initiative[0] = live.initiative[0].model_copy(
+        update={
+            "weapon_in_hands": "mace",
+            "weapon_grip": "one_handed",
+            "carried_item_slugs": ("mace", "chain-shirt", "shield"),
+            "worn_armor": "medium",
+            "shield_equipped": True,
+            "other_hand_occupied": True,
+        }
+    )
     request = RuleEvaluationRequest.model_validate_json(json.dumps(wire))
     recaptured = capture_evaluation_snapshot(
         live, request.state_snapshot, GridScene(width=3, height=3)
     )
     assert recaptured.snapshot_schema_version == "engine-snapshot/20"
     assert recaptured.casting_state == request.state_snapshot.casting_state
-    assert recaptured.character_states[0].held_weapon_instance_id == request.state_snapshot.character_states[0].held_weapon_instance_id
-    assert recaptured.character_states[0].worn_armor_instance_id == request.state_snapshot.character_states[0].worn_armor_instance_id
+    assert (
+        recaptured.character_states[0].held_weapon_instance_id
+        == request.state_snapshot.character_states[0].held_weapon_instance_id
+    )
+    assert (
+        recaptured.character_states[0].worn_armor_instance_id
+        == request.state_snapshot.character_states[0].worn_armor_instance_id
+    )
     assert all(
         "spells_known" not in actor.model_fields_set for actor in recaptured.character_states
     )

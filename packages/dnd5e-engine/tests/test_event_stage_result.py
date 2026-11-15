@@ -268,7 +268,7 @@ def test_interleaved_sessions_requests_rng_and_frozen_stage_values_are_isolated(
 
 
 @pytest.mark.parametrize("mode", ["validation", "serialization"])
-def test_exported_schema_requires_stages_and_advertises_both_attack_protocols(mode):
+def test_exported_schema_requires_stages_and_advertises_versioned_protocols(mode):
     from dnd5e_engine.evaluation_availability import ActionAvailabilityRequest
     from dnd5e_engine.evaluation_state import CombatSnapshot
 
@@ -278,6 +278,7 @@ def test_exported_schema_requires_stages_and_advertises_both_attack_protocols(mo
         "engine-evaluation/24",
         "engine-evaluation/25",
         "engine-evaluation/26",
+        "engine-evaluation/27",
     ]
     assert (
         schema["$defs"]["EventStageFacts"]["properties"]["schema_version"]["const"]
@@ -289,12 +290,14 @@ def test_exported_schema_requires_stages_and_advertises_both_attack_protocols(mo
         "engine-snapshot/17",
         "engine-snapshot/18",
         "engine-snapshot/19",
+        "engine-snapshot/20",
     ]
     availability_schema = ActionAvailabilityRequest.model_json_schema(mode=mode)
     assert availability_schema["properties"]["schema_version"]["enum"] == [
         "engine-availability/13",
         "engine-availability/14",
         "engine-availability/15",
+        "engine-availability/16",
     ]
 
 

@@ -14,6 +14,7 @@ from dnd5e_srd_data.schema.spell import Spell
 from pydantic import (
     ConfigDict,
     Field,
+    SerializerFunctionWrapHandler,
     ValidationInfo,
     field_serializer,
     field_validator,
@@ -537,15 +538,37 @@ class SnapshotBase(EvaluationModel):
     inventory_state: InventoryState
     scene_state: SceneState
 
-    @field_serializer("character_states")
-    def canonical_actor_serialization(
-        self, actors: tuple[CharacterStateV2, ...]
-    ) -> tuple[dict[str, Any], ...]:
-        """Serialize /20 actors without a second spell repertoire representation."""
-        excluded = (
-            {"spells_known"} if self.snapshot_schema_version == "engine-snapshot/20" else set()
+    @field_validator("casting_state", mode="before")
+    @classmethod
+    def versioned_casting(
+        cls, value: Any, info: ValidationInfo
+    ) -> CastingState | CastingStateV20 | None:
+        """Select the casting DTO by snapshot version, including the ambiguous empty state."""
+        if value is None:
+            return None
+        model = (
+            CastingStateV20
+            if info.data.get("snapshot_schema_version") == "engine-snapshot/20"
+            else CastingState
         )
-        return tuple(actor.model_dump(exclude=excluded) for actor in actors)
+        return (
+            model.model_validate_json(to_json(value))
+            if info.mode == "json"
+            else model.model_validate(value)
+        )
+
+    @field_serializer("character_states", mode="wrap")
+    def canonical_actor_serialization(
+        self, actors: tuple[CharacterStateV2, ...], handler: SerializerFunctionWrapHandler
+    ) -> Any:
+        """Honor nested serialization filters, then omit /20's duplicate spell mirror."""
+        serialized = handler(actors)
+        if self.snapshot_schema_version != "engine-snapshot/20":
+            return serialized
+        return type(serialized)(
+            {key: value for key, value in actor.items() if key != "spells_known"}
+            for actor in serialized
+        )
 
     @model_validator(mode="after")
     def identities(self) -> Self:

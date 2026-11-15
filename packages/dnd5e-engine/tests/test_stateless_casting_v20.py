@@ -12,14 +12,20 @@ from dnd5e_engine.evaluation_casting import (
     SpellSelection,
 )
 from dnd5e_engine.evaluation_contracts import RuleEvaluationRequest
+from dnd5e_engine.evaluation_snapshot import capture_evaluation_snapshot
 from dnd5e_engine.events import HealingApplied
+from dnd5e_engine.specs import GridScene
 from tests.test_stateless_attack import execute
+from tests.test_stateless_equipped_spells import equipped_spell_case
 from tests.test_stateless_spell_feature import healing_case
 
 
-def canonical_healing_wire() -> tuple[dict, object]:
+def canonical_healing_wire(request=None) -> tuple[dict, object]:
     """Upgrade a real Cleric 1 fixture to the complete /20 casting wire."""
-    request, loader, _, _ = healing_case()
+    if request is None:
+        request, loader, _, _ = healing_case()
+    else:
+        loader = None
     wire = json.loads(request.model_dump_json())
     wire["schema_version"] = "engine-evaluation/27"
     snapshot = wire["state_snapshot"]
@@ -27,11 +33,68 @@ def canonical_healing_wire() -> tuple[dict, object]:
     for actor in snapshot["character_states"]:
         del actor["spells_known"]
     source = snapshot["casting_state"]["actors"][0]["sources"][0]
-    source.pop("known_spells")
-    source.pop("prepared_spells")
-    source["spells"] = [{"spell_id": "cure-wounds", "prepared_order": 0, "material": None}]
+    known = source.pop("known_spells")
+    prepared = source.pop("prepared_spells")
+    source["spells"] = [
+        {
+            "spell_id": spell_id,
+            "prepared_order": prepared.index(spell_id) if spell_id in prepared else None,
+            "material": None,
+        }
+        for spell_id in known
+    ]
     snapshot["casting_state"]["actors"][0].pop("materials")
     return wire, loader
+
+
+def test_empty_casting_state_selects_versioned_shape() -> None:
+    """Empty actors are unambiguous at each version boundary and survive transport."""
+    old, _, _, _ = healing_case()
+    legacy = json.loads(old.model_dump_json())
+    legacy["state_snapshot"]["casting_state"] = {"actors": []}
+    for actor in legacy["state_snapshot"]["character_states"]:
+        actor["spells_known"] = []
+    old_request = RuleEvaluationRequest.model_validate_json(json.dumps(legacy))
+    assert old_request.state_snapshot.casting_state.__class__.__name__ == "CastingState"
+    assert RuleEvaluationRequest.model_validate_json(old_request.model_dump_json()) == old_request
+
+    canonical, _ = canonical_healing_wire()
+    canonical["state_snapshot"]["casting_state"] = {"actors": []}
+    new_request = RuleEvaluationRequest.model_validate_json(json.dumps(canonical))
+    assert new_request.state_snapshot.casting_state.__class__.__name__ == "CastingStateV20"
+    assert RuleEvaluationRequest.model_validate_json(new_request.model_dump_json()) == new_request
+
+
+def test_snapshot_recapture_preserves_canonical_casting_and_equipment() -> None:
+    """The Legacy parity adapter retains /20 sources without restoring the actor mirror."""
+    legacy, _, _, live = equipped_spell_case()
+    wire, _ = canonical_healing_wire(legacy)
+    request = RuleEvaluationRequest.model_validate_json(json.dumps(wire))
+    recaptured = capture_evaluation_snapshot(
+        live, request.state_snapshot, GridScene(width=3, height=3)
+    )
+    assert recaptured.snapshot_schema_version == "engine-snapshot/20"
+    assert recaptured.casting_state == request.state_snapshot.casting_state
+    assert recaptured.character_states[0].held_weapon_instance_id == request.state_snapshot.character_states[0].held_weapon_instance_id
+    assert recaptured.character_states[0].worn_armor_instance_id == request.state_snapshot.character_states[0].worn_armor_instance_id
+    assert all(
+        "spells_known" not in actor.model_fields_set for actor in recaptured.character_states
+    )
+    assert (
+        recaptured.model_dump(mode="json")["casting_state"]
+        == wire["state_snapshot"]["casting_state"]
+    )
+
+
+def test_nested_actor_serialization_filters_still_apply() -> None:
+    """Old and new snapshots preserve caller-selected actor fields and indices."""
+    old, _, _, _ = healing_case()
+    canonical, _ = canonical_healing_wire(old)
+    new = RuleEvaluationRequest.model_validate_json(json.dumps(canonical))
+    for snapshot in (old.state_snapshot, new.state_snapshot):
+        assert snapshot.model_dump(include={"character_states": {0: {"entity_id"}}}) == {
+            "character_states": ({"entity_id": snapshot.character_states[0].entity_id},)
+        }
 
 
 def test_canonical_casting_roundtrip_and_real_heal() -> None:

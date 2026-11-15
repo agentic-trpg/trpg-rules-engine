@@ -188,13 +188,15 @@ def capture_combat_snapshot(
 def capture_evaluation_snapshot(
     live: _LiveCombat, snapshot: CombatSnapshot, grid: GridScene
 ) -> CombatSnapshot:
-    """Create a detached evaluation snapshot preserving explicit inventory and actor
-    ordering.
+    """Recapture Legacy mechanics while retaining the input's versioned host facts.
+
+    Casting sources and equipment instance bindings remain supplied by the fixed
+    input. Snapshot /20 keeps its canonical sources and omits actor spell mirrors.
     """
     captured = capture_combat_snapshot(
         live,
         resource_state=snapshot.resource_state,
-        casting_state=snapshot.casting_state,
+        casting_state=None,
         reaction_sources={
             p.owner_id: p.spell_source_id
             for p in snapshot.combat_state.pending_reactions
@@ -207,17 +209,27 @@ def capture_evaluation_snapshot(
         inventory_state=snapshot.inventory_state,
     )
     by_id = {actor.entity_id: actor for actor in captured.character_states}
-    actors = tuple(
-        by_id[actor.entity_id].model_copy(
-            update={"held_weapon_instance_id": actor.held_weapon_instance_id}
+    actors = []
+    for actor in snapshot.character_states:
+        recaptured = by_id[actor.entity_id].model_copy(
+            update={
+                "held_weapon_instance_id": actor.held_weapon_instance_id,
+                "worn_armor_instance_id": actor.worn_armor_instance_id,
+                "equipped_shield_instance_id": actor.equipped_shield_instance_id,
+                "offhand_item_instance_id": actor.offhand_item_instance_id,
+            }
         )
-        for actor in snapshot.character_states
-    )
+        if snapshot.snapshot_schema_version == "engine-snapshot/20":
+            recaptured = CharacterStateV2.model_validate(
+                recaptured.model_dump(exclude={"spells_known"})
+            )
+        actors.append(recaptured)
     return CombatSnapshot.model_validate(
         captured.model_copy(
             update={
                 "snapshot_schema_version": snapshot.snapshot_schema_version,
-                "character_states": actors,
+                "character_states": tuple(actors),
+                "casting_state": snapshot.casting_state,
             }
         )
     )

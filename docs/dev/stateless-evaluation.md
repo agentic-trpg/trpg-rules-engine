@@ -79,7 +79,7 @@ and does not close remaining full recovery, Legacy migration or multiplayer acce
 
 ## Session RAM consumer architecture (2026-10-21)
 
-Architecture Decision Status **[DECIDED]**. Implementation Status: the complete SM Session RAM integration is **[NOT IMPLEMENTED]**; RE already has bounded stateless evaluation and fixed ruleset reuse, while full Legacy conversion remains incomplete. Acceptance Status: **no runtime, fault or concurrency acceptance executed in this documentation batch**.
+Architecture Decision Status **[DECIDED]**. Implementation status at the 2026-10-21 baseline: complete SM Session RAM integration was **[NOT IMPLEMENTED]**. RE already had bounded stateless evaluation and fixed ruleset reuse, while full Legacy conversion remained incomplete. Later SM implementation evidence is linked from [the project contract](https://github.com/agentic-trpg/agentic-trpg/blob/main/docs/MODULE_CONTRACTS.md#10-当前实现入口2026-11-16). Acceptance Status: **no runtime, fault or concurrency acceptance executed in this documentation batch**.
 
 The [paired Module Contracts §2.3 / §4 / §6](https://github.com/agentic-trpg/agentic-trpg/blob/docs/session-memory-runtime/docs/MODULE_CONTRACTS.md) is authoritative; the link targets the new documentation branch, not a merged main change. SM supplies fixed-version inputs covering the complete necessary mechanical dependency closure from its consistent Session RAM scope. Loaded valid facts must not be re-read/reassembled from SQL just to build a request or Snapshot, or to prove each memory read valid. Cold persisted dependencies must match that read version; candidate-stage checks use an isolated candidate scope. Old RE/NPC/history inputs must not change when the world advances.
 

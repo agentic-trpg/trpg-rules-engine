@@ -1,5 +1,25 @@
 # Stateless rule evaluation: current local contract
 
+## Exploration Potion of Healing — 2026-11-16
+
+`world.use_item` uses `engine-evaluation/28` and `engine-snapshot/20` with a
+`NonCombatSnapshot` whose `combat_setup` is null. `ExplorationItemUsePayload`
+supplies `kind`, the exact `instance_id`, its `activity_id`, and the drinker's own
+`target_id`. Admission requires an owned, accessible, one-unit ordinary Potion
+of Healing with one available use, a living drinker able to act, and a declared
+free hand. Full HP returns `hp_full` before restoring RNG. The shared healing
+activity rolls the bound item's healing and caps the drinker's HP.
+Equipment checks use the drinker's actual owned units, including inaccessible
+ones, when checking for unreviewed passive effects or attunement.
+
+The accepted result proposes one guarded `InventoryConsume`, one guarded
+`HPDelta`, `IntentSubmitted` and `HealingApplied` events, an RNG transition, and
+uncovered event-stage metadata. `HealingApplied.amount` records the rolled
+healing. `HPDelta.amount` gives the actual gain after applying the HP maximum.
+Use that capped value for the displayed HP change. SM adopts the proposal and
+commits all affected facts in a separate step. Earlier request/snapshot pairs
+remain accepted for their existing operations.
+
 ## Canonical spell source wire — 2026-11-16
 
 Snapshot `engine-snapshot/20`, evaluation `engine-evaluation/27`, availability
@@ -256,6 +276,7 @@ remain OPEN. SM authenticates/authorizes the caller and approved write scope.
 | rules.save | Explicit noncombat actor saving throw; six abilities and fixed DC |
 | rules.rest | Bounded noncombat Short/Long Rest: explicit HP/Hit Dice/Slots and reviewed Feature recovery |
 | combat.item | Owned accessible single-use Potion of Healing, living self-drinker with declared free hand |
+| world.use_item | Exploration self-use of one owned accessible Potion of Healing with an available use and HP below maximum |
 | combat.close | Consistent terminal victory / TPK; no loot/effects/flight/forced end |
 
 Common weapon properties Finesse/Versatile/Two-Handed/Reach/Heavy use the shared resolver

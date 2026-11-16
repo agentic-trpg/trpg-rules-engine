@@ -17,7 +17,7 @@ from dnd5e_engine.evaluation_contracts import (
     RuleEvaluationResult,
 )
 from dnd5e_engine.evaluation_equipment_dependencies import snapshot_equipment_kind_failure
-from dnd5e_engine.evaluation_items import evaluate_item
+from dnd5e_engine.evaluation_items import evaluate_exploration_item, evaluate_item
 from dnd5e_engine.evaluation_movement import evaluate_movement
 from dnd5e_engine.evaluation_preflight import prepare_attack
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError, attack_delta
@@ -103,8 +103,12 @@ async def evaluate(
             choice=None,
             error=RuleError(code="snapshot.capability", reason=failure),
         )
-    if request.operation_kind == "combat.item":
-        item = await evaluate_item(request, assets)
+    if request.operation_kind in {"combat.item", "world.use_item"}:
+        item = (
+            await evaluate_item(request, assets)
+            if request.operation_kind == "combat.item"
+            else evaluate_exploration_item(request, assets)
+        )
         result = RuleEvaluationResult(**common, **item, stage_facts=_stage_coverage(item["status"]))
         result.verify_request(request)
         return result

@@ -1,6 +1,7 @@
 """Canonical consumable execution, ownership and atomic proposal application."""
 
 import asyncio
+import json
 from copy import deepcopy
 
 import pytest
@@ -83,6 +84,144 @@ def item_case(*, hp=10, quantity=1, charges=1, **entry_updates):
         }
     )
     return request, handle, live, loader
+
+
+def exploration_item_wire(*, hp=10, quantity=1, charges=1, **entry_updates):
+    """Prepare a /20 exploration request with two independently selectable bottles."""
+    combat, _, _, loader = item_case(hp=hp, quantity=quantity, charges=charges, **entry_updates)
+    data = json.loads(combat.model_dump_json())
+    data.update(schema_version="engine-evaluation/28", operation_kind="world.use_item")
+    data["payload"]["kind"] = "world.use_item"
+    snapshot = data["state_snapshot"]
+    snapshot.pop("combat_state")
+    snapshot.update(snapshot_kind="non_combat", snapshot_schema_version="engine-snapshot/20")
+    snapshot["combat_setup"] = None
+    snapshots_by_id = {actor["entity_id"]: actor for actor in snapshot["character_states"]}
+    for actor in snapshots_by_id.values():
+        actor.pop("spells_known")
+        actor.update(weapon_in_hands=None, weapon_grip="none", carried_item_slugs=[])
+    selected = snapshot["inventory_state"]["entries"][0]
+    spare = {
+        **selected,
+        "instance_id": "inventory:potion-spare",
+        "owner_id": HERO,
+        "quantity": 1,
+        "charges_remaining_per_unit": 1,
+        "accessible": True,
+    }
+    snapshot["inventory_state"]["entries"].append(spare)
+    for entry in (selected, spare):
+        snapshots_by_id[entry["owner_id"]]["carried_item_slugs"] = [POTION]
+    return data, loader
+
+
+@pytest.mark.parametrize("hp", [10, 39])
+def test_exploration_potion_proposes_only_exact_consumption_and_capped_healing(hp):
+    """The same fixed input replays, and only the selected bottle participates."""
+    wire, loader = exploration_item_wire(hp=hp)
+    request = RuleEvaluationRequest.model_validate_json(json.dumps(wire))
+    result = execute(request, loader)
+    assert result.status == "accepted", result.error
+    assert result.schema_version == "engine-evaluation/28"
+    assert result == execute(request, loader)
+    assert request == RuleEvaluationRequest.model_validate_json(json.dumps(wire))
+    assert result == RuleEvaluationResult.model_validate_json(result.model_dump_json())
+    result.verify_request(request)
+    assert result.state_delta.expected_world_version == request.state_snapshot.world_version
+    consume, healing = result.state_delta.operations
+    assert isinstance(consume, InventoryConsume)
+    assert consume.expected == request.state_snapshot.inventory_state.entries[0]
+    assert consume.value.quantity == 0
+    assert consume.amount == 1
+    assert isinstance(healing, HPDelta)
+    assert healing.target_id == HERO
+    assert healing.expected_hp == hp
+    (event,) = (event for event in result.proposed_events if isinstance(event, HealingApplied))
+    assert event.target_id == HERO
+    assert 4 <= event.amount <= 10
+    assert healing.resulting_hp == min(40, hp + event.amount)
+    assert healing.amount == healing.resulting_hp - hp
+    result.rng_transition.verify_input(request.rng_context)
+    assert result.rng_transition.state_changed
+
+
+@pytest.mark.parametrize(
+    ("fixture_changes", "payload_changes", "error_code"),
+    [
+        ({"hp": 40}, {}, "hp_full"),
+        ({"owner_id": FOE}, {}, "item_unauthorized"),
+        ({"accessible": False}, {}, "item_unauthorized"),
+        ({"charges": 0}, {}, "item_exhausted"),
+        ({}, {"target_id": FOE}, "target_invalid"),
+        ({}, {"instance_id": "inventory:missing"}, "item_missing"),
+        ({}, {"activity_id": "some-other-activity"}, "activity_invalid"),
+        ({"quantity": 2}, {}, "item.quantity"),
+    ],
+)
+def test_exploration_potion_refuses_without_spending(fixture_changes, payload_changes, error_code):
+    wire, loader = exploration_item_wire(**fixture_changes)
+    wire["payload"].update(payload_changes)
+    request = RuleEvaluationRequest.model_validate_json(json.dumps(wire))
+    result = execute(request, loader)
+    assert result.status in {"rejected", "unsupported"}
+    assert result.error is not None
+    assert result.error.code == error_code
+    assert result.state_delta is result.rng_transition is None
+    assert result.proposed_events == ()
+
+
+def test_exploration_potion_requires_new_request_version_and_noncombat_snapshot():
+    wire, _ = exploration_item_wire()
+    wire["schema_version"] = "engine-evaluation/27"
+    with pytest.raises(ValidationError):
+        RuleEvaluationRequest.model_validate_json(json.dumps(wire))
+    wire["schema_version"] = "engine-evaluation/28"
+    combat, _, _, _ = item_case()
+    snapshot = wire["state_snapshot"]
+    snapshot.pop("combat_setup")
+    snapshot.update(
+        snapshot_kind="combat",
+        combat_state=combat.state_snapshot.model_dump(mode="json")["combat_state"],
+    )
+    with pytest.raises(ValidationError):
+        RuleEvaluationRequest.model_validate_json(json.dumps(wire))
+
+
+@pytest.mark.parametrize("armor_owner", [HERO, FOE])
+def test_exploration_potion_checks_owned_equipment_even_if_projection_omits_it(armor_owner):
+    """An omitted carried slug cannot hide unsupported gear on the actual drinker."""
+    wire, _ = exploration_item_wire()
+    bundled = BundledAssetLoader()
+    potion = bundled.get_item(POTION)
+    armor = bundled.get_item("leather-armor")
+    assert armor is not None
+    loader = MemoryAssetLoader(
+        items=[potion, armor.model_copy(update={"requires_attunement": True})]
+    )
+    wire["ruleset_binding"] = ruleset_binding(loader).model_dump(mode="json")
+    snapshot = wire["state_snapshot"]
+    snapshot["inventory_state"]["entries"].append(
+        {
+            "instance_id": "inventory:attunement-armor",
+            "owner_id": armor_owner,
+            "item_slug": "leather-armor",
+            "quantity": 1,
+            "charges_remaining_per_unit": 0,
+            "accessible": True,
+        }
+    )
+    owner = next(
+        actor for actor in snapshot["character_states"] if actor["entity_id"] == armor_owner
+    )
+    owner.update(worn_armor="light", worn_armor_instance_id="inventory:attunement-armor")
+    request = RuleEvaluationRequest.model_validate_json(json.dumps(wire))
+    result = execute(request, loader)
+    if armor_owner == HERO:
+        assert result.status == "unsupported"
+        assert result.state_delta is result.rng_transition is None
+        assert result.proposed_events == ()
+    else:
+        assert result.status == "accepted", result.error
 
 
 def legacy_intent():

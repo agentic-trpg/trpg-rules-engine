@@ -11,7 +11,7 @@ from dnd5e_engine.evaluation_resources import HitDieSpend
 from dnd5e_engine.evaluation_rng import RNGContext, RNGTransition
 from dnd5e_engine.evaluation_ruleset import RulesetBinding
 from dnd5e_engine.evaluation_stages import EventStageFacts
-from dnd5e_engine.evaluation_state import CombatSnapshot, StateSnapshot
+from dnd5e_engine.evaluation_state import CombatSnapshot, NonCombatSnapshot, StateSnapshot
 from dnd5e_engine.events import (
     ALL_COMBAT_EVENT_TYPES,
     Ability,
@@ -24,16 +24,29 @@ from dnd5e_engine.intents import PlayerIntent
 from dnd5e_engine.rules.skills import Skill
 from dnd5e_engine.types.checks import CheckRequest, GrantedDie
 
-SCHEMA_VERSION = "engine-evaluation/27"
+SCHEMA_VERSION = "engine-evaluation/28"
 EvaluationVersion = Literal[
-    "engine-evaluation/24", "engine-evaluation/25", "engine-evaluation/26", "engine-evaluation/27"
+    "engine-evaluation/24",
+    "engine-evaluation/25",
+    "engine-evaluation/26",
+    "engine-evaluation/27",
+    "engine-evaluation/28",
 ]
 
 
 class ItemUsePayload(EvaluationModel):
-    """Select an owned inventory instance, activity and target for item evaluation."""
+    """Select an owned inventory instance, activity and target for combat item evaluation."""
 
     kind: Literal["combat.item"]
+    instance_id: Annotated[str, Field(min_length=1)]
+    activity_id: Annotated[str, Field(min_length=1)]
+    target_id: Annotated[str, Field(min_length=1)]
+
+
+class ExplorationItemUsePayload(EvaluationModel):
+    """Select an owned inventory instance and activity for exploration self-use."""
+
+    kind: Literal["world.use_item"]
     instance_id: Annotated[str, Field(min_length=1)]
     activity_id: Annotated[str, Field(min_length=1)]
     target_id: Annotated[str, Field(min_length=1)]
@@ -111,7 +124,13 @@ class RuleEvaluationRequest(EvaluationModel):
     session_id: Annotated[str, Field(min_length=1)]
     command_id: Annotated[str, Field(min_length=1)]
     operation_kind: Literal[
-        "combat.intent", "rules.check", "combat.close", "combat.item", "rules.save", "rules.rest"
+        "combat.intent",
+        "rules.check",
+        "combat.close",
+        "combat.item",
+        "rules.save",
+        "rules.rest",
+        "world.use_item",
     ]
     actor_id: Annotated[str, Field(min_length=1)]
     payload: (
@@ -119,6 +138,7 @@ class RuleEvaluationRequest(EvaluationModel):
         | CheckPayload
         | CombatClosePayload
         | ItemUsePayload
+        | ExplorationItemUsePayload
         | SavePayload
         | RestPayload
     )
@@ -157,6 +177,7 @@ class RuleEvaluationRequest(EvaluationModel):
             "engine-evaluation/25": "engine-snapshot/18",
             "engine-evaluation/26": "engine-snapshot/19",
             "engine-evaluation/27": "engine-snapshot/20",
+            "engine-evaluation/28": "engine-snapshot/20",
         }
         if self.state_snapshot.snapshot_schema_version != version_pairs[self.schema_version]:
             raise ValueError("evaluation and snapshot versions differ")
@@ -173,6 +194,16 @@ class RuleEvaluationRequest(EvaluationModel):
                 self.state_snapshot, CombatSnapshot
             ):
                 raise ValueError("combat.item requires a typed item payload and combat snapshot")
+            return self
+        if self.operation_kind == "world.use_item":
+            if (
+                self.schema_version != "engine-evaluation/28"
+                or not isinstance(self.payload, ExplorationItemUsePayload)
+                or not isinstance(self.state_snapshot, NonCombatSnapshot)
+            ):
+                raise ValueError(
+                    "world.use_item requires evaluation/28 and a noncombat item request"
+                )
             return self
         if self.operation_kind == "combat.intent":
             if not isinstance(self.payload, CombatIntentPayload):

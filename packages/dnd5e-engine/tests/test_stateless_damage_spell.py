@@ -24,7 +24,7 @@ from tests.test_stateless_attack_concentration import ATTACKER, attack_concentra
 from tests.test_stateless_concentration import apply_candidate
 from tests.test_stateless_item_closure_core import isolate
 from tests.test_stateless_reactions import reaction_case
-from tests.test_stateless_spell_feature import healing_case
+from tests.test_stateless_spell_feature import apply_healing, healing_case
 
 CLERIC_KNOWN = (
     "sacred-flame",
@@ -32,6 +32,7 @@ CLERIC_KNOWN = (
     "thaumaturgy",
     "bless",
     "cure-wounds",
+    "inflict-wounds",
     "guiding-bolt",
     "healing-word",
 )
@@ -47,6 +48,7 @@ def damage_spell_case(
     defense=None,
     dodge=False,
     empty_slots=False,
+    spell_id="sacred-flame",
 ):
     if concentrating:
         request, handle, live, _ = attack_concentration_case(seed=seed, pc=not pc)
@@ -172,9 +174,10 @@ def damage_spell_case(
             "ruleset_binding": ruleset_binding(loader),
             "payload": CombatIntentPayload(
                 intent_type="cast_spell",
-                spell_id="sacred-flame",
+                spell_id=spell_id,
                 target_id=FOE,
                 spell_source_id="class:cleric",
+                slot_level=1 if spell_id == "inflict-wounds" else None,
             ),
         }
     )
@@ -236,6 +239,34 @@ def test_complete_class_save_damage_cost_event_rng_parity(
     assert expected.randint(1, 8) == raw  # original Resolver rolls damage before the save
     assert expected.randint(1, 20) == natural
     assert result.rng_transition.next_state == RNGState.capture(expected)
+
+
+@pytest.mark.parametrize("seed,success,damage", [(0, False, 14), (3, True, 7)])
+def test_inflict_wounds_single_target_save_outcomes_and_slot(seed, success, damage, monkeypatch):
+    request, _, _, loader = damage_spell_case(seed=seed, spell_id="inflict-wounds")
+    assert evaluation_spells.ordinary_spell_mechanism(loader, "inflict-wounds") == "save_damage"
+    isolate(monkeypatch)
+    result = execute(request, loader)
+    assert result.status == "accepted", result.error
+    assert execute(request, loader) == result
+    after = apply_healing(request.state_snapshot, result)
+    save = next(e for e in result.proposed_events if isinstance(e, SaveRolled))
+    assert save.succeeded is success
+    assert after.character_states[-1].hp_current == 40 - damage
+    assert after.resource_state.pools[-1].current == 1
+    assert after.combat_state.expended_resources[request.actor_id]["spell_slot:1"] == 1
+    assert [e.slot_level for e in result.proposed_events if isinstance(e, SpellCast)] == [1]
+    assert sum(e.amount for e in result.proposed_events if isinstance(e, DamageApplied)) == damage
+
+
+def test_ordinary_spell_profile_rejects_incomplete_bundled_mechanics():
+    loader = BundledAssetLoader()
+    assert evaluation_spells.ordinary_spell_mechanism(loader, "cure-wounds") == "healing"
+    assert evaluation_spells.ordinary_spell_mechanism(loader, "sacred-flame") == "save_damage"
+    assert evaluation_spells.ordinary_spell_mechanism(loader, "inflict-wounds") == "save_damage"
+    for slug in ("dissonant-whispers", "vicious-mockery", "acid-splash", "hold-person"):
+        assert evaluation_spells.ordinary_spell_mechanism(loader, slug) is None
+    assert evaluation_spells.ordinary_spell_mechanism(loader, None) is None
 
 
 @pytest.mark.parametrize(

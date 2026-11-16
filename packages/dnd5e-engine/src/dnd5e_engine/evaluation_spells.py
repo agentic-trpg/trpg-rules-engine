@@ -2,10 +2,11 @@
 
 import random
 from dataclasses import dataclass, replace
+from typing import Literal
 
 from dnd5e_srd_data.loader import AssetLoader
-from dnd5e_srd_data.schema.common import HealActivity, SaveActivity
-from dnd5e_srd_data.schema.spell import Spell
+from dnd5e_srd_data.schema.common import ActivityTiming, HealActivity, SaveActivity
+from dnd5e_srd_data.schema.spell import CastingTimeUnit, Spell, SpellDurationUnits, SpellRangeUnits
 
 from dnd5e_engine import attack_rules
 from dnd5e_engine.action_economy_rules import action_economy_gate_failure
@@ -64,6 +65,74 @@ class InvocationPlan:
     payment: tuple[ResourceUpdate, ...]
     spell: Spell | None
     slot_level: int | None
+
+
+def ordinary_spell_mechanism(
+    loader: AssetLoader, spell_id: str
+) -> Literal["healing", "save_damage"] | None:
+    """Classify one bound, complete instant spell without actor state or RNG.
+
+    This is the ordinary-cast admission profile shared with the SM preflight.
+    Source, target, resources and reaction legality still require evaluation.
+    The separate Hold Person effect path is outside this profile.
+    """
+    if not spell_id:
+        return None
+    spell = loader.get_spell(spell_id)
+    if spell is None or spell != get_default_ruleset().get_spell(spell_id):
+        return None
+    return _ordinary_spell_profile(spell)
+
+
+def _ordinary_spell_profile(spell: Spell) -> Literal["healing", "save_damage"] | None:
+    """Select a complete typed ordinary activity from an already resolved spell."""
+    if (
+        spell.level not in (0, 1)
+        or spell.ritual
+        or spell.concentration
+        or spell.casting_time.unit != CastingTimeUnit.ACTION
+        or spell.casting_time.value != 1
+        or spell.duration.units != SpellDurationUnits.INSTANT
+        or spell.range.units not in (SpellRangeUnits.TOUCH, SpellRangeUnits.FEET)
+        or spell.passive_effects
+        or len(spell.activities) != 1
+        or admission_failure(spell, spell.activities)
+    ):
+        return None
+    activity = spell.activities[0]
+    if (
+        not isinstance(activity, (HealActivity, SaveActivity))
+        or activity.activation.type != "action"
+        or activity.duration.units != "inst"
+        or activity.timing != ActivityTiming()
+        or activity.effects
+        or activity.applied_effects
+        or activity.effect_selection is not None
+        or activity.persistent_area is not None
+        or activity.reaction is not None
+        or activity.forced_movement is not None
+        or activity.target.affects.type != "creature"
+        or activity.target.affects.count != "1"
+        or activity.target.affects.choice
+        or activity.target.affects.special
+        or activity.target.template.type
+        or activity.target.area_semantics is not None
+        or activity.target.creature_filter is not None
+    ):
+        return None
+    if isinstance(activity, HealActivity):
+        if spell.level != 1 or activity.healing.types != ["healing"]:
+            return None
+        return "healing"
+    if (
+        len(activity.save.ability) != 1
+        or activity.save.dc.calculation != "spellcasting"
+        or len(activity.damage.parts) != 1
+        or len(activity.damage.parts[0].types) != 1
+        or activity.damage.on_save not in ("none", "half")
+    ):
+        return None
+    return "save_damage"
 
 
 def invocation_context(
@@ -134,7 +203,7 @@ def source_failure(
         next((a for a in component.actors if a.actor_id == actor_id), None) if component else None
     )
     source = next((s for s in entry.sources if s.source_id == source_id), None) if entry else None
-    # The reviewed canonical Cleric list includes Cure Wounds and Sacred Flame.
+    # The reviewed Cleric source includes the admitted instant spell profiles.
     if entry is None or source is None or source.class_slug != "cleric" or source.ability != "wis":
         return "explicit reviewed Cleric casting source is required"
     levels = actor.classes or (
@@ -151,8 +220,8 @@ def source_failure(
         verbal_available=entry.verbal_available,
         somatic_hand_available=actor.weapon_grip != "two_handed"
         and (actor.weapon_in_hands is None or not actor.other_hand_occupied),
-        # R30's two canonical V/S spells need no materials. No material or focus
-        # contract is invented for other spells.
+        # The admitted instant spells use V/S components without materials.
+        # No material or focus contract is invented for other spells.
         material_available=False,
     )
 
@@ -175,17 +244,20 @@ def spell_event(actor_id: str, spell: Spell, slot_level: int | None) -> SpellCas
 
 
 def spell_plan(
-    request: RuleEvaluationRequest, loader: AssetLoader
+    request: RuleEvaluationRequest,
+    loader: AssetLoader,
+    spell: Spell | None,
+    mechanism: Literal["healing", "save_damage"] | None,
 ) -> InvocationPlan | TurnEvaluation:
     """Prepare the admitted spell delivery and payment plan."""
     snapshot, intent = request.state_snapshot, request.payload
     assert isinstance(snapshot, CombatSnapshot)
     assert isinstance(intent, CombatIntentPayload)
-    if intent.spell_id not in {"cure-wounds", "sacred-flame"}:
+    if mechanism is None:
         return _refuse(
             "unsupported",
             "spell.capability",
-            "only reviewed immediate Cure Wounds and Sacred Flame are migrated",
+            "ordinary spell lacks a complete reviewed instant single-target mechanism",
         )
     basic = CombatIntentPayload(
         intent_type="cast_spell",
@@ -197,22 +269,12 @@ def spell_plan(
     )
     if intent != basic:
         return _refuse("unsupported", "spell.inputs", "additional casting choices are not migrated")
-    spell = loader.get_spell(intent.spell_id)
-    if spell is None or spell != get_default_ruleset().get_spell(intent.spell_id):
-        return _refuse(
-            "unsupported", "spell.binding", "spell definition differs from reviewed canonical data"
-        )
-    if (
-        admission_failure(spell, spell.activities)
-        or len(spell.activities) != 1
-        or not isinstance(spell.activities[0], (HealActivity, SaveActivity))
-    ):
-        return _refuse(
-            "unsupported", "spell.activity", "spell lacks reviewed complete instant payload"
-        )
+    assert spell is not None
     if intent.slot_level not in ((None, 0) if spell.level == 0 else (1,)):
         return _refuse(
-            "rejected", "no_slot", "Cantrip requires no slot; Cure Wounds requires explicit level 1"
+            "rejected",
+            "no_slot",
+            "Cantrip requires no slot; level 1 spell requires explicit level 1",
         )
     if failure := source_failure(snapshot, request.actor_id, intent.spell_source_id, spell):
         return _refuse("rejected", "spell.source", failure)
@@ -261,6 +323,7 @@ def spell_plan(
     except ValueError:
         return _refuse("rejected", "no_slot", "no owned slot remains")
     assert intent.target_id is not None
+    assert isinstance(spell.activities[0], (HealActivity, SaveActivity))
     return InvocationPlan(
         spell.activities[0], intent.target_id, "wis", payments, spell, spell.level
     )
@@ -373,8 +436,31 @@ def evaluate_invocation(request: RuleEvaluationRequest, loader: AssetLoader) -> 
             "reaction.trigger",
             "only the reviewed spell-cast opportunity is migrated",
         )
+    spell = None
+    mechanism = None
+    if intent.intent_type == "cast_spell" and intent.spell_id:
+        spell = loader.get_spell(intent.spell_id)
+        if spell is not None:
+            canonical_spell = get_default_ruleset().get_spell(intent.spell_id)
+            canonical_mechanism = (
+                _ordinary_spell_profile(canonical_spell) if canonical_spell is not None else None
+            )
+            if canonical_mechanism is not None and spell != canonical_spell:
+                return _refuse(
+                    "unsupported",
+                    "spell.binding",
+                    "spell definition differs from reviewed canonical data",
+                )
+            if spell == canonical_spell:
+                mechanism = canonical_mechanism
+    if intent.intent_type == "cast_spell" and mechanism is None:
+        return _refuse(
+            "unsupported",
+            "spell.capability",
+            "ordinary spell lacks a complete reviewed instant single-target mechanism",
+        )
     if failure := invocation_dependencies(
-        snapshot, loader, intent.target_id, damaging=intent.spell_id == "sacred-flame"
+        snapshot, loader, intent.target_id, damaging=mechanism == "save_damage"
     ):
         return _refuse("unsupported", "healing.dependencies", failure)
     actor = combatant(current)
@@ -382,7 +468,11 @@ def evaluate_invocation(request: RuleEvaluationRequest, loader: AssetLoader) -> 
     if action_economy_gate_failure(actor, intent, is_bonus_action=bonus, is_reaction_cast=False):
         return _refuse("rejected", "no_action_economy", "required action budget is unavailable")
     with scoped_lib_loader(loader):
-        plan = feature_plan(request, loader) if bonus else spell_plan(request, loader)
+        plan = (
+            feature_plan(request, loader)
+            if bonus
+            else spell_plan(request, loader, spell, mechanism)
+        )
         if not isinstance(plan, InvocationPlan):
             return plan
         reaction = (

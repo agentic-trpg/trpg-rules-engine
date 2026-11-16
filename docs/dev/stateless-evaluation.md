@@ -783,6 +783,27 @@ keeps new-spell reactions, unknown modifiers and wider geometry unsupported befo
 Evaluator `/26` changes no formal source/continuation/commit contract.
 
 
+## SPELL-02 ordinary instant spell mechanism admission (2026-11-16)
+
+`evaluation_spells.ordinary_spell_mechanism(loader, spell_id)` classifies an
+exactly bound canonical definition with an executable review and a typed,
+single-creature, immediate Action payload. It returns `healing`, `save_damage`,
+or `None` without actor state, payment or RNG. The evaluator uses the same
+profile before its dependency checks. Current bundled matches are Cure Wounds
+(level 1 healing), Sacred Flame (cantrip save damage), and Inflict Wounds
+(level 1 save damage, half damage on a successful save). The latter still
+requires explicit preparation and a level 1 Slot. Its resolution uses shared
+Delivery/Save/Damage and the existing atomic candidate machinery.
+
+The profile excludes effects, areas, extra choices, other timing and levels.
+The existing executable review is binding: Dissonant Whispers is deferred for
+its missing forced Reaction movement despite a superficially similar save
+payload. Vicious Mockery's effect and Acid Splash's area remain outside this
+slice. Hold Person retains its separate effect-creation path. The helper does
+not establish source, turn, target, reaction or resource legality; evaluation
+checks those on the fixed Snapshot. No evaluation or Snapshot wire version,
+ruleset identity or canonical asset changed in this RE batch.
+
 ## R25 bounded authorized weapon Opportunity Attack
 
 `engine-snapshot/13` changes the existing pending declaration component to a closed

@@ -1,5 +1,25 @@
 # Typed effect lifecycle and conditional expiry
 
+## World-time Longstrider proposal (2026-11-16)
+
+`evaluation_world_effect.plan_longstrider_application` is an additive, stateless
+`engine-world-effect/1` interface for a host-authorized application of the
+canonical Longstrider spell. It uses the frozen ruleset binding and the shared
+passive-effect conversion to return one full `(target_id, id, origin)` identity,
+the typed effect, the spell's 3,600-second duration, and a typed terminal
+`remove` policy for that identity. It does not admit or pay for casting.
+
+The host alone reads the Session's fixed world-time binding and current tick,
+computes the absolute due tick, persists the effect and schedule atomically,
+and removes only the matching effect when due. The RE receives no world clock
+and performs no expiry callback for this deterministic policy. A Host using
+legacy abstract ticks must not treat this duration as a tick count. Longstrider's
+active movement contribution follows the existing `system.attributes.movement.walk`
+effect consumer; movement admission remains the caller's separate responsibility.
+Hold Person and other turn-boundary/concentration effects retain their distinct
+combat lifecycle. This interface does not make ordinary casting, concentration,
+early termination, or arbitrary timed effects supported.
+
 Lifecycle behavior belongs to the exact canonical effect binding. A failed
 save, concentration flag, condition name or display duration does not grant a
 repeat save. Runtime code does not interpret descriptions or activation prose.

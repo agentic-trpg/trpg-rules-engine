@@ -24,6 +24,7 @@ from dnd5e_engine.activities.build_context import build_activity_context
 from dnd5e_engine.activities.resolver import resolve_activity
 from dnd5e_engine.damage_rules import healing_balance
 from dnd5e_engine.evaluation_actor import combatant
+from dnd5e_engine.evaluation_class_dependencies import class_dependencies
 from dnd5e_engine.evaluation_computation import CombatComputation
 from dnd5e_engine.evaluation_contracts import (
     CombatIntentPayload,
@@ -33,9 +34,11 @@ from dnd5e_engine.evaluation_contracts import (
     RuleEvaluationRequest,
 )
 from dnd5e_engine.evaluation_delta import HPDelta, InventoryConsume, StateDelta
+from dnd5e_engine.evaluation_equipment_dependencies import reviewed_healing_potion_owners
 from dnd5e_engine.evaluation_preflight import snapshot_support_failure, template_support_failure
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError, attack_delta
 from dnd5e_engine.evaluation_rng import RNGTransition
+from dnd5e_engine.evaluation_ruleset import get_default_ruleset
 from dnd5e_engine.evaluation_state import (
     CharacterStateV2,
     CombatSnapshot,
@@ -228,6 +231,43 @@ def _consume_unit(entry: InventoryEntry) -> InventoryConsume:
     )
 
 
+def _combat_drink_dependencies(snapshot: CombatSnapshot, loader: AssetLoader) -> str | None:
+    """Admit reviewed class grants for healing and the existing shared turn path."""
+    if snapshot.snapshot_schema_version != "engine-snapshot/20" or not any(
+        actor.class_slug or actor.classes or actor.granted_features
+        for actor in snapshot.character_states
+    ):
+        return snapshot_support_failure(snapshot) or template_support_failure(snapshot, loader)
+
+    canonical = get_default_ruleset()
+    potion_owners = reviewed_healing_potion_owners(snapshot, loader, canonical)
+
+    def actor_dependencies(actor: CharacterStateV2) -> str | None:
+        if actor.weapon_mastery_slugs:
+            return "trained weapon mastery execution is not migrated"
+        if (
+            actor.trait_mechanics
+            or actor.subclass_slug
+            or actor.species_slug
+            or actor.fighting_styles
+        ):
+            return "actor effects, features or extended attack budgets are not migrated"
+        if actor.class_slug or actor.classes or actor.granted_features:
+            return class_dependencies(
+                actor,
+                snapshot,
+                loader,
+                canonical,
+                equipped=True,
+                allow_stowed_healing_potions=actor.entity_id in potion_owners,
+            )
+        return None
+
+    return snapshot_support_failure(
+        snapshot, actor_dependencies=actor_dependencies
+    ) or template_support_failure(snapshot, loader)
+
+
 async def evaluate_item(request: RuleEvaluationRequest, loader: AssetLoader) -> ItemEvaluation:
     """Propose combat self-healing, exact item consumption and turn consequences.
 
@@ -241,7 +281,7 @@ async def evaluate_item(request: RuleEvaluationRequest, loader: AssetLoader) -> 
     entry = _selected_unit(snapshot, request.actor_id, payload)
     if not isinstance(entry, InventoryEntry):
         return entry
-    support = snapshot_support_failure(snapshot) or template_support_failure(snapshot, loader)
+    support = _combat_drink_dependencies(snapshot, loader)
     if support:
         return _refuse("unsupported", "item.snapshot", support)
     item = _item_for_activity(entry, payload.activity_id, loader)

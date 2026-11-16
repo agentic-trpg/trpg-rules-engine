@@ -1,5 +1,15 @@
 # Stateless rule evaluation: current local contract
 
+## Combat potion compatibility — 2026-11-16
+
+Evaluator binding `dnd5e-evaluation/41` retains the existing request, snapshot,
+and result shapes. On Snapshot `/20`, `combat.item` validates reviewed class
+facts before executing the existing self-drink and turn path. Ordinary instant
+healing accepts the canonical Potion of Healing as stowed stock when no equipment
+slot references its instance. The inventory retains its original identities,
+charges, and access facts. The existing payment, turn, spell component, and
+equipped slot validation still apply to each operation.
+
 ## Exploration Potion of Healing — 2026-11-16
 
 `world.use_item` uses `engine-evaluation/28` and `engine-snapshot/20` with a
@@ -66,7 +76,7 @@ and the weapon type. Evaluation `engine-evaluation/25` and availability
 Both run the same preflight. A different item of the same type cannot stand in for
 the held item. Stat-block actions retain their action identity. The earlier typed
 snapshot and request versions retain their existing shape for callers not using the
-instance protocol. The current evaluator binding is `dnd5e-evaluation/39`.
+instance protocol. This contract predates the evaluator binding revisions above.
 
 ## Current consumer baseline — 2026-10-27
 

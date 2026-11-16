@@ -20,12 +20,48 @@ from dnd5e_engine.rules.character import (
 )
 from dnd5e_engine.rules.dice import ability_modifier
 
+HEALING_POTION_SLUG = "potion-of-healing"
+
+
+def reviewed_healing_potion_owners(
+    snapshot: CombatSnapshot, loader: AssetLoader, canonical: AssetLoader
+) -> set[str]:
+    """Identify owners whose canonical potion instances are all outside equipment slots."""
+    if snapshot.snapshot_schema_version != "engine-snapshot/20":
+        return set()
+    stock = [e for e in snapshot.inventory_state.entries if e.item_slug == HEALING_POTION_SLUG]
+    if not stock:
+        return set()
+    potion = canonical.get_item(HEALING_POTION_SLUG)
+    if potion is None or loader.get_item(HEALING_POTION_SLUG) != potion:
+        return set()
+    actors = {actor.entity_id: actor for actor in snapshot.character_states}
+    owners = {entry.owner_id for entry in stock}
+    owners_with_equipped_potions = {
+        entry.owner_id
+        for entry in stock
+        if not is_stowed_healing_potion(entry, actors[entry.owner_id])
+    }
+    return owners - owners_with_equipped_potions
+
+
+def is_stowed_healing_potion(entry: InventoryEntry, actor: CharacterStateV2) -> bool:
+    """Identify a potion inventory row that does not supply an equipped slot."""
+    return entry.item_slug == HEALING_POTION_SLUG and entry.instance_id not in (
+        actor.held_weapon_instance_id,
+        actor.worn_armor_instance_id,
+        actor.equipped_shield_instance_id,
+        actor.offhand_item_instance_id,
+    )
+
 
 def equipped_dependencies(
     actor: CharacterStateV2,
     snapshot: CombatSnapshot | NonCombatSnapshot,
     loader: AssetLoader,
     canonical: AssetLoader,
+    *,
+    allow_stowed_healing_potions: bool = False,
 ) -> str | None:
     # Reviewed identities, never a rule inferred from item prose.
     """Check effective equipped item dependencies against the bound rules assets."""
@@ -50,7 +86,14 @@ def equipped_dependencies(
             by_id[entry.instance_id] = entry
             if entry.owner_id == actor.entity_id:
                 owned.append(entry)
-        failure = instance_equipment_dependencies(actor, owned, by_id, loader, canonical)
+        failure = instance_equipment_dependencies(
+            actor,
+            owned,
+            by_id,
+            loader,
+            canonical,
+            allow_stowed_healing_potions=allow_stowed_healing_potions,
+        )
         if failure:
             return failure
         slugs = {weapon_slug, "chain-shirt"} | ({"shield"} if actor.shield_equipped else set())
@@ -154,6 +197,8 @@ def instance_equipment_dependencies(
     entries: Mapping[str, InventoryEntry],
     loader: AssetLoader,
     canonical: AssetLoader,
+    *,
+    allow_stowed_healing_potions: bool = False,
 ) -> str | None:
     """Check only bound equipped instances; identical inventory spares are inert."""
     if actor.worn_armor_instance_id is None or actor.held_weapon_instance_id is None:
@@ -190,19 +235,23 @@ def instance_equipment_dependencies(
         ):
             return "offhand item has unreviewed active equipment mechanics"
     held_entry = entries[actor.held_weapon_instance_id]
-    if (
-        held_entry.item_slug != actor.weapon_in_hands
-        or set(actor.carried_item_slugs) != {entry.item_slug for entry in owned}
-        or any(entry.item_slug not in actor.carried_item_slugs for entry in owned)
-        or any(entry.charges_remaining_per_unit for entry in owned)
-    ):
+    if held_entry.item_slug != actor.weapon_in_hands or set(actor.carried_item_slugs) != {
+        entry.item_slug for entry in owned
+    }:
+        return "supplied equipment and inventory identities disagree"
+    equipment = (
+        [entry for entry in owned if not is_stowed_healing_potion(entry, actor)]
+        if allow_stowed_healing_potions
+        else owned
+    )
+    if any(entry.charges_remaining_per_unit for entry in equipment):
         return "supplied equipment and inventory identities disagree"
     reviewed = {actor.weapon_in_hands, "chain-shirt", "shield"}
     if actor.offhand_item_instance_id is not None:
         reviewed.add(entries[actor.offhand_item_instance_id].item_slug)
     if any(
         entry.item_slug not in reviewed and entry.instance_id != actor.offhand_item_instance_id
-        for entry in owned
+        for entry in equipment
     ):
         return "inventory contains an unreviewed equipment type"
     return None

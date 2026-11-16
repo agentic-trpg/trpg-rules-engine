@@ -4,6 +4,10 @@ from dnd5e_srd_data.loader import AssetLoader
 from dnd5e_srd_data.schema.monster import MonsterTraitMechanic
 
 from dnd5e_engine.evaluation_class_dependencies import class_dependencies
+from dnd5e_engine.evaluation_equipment_dependencies import (
+    HEALING_POTION_SLUG,
+    reviewed_healing_potion_owners,
+)
 from dnd5e_engine.evaluation_preflight import snapshot_support_failure
 from dnd5e_engine.evaluation_reactions import reaction_dependencies
 from dnd5e_engine.evaluation_ruleset import get_default_ruleset
@@ -11,11 +15,16 @@ from dnd5e_engine.evaluation_state import CharacterStateV2, CombatSnapshot
 
 
 def invocation_dependencies(
-    snapshot: CombatSnapshot, loader: AssetLoader, target_id: str, *, damaging: bool
+    snapshot: CombatSnapshot,
+    loader: AssetLoader,
+    target_id: str,
+    *,
+    damaging: bool,
+    ordinary_healing: bool = False,
 ) -> str | None:
     """Check rules dependencies needed by the selected invocation."""
     if not damaging:
-        return healing_dependencies(snapshot, loader, target_id)
+        return healing_dependencies(snapshot, loader, target_id, ordinary_healing=ordinary_healing)
     if snapshot.combat_state.pending_reactions:
         return "instant damage spell reactions are not migrated"
     if snapshot.effect_states or snapshot.combat_state.concentration_chain:
@@ -39,16 +48,27 @@ def invocation_dependencies(
 
 
 def healing_dependencies(
-    snapshot: CombatSnapshot, loader: AssetLoader, target_id: str
+    snapshot: CombatSnapshot, loader: AssetLoader, target_id: str, *, ordinary_healing: bool = False
 ) -> str | None:
     """Check dependencies required by the admitted healing invocation."""
     if failure := reaction_dependencies(snapshot, loader):
         return failure
     canonical = get_default_ruleset()
+    potion_owners = (
+        reviewed_healing_potion_owners(snapshot, loader, canonical) if ordinary_healing else set()
+    )
 
     def dependencies(actor: CharacterStateV2) -> str | None:
         """Check the complete rules dependency set for the enclosing operation."""
-        if failure := class_dependencies(actor, snapshot, loader, canonical, equipped=True):
+        allow_stowed_healing_potions = actor.entity_id in potion_owners
+        if failure := class_dependencies(
+            actor,
+            snapshot,
+            loader,
+            canonical,
+            equipped=True,
+            allow_stowed_healing_potions=allow_stowed_healing_potions,
+        ):
             return f"unreviewed spell component/equipment profile: {failure}"
         if not (actor.class_slug or actor.classes) and (
             actor.worn_armor or actor.shield_equipped or actor.other_hand_occupied
@@ -58,7 +78,14 @@ def healing_dependencies(
             return "unreviewed healing counter"
         for slug in actor.carried_item_slugs:
             item = loader.get_item(slug)
-            if item is None or item.passive_effects or item.requires_attunement or item.uses:
+            if (
+                item is None
+                or item.passive_effects
+                or item.requires_attunement
+                or (
+                    item.uses and not (allow_stowed_healing_potions and slug == HEALING_POTION_SLUG)
+                )
+            ):
                 return "unreviewed healing equipment dependency"
         if actor.trait_mechanics and not (
             actor.entity_id == target_id

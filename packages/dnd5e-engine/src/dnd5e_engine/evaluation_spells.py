@@ -460,7 +460,11 @@ def evaluate_invocation(request: RuleEvaluationRequest, loader: AssetLoader) -> 
             "ordinary spell lacks a complete reviewed instant single-target mechanism",
         )
     if failure := invocation_dependencies(
-        snapshot, loader, intent.target_id, damaging=mechanism == "save_damage"
+        snapshot,
+        loader,
+        intent.target_id,
+        damaging=mechanism == "save_damage",
+        ordinary_healing=mechanism == "healing",
     ):
         return _refuse("unsupported", "healing.dependencies", failure)
     actor = combatant(current)

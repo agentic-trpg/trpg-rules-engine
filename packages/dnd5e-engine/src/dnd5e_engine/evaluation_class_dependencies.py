@@ -6,7 +6,11 @@ from dnd5e_engine.activities.build_context import build_activity_context
 from dnd5e_engine.activities.scale import build_scale_values
 from dnd5e_engine.build_spec import derive_multiclass_pact_slots, derive_multiclass_slots
 from dnd5e_engine.evaluation_actor import combatant
-from dnd5e_engine.evaluation_equipment_dependencies import equipped_dependencies
+from dnd5e_engine.evaluation_equipment_dependencies import (
+    HEALING_POTION_SLUG,
+    equipped_dependencies,
+    is_stowed_healing_potion,
+)
 from dnd5e_engine.evaluation_resources import FeatureResource, SlotResource
 from dnd5e_engine.evaluation_ruleset import get_default_ruleset
 from dnd5e_engine.evaluation_state import CharacterStateV2, CombatSnapshot, NonCombatSnapshot
@@ -18,6 +22,52 @@ from dnd5e_engine.feature_runtime import DrawFreeRandom, scalar_formula
 _REVIEWED = {"cleric": 1, "fighter": 1, "wizard": 5}
 
 
+def _class_equipment_profile(
+    actor: CharacterStateV2,
+    snapshot: CombatSnapshot | NonCombatSnapshot,
+    loader: AssetLoader,
+    canonical: AssetLoader,
+    *,
+    equipped: bool,
+    allow_stowed_healing_potions: bool,
+) -> tuple[bool, str | None]:
+    """Check equipment dependencies while retaining the complete inventory identity."""
+    if allow_stowed_healing_potions and set(actor.carried_item_slugs) != {
+        entry.item_slug
+        for entry in snapshot.inventory_state.entries
+        if entry.owner_id == actor.entity_id
+    }:
+        return False, "supplied equipment and inventory identities disagree"
+    has_worn_or_offhand = actor.worn_armor or actor.shield_equipped or actor.other_hand_occupied
+    has_equipment = bool(
+        has_worn_or_offhand
+        or any(
+            not allow_stowed_healing_potions or slug != HEALING_POTION_SLUG
+            for slug in actor.carried_item_slugs
+        )
+        or any(
+            entry.owner_id == actor.entity_id
+            and (not allow_stowed_healing_potions or not is_stowed_healing_potion(entry, actor))
+            for entry in snapshot.inventory_state.entries
+        )
+    )
+    if not has_equipment:
+        return False, None
+    if not equipped:
+        return True, (
+            "only unarmored, unencumbered component profile is reviewed"
+            if has_worn_or_offhand
+            else "only the complete empty equipment profile is reviewed"
+        )
+    return True, equipped_dependencies(
+        actor,
+        snapshot,
+        loader,
+        canonical,
+        allow_stowed_healing_potions=allow_stowed_healing_potions,
+    )
+
+
 def class_dependencies(
     actor: CharacterStateV2,
     snapshot: CombatSnapshot | NonCombatSnapshot,
@@ -25,6 +75,7 @@ def class_dependencies(
     canonical: AssetLoader,
     *,
     equipped: bool = False,
+    allow_stowed_healing_potions: bool = False,
 ) -> str | None:
     """Check the actor's class feature dependencies against the bound rules assets."""
     if actor.species_slug:
@@ -43,22 +94,16 @@ def class_dependencies(
         ):
             return "class/source dependency is absent"
         return None
-    has_equipment = bool(
-        actor.worn_armor
-        or actor.shield_equipped
-        or actor.other_hand_occupied
-        or actor.carried_item_slugs
-        or any(e.owner_id == actor.entity_id for e in snapshot.inventory_state.entries)
+    has_equipment, failure = _class_equipment_profile(
+        actor,
+        snapshot,
+        loader,
+        canonical,
+        equipped=equipped,
+        allow_stowed_healing_potions=allow_stowed_healing_potions,
     )
-    if has_equipment:
-        if not equipped:
-            return (
-                "only unarmored, unencumbered component profile is reviewed"
-                if actor.worn_armor or actor.shield_equipped or actor.other_hand_occupied
-                else "only the complete empty equipment profile is reviewed"
-            )
-        if failure := equipped_dependencies(actor, snapshot, loader, canonical):
-            return failure
+    if failure:
+        return failure
     if actor.fighting_styles not in ((), ("defense",)):
         return "unreviewed fighting style"
     if any(not k.startswith("feature_use:") for k in actor.custom_counters):

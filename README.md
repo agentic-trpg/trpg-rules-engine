@@ -16,9 +16,18 @@ Developer batches follow [AGENTS.md](AGENTS.md): use `make check-fast` normally,
 `make check-integration` for public or high-risk changes, and reserve `make check`
 for full validation. See [validation and CI](docs/dev/validation.md) for scope selection.
 
+## Find the right document
+
+| Task | Start here |
+| --- | --- |
+| Run the engine or a sample | [Quickstart](#quickstart) |
+| Check a request, snapshot, or result | [Current Stateless contract](docs/dev/stateless-evaluation.md) |
+| Check support for a rule or operation | [Capability matrix](docs/capabilities.md), then confirm the exact consuming entry point |
+| Integrate RE with Agentic TRPG | [Cross-repository interfaces](docs/SYSTEM_OVERVIEW.md#5-跨仓库接口) |
+
 ## Agentic TRPG Session memory target (2026-10-21)
 
-**[DECIDED]**, complete SM RAM integration **[NOT IMPLEMENTED]**, runtime acceptance **not executed**. RE consumes fixed-version necessary inputs built from SM's consistent RAM scope, returns uncommitted typed changes/events/RNG, and never reads SM SQL or mutates a shared world. SM owns incremental SQLite commit, subsequent RAM publication, receipts and recovery. This preserves Stateless RE, FrozenRuleset, bindings and all public DTO/Schema versions; it does not restore Legacy Stateful Engine. See [the consumer contract and exact source baseline](docs/dev/stateless-evaluation.md#session-ram-consumer-architecture-2026-10-21) and [progress](docs/dev/stateless-migration-progress.md).
+**Historical baseline (2026-10-21).** The design was **[DECIDED]**. Complete SM RAM integration was **[NOT IMPLEMENTED]** and runtime acceptance was **not executed** at that baseline. See the [current project implementation entry](https://github.com/agentic-trpg/agentic-trpg/blob/main/docs/MODULE_CONTRACTS.md#10-当前实现入口2026-11-16) for later evidence. RE consumes fixed-version necessary inputs built from SM's consistent RAM scope, returns uncommitted typed changes/events/RNG, and never reads SM SQL or mutates a shared world. SM owns incremental SQLite commit, subsequent RAM publication, receipts and recovery. This preserves Stateless RE, FrozenRuleset, bindings and all public DTO/Schema versions; it does not restore Legacy Stateful Engine. See [the consumer contract and exact source baseline](docs/dev/stateless-evaluation.md#session-ram-consumer-architecture-2026-10-21) and [progress](docs/dev/stateless-migration-progress.md).
 
 ## What is Nat20
 

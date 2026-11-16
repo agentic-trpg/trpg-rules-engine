@@ -1,6 +1,6 @@
 # 系统与接口总览：Rule Engine
 
-2026-10-27，按本批起始源码 `f1a3235` 核对。此页解释当前结构与阅读入口，
+当前施法接口按 RE `d26b59d` 静态核对。本页提供代码与文档入口，
 详细协议见[Stateless 合同](dev/stateless-evaluation.md)，当前支持范围见
 [能力矩阵](capabilities.md)及[迁移进度](dev/stateless-migration-progress.md)。
 跨模块权威是 sibling 文档库的 `docs/MODULE_CONTRACTS.md`，尤其 §2.3／§4／§6；
@@ -17,7 +17,7 @@ Stateless 转换仍是受限能力集。Legacy 和 Demo 中可运行的能力，
 Stateless 接口或 SM pin／采用白名单支持它；完整迁移与跨仓库 ABI 批准单独跟踪。
 本库的 Bridge HTTP 和 Demo 也不代表 Agentic TRPG 已交付完整 Host／玩家 UI。
 
-2026-11-16 本地候选版本以 Snapshot `/20` 的 `casting_state` 来源记录承载已知、
+RE main `d26b59d` 以 Snapshot `/20` 的 `casting_state` 来源记录承载已知、
 准备顺序与已审定材料绑定，移除新线上的角色法术镜像。旧 `/17`–`/19` 协议仍按
 旧形状解析；SM 是否采用新版本需单独按依赖 pin 与真实调用验证。
 
@@ -130,7 +130,7 @@ Legacy View 会复制集合容器，但部分模型值仍共享，应按实际�
 Schema／evaluator 版本值查当前定义、[Stateless 合同](dev/stateless-evaluation.md)及测试；
 不在总览中把易变数字写成永久约束。SM 的安装 pin 由其 `pyproject.toml`／`uv.lock` 决定，
 与本 checkout、RE 自身支持范围及正式跨模块 ABI 批准状态分别核对。
-上层[项目契约](https://github.com/agentic-trpg/agentic-trpg/blob/docs/code-documentation-and-skills/docs/MODULE_CONTRACTS.md)
+上层[项目契约](https://github.com/agentic-trpg/agentic-trpg/blob/main/docs/MODULE_CONTRACTS.md)
 中的目标类型／示例不能替代当前 DTO 或 SM 采用白名单。
 
 ## 6. 按任务查找代码

@@ -1,5 +1,7 @@
 """Evaluate direct exploration casts that create one elapsed-time passive modifier."""
 
+from typing import cast
+
 from dnd5e_srd_data.loader import AssetLoader, BundledAssetLoader
 from dnd5e_srd_data.schema.class_ import SpellcastingProgression
 from dnd5e_srd_data.schema.common import (
@@ -32,6 +34,9 @@ from dnd5e_engine.events import EffectApplied, IntentSubmitted, SpellCast
 from dnd5e_engine.rules.conditions import conditions_block_actions
 from dnd5e_engine.spatial import GridTopology, canonical_cell_id
 from dnd5e_engine.specs import GridScene
+from dnd5e_engine.spellcasting import (
+    SpellcastingProgression as ProgressionValue,
+)
 from dnd5e_engine.spellcasting import (
     effective_caster_level,
     resolve_target_count,
@@ -181,9 +186,8 @@ def _source_failure(
         in (SpellcastingProgression.NONE, SpellcastingProgression.PACT)
     ):
         return "casting source conflicts with the actor's class and bound casting rules"
-    class_slots = slots_for_caster_level(
-        effective_caster_level(class_asset.spellcasting.progression, level)
-    )
+    progression = cast(ProgressionValue, str(class_asset.spellcasting.progression))
+    class_slots = slots_for_caster_level(effective_caster_level(progression, level))
     if spell.level not in class_slots:
         return "the selected class cannot yet prepare spells at this level"
     selection = next((item for item in source.spells if item.spell_id == spell.slug), None)

@@ -12,13 +12,17 @@ from typing import Literal
 from dnd5e_srd_data.schema.lifecycle import EffectLifecycleSpec, OneUseModifier
 from pydantic import BaseModel, ConfigDict, model_validator
 
-from dnd5e_engine.types.conditions import ActiveCondition
+from dnd5e_engine.types.conditions import ActiveCondition, ConditionScope
 
 
 def conditions_after_effect_application(
-    conditions: Sequence[ActiveCondition], effect_id: str, statuses: Collection[str]
+    conditions: Sequence[ActiveCondition],
+    effect_id: str,
+    statuses: Collection[str],
+    *,
+    scope: ConditionScope = "combat",
 ) -> tuple[list[ActiveCondition], list[str]]:
-    """Original attachment and newly present names, after shared immunity policy."""
+    """Project accepted statuses and newly present names in the effect's scope."""
     existing_names = {c.condition for c in conditions}
     existing_keys = {(c.condition, c.source_effect_id) for c in conditions}
     value = list(conditions)
@@ -30,7 +34,7 @@ def conditions_after_effect_application(
             ActiveCondition(
                 condition=status,
                 source_entity_id="implied:effect",
-                scope="combat",
+                scope=scope,
                 source_effect_id=effect_id,
             )
         )

@@ -1,5 +1,14 @@
 # Stateful → Stateless migration progress
 
+## Fixed exploration region conditions — 2026-11-19
+
+The RE branch adds a [fixed-region planner](stateless-evaluation.md#fixed-exploration-region-conditions)
+for the Poisoned exploration fixture. It proposes exact source transitions and
+reuses the shared condition immunity rule. The attached condition can be
+projected with session scope while combat callers retain the existing default.
+Evaluator `/43` and the published operation union remain unchanged. SM adoption,
+movement coverage and commit evidence are tracked in the consuming repository.
+
 ## Canonical spell source boundary — 2026-11-16
 
 The local RE branch adds `/20` snapshot, `/27` evaluation, `/16` availability

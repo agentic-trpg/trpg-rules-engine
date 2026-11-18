@@ -1,5 +1,22 @@
 # Stateless rule evaluation: current local contract
 
+## Fixed exploration region conditions
+
+`evaluation_region_effect.plan_region_condition_transition` verifies the fixed
+ruleset binding and proposes `add`, `remove`, or `none` for the Poisoned profile
+of a fixed region. The host supplies the Scene and region source identities,
+the target, a coverage edge, the presence of that exact effect, and the target's
+condition immunities. Entry proposes an addition only for a non-immune target
+without that source's effect. Departure proposes removal of that source alone,
+including when the target now has immunity.
+
+The complete effect identity is `(target_id, effect_id, origin)`. The effect ID
+is stable across targets of one source, and its origin records the actual Scene
+and source. An addition carries an untimed `EffectState` for a session-scoped
+condition link. The host evaluates spatial coverage and adopts the exact
+transition through its own Effects owner. The planner has no clock, resource
+payment, or RNG and does not extend the `evaluate` operation union.
+
 ## Timed spell creation and voluntary concentration release
 
 Evaluator binding `dnd5e-evaluation/43` adds exploration casting through

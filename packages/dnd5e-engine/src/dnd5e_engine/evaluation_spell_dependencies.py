@@ -1,4 +1,4 @@
-"""Reviewed immediate-healing admission without removing any input facts."""
+"""Reviewed invocation dependencies without removing any input facts."""
 
 from dnd5e_srd_data.loader import AssetLoader
 from dnd5e_srd_data.schema.monster import MonsterTraitMechanic
@@ -20,11 +20,13 @@ def invocation_dependencies(
     target_id: str,
     *,
     damaging: bool,
-    ordinary_healing: bool = False,
+    ordinary_spell: bool = False,
 ) -> str | None:
-    """Check rules dependencies needed by the selected invocation."""
+    """Check invocation dependencies, allowing stowed stock for ordinary instant spells."""
     if not damaging:
-        return healing_dependencies(snapshot, loader, target_id, ordinary_healing=ordinary_healing)
+        return healing_dependencies(
+            snapshot, loader, target_id, allow_stowed_healing_potions=ordinary_spell
+        )
     if snapshot.combat_state.pending_reactions:
         return "instant damage spell reactions are not migrated"
     if snapshot.effect_states or snapshot.combat_state.concentration_chain:
@@ -35,7 +37,9 @@ def invocation_dependencies(
         return "unreviewed spell damage/save trait"
     from dnd5e_engine.evaluation_saves import save_actor_failure
 
-    if failure := healing_dependencies(snapshot, loader, target_id):
+    if failure := healing_dependencies(
+        snapshot, loader, target_id, allow_stowed_healing_potions=ordinary_spell
+    ):
         return failure
     for actor in snapshot.character_states:
         if actor.granted_features is None:
@@ -48,26 +52,32 @@ def invocation_dependencies(
 
 
 def healing_dependencies(
-    snapshot: CombatSnapshot, loader: AssetLoader, target_id: str, *, ordinary_healing: bool = False
+    snapshot: CombatSnapshot,
+    loader: AssetLoader,
+    target_id: str,
+    *,
+    allow_stowed_healing_potions: bool = False,
 ) -> str | None:
-    """Check dependencies required by the admitted healing invocation."""
+    """Check shared invocation dependencies and optionally admit canonical stowed potions."""
     if failure := reaction_dependencies(snapshot, loader):
         return failure
     canonical = get_default_ruleset()
     potion_owners = (
-        reviewed_healing_potion_owners(snapshot, loader, canonical) if ordinary_healing else set()
+        reviewed_healing_potion_owners(snapshot, loader, canonical)
+        if allow_stowed_healing_potions
+        else set()
     )
 
     def dependencies(actor: CharacterStateV2) -> str | None:
         """Check the complete rules dependency set for the enclosing operation."""
-        allow_stowed_healing_potions = actor.entity_id in potion_owners
+        actor_has_stowed_stock = actor.entity_id in potion_owners
         if failure := class_dependencies(
             actor,
             snapshot,
             loader,
             canonical,
             equipped=True,
-            allow_stowed_healing_potions=allow_stowed_healing_potions,
+            allow_stowed_healing_potions=actor_has_stowed_stock,
         ):
             return f"unreviewed spell component/equipment profile: {failure}"
         if not (actor.class_slug or actor.classes) and (
@@ -82,9 +92,7 @@ def healing_dependencies(
                 item is None
                 or item.passive_effects
                 or item.requires_attunement
-                or (
-                    item.uses and not (allow_stowed_healing_potions and slug == HEALING_POTION_SLUG)
-                )
+                or (item.uses and not (actor_has_stowed_stock and slug == HEALING_POTION_SLUG))
             ):
                 return "unreviewed healing equipment dependency"
         if actor.trait_mechanics and not (

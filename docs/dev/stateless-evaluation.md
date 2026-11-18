@@ -1,5 +1,28 @@
 # Stateless rule evaluation: current local contract
 
+## Scoped operation admission — 2026-11-18
+
+Evaluator binding `dnd5e-evaluation/42` retains the existing request, snapshot,
+and result shapes. Ordinary attacks accept difficult terrain. Movement still
+charges its terrain cost, and attack geometry and lighting checks still apply.
+An unbound actor can Dash or Disengage in place with unrelated supported NPCs
+present. Actual movement and pending reactions retain their own requirements.
+
+Noncombat checks validate the roller and any named target. The resolver
+constructs the roller and, for social checks, the target. The input snapshot
+still undergoes protocol and effect validation. Ordinary instant save-damage
+can use the same checked stowed Potion of Healing stock as ordinary healing.
+Short Rest preserves an explicitly owned Arcane Recovery pool with the bound
+Long Rest recovery rule. A reserved, inert Multiattack entry can coexist with
+a supported ordinary attack in a candidate NPC template. Selecting Multiattack
+still requires its own implementation.
+
+The exploration and combat self-healing operations admit the bound item's
+single-use healing activity and preserve exact instance payment. The canonical
+Potion of Healing, Greater, Superior and Supreme variants use this profile.
+For the supported combat class profiles, only verified canonical consumable
+instances outside equipment slots are ignored during equipment comparison.
+
 ## Combat potion compatibility — 2026-11-16
 
 Evaluator binding `dnd5e-evaluation/41` retains the existing request, snapshot,

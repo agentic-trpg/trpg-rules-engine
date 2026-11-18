@@ -1,18 +1,53 @@
 """Validate complete, explicitly bound NPC facts before initialization RNG."""
 
 from dnd5e_srd_data.loader import AssetLoader
-from dnd5e_srd_data.schema.common import AttackActivity
-from dnd5e_srd_data.schema.monster import Monster, MonsterActionKind
+from dnd5e_srd_data.schema.common import ActivationBlock, AttackActivity, UtilityActivity
+from dnd5e_srd_data.schema.monster import Monster, MonsterAction, MonsterActionKind
 
 from dnd5e_engine.evaluation_preflight import activity_support_failure
 from dnd5e_engine.evaluation_state import CharacterStateV2, NonCombatSnapshot
 from dnd5e_engine.monster_rules import monster_rule_facts
 
 
+def _supports_initial_actions(actions: list[MonsterAction]) -> bool:
+    """Require a supported single attack and exclude unresolved automatic dependencies."""
+    has_ordinary_attack = False
+    for action in actions:
+        if (
+            action.kind != MonsterActionKind.ACTION
+            or action.mechanic
+            or action.recharge
+            or action.uses_per_day
+            or action.legendary_cost
+            or len(action.activities) != 1
+        ):
+            return False
+        activity = action.activities[0]
+        if action.slug == "multiattack":
+            # Selection remains unsupported. Only a utility placeholder with no
+            # mechanics can remain in the template without adding runtime state.
+            if activity != UtilityActivity(
+                id=activity.id,
+                name=activity.name,
+                img=activity.img,
+                sort=activity.sort,
+                description=activity.description,
+                activation=ActivationBlock(type="action"),
+            ):
+                return False
+        elif not isinstance(activity, AttackActivity) or activity_support_failure(
+            activity, stat_block=True
+        ):
+            return False
+        else:
+            has_ordinary_attack = True
+    return has_ordinary_attack
+
+
 def npc_initialization_failure(
     snapshot: NonCombatSnapshot, data_revision: str, loader: AssetLoader
 ) -> str | None:
-    """Check the supported NPC initialization dependency profile."""
+    """Check bound facts and supported initial dependencies before drawing initiative."""
     setup = snapshot.combat_setup
     assert setup is not None
     actors = {a.entity_id: a for a in snapshot.character_states}
@@ -38,19 +73,8 @@ def npc_initialization_failure(
             return "complex template traits, legendary, spellcasting or movement are not migrated"
         if len({a.slug for a in monster.actions}) != len(monster.actions):
             return "ambiguous template action identity"
-        for action in monster.actions:
-            if (
-                action.slug == "multiattack"
-                or action.kind != MonsterActionKind.ACTION
-                or action.mechanic
-                or action.recharge
-                or action.uses_per_day
-                or action.legendary_cost
-                or len(action.activities) != 1
-                or not isinstance(action.activities[0], AttackActivity)
-                or activity_support_failure(action.activities[0], stat_block=True)
-            ):
-                return "only ordinary explicit single-attack template actions are migrated"
+        if not _supports_initial_actions(monster.actions):
+            return "only ordinary explicit single-attack template actions are migrated"
         if failure := monster_actor_failure(actor, monster):
             return failure
         modifier = setup.initiative_modifiers[binding.actor_id]

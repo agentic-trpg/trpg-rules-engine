@@ -57,13 +57,18 @@ def snapshot_support_failure(
     *,
     turn_lifecycle: bool = False,
     movement: bool = False,
+    allow_difficult_terrain: bool = False,
     actor_dependencies: Callable[[CharacterStateV2], str | None] | None = None,
     reviewed_reactions: bool = False,
     reviewed_effects: bool = False,
     reviewed_sap: bool = False,
     reviewed_conditions: bool = False,
 ) -> str | None:
-    """Return a reason when snapshot mechanics exceed the supported operation profile."""
+    """Return a reason when snapshot mechanics exceed the supported operation profile.
+
+    Movement evaluates terrain costs. Ordinary attacks can admit terrain as an
+    independent input without enabling movement geometry.
+    """
     state = snapshot.combat_state
     failure = death_consistency(snapshot, allow_dying=turn_lifecycle)
     if failure is None and turn_lifecycle:
@@ -110,7 +115,7 @@ def snapshot_support_failure(
         (grid.blocked_cells and not movement)
         or (grid.wall_segments and not movement)
         or grid.cover_cells
-        or (grid.difficult_terrain_cells and not movement)
+        or (grid.difficult_terrain_cells and not (movement or allow_difficult_terrain))
         or grid.lighting
         or grid.obscurement_cells
         or grid.default_lighting != "bright"
@@ -492,7 +497,9 @@ def prepare_attack(
             snapshot, intent.target_id or "", loader, composed=True
         )
     else:
-        support = operation_dependencies(snapshot, loader, attack=True, reviewed_sap=True)
+        support = operation_dependencies(
+            snapshot, loader, attack=True, reviewed_sap=True, allow_difficult_terrain=True
+        )
     if support:
         return refused("unsupported", "snapshot.capability", support)
     support = template_support_failure(snapshot, loader)

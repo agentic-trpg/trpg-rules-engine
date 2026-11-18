@@ -29,11 +29,17 @@ from tests.test_stateless_weapons import weapon_case
 
 POTION = "potion-of-healing"
 ACTIVITY = "ZyWmXem7zzQwFFcF"
+HEALING_POTIONS = (
+    (POTION, 2, 2),
+    ("greater-potion-of-healing", 4, 4),
+    ("superior-potion-of-healing", 8, 8),
+    ("supreme-potion-of-healing", 10, 20),
+)
 
 
-def item_case(*, hp=10, quantity=1, charges=1, **entry_updates):
+def item_case(*, hp=10, quantity=1, charges=1, potion_slug=POTION, **entry_updates):
     request, handle, live, _ = weapon_case("mace", seed=1)
-    potion = BundledAssetLoader().get_item(POTION)
+    potion = BundledAssetLoader().get_item(potion_slug)
     loader = MemoryAssetLoader(
         items=[
             potion,
@@ -49,7 +55,7 @@ def item_case(*, hp=10, quantity=1, charges=1, **entry_updates):
     entry = dict(
         instance_id="inventory:potion-stack",
         owner_id=HERO,
-        item_slug=POTION,
+        item_slug=potion_slug,
         quantity=quantity,
         charges_remaining_per_unit=charges,
         accessible=True,
@@ -77,7 +83,7 @@ def item_case(*, hp=10, quantity=1, charges=1, **entry_updates):
             "payload": ItemUsePayload(
                 kind="combat.item",
                 instance_id="inventory:potion-stack",
-                activity_id=ACTIVITY,
+                activity_id=potion.activities[0].id,
                 target_id=HERO,
             ),
             "ruleset_binding": ruleset_binding(loader),
@@ -111,14 +117,17 @@ def exploration_item_wire(*, hp=10, quantity=1, charges=1, **entry_updates):
     }
     snapshot["inventory_state"]["entries"].append(spare)
     for entry in (selected, spare):
-        snapshots_by_id[entry["owner_id"]]["carried_item_slugs"] = [POTION]
+        snapshots_by_id[entry["owner_id"]]["carried_item_slugs"] = [entry["item_slug"]]
     return data, loader
 
 
 @pytest.mark.parametrize("hp", [10, 39])
-def test_exploration_potion_proposes_only_exact_consumption_and_capped_healing(hp):
+@pytest.mark.parametrize(("slug", "dice", "bonus"), HEALING_POTIONS)
+def test_exploration_potion_proposes_only_exact_consumption_and_capped_healing(
+    hp, slug, dice, bonus
+):
     """The same fixed input replays, and only the selected bottle participates."""
-    wire, loader = exploration_item_wire(hp=hp)
+    wire, loader = exploration_item_wire(hp=hp, potion_slug=slug)
     request = RuleEvaluationRequest.model_validate_json(json.dumps(wire))
     result = execute(request, loader)
     assert result.status == "accepted", result.error
@@ -138,7 +147,7 @@ def test_exploration_potion_proposes_only_exact_consumption_and_capped_healing(h
     assert healing.expected_hp == hp
     (event,) = (event for event in result.proposed_events if isinstance(event, HealingApplied))
     assert event.target_id == HERO
-    assert 4 <= event.amount <= 10
+    assert dice + bonus <= event.amount <= 4 * dice + bonus
     assert healing.resulting_hp == min(40, hp + event.amount)
     assert healing.amount == healing.resulting_hp - hp
     result.rng_transition.verify_input(request.rng_context)
@@ -462,12 +471,13 @@ def test_successive_fresh_units_do_not_reuse_a_slug_charge_pool():
     assert result.state_delta.operations[0].value.quantity == 0
 
 
+@pytest.mark.parametrize("slug", [POTION, "greater-potion-of-healing"])
 @pytest.mark.parametrize("mutation", ["effect", "timing", "scaling", "charges", "attunement"])
-def test_unmigrated_item_mechanics_fail_closed(mutation, monkeypatch):
+def test_unmigrated_item_mechanics_fail_closed(slug, mutation, monkeypatch):
     from dnd5e_srd_data.schema.common import ActivityTiming, AppliedEffectRef
 
-    request, _, _, loader = item_case()
-    item = loader.get_item(POTION)
+    request, _, _, loader = item_case(potion_slug=slug)
+    item = loader.get_item(slug)
     activity = item.activities[0]
     if mutation == "effect":
         activity = activity.model_copy(update={"effects": [AppliedEffectRef(id="unmigrated")]})
@@ -494,6 +504,32 @@ def test_unmigrated_item_mechanics_fail_closed(mutation, monkeypatch):
     request = request.model_copy(update={"ruleset_binding": ruleset_binding(loader)})
     monkeypatch.setattr(RNGState, "restore", lambda self: pytest.fail("RNG before support"))
     assert execute(request, loader).status == "unsupported"
+
+
+def test_combat_potion_cannot_consume_a_bound_equipment_instance(monkeypatch):
+    slug = "greater-potion-of-healing"
+    request, _, _, loader = item_case(potion_slug=slug)
+    wire = json.loads(request.model_dump_json())
+    wire["schema_version"] = "engine-evaluation/28"
+    snapshot = wire["state_snapshot"]
+    snapshot["snapshot_schema_version"] = "engine-snapshot/20"
+    for actor in snapshot["character_states"]:
+        actor.pop("spells_known")
+    drinker = next(actor for actor in snapshot["character_states"] if actor["entity_id"] == HERO)
+    drinker.update(
+        held_weapon_instance_id=wire["payload"]["instance_id"],
+        weapon_in_hands=slug,
+        weapon_grip="one_handed",
+        carried_item_slugs=[slug],
+    )
+    request = RuleEvaluationRequest.model_validate_json(json.dumps(wire))
+    monkeypatch.setattr(RNGState, "restore", lambda self: pytest.fail("refusal restored RNG"))
+
+    result = execute(request, loader)
+    assert result.status == "unsupported"
+    assert result.error.code == "item.equipment"
+    assert result.state_delta is result.rng_transition is None
+    assert not result.proposed_events
 
 
 def test_npc_owner_and_reordered_actor_snapshot():

@@ -7,6 +7,7 @@ from dnd5e_srd_data.loader import AssetLoader
 from dnd5e_engine.activities.actor_stats import _SCORE_ATTR, skill_ability
 from dnd5e_engine.activities.check_pipeline import resolve_check_request
 from dnd5e_engine.activities.context import ActivityResolutionContext
+from dnd5e_engine.evaluation_actor import combatant
 from dnd5e_engine.evaluation_contracts import (
     CheckAdjudicationChoice,
     CheckPayload,
@@ -16,11 +17,10 @@ from dnd5e_engine.evaluation_contracts import (
 from dnd5e_engine.evaluation_delta import StateDelta
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError
 from dnd5e_engine.evaluation_rng import RNGTransition
-from dnd5e_engine.evaluation_state import NonCombatSnapshot
+from dnd5e_engine.evaluation_state import CharacterStateV2, NonCombatSnapshot
 from dnd5e_engine.events import CheckRolled
 from dnd5e_engine.rules.skills import Skill
 from dnd5e_engine.types.checks import CheckActorState
-from dnd5e_engine.types.combat import Combatant
 
 
 class CheckEvaluation(TypedDict):
@@ -56,13 +56,13 @@ def evaluate_check(
     """Evaluate an admitted noncombat check, returning uncommitted evidence and RNG
     transition.
     """
-    if failure := check_support_failure(request, loader):
-        return failure
+    admission = _admit_check(request, loader)
+    if isinstance(admission, dict):
+        return admission
+    actor, target = admission
     payload, snapshot = request.payload, request.state_snapshot
     if not isinstance(payload, CheckPayload) or not isinstance(snapshot, NonCombatSnapshot):
         raise EvaluationInvariantError("unreachable admitted check types")
-    actors = {actor.entity_id: actor for actor in snapshot.character_states}
-    actor = actors[request.actor_id]
     if payload.dc is None:
         return dict(
             status="needs_choice",
@@ -74,24 +74,23 @@ def evaluate_check(
             ),
             error=None,
         )
-    combatants = []
-    for state in actors.values():
-        value = state.model_dump(mode="python")
-        for field in ("spell_slots", "pact_slots", "spells_known", "custom_counters"):
-            del value[field]
-        value["death_saves"] = value["death_saves"] or {}
-        combatants.append(Combatant.model_validate(value))
-    caster = next(c for c in combatants if c.entity_id == actor.entity_id)
+    caster = combatant(actor)
+    # The shared resolver reads another actor only for a social target's conditions.
+    targets = (
+        [combatant(target)]
+        if payload.social_interaction and target is not None and target is not actor
+        else []
+    )
     rng = request.rng_context.state.restore()
     ctx = ActivityResolutionContext(
         rng=rng,
         caster=caster,
-        targets=[c for c in combatants if c is not caster],
+        targets=targets,
         event_emitter=lambda event: None,
         caster_abilities={
             ability: getattr(caster, field) for ability, field in _SCORE_ATTR.items()
         },
-        check_states={c.entity_id: CheckActorState() for c in combatants},
+        check_states={c.entity_id: CheckActorState() for c in (caster, *targets)},
     )
     event = (
         resolve_check_request(payload, ctx, tool_slug=tool_slug, tool_advantage=tool_advantage)
@@ -112,6 +111,14 @@ def check_support_failure(
     request: RuleEvaluationRequest, loader: AssetLoader
 ) -> CheckEvaluation | None:
     """Return a refusal for unsupported check dependencies, or None when admitted."""
+    admission = _admit_check(request, loader)
+    return admission if isinstance(admission, dict) else None
+
+
+def _admit_check(
+    request: RuleEvaluationRequest, loader: AssetLoader
+) -> CheckEvaluation | tuple[CharacterStateV2, CharacterStateV2 | None]:
+    """Admit the roller and named target while preserving the snapshot effect gate."""
     snapshot, payload = request.state_snapshot, request.payload
     if not isinstance(snapshot, NonCombatSnapshot):
         return _refuse("unsupported", "check.snapshot", "checks require a noncombat snapshot")
@@ -121,11 +128,17 @@ def check_support_failure(
         )
     if not isinstance(payload, CheckPayload):
         raise EvaluationInvariantError("check payload lacks explicit adjudication")
-    actors = {actor.entity_id: actor for actor in snapshot.character_states}
+    actor_ids = (request.actor_id, payload.target_id)
+    actors = {
+        actor.entity_id: actor
+        for actor in snapshot.character_states
+        if actor.entity_id in actor_ids
+    }
     actor = actors.get(request.actor_id)
     if actor is None or not actor.is_alive or actor.hp_current <= 0:
         return _refuse("rejected", "actor_invalid", "check actor is absent, dead or dying")
-    if payload.target_id is not None and payload.target_id not in actors:
+    target = actors.get(payload.target_id) if payload.target_id is not None else None
+    if payload.target_id is not None and target is None:
         return _refuse("rejected", "target_invalid", "check target is absent")
     if (
         payload.skill is not None
@@ -183,4 +196,4 @@ def check_support_failure(
                 return _refuse(
                     "unsupported", "check.equipment", "equipment passive effects require migration"
                 )
-    return None
+    return actor, target

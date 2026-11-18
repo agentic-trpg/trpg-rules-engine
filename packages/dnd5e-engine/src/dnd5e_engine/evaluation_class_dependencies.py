@@ -30,9 +30,12 @@ def _class_equipment_profile(
     *,
     equipped: bool,
     allow_stowed_healing_potions: bool,
+    stowed_consumable_ids: frozenset[str],
 ) -> tuple[bool, str | None]:
     """Check equipment dependencies while retaining the complete inventory identity."""
-    if allow_stowed_healing_potions and set(actor.carried_item_slugs) != {
+    if (allow_stowed_healing_potions or stowed_consumable_ids) and set(
+        actor.carried_item_slugs
+    ) != {
         entry.item_slug
         for entry in snapshot.inventory_state.entries
         if entry.owner_id == actor.entity_id
@@ -41,12 +44,16 @@ def _class_equipment_profile(
     has_worn_or_offhand = actor.worn_armor or actor.shield_equipped or actor.other_hand_occupied
     has_equipment = bool(
         has_worn_or_offhand
-        or any(
-            not allow_stowed_healing_potions or slug != HEALING_POTION_SLUG
-            for slug in actor.carried_item_slugs
+        or (
+            not stowed_consumable_ids
+            and any(
+                not allow_stowed_healing_potions or slug != HEALING_POTION_SLUG
+                for slug in actor.carried_item_slugs
+            )
         )
         or any(
             entry.owner_id == actor.entity_id
+            and entry.instance_id not in stowed_consumable_ids
             and (not allow_stowed_healing_potions or not is_stowed_healing_potion(entry, actor))
             for entry in snapshot.inventory_state.entries
         )
@@ -65,6 +72,7 @@ def _class_equipment_profile(
         loader,
         canonical,
         allow_stowed_healing_potions=allow_stowed_healing_potions,
+        stowed_consumable_ids=stowed_consumable_ids,
     )
 
 
@@ -76,8 +84,9 @@ def class_dependencies(
     *,
     equipped: bool = False,
     allow_stowed_healing_potions: bool = False,
+    stowed_consumable_ids: frozenset[str] = frozenset(),
 ) -> str | None:
-    """Check the actor's class feature dependencies against the bound rules assets."""
+    """Check class dependencies with any caller-proved stowed inventory instances."""
     if actor.species_slug:
         return "subclass/species operation dependencies are not migrated"
     levels = actor.classes or (
@@ -101,6 +110,7 @@ def class_dependencies(
         canonical,
         equipped=equipped,
         allow_stowed_healing_potions=allow_stowed_healing_potions,
+        stowed_consumable_ids=stowed_consumable_ids,
     )
     if failure:
         return failure
@@ -221,6 +231,7 @@ def operation_dependencies(
     *,
     movement: bool = False,
     turn_lifecycle: bool = False,
+    allow_difficult_terrain: bool = False,
     attack: bool = False,
     reviewed_reactions: bool = False,
     equipped: bool = False,
@@ -281,6 +292,7 @@ def operation_dependencies(
         snapshot,
         movement=movement,
         turn_lifecycle=turn_lifecycle,
+        allow_difficult_terrain=allow_difficult_terrain,
         actor_dependencies=dependencies,
         reviewed_reactions=reviewed_reactions,
         reviewed_sap=reviewed_sap,

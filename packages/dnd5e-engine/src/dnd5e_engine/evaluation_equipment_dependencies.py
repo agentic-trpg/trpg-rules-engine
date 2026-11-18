@@ -47,11 +47,16 @@ def reviewed_healing_potion_owners(
 
 def is_stowed_healing_potion(entry: InventoryEntry, actor: CharacterStateV2) -> bool:
     """Identify a potion inventory row that does not supply an equipped slot."""
-    return entry.item_slug == HEALING_POTION_SLUG and entry.instance_id not in (
-        actor.held_weapon_instance_id,
-        actor.worn_armor_instance_id,
-        actor.equipped_shield_instance_id,
-        actor.offhand_item_instance_id,
+    return entry.item_slug == HEALING_POTION_SLUG and is_stowed_inventory_entry(entry, actor)
+
+
+def is_stowed_inventory_entry(entry: InventoryEntry, owner: CharacterStateV2) -> bool:
+    """Check whether this inventory row supplies none of its owner's equipped slots."""
+    return entry.instance_id not in (
+        owner.held_weapon_instance_id,
+        owner.worn_armor_instance_id,
+        owner.equipped_shield_instance_id,
+        owner.offhand_item_instance_id,
     )
 
 
@@ -62,9 +67,10 @@ def equipped_dependencies(
     canonical: AssetLoader,
     *,
     allow_stowed_healing_potions: bool = False,
+    stowed_consumable_ids: frozenset[str] = frozenset(),
 ) -> str | None:
     # Reviewed identities, never a rule inferred from item prose.
-    """Check effective equipped item dependencies against the bound rules assets."""
+    """Check equipment against bound rules assets and caller-proved inert stock."""
     levels = actor.classes or (
         {actor.class_slug: actor.character_level} if actor.class_slug else {}
     )
@@ -93,6 +99,7 @@ def equipped_dependencies(
             loader,
             canonical,
             allow_stowed_healing_potions=allow_stowed_healing_potions,
+            stowed_consumable_ids=stowed_consumable_ids,
         )
         if failure:
             return failure
@@ -199,8 +206,9 @@ def instance_equipment_dependencies(
     canonical: AssetLoader,
     *,
     allow_stowed_healing_potions: bool = False,
+    stowed_consumable_ids: frozenset[str] = frozenset(),
 ) -> str | None:
-    """Check only bound equipped instances; identical inventory spares are inert."""
+    """Validate equipped instances and the full inventory mirror before ignoring proved stock."""
     if actor.worn_armor_instance_id is None or actor.held_weapon_instance_id is None:
         return "equipped profile requires bound armor and held weapon instances"
     armor_entry = entries[actor.worn_armor_instance_id]  # Snapshot validates presence and owner.
@@ -240,8 +248,13 @@ def instance_equipment_dependencies(
     }:
         return "supplied equipment and inventory identities disagree"
     equipment = (
-        [entry for entry in owned if not is_stowed_healing_potion(entry, actor)]
-        if allow_stowed_healing_potions
+        [
+            entry
+            for entry in owned
+            if entry.instance_id not in stowed_consumable_ids
+            and not (allow_stowed_healing_potions and is_stowed_healing_potion(entry, actor))
+        ]
+        if allow_stowed_healing_potions or stowed_consumable_ids
         else owned
     )
     if any(entry.charges_remaining_per_unit for entry in equipment):

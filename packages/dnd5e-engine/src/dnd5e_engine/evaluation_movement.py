@@ -31,9 +31,10 @@ def evaluate_movement(request: RuleEvaluationRequest, loader: AssetLoader) -> Tu
     """Admit movement and compute its route, costs and candidate consequences.
 
     Validate actor/turn, explicit geometry and supported effect/reaction dependencies
-    before resolution. Execute supported movement in isolated working state and project
-    positions, expenditure, events and RNG transition into an uncommitted result. Return
-    structured refusal for invalid or unsupported input rather than moving host actors.
+    before resolution. Walking and bound actors require the supported monster movement
+    profile. Dash and Disengage by an unbound actor do not use other monsters' reach.
+    Execute in isolated working state and project positions, expenditure, events and RNG
+    transition into an uncommitted result. Invalid or unsupported input returns a refusal.
     """
     snapshot, intent = request.state_snapshot, request.payload
     assert isinstance(snapshot, CombatSnapshot)
@@ -58,7 +59,9 @@ def evaluate_movement(request: RuleEvaluationRequest, loader: AssetLoader) -> Tu
     actor = actors[actor_id]
     if actor_id in state.dead_ids or not actor.is_alive or actor.hp_current <= 0:
         return _refuse("rejected", "actor_incapacitated", "actor cannot move or act")
-    if failure := monster_movement_failure(snapshot, loader):
+    if (intent.intent_type == "move" or actor_id in state.monster_slug_by_entity) and (
+        failure := monster_movement_failure(snapshot, loader)
+    ):
         return _refuse("unsupported", "movement.template", failure)
     if state.movement_ledgers[actor_id].active_mode != "walk":
         return _refuse("unsupported", "movement.mode", "only an active walking ledger is admitted")

@@ -1,4 +1,4 @@
-"""Bounded Short Rest: existing resolver, typed owned pools and no world mutation."""
+"""Bounded rest evaluation over owned pools without world mutation."""
 
 from dnd5e_srd_data.loader import AssetLoader
 from dnd5e_srd_data.schema.feature import RecoveryRule
@@ -34,6 +34,7 @@ def evaluate_rest(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
     supported class/feature/item recovery dependencies before resolution. Dispatch
     supported short or long rest computation; refuse unsupported lifecycle assumptions
     rather than filling resource capacity from inferred actor mirrors.
+    Short Rest retains a proved Arcane Recovery pool at its current balance.
     """
     snapshot, payload = request.state_snapshot, request.payload
     assert isinstance(payload, RestPayload)
@@ -53,11 +54,20 @@ def evaluate_rest(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
     levels = actor.classes or (
         {actor.class_slug: actor.character_level} if actor.class_slug else {}
     )
+    grants = set(actor.granted_features or ())
+    long_rest = payload.rest_type == "long"
+    # Arcane Recovery can be invoked separately after resting. Its own pool only
+    # recharges on a Long Rest, and accepting it requires the pinned recovery profile.
+    complete_recovery = long_rest or "arcane-recovery" in grants
+    rest_grants = (
+        {"second-wind", "spellcasting", "ritual-adept", "arcane-recovery"}
+        if complete_recovery
+        else {"second-wind"}
+    )
     # Retain R16/R19's previously admitted explicit recovery-only profiles.
     # Complete R20/R21 builds use the stricter canonical grant/pool closure.
     reviewed = levels in ({"cleric": 1}, {"fighter": 1}, {"wizard": 5}) and bool(
-        set(actor.granted_features or ())
-        - {"second-wind", "spellcasting", "ritual-adept", "arcane-recovery"}
+        grants - {"second-wind", "spellcasting", "ritual-adept", "arcane-recovery"}
         or actor.subclass_slug
         or actor.fighting_styles
     )
@@ -73,15 +83,7 @@ def evaluate_rest(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
         or actor.species_slug
         or (actor.subclass_slug and not reviewed)
         or actor.granted_features is None
-        or (
-            not reviewed
-            and set(actor.granted_features or ())
-            - (
-                {"second-wind", "spellcasting", "ritual-adept", "arcane-recovery"}
-                if payload.rest_type == "long"
-                else {"second-wind"}
-            )
-        )
+        or (not reviewed and not grants <= rest_grants)
         or (actor.fighting_styles and not reviewed)
         or any(k.startswith("item_use:") for k in actor.custom_counters)
     ):
@@ -105,39 +107,30 @@ def evaluate_rest(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
         for slug in actor.granted_features or ()
         if (f := loader.get_feature(slug)) is not None and f.uses is not None and f.uses.max
     }
-    if payload.rest_type == "short" and not reviewed:
-        finite = set(actor.granted_features or ())
+    if not complete_recovery and not reviewed:
+        finite = grants
     if {p.feature_slug for p in feature_pools} != finite:
         return _refuse(
             "unsupported", "rest.features", "owned feature recovery closure is incomplete"
         )
     feature_recovery = {}
+    rest_pools = {"second-wind", "arcane-recovery"} if complete_recovery else {"second-wind"}
     for feature_pool in feature_pools:
         feature = loader.get_feature(feature_pool.feature_slug)
-        if (
-            feature_pool.feature_slug
-            not in (
-                {"second-wind", "arcane-recovery"}
-                if payload.rest_type == "long"
-                else {"second-wind"}
-            )
-            or feature is None
-            or feature.uses is None
-        ):
+        if feature_pool.feature_slug not in rest_pools or feature is None or feature.uses is None:
             return _refuse(
-                "unsupported", "rest.features", "only reviewed Second Wind recovery is migrated"
+                "unsupported", "rest.features", "feature pool has no supported recovery profile"
             )
-        short = [
-            r
-            for r in feature.uses.recovery
-            if r.period == ("lr" if payload.rest_type == "long" else "sr")
-        ]
-        rule_ok = len(short) == 1 and (
-            (short[0].type == "recoverAll" and short[0].formula == "")
-            if payload.rest_type == "long"
-            else (short[0].type == "formula" and short[0].formula == "1")
+        arcane_on_short = not long_rest and feature_pool.feature_slug == "arcane-recovery"
+        expected_rule = (
+            ("lr", "recoverAll", "") if long_rest or arcane_on_short else ("sr", "formula", "1")
         )
-        if not rule_ok:
+        rules = [
+            (r.period, r.type, r.formula)
+            for r in feature.uses.recovery
+            if arcane_on_short or r.period == expected_rule[0]
+        ]
+        if rules != [expected_rule]:
             return _refuse(
                 "unsupported",
                 "rest.feature_rule",
@@ -178,16 +171,17 @@ def evaluate_rest(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
                 "rejected", "rest.insufficient", "requested Hit Dice are absent or exhausted"
             )
     pact = [p for p in pools if isinstance(p, SlotResource) and p.kind == "pact_slot"]
-    if payload.rest_type == "long":
-        if payload.hit_dice:
-            return _refuse("rejected", "rest.long_spend", "Long Rest does not spend Hit Dice")
-        failure = _long_rest_failure(
+    if long_rest and payload.hit_dice:
+        return _refuse("rejected", "rest.long_spend", "Long Rest does not spend Hit Dice")
+    if complete_recovery:
+        failure = _recovery_dependencies_failure(
             actor, snapshot.resource_state, classes, loader, snapshot.inventory_state
         )
         if failure:
-            return _refuse("unsupported", "rest.long_dependencies", failure)
-        return _compute_long_rest(request, actor, hit_dice, pact, feature_pools, feature_recovery)
-    return _compute_rest(request, actor, hit_dice, pact, feature_pools, feature_recovery)
+            code = "rest.long_dependencies" if long_rest else "rest.dependencies"
+            return _refuse("unsupported", code, failure)
+    compute = _compute_long_rest if long_rest else _compute_rest
+    return compute(request, actor, hit_dice, pact, feature_pools, feature_recovery)
 
 
 def _compute_rest(
@@ -414,14 +408,14 @@ def _compute_long_rest(
     )
 
 
-def _long_rest_failure(
+def _recovery_dependencies_failure(
     actor: CharacterStateV2,
     resources: ResourceState,
     classes: dict[str, int],
     loader: AssetLoader,
     inventory: InventoryState,
 ) -> str | None:
-    """Check complete item, class and feature recovery dependencies for long rest."""
+    """Check complete recovery dependencies for Long Rest and the Short Rest Arcane pool."""
     from dnd5e_engine.activities.actor_stats import _SCORE_ATTR
     from dnd5e_engine.activities.context import ActivityResolutionContext
     from dnd5e_engine.activities.scale import build_scale_values

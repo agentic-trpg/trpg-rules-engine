@@ -19,7 +19,7 @@ from dnd5e_engine.evaluation_state import NonCombatSnapshot
 from dnd5e_engine.events import CheckRolled
 from dnd5e_engine.rules.skills import SKILL_ABILITIES, Skill
 from dnd5e_engine.types.effects import ActiveEffect
-from tests.evaluation_support import HERO
+from tests.evaluation_support import FOE, HERO
 from tests.test_stateless_attack import execute, request_and_live
 
 
@@ -246,6 +246,49 @@ def test_unmigrated_mechanics_before_rng(updates, monkeypatch):
 )
 def test_unrepresented_actor_mechanics(updates):
     assert execute(check_case(actor_updates=updates)).status == "unsupported"
+
+
+def test_unrelated_actor_profiles_do_not_block_or_change_the_check():
+    request = check_case(target_id=FOE, social_interaction=True)
+    expected = execute(request)
+    snapshot = request.state_snapshot
+    bystanders = tuple(
+        snapshot.character_states[1].model_copy(
+            update={
+                "entity_id": f"bystander:{index}",
+                "class_slug": "fighter",
+                "classes": {"fighter": 1},
+            }
+        )
+        for index in range(24)
+    )
+    populated = request.model_copy(
+        update={
+            "state_snapshot": snapshot.model_copy(
+                update={"character_states": (*snapshot.character_states, *bystanders)}
+            )
+        }
+    )
+    assert expected.status == "accepted"
+    assert execute(populated) == expected
+
+
+def test_unreviewed_social_target_still_refuses_before_rng(monkeypatch):
+    request = check_case(target_id=FOE, social_interaction=True)
+    snapshot = request.state_snapshot
+    roller, target = snapshot.character_states
+    target = target.model_copy(update={"class_slug": "fighter", "classes": {"fighter": 1}})
+    request = request.model_copy(
+        update={
+            "state_snapshot": snapshot.model_copy(update={"character_states": (roller, target)})
+        }
+    )
+    monkeypatch.setattr(RNGState, "restore", lambda self: pytest.fail("RNG before unsupported"))
+    result = execute(request)
+    assert result.status == "unsupported"
+    assert result.error.code == "check.effects"
+    assert result.state_delta is result.rng_transition is None
+    assert result.proposed_events == ()
 
 
 def test_actor_target_effect_binding_and_fault_boundaries(monkeypatch):

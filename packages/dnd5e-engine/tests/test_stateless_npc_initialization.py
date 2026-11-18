@@ -5,7 +5,9 @@ import random
 from copy import deepcopy
 
 import pytest
-from dnd5e_srd_data import BundledAssetLoader
+from dnd5e_srd_data import BundledAssetLoader, MemoryAssetLoader
+from dnd5e_srd_data.schema.common import ActivityTiming, UsesBlock
+from dnd5e_srd_data.schema.monster import MonsterActionKind, MonsterTraitMechanic
 from pydantic import ValidationError
 
 from dnd5e_engine import evaluation_initialization as init
@@ -13,7 +15,7 @@ from dnd5e_engine import orchestrator as orch
 from dnd5e_engine.evaluation_contracts import CombatIntentPayload, RuleEvaluationRequest
 from dnd5e_engine.evaluation_delta import CombatCreationCandidate
 from dnd5e_engine.evaluation_rng import RNGContext, RNGState
-from dnd5e_engine.evaluation_ruleset import RulesetBindingError, ruleset_binding
+from dnd5e_engine.evaluation_ruleset import RulesetBindingError, freeze_ruleset, ruleset_binding
 from dnd5e_engine.evaluation_snapshot import capture_combat_snapshot
 from dnd5e_engine.evaluation_state import (
     CombatSetupState,
@@ -265,6 +267,134 @@ def test_real_srd_init_then_npc_explicit_attack_without_legacy(monkeypatch, roll
         apply_creation(request, result, world_version=8)
     with pytest.raises(AssertionError):
         apply_creation(request, result, existing=result.state_delta.operations[0].value)
+
+
+@pytest.fixture(scope="module")
+def multiattack_template_case():
+    """Reuse an initialized Bandit and a real unported action from the same source."""
+    request, _, _, loader, _, _ = real_case()
+    bandit = loader.get_monster("bandit")
+    captain = loader.get_monster("bandit-captain")
+    multiattack = next(action for action in captain.actions if action.slug == "multiattack")
+    return request, bandit, multiattack, loader.get_item("potion-of-healing")
+
+
+def bind_monster(request, monster, potion):
+    """Supply an explicitly frozen rules revision and its corresponding NPC binding."""
+    loader = freeze_ruleset(MemoryAssetLoader(monsters=[monster], items=[potion]))
+    binding = ruleset_binding(loader)
+    snapshot = request.state_snapshot
+    setup = snapshot.combat_setup
+    npc_binding = setup.npc_stat_blocks[0].model_copy(
+        update={"data_revision": binding.data_revision}
+    )
+    snapshot = snapshot.model_copy(
+        update={"combat_setup": setup.model_copy(update={"npc_stat_blocks": (npc_binding,)})}
+    )
+    return request.model_copy(
+        update={"state_snapshot": snapshot, "ruleset_binding": binding}
+    ), loader
+
+
+def test_optional_inert_multiattack_does_not_block_initialization(
+    monkeypatch, multiattack_template_case
+):
+    request, bandit, multiattack, potion = multiattack_template_case
+    baseline_request, baseline_loader = bind_monster(request, bandit, potion)
+    monster = bandit.model_copy(update={"actions": [*bandit.actions, multiattack]})
+    request, loader = bind_monster(request, monster, potion)
+    assert request.ruleset_binding.data_revision != baseline_request.ruleset_binding.data_revision
+
+    isolated(monkeypatch)
+    baseline = init.evaluate_combat_initialization_candidate(
+        baseline_request, loader=baseline_loader
+    )
+    assert baseline.status == "accepted", baseline.error
+    result = init.evaluate_combat_initialization_candidate(request, loader=loader)
+    assert result.status == "accepted", result.error
+    assert result.proposed_events == baseline.proposed_events
+    assert result.rng_transition == baseline.rng_transition
+    after = apply_creation(request, result)
+    assert after == apply_creation(baseline_request, baseline)
+    assert after.combat_state.monster_action_uses_by_entity == {NPC: {}}
+
+    attack = RuleEvaluationRequest(
+        schema_version=request.schema_version,
+        session_id=request.session_id,
+        command_id="cmd:r14:ordinary-with-multiattack",
+        actor_id=NPC,
+        operation_kind="combat.intent",
+        payload=CombatIntentPayload(
+            intent_type="attack", stat_block_action_id="light-crossbow", target_id=HERO
+        ),
+        state_snapshot=after,
+        ruleset_binding=request.ruleset_binding,
+        rng_context=request.rng_context.model_copy(
+            update={"state": result.rng_transition.next_state}
+        ),
+    )
+    ordinary = execute(attack, loader)
+    assert ordinary.status == "accepted", ordinary.error
+    assert any(isinstance(event, AttackRolled) for event in ordinary.proposed_events)
+    reserved = execute(
+        attack.model_copy(
+            update={
+                "payload": attack.payload.model_copy(update={"stat_block_action_id": "multiattack"})
+            }
+        ),
+        loader,
+    )
+    assert reserved.status == "unsupported"
+    assert reserved.error.code == "action.capability"
+    assert reserved.state_delta is None
+    assert reserved.rng_transition is None
+    assert not reserved.proposed_events
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"recharge": "5-6"},
+        {"uses_per_day": 1},
+        {"legendary_cost": 1},
+        {"mechanic": MonsterTraitMechanic.REGENERATION},
+        {"kind": MonsterActionKind.REACTION},
+        "turn_start",
+        "activity_uses",
+        "duplicate",
+        "no_ordinary_attack",
+    ],
+)
+def test_multiattack_with_mechanics_or_without_ordinary_attack_refuses(
+    monkeypatch, multiattack_template_case, change
+):
+    request, bandit, multiattack, potion = multiattack_template_case
+    actions = list(bandit.actions)
+    if isinstance(change, dict):
+        multiattack = multiattack.model_copy(update=change)
+    elif change in {"turn_start", "activity_uses"}:
+        update = (
+            {"timing": ActivityTiming(trigger="turn_start")}
+            if change == "turn_start"
+            else {"uses": UsesBlock(max="1")}
+        )
+        multiattack = multiattack.model_copy(
+            update={"activities": [multiattack.activities[0].model_copy(update=update)]}
+        )
+    elif change == "duplicate":
+        actions.append(multiattack)
+    else:
+        actions.clear()
+
+    monster = bandit.model_copy(update={"actions": [*actions, multiattack]})
+    request, loader = bind_monster(request, monster, potion)
+    monkeypatch.setattr(RNGState, "restore", lambda _: pytest.fail("invalid template restored RNG"))
+    result = init.evaluate_combat_initialization_candidate(request, loader=loader)
+    assert result.status == "unsupported"
+    assert result.error.code == "init.template"
+    assert result.state_delta is None
+    assert result.rng_transition is None
+    assert not result.proposed_events
 
 
 @pytest.mark.parametrize(

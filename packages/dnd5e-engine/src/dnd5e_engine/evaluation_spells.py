@@ -464,7 +464,7 @@ def evaluate_invocation(request: RuleEvaluationRequest, loader: AssetLoader) -> 
         loader,
         intent.target_id,
         damaging=mechanism == "save_damage",
-        ordinary_healing=mechanism == "healing",
+        ordinary_spell=mechanism is not None,
     ):
         return _refuse("unsupported", "healing.dependencies", failure)
     actor = combatant(current)

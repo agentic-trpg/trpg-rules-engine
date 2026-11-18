@@ -1,6 +1,7 @@
 """Single-use owned inventory units through shared item payment and healing."""
 
 import re
+from collections import defaultdict
 from collections.abc import Callable, Iterable
 from random import Random
 from typing import Literal, TypedDict
@@ -34,7 +35,7 @@ from dnd5e_engine.evaluation_contracts import (
     RuleEvaluationRequest,
 )
 from dnd5e_engine.evaluation_delta import HPDelta, InventoryConsume, StateDelta
-from dnd5e_engine.evaluation_equipment_dependencies import reviewed_healing_potion_owners
+from dnd5e_engine.evaluation_equipment_dependencies import is_stowed_inventory_entry
 from dnd5e_engine.evaluation_preflight import snapshot_support_failure, template_support_failure
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError, attack_delta
 from dnd5e_engine.evaluation_rng import RNGTransition
@@ -84,10 +85,9 @@ def _refuse(status: Literal["rejected", "unsupported"], code: str, reason: str) 
 
 
 def _item_support_failure(item: Item) -> str | None:
-    # Explicit reviewed identity; execution semantics still come from typed fields.
-    """Return a reason unless the item fits the reviewed single-use healing profile."""
-    if item.slug != "potion-of-healing" or item.item_kind != "item":
-        return "only the reviewed single-use healing item is admitted"
+    """Require a standalone single-use healing activity on a non-equipment item."""
+    if item.item_kind not in ("item", "magic_item"):
+        return "healing consumables must be items without weapon or armor mechanics"
     if (
         item.requires_attunement
         or item.attunement_constraint
@@ -231,6 +231,30 @@ def _consume_unit(entry: InventoryEntry) -> InventoryConsume:
     )
 
 
+def _reviewed_stowed_consumables(
+    snapshot: CombatSnapshot, loader: AssetLoader, canonical: AssetLoader
+) -> dict[str, frozenset[str]]:
+    """Prove exact canonical healing inventory instances inert for equipment validation."""
+    actors = {actor.entity_id: actor for actor in snapshot.character_states}
+    stock = [
+        entry
+        for entry in snapshot.inventory_state.entries
+        if is_stowed_inventory_entry(entry, actors[entry.owner_id])
+    ]
+    reviewed_slugs = {
+        slug
+        for slug in {entry.item_slug for entry in stock}
+        if (item := loader.get_item(slug)) is not None
+        and _item_support_failure(item) is None
+        and item == canonical.get_item(slug)
+    }
+    by_owner: dict[str, set[str]] = defaultdict(set)
+    for entry in stock:
+        if entry.item_slug in reviewed_slugs:
+            by_owner[entry.owner_id].add(entry.instance_id)
+    return {owner_id: frozenset(ids) for owner_id, ids in by_owner.items()}
+
+
 def _combat_drink_dependencies(snapshot: CombatSnapshot, loader: AssetLoader) -> str | None:
     """Admit reviewed class grants for healing and the existing shared turn path."""
     if snapshot.snapshot_schema_version != "engine-snapshot/20" or not any(
@@ -240,7 +264,7 @@ def _combat_drink_dependencies(snapshot: CombatSnapshot, loader: AssetLoader) ->
         return snapshot_support_failure(snapshot) or template_support_failure(snapshot, loader)
 
     canonical = get_default_ruleset()
-    potion_owners = reviewed_healing_potion_owners(snapshot, loader, canonical)
+    stock = _reviewed_stowed_consumables(snapshot, loader, canonical)
 
     def actor_dependencies(actor: CharacterStateV2) -> str | None:
         if actor.weapon_mastery_slugs:
@@ -259,7 +283,7 @@ def _combat_drink_dependencies(snapshot: CombatSnapshot, loader: AssetLoader) ->
                 loader,
                 canonical,
                 equipped=True,
-                allow_stowed_healing_potions=actor.entity_id in potion_owners,
+                stowed_consumable_ids=stock.get(actor.entity_id, frozenset()),
             )
         return None
 
@@ -296,6 +320,8 @@ async def evaluate_item(request: RuleEvaluationRequest, loader: AssetLoader) -> 
     )
     if equipment_failure is not None:
         return equipment_failure
+    if not is_stowed_inventory_entry(entry, actor_state):
+        return _refuse("unsupported", "item.equipment", "selected potion is equipped")
     state = snapshot.combat_state
     if state.ended:
         return _refuse("rejected", "combat_ended", "combat has ended")

@@ -5,6 +5,7 @@ from copy import deepcopy
 
 import pytest
 from dnd5e_srd_data import BundledAssetLoader, MemoryAssetLoader
+from dnd5e_srd_data.schema.feature import RecoveryRule
 from pydantic import ValidationError
 
 from dnd5e_engine import evaluation_rest
@@ -32,7 +33,7 @@ from tests.test_stateless_item_closure_core import isolate
 from tests.test_stateless_rest import apply_rest, rest_case
 
 
-def long_case(*, hp=10):
+def long_case(*, hp=10, arcane_remaining=0):
     request, old_loader = rest_case(hp=hp, spends=[])
     canonical = BundledAssetLoader()
     grants = ("second-wind", "spellcasting", "ritual-adept", "arcane-recovery")
@@ -49,7 +50,7 @@ def long_case(*, hp=10):
             kind="feature_uses",
             owner_id=HERO,
             pool_id="feature:" + slug,
-            current=0,
+            current=arcane_remaining if slug == "arcane-recovery" else 0,
             maximum=maximum,
             feature_slug=slug,
         )
@@ -62,7 +63,7 @@ def long_case(*, hp=10):
             "pact_slots": {1: 0},
             "custom_counters": {
                 "feature_use:second-wind": {"spent": 2},
-                "feature_use:arcane-recovery": {"spent": 1},
+                "feature_use:arcane-recovery": {"spent": 1 - arcane_remaining},
             },
         }
     )
@@ -152,6 +153,95 @@ def test_real_class_long_rest_full_recovery_no_rng_and_original_resolver_parity(
     assert after.character_states[1:] == request.state_snapshot.character_states[1:]
     assert request == before
     assert RuleEvaluationResult.model_validate_json(result.model_dump_json()) == result
+
+
+@pytest.mark.parametrize("arcane_remaining", [0, 1])
+def test_short_rest_preserves_arcane_recovery_and_ordinary_spell_slots(arcane_remaining):
+    request, loader = long_case(arcane_remaining=arcane_remaining)
+    request = request.model_copy(
+        update={"payload": request.payload.model_copy(update={"rest_type": "short"})}
+    )
+    before = deepcopy(request)
+    result = execute(request, loader)
+
+    assert result.status == "accepted", result.error
+    assert [(op.pool_id, op.amount) for op in result.state_delta.operations] == [
+        ("pact:1", 1),
+        ("feature:second-wind", 1),
+    ]
+    actor = apply_rest(request.state_snapshot, result).character_states[0]
+    assert actor.hp_current == 10
+    assert actor.spell_slots == {1: 0}
+    assert actor.pact_slots == {1: 1}
+    assert actor.custom_counters == {
+        "feature_use:second-wind": {"spent": 1},
+        "feature_use:arcane-recovery": {"spent": 1 - arcane_remaining},
+    }
+    (event,) = result.proposed_events
+    assert event.type == "rest_resolved"
+    assert event.rest_type == "short"
+    assert event.feature_uses_restored == {"second-wind": 1, "arcane-recovery": 0}
+    assert result.rng_transition.input_state == result.rng_transition.next_state
+    assert result.rng_transition.state_changed is False
+    assert request == before
+
+
+@pytest.mark.parametrize("bad", ["class_owner", "short_recharge"])
+def test_short_rest_refuses_unproved_arcane_recovery_before_rng(monkeypatch, bad):
+    request, loader = long_case()
+    snapshot = request.state_snapshot
+    classes = [loader.get_class(s) for s in loader.list_slugs("classes")]
+    features = [loader.get_feature(s) for s in loader.list_slugs("features")]
+    if bad == "class_owner":
+        cleric = BundledAssetLoader().get_class("cleric")
+        classes = [cleric if cls.slug == "wizard" else cls for cls in classes]
+        actor = snapshot.character_states[0].model_copy(
+            update={
+                "classes": {"fighter": 1, "warlock": 1, "cleric": 1},
+                "granted_features": ("second-wind", "spellcasting", "arcane-recovery"),
+            }
+        )
+        pools = tuple(
+            p.model_copy(update={"pool_id": "hd:cleric", "class_slug": "cleric", "die_size": 8})
+            if p.pool_id == "hd:wizard"
+            else p
+            for p in snapshot.resource_state.pools
+        )
+        snapshot = snapshot.model_copy(
+            update={
+                "character_states": (actor, *snapshot.character_states[1:]),
+                "resource_state": ResourceState(pools=pools),
+            }
+        )
+    else:
+        arcane = loader.get_feature("arcane-recovery")
+        recharge = RecoveryRule(period="sr", type="recoverAll", formula="")
+        uses = arcane.uses.model_copy(update={"recovery": [*arcane.uses.recovery, recharge]})
+        features = [
+            feature.model_copy(update={"uses": uses}) if feature.slug == arcane.slug else feature
+            for feature in features
+        ]
+    loader = MemoryAssetLoader(
+        items=[loader.get_item(s) for s in loader.list_slugs("items")],
+        classes=classes,
+        features=features,
+    )
+    request = request.model_copy(
+        update={
+            "payload": request.payload.model_copy(update={"rest_type": "short"}),
+            "state_snapshot": snapshot,
+            "ruleset_binding": ruleset_binding(loader),
+        }
+    )
+    monkeypatch.setattr(RNGState, "restore", lambda *a: pytest.fail("restored RNG"))
+    result = execute(request, loader)
+    assert result.status == "unsupported"
+    assert result.error.code == (
+        "rest.dependencies" if bad == "class_owner" else "rest.feature_rule"
+    )
+    assert result.state_delta is None
+    assert result.rng_transition is None
+    assert not result.proposed_events
 
 
 def payment_case():

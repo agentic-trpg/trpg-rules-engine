@@ -6,19 +6,29 @@ from copy import deepcopy
 
 import pytest
 from pydantic import ValidationError
+from pydantic_core import to_json
 
 from dnd5e_engine import evaluation_delta as delta
 from dnd5e_engine import evaluation_movement
 from dnd5e_engine import orchestrator as orch
-from dnd5e_engine.evaluation_contracts import CombatIntentPayload, RuleEvaluationResult
+from dnd5e_engine.evaluation_contracts import (
+    CombatIntentPayload,
+    RuleEvaluationRequest,
+    RuleEvaluationResult,
+)
+from dnd5e_engine.evaluation_reaction_state import StatBlockOpportunityAttackState
 from dnd5e_engine.evaluation_rng import RNGState
+from dnd5e_engine.evaluation_ruleset import get_default_ruleset
 from dnd5e_engine.evaluation_snapshot import capture_evaluation_snapshot
-from dnd5e_engine.evaluation_state import MovementLedgerState
+from dnd5e_engine.evaluation_state import CombatSnapshot, MovementLedgerState
 from dnd5e_engine.spatial import GridTopology
 from dnd5e_engine.specs import GridScene
 from tests.evaluation_support import FOE, HERO
 from tests.test_stateless_attack import apply_delta, execute, request_and_live
 from tests.test_stateless_item_closure_core import isolate
+from tests.test_stateless_npc_initialization import HERO as BANDIT_FIGHT_HERO
+from tests.test_stateless_npc_initialization import NPC as BANDIT
+from tests.test_stateless_npc_initialization import real_case
 
 
 def move_case(*, npc=False, destination="2,0", kind="move", blocked=(), terrain=(), walls=()):
@@ -117,6 +127,110 @@ def test_dash_disengage_independent_budget_and_no_turn_advance(monkeypatch, kind
     assert actor.movement_remaining == (60 if kind == "dash" else 30)
     assert after.combat_state.movement_ledgers[actor.entity_id].dash_count == int(kind == "dash")
     assert after.combat_state.turn_serial == request.state_snapshot.combat_state.turn_serial
+
+
+@pytest.fixture(scope="module")
+def bandit_turns():
+    """Use canonical Bandit facts and advance to the hero with a public Pass."""
+    initial, snapshot, _, _, _, _ = real_case()
+    raw = snapshot.model_dump(mode="json")
+    raw["snapshot_schema_version"] = "engine-snapshot/20"
+    for actor in raw["character_states"]:
+        actor.pop("spells_known")
+    loader = get_default_ruleset()
+    bandit = RuleEvaluationRequest(
+        schema_version="engine-evaluation/28",
+        session_id=initial.session_id,
+        command_id="move-bandit",
+        actor_id=BANDIT,
+        operation_kind="combat.intent",
+        payload=CombatIntentPayload(intent_type="pass"),
+        state_snapshot=CombatSnapshot.model_validate_json(to_json(raw)),
+        ruleset_binding=initial.ruleset_binding,
+        rng_context=initial.rng_context,
+    )
+    passed = execute(bandit, loader)
+    assert passed.status == "accepted", passed.error
+    after = apply_delta(bandit.state_snapshot, passed)
+    hero = bandit.model_copy(
+        update={
+            "command_id": "move-bandit-hero",
+            "actor_id": BANDIT_FIGHT_HERO,
+            "state_snapshot": after,
+            "rng_context": bandit.rng_context.model_copy(
+                update={"state": passed.rng_transition.next_state}
+            ),
+        }
+    )
+    return bandit, hero, loader
+
+
+@pytest.mark.parametrize("kind,event", [("dash", "dash_taken"), ("disengage", "intent_submitted")])
+def test_stationary_actions_accept_an_unrelated_bound_bandit(bandit_turns, kind, event):
+    _, hero, loader = bandit_turns
+    request = hero.model_copy(update={"payload": CombatIntentPayload(intent_type=kind)})
+    result = execute(request, loader)
+    assert result.status == "accepted", result.error
+    assert [e.type for e in result.proposed_events] == [event]
+    assert not result.rng_transition.state_changed
+    before = request.state_snapshot
+    after = apply_delta(before, result)
+    actor = next(a for a in after.character_states if a.entity_id == request.actor_id)
+    assert not actor.action_available
+    assert actor.action_taken_this_turn
+    assert actor.disengaging_this_turn == (kind == "disengage")
+    assert actor.movement_remaining == (60 if kind == "dash" else 30)
+    assert after.combat_state.actor_zone == before.combat_state.actor_zone
+    assert after.combat_state.turn_serial == before.combat_state.turn_serial
+    assert after.combat_state.monster_slug_by_entity == {BANDIT: "bandit"}
+
+    spent = execute(request.model_copy(update={"state_snapshot": after}), loader)
+    assert spent.status == "rejected"
+    assert spent.error.code == "no_action_economy"
+    assert spent.state_delta is None
+    assert spent.rng_transition is None
+    assert not spent.proposed_events
+
+
+@pytest.mark.parametrize(
+    "obstacle", ["walk", "bound_actor", "unknown_template", "pending_reaction"]
+)
+def test_stationary_action_change_keeps_required_template_guards(bandit_turns, obstacle):
+    bandit, hero, loader = bandit_turns
+    request = bandit if obstacle == "bound_actor" else hero
+    snapshot = request.state_snapshot
+    state = snapshot.combat_state
+    expected = "movement.template"
+    intent = CombatIntentPayload(intent_type="dash")
+    if obstacle == "walk":
+        intent = CombatIntentPayload(intent_type="move", target_zone_id="0,1")
+    elif obstacle == "unknown_template":
+        state = state.model_copy(update={"monster_slug_by_entity": {BANDIT: "unknown-template"}})
+        expected = "movement.capability"
+    elif obstacle == "pending_reaction":
+        declaration = StatBlockOpportunityAttackState(
+            source_kind="stat_block_opportunity_attack",
+            owner_id=BANDIT,
+            mover_id=hero.actor_id,
+            monster_slug="bandit",
+            stat_block_action_id="scimitar",
+            trigger="voluntary_leave_reach",
+            expiry="owner_next_turn_start",
+        )
+        state = state.model_copy(update={"pending_reactions": [declaration]})
+        expected = "movement.capability"
+    request = request.model_copy(
+        update={
+            "state_snapshot": snapshot.model_copy(update={"combat_state": state}),
+            "payload": intent,
+        }
+    )
+    result = execute(request, loader)
+    assert result.status == "unsupported"
+    assert result.error.code == expected
+    assert result.state_delta is None
+    assert result.rng_transition is None
+    assert not result.proposed_events
 
 
 @pytest.mark.parametrize(

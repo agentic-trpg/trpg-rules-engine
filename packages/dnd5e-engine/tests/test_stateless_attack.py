@@ -12,6 +12,10 @@ from dnd5e_engine import evaluation_attack
 from dnd5e_engine import evaluation_delta as delta
 from dnd5e_engine import orchestrator as orch
 from dnd5e_engine.evaluation import evaluate
+from dnd5e_engine.evaluation_availability import (
+    ActionAvailabilityRequest,
+    query_action_availability,
+)
 from dnd5e_engine.evaluation_contracts import (
     CombatIntentPayload,
     PreflightChoice,
@@ -57,6 +61,66 @@ def request_and_live(**kwargs):
 
 def execute(request, loader=None):
     return asyncio.run(evaluate(request, loader=loader or synthetic_loader()))
+
+
+@pytest.mark.parametrize(
+    "obstruction",
+    [
+        pytest.param({}, id="terrain-only"),
+        pytest.param({"cover_cells": {"1,0": "total"}}, id="total-cover"),
+        pytest.param({"wall_segments": [{"x1": 1, "y1": 0, "x2": 1, "y2": 3}]}, id="wall"),
+        pytest.param({"default_lighting": "dim"}, id="dim-light"),
+    ],
+)
+def test_instance_attack_admits_difficult_terrain_with_other_grid_checks_intact(obstruction):
+    """Terrain changes movement cost without changing ordinary attack range or damage."""
+    original, _, live = request_and_live()
+    wire = original.model_dump(mode="json")
+    wire["schema_version"] = "engine-evaluation/28"
+    snapshot = wire["state_snapshot"]
+    snapshot["snapshot_schema_version"] = "engine-snapshot/20"
+    for actor in snapshot["character_states"]:
+        assert not actor.pop("spells_known")
+        if actor["entity_id"] == HERO:
+            actor["held_weapon_instance_id"] = "weapon:held"
+    snapshot["inventory_state"]["entries"] = [
+        {
+            "instance_id": "weapon:held",
+            "owner_id": HERO,
+            "item_slug": WEAPON,
+            "quantity": 1,
+            "charges_remaining_per_unit": 0,
+            "accessible": True,
+        },
+    ]
+    del wire["payload"]["weapon_id"]
+    wire["payload"]["weapon_instance_id"] = "weapon:held"
+    plain = RuleEvaluationRequest.model_validate_json(to_json(wire))
+
+    grid = snapshot["scene_state"]["grid"]
+    grid["difficult_terrain_cells"] = [snapshot["combat_state"]["actor_zone"][FOE]]
+    grid.update(obstruction)
+    request = RuleEvaluationRequest.model_validate_json(to_json(wire))
+    query = ActionAvailabilityRequest(
+        schema_version="engine-availability/16",
+        session_id=request.session_id,
+        operation_kind="combat.intent",
+        actor_id=HERO,
+        payload=request.payload,
+        state_snapshot=request.state_snapshot,
+        ruleset_binding=request.ruleset_binding,
+    )
+    availability = query_action_availability(query, loader=live.ruleset_loader)
+    result = execute(request, live.ruleset_loader)
+    if obstruction:
+        assert (availability.status, result.status) == ("unknown", "unsupported")
+        assert availability.reason.code == result.error.code == "snapshot.capability"
+        assert result.state_delta is None
+        assert result.proposed_events == ()
+        assert result.rng_transition is None
+    else:
+        assert (availability.status, result.status) == ("available", "accepted")
+        assert result == execute(plain, live.ruleset_loader)
 
 
 def test_slug_based_attack_wire_shape_omits_instance_fields():

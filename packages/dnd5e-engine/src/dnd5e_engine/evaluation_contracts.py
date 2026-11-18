@@ -24,7 +24,7 @@ from dnd5e_engine.intents import PlayerIntent
 from dnd5e_engine.rules.skills import Skill
 from dnd5e_engine.types.checks import CheckRequest, GrantedDie
 
-SCHEMA_VERSION = "engine-evaluation/29"
+SCHEMA_VERSION = "engine-evaluation/30"
 EvaluationVersion = Literal[
     "engine-evaluation/24",
     "engine-evaluation/25",
@@ -32,6 +32,7 @@ EvaluationVersion = Literal[
     "engine-evaluation/27",
     "engine-evaluation/28",
     "engine-evaluation/29",
+    "engine-evaluation/30",
 ]
 
 
@@ -202,6 +203,7 @@ class RuleEvaluationRequest(EvaluationModel):
             "engine-evaluation/27": "engine-snapshot/20",
             "engine-evaluation/28": "engine-snapshot/20",
             "engine-evaluation/29": "engine-snapshot/20",
+            "engine-evaluation/30": "engine-snapshot/20",
         }
         if self.state_snapshot.snapshot_schema_version != version_pairs[self.schema_version]:
             raise ValueError("evaluation and snapshot versions differ")
@@ -223,23 +225,23 @@ class RuleEvaluationRequest(EvaluationModel):
             return self
         if self.operation_kind == "world.use_item":
             if (
-                self.schema_version != "engine-evaluation/28"
+                self.schema_version not in {"engine-evaluation/28", "engine-evaluation/30"}
                 or not isinstance(self.payload, ExplorationItemUsePayload)
                 or not isinstance(self.state_snapshot, NonCombatSnapshot)
             ):
                 raise ValueError(
-                    "world.use_item requires evaluation/28 and a noncombat item request"
+                    "world.use_item requires evaluation/28 or /30 and a noncombat item request"
                 )
             return self
         if self.operation_kind == "world.cast_spell":
             if (
-                self.schema_version != "engine-evaluation/29"
+                self.schema_version not in {"engine-evaluation/29", "engine-evaluation/30"}
                 or not isinstance(self.payload, ExplorationSpellCastPayload)
                 or not isinstance(self.state_snapshot, NonCombatSnapshot)
                 or self.state_snapshot.combat_setup is not None
             ):
                 raise ValueError(
-                    "world.cast_spell requires evaluation/29 and a noncombat spell request"
+                    "world.cast_spell requires evaluation/29 or /30 and a noncombat spell request"
                 )
             return self
         if self.operation_kind == "combat.intent":
@@ -387,6 +389,19 @@ class RuleEvaluationResult(EvaluationModel):
             request.ruleset_binding,
         ):
             raise ValueError("result does not match request identity/version/binding")
+        if self.state_delta is not None:
+            from dnd5e_engine.evaluation_haste_delta import (
+                EffectFollowUpCreate,
+                HasteGraphCreate,
+                verify_haste_creation,
+            )
+
+            for operation in self.state_delta.operations:
+                if isinstance(operation, (HasteGraphCreate, EffectFollowUpCreate)):
+                    if request.schema_version != "engine-evaluation/30":
+                        raise ValueError("new combat effect operations require evaluation/30")
+                    if isinstance(operation, HasteGraphCreate):
+                        verify_haste_creation(operation, request, self.proposed_events)
         if self.rng_transition is not None:
             self.rng_transition.verify_input(request.rng_context)
         if self.stage_facts is not None:

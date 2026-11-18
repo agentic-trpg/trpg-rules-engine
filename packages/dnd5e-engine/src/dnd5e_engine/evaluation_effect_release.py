@@ -241,6 +241,34 @@ def evaluate_effect_release(request: RuleEvaluationRequest, loader: AssetLoader)
     ):
         return _refuse("unsupported", "concentration.graph", "source cannot retain concentration")
 
+    from dnd5e_engine.evaluation_haste import (
+        HasteComputation,
+        has_haste_effects,
+        haste_delta,
+        haste_support_failure,
+    )
+
+    if has_haste_effects(snapshot) and caster.concentration_effect_id == "effect:hasted":
+        if request.schema_version != "engine-evaluation/30":
+            return _refuse(
+                "unsupported", "concentration.haste", "Haste release requires evaluation/30"
+            )
+        if failure := haste_support_failure(snapshot, loader):
+            return _refuse("unsupported", "concentration.haste", failure)
+        rng = request.rng_context.state.restore()
+        haste = HasteComputation(snapshot, rng)
+        haste.emit(IntentSubmitted(actor_id=source, intent_type="drop_concentration"))
+        haste.drop(source)
+        computed = haste.result()
+        return dict(
+            status="accepted",
+            state_delta=haste_delta(snapshot, computed.candidate_state, haste.follow_ups),
+            proposed_events=computed.proposed_events,
+            rng_transition=RNGTransition.between(request.rng_context, rng),
+            choice=None,
+            error=None,
+        )
+
     member_removals = _selected_effects(snapshot, caster, tuple(chain), rounds, loader)
     if isinstance(member_removals, str):
         return _refuse("unsupported", "concentration.graph", member_removals)

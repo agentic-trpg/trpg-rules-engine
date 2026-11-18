@@ -17,6 +17,7 @@ from dnd5e_engine.effect_lifecycle import (
     conditions_after_effect_application,
 )
 from dnd5e_engine.evaluation_actor import combatant
+from dnd5e_engine.evaluation_casting import ClassSpellSourceV20
 from dnd5e_engine.evaluation_contracts import CombatIntentPayload, RuleEvaluationRequest
 from dnd5e_engine.evaluation_delta import ResourceUpdate, SlotSpendLedgerUpdate, StateDelta
 from dnd5e_engine.evaluation_effects import effect_state
@@ -87,8 +88,9 @@ class HoldCastComputation(HoldTurnComputation):
 def hold_cast_source_failure(
     snapshot: CombatSnapshot, intent: CombatIntentPayload, actor_id: str, loader: AssetLoader
 ) -> str | None:
-    """Check the bound source required by the admitted Hold Person cast."""
-    spell = loader.get_spell("hold-person")
+    """Check the bound Wizard source and components of the admitted concentration cast."""
+    assert intent.spell_id is not None
+    spell = loader.get_spell(intent.spell_id)
     assert spell is not None
     actor = next(a for a in snapshot.character_states if a.entity_id == actor_id)
     entry = (
@@ -113,13 +115,17 @@ def hold_cast_source_failure(
     ):
         return "complete known/prepared Wizard 5 Evoker source is required"
     assert entry is not None
-    material = next(
-        (
-            m
-            for m in entry.materials
-            if m.source_id == source.source_id and m.spell_slug == spell.slug
-        ),
-        None,
+    material = (
+        next((s.material for s in source.spells if s.spell_id == spell.slug), None)
+        if isinstance(source, ClassSpellSourceV20)
+        else next(
+            (
+                m
+                for m in entry.materials
+                if m.source_id == source.source_id and m.spell_slug == spell.slug
+            ),
+            None,
+        )
     )
     owned = next(
         (

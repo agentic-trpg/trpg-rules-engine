@@ -1,5 +1,31 @@
 # Stateless rule evaluation: current local contract
 
+## Combat Haste and effect follow-ups
+
+Evaluator binding `dnd5e-evaluation/44` adds the reviewed combat Haste profile on
+`engine-evaluation/30` and Snapshot `/20`. An initial cast requires the bound
+Wizard 5 Evoker source, a level 3 slot, an accessible attested component pouch,
+and one named, visible and explicitly willing living creature. It uses an
+ordinary Action and proposes a `combat.haste_graph_create` for the full captured
+effect, lifecycle, concentration reference, and source duration. There is no
+RNG draw. Explicit timed world-cast requests on `/29` remain accepted.
+
+On a reviewed Haste graph, ordinary Pass ticks concentration at caster turn
+end, including the cast turn if it closes. The existing voluntary release
+intent can also end the acting caster's Haste. The result proposes exact
+concentration and effect removals and a `combat.effect_follow_up_create`
+operation whose full parent identity refers to the removal. The follow-up is
+the exact Lethargy captured on application, with its own clock and condition
+lineage. Incapacitated immunity leaves the numeric speed override and its
+expiry intact. Lethargy expires only on a later end boundary of that target's
+turn, even when Haste ends during the target's current turn. The host adopts
+the proposal as one transition and adds effects only when the result includes
+an explicit creation.
+
+The supported stateless graph contains one Haste or one Lethargy. Haste's
+overlap, replacement, damage-driven concentration transitions and granted
+actions remain outside this stateless profile.
+
 ## Fixed exploration region conditions
 
 `evaluation_region_effect.plan_region_condition_transition` verifies the fixed

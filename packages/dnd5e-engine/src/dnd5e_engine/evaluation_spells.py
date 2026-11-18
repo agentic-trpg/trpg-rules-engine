@@ -402,6 +402,10 @@ def evaluate_invocation(request: RuleEvaluationRequest, loader: AssetLoader) -> 
     snapshot, intent = request.state_snapshot, request.payload
     assert isinstance(snapshot, CombatSnapshot)
     assert isinstance(intent, CombatIntentPayload)
+    if intent.intent_type == "cast_spell" and intent.spell_id == "haste":
+        from dnd5e_engine.evaluation_haste_cast import evaluate_haste_cast
+
+        return evaluate_haste_cast(request, loader)
     if intent.intent_type == "cast_spell" and intent.spell_id == "hold-person":
         from dnd5e_engine.evaluation_hold_cast import evaluate_hold_cast
 

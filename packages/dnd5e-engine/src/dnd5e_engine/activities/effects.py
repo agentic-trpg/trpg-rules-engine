@@ -407,7 +407,9 @@ def apply_activity_effects(
 
 
 def capture_end_effects(
-    effect: ActiveEffect, templates: Mapping[str, PassiveEffect], ctx: ActivityResolutionContext
+    effect: ActiveEffect,
+    templates: Mapping[str, PassiveEffect],
+    ctx: ActivityResolutionContext | None = None,
 ) -> ActiveEffect:
     """Freeze reviewed payloads in the parent's existing EffectApplied record."""
     from dnd5e_srd_data.schema.lifecycle import EffectLifecycleSpec
@@ -418,7 +420,7 @@ def capture_end_effects(
     for entry in effect.lifecycle.spec.on_end:
         template = templates[entry.effect_id]
         child = passive_effect_to_active_effect(
-            template, target_id=effect.target_id, caster_id=ctx.caster.entity_id, ctx=ctx
+            template, target_id=effect.target_id, caster_id=effect.lifecycle.source_id, ctx=ctx
         ).model_copy(
             update={
                 "origin": f"end:{effect.id}:{effect.origin}",

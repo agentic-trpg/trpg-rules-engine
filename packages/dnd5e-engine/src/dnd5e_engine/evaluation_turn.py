@@ -70,6 +70,12 @@ def evaluate_turn(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
         effect_turn_delta,
         effect_turn_support_failure,
     )
+    from dnd5e_engine.evaluation_haste import (
+        HasteComputation,
+        has_haste_effects,
+        haste_delta,
+        haste_support_failure,
+    )
     from dnd5e_engine.evaluation_hold_turn import HoldTurnComputation, hold_turn_support_failure
     from dnd5e_engine.evaluation_opportunity import opportunity_dependencies
     from dnd5e_engine.evaluation_shield import (
@@ -78,6 +84,27 @@ def evaluate_turn(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
         shield_delta,
         shield_support_failure,
     )
+
+    if has_haste_effects(snapshot):
+        if request.schema_version != "engine-evaluation/30":
+            return _refuse("unsupported", "turn.haste", "Haste turns require evaluation/30")
+        if failure := haste_support_failure(snapshot, loader):
+            return _refuse("unsupported", "turn.haste", failure)
+        rng = request.rng_context.state.restore()
+        haste = HasteComputation(snapshot, rng)
+        haste.enable_stages()
+        haste.emit(IntentSubmitted(actor_id=request.actor_id, intent_type="pass"))
+        haste.finish_turn(request.actor_id, force=True)
+        computed = haste.result()
+        return dict(
+            status="accepted",
+            state_delta=haste_delta(snapshot, computed.candidate_state, haste.follow_ups),
+            proposed_events=computed.proposed_events,
+            rng_transition=RNGTransition.between(request.rng_context, rng),
+            choice=None,
+            error=None,
+            stage_facts=computed.stage_facts,
+        )
 
     if has_shield(snapshot):
         failure = shield_support_failure(snapshot, loader, turn=True) or template_support_failure(

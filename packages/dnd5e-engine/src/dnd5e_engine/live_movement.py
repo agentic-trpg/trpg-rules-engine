@@ -28,6 +28,7 @@ from dnd5e_engine.spatial import cell_id, parse_cell
 if TYPE_CHECKING:
     from dnd5e_engine.orchestrator import PlayerIntent, _LiveCombat
     from dnd5e_engine.types.combat import Combatant
+    from dnd5e_engine.types.effects import ActiveEffect
 
 
 def effective_speed(actor: Combatant, mode: str, live: _LiveCombat | None = None) -> int:
@@ -47,31 +48,36 @@ def effective_speed(actor: Combatant, mode: str, live: _LiveCombat | None = None
         if live.slow_marks.get(actor.entity_id):
             speed = max(0, speed - 10)
         speed = rider_speed(live, actor.entity_id, speed)
-        from fractions import Fraction
-
-        from dnd5e_engine.rules.effects import effective_effects
-
-        zero = False
-        multiplier = Fraction(1)
-        for effect in effective_effects(live.active_effects.get(actor.entity_id, ())):
-            if effect.disabled:
-                continue
-            for change in effect.changes:
-                speed_mode = "walk" if mode == "crawl" else mode
-                if (
-                    change.key == f"system.attributes.movement.{speed_mode}"
-                    and change.mode == "multiply"
-                ):
-                    multiplier *= Fraction(str(change.value))
-                if (
-                    change.key in ("speed.override", f"system.attributes.movement.{speed_mode}")
-                    and change.mode in ("override", "downgrade")
-                    and str(change.value) == "0"
-                ):
-                    zero = True
-        speed = 0 if zero else int(speed * multiplier)
+        speed = project_effect_speed(speed, mode, live.active_effects.get(actor.entity_id, ()))
         speed = area_speed(live, actor.entity_id, speed)
     return speed
+
+
+def project_effect_speed(speed: int, mode: str, effects: Sequence[ActiveEffect]) -> int:
+    """Apply effective numeric movement effects to an already projected base speed."""
+    from fractions import Fraction
+
+    from dnd5e_engine.rules.effects import effective_effects
+
+    zero = False
+    multiplier = Fraction(1)
+    for effect in effective_effects(effects):
+        if effect.disabled:
+            continue
+        for change in effect.changes:
+            speed_mode = "walk" if mode == "crawl" else mode
+            if (
+                change.key == f"system.attributes.movement.{speed_mode}"
+                and change.mode == "multiply"
+            ):
+                multiplier *= Fraction(str(change.value))
+            if (
+                change.key in ("speed.override", f"system.attributes.movement.{speed_mode}")
+                and change.mode in ("override", "downgrade")
+                and str(change.value) == "0"
+            ):
+                zero = True
+    return 0 if zero else int(speed * multiplier)
 
 
 def ledger_for(live: _LiveCombat, actor: Combatant) -> MovementLedger:

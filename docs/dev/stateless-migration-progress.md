@@ -1,5 +1,13 @@
 # Stateful → Stateless migration progress
 
+## Combat Haste and effect follow-ups — 2026-11-19
+
+The [stateless Haste profile](stateless-evaluation.md#combat-haste-and-effect-follow-ups)
+uses combat request/result `/30` and evaluator binding `/44`. Public RE cases
+exercise initial cast, explicit release, natural expiry, target-relative clock
+expiry and an immune target. SM adoption and durable commit evidence are
+tracked in the consuming repository.
+
 ## Fixed exploration region conditions — 2026-11-19
 
 The RE branch adds a [fixed-region planner](stateless-evaluation.md#fixed-exploration-region-conditions)

@@ -9,7 +9,7 @@ import random
 from copy import deepcopy
 from dataclasses import replace
 from functools import partial
-from typing import Annotated, Literal, TypedDict
+from typing import Annotated, Literal, TypedDict, cast
 
 from dnd5e_srd_data.loader import AssetLoader
 from dnd5e_srd_data.schema.common import SaveActivity
@@ -57,6 +57,7 @@ from dnd5e_engine.events import (
     ConcentrationDropped,
     ConditionApplied,
     ConditionRemoved,
+    ConditionType,
     DamageApplied,
     DamageType,
     Death,
@@ -361,6 +362,7 @@ class ConcentrationComputation(CombatComputation):
         target, effect_id, origin = identity
         effect = next(e for e in self.effects if (e.target_id, e.id, e.origin) == identity)
         source_id = effect.lifecycle.source_id if effect.lifecycle else effect.target_id
+        link = next(r for r in self.state.conditions_by_effect if r.identity == identity)
         self.events.append(
             EffectExpired(target_id=target, effect_id=effect_id, origin=origin, reason=reason)
         )
@@ -369,28 +371,29 @@ class ConcentrationComputation(CombatComputation):
         actor = actor.model_copy(
             update={
                 "conditions": conditions_after_effect_expiry(
-                    actor.conditions, effect_id, effect.statuses, []
+                    actor.conditions, effect_id, link.statuses, []
                 )
             }
         )
         ledger = self.state.movement_ledgers[target]
         self.actors[target] = actor.model_copy(
-            update={"movement_remaining": ledger.remaining(self.speed(actor))}
+            update={"movement_remaining": ledger.remaining(self.speed(actor, ledger.active_mode))}
         )
-        if "paralyzed" in effect.statuses:
-            self.events.append(ConditionRemoved(target_id=target, condition="paralyzed"))
-        remaining = concentration_chain_after_expiry(
-            self.state.concentration_chain[source_id], identity
-        )
-        chains = {k: v for k, v in self.state.concentration_chain.items() if k != source_id}
-        rounds = dict(self.state.concentration_rounds_remaining)
-        if remaining:
-            chains[source_id] = list(remaining)
-        else:
-            rounds.pop(source_id)
-            self.actors[source_id] = self.actors[source_id].model_copy(
-                update={"concentration_effect_id": None}
+        for status in link.statuses:
+            self.events.append(
+                ConditionRemoved(target_id=target, condition=cast(ConditionType, status))
             )
+        chains = dict(self.state.concentration_chain)
+        rounds = dict(self.state.concentration_rounds_remaining)
+        if identity in chains.get(source_id, ()):
+            remaining = concentration_chain_after_expiry(chains.pop(source_id), identity)
+            if remaining:
+                chains[source_id] = list(remaining)
+            else:
+                rounds.pop(source_id)
+                self.actors[source_id] = self.actors[source_id].model_copy(
+                    update={"concentration_effect_id": None}
+                )
         self.state = self.state.model_copy(
             update={
                 "concentration_chain": chains,

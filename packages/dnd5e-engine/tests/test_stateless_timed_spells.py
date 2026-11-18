@@ -6,7 +6,11 @@ import pytest
 from dnd5e_srd_data import BundledAssetLoader, MemoryAssetLoader
 from dnd5e_srd_data.schema.spell import Spell
 
-from dnd5e_engine.evaluation_contracts import RuleEvaluationRequest, RuleEvaluationResult
+from dnd5e_engine.evaluation_contracts import (
+    SCHEMA_VERSION,
+    RuleEvaluationRequest,
+    RuleEvaluationResult,
+)
 from dnd5e_engine.evaluation_delta import ResourceUpdate, WorldEffectCreate
 from dnd5e_engine.evaluation_effects import effect_state
 from dnd5e_engine.evaluation_ruleset import freeze_ruleset, ruleset_binding
@@ -120,9 +124,11 @@ def _longstrider() -> Spell:
     return BundledAssetLoader().get_spell("longstrider")
 
 
-def test_timed_touch_spell_proposes_one_paid_effect_and_replays() -> None:
+@pytest.mark.parametrize("schema_version", ["engine-evaluation/29", SCHEMA_VERSION])
+def test_timed_touch_spell_proposes_one_paid_effect_and_replays(schema_version) -> None:
     """Publish only guarded slot/effect operations and deterministic cast evidence."""
     wire, loader = spell_wire(_longstrider())
+    wire["schema_version"] = schema_version
     request = RuleEvaluationRequest.model_validate_json(json.dumps(wire))
     result = execute(request, loader)
     assert result.status == "accepted", result.error

@@ -99,14 +99,12 @@ class ClassSpellSourceV20(EvaluationModel):
 
     @model_validator(mode="after")
     def repertoire(self) -> Self:
-        """Reject duplicate spell identities, preparation positions and unsupported materials."""
+        """Reject duplicate spell identities and preparation positions within the source."""
         if len({s.spell_id for s in self.spells}) != len(self.spells):
             raise ValueError("duplicate spell in casting source")
         orders = [s.prepared_order for s in self.spells if s.prepared_order is not None]
         if len(orders) != len(set(orders)):
             raise ValueError("duplicate prepared order in casting source")
-        if any(s.material is not None and s.spell_id != "hold-person" for s in self.spells):
-            raise ValueError("material attestation is only reviewed for Hold Person")
         return self
 
     @property
@@ -154,7 +152,7 @@ class ActorCastingStateV20(EvaluationModel):
             )
             for source in self.sources
             for spell in source.spells
-            if spell.material is not None
+            if spell.spell_id == "hold-person" and spell.material is not None
         )
 
 

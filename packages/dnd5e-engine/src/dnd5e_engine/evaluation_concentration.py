@@ -13,6 +13,7 @@ from typing import Annotated, Literal, TypedDict
 
 from dnd5e_srd_data.loader import AssetLoader
 from dnd5e_srd_data.schema.common import SaveActivity
+from dnd5e_srd_data.schema.spell import Spell
 from pydantic import Field
 
 from dnd5e_engine.activities.context import DamageInstanceContext
@@ -37,7 +38,7 @@ from dnd5e_engine.evaluation_contracts import (
 )
 from dnd5e_engine.evaluation_delta import ConcentrationUpdate, EffectLifecycleUpdate, StateDelta
 from dnd5e_engine.evaluation_dependencies import damage_save_identity_failure
-from dnd5e_engine.evaluation_effects import effect_state
+from dnd5e_engine.evaluation_effects import EffectState, effect_state
 from dnd5e_engine.evaluation_preflight import snapshot_support_failure
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError, attack_delta
 from dnd5e_engine.evaluation_rng import RNGContext, RNGTransition
@@ -49,7 +50,7 @@ from dnd5e_engine.evaluation_ruleset import (
 )
 from dnd5e_engine.evaluation_saves import resolve_snapshot_save, save_actor_failure
 from dnd5e_engine.evaluation_stages import EventStageFacts
-from dnd5e_engine.evaluation_state import CharacterStateV2, CombatSnapshot
+from dnd5e_engine.evaluation_state import CharacterStateV2, CombatSnapshot, CombatState
 from dnd5e_engine.events import (
     CombatEvent,
     ConcentrationCheck,
@@ -93,6 +94,68 @@ class ConcentrationDamageRequest(EvaluationModel):
     state_snapshot: CombatSnapshot
     ruleset_binding: RulesetBinding
     rng_context: RNGContext
+
+
+def hold_person_member_failure(
+    effect: EffectState,
+    clock: OngoingEffectLifecycle,
+    state: CombatState,
+    source_id: str,
+    spell: Spell,
+) -> str | None:
+    """Validate one member against the pinned Hold Person definition and combat clock."""
+    identity = (effect.target_id, effect.id, effect.origin)
+    activity = spell.activities[0]
+    assert isinstance(activity, SaveActivity)
+    binding = activity.effects[0]
+    assert binding.lifecycle is not None
+    definition = next(p for p in spell.passive_effects if p.id == binding.id)
+    app = effect.lifecycle
+    if app is None or (
+        app.source_id != source_id
+        or app.source_kind != "spell"
+        or app.source_slug != spell.slug
+        or app.activity_id != activity.id
+        or app.save_ability != "wis"
+        or app.save_dc is None
+        or app.save_dc < 0
+        or not app.is_magical
+        or identity[0] == source_id
+    ):
+        return "wrong or incomplete effect source/target/save capture"
+    expected = bind_effect_lifecycle(
+        passive_effect_to_active_effect(definition, target_id=identity[0], caster_id=source_id),
+        binding.lifecycle,
+        source_id=source_id,
+        source_kind="spell",
+        source_slug=spell.slug,
+        activity_id=activity.id,
+        save_ability="wis",
+        save_dc=app.save_dc,
+        is_magical=True,
+    )
+    # Actual cast marks concentration on the applied passive effect.
+    expected = expected.model_copy(update={"flags": {**expected.flags, "concentration": True}})
+    if effect != effect_state(expected):
+        return "effect or condition lineage differs from the captured pinned definition"
+    if (
+        _canonical(clock.application) != _canonical(app)
+        or clock.identity != identity
+        or not (
+            1 <= clock.applied_turn_serial <= state.turn_serial
+            and 1 <= clock.applied_round <= state.round_number
+        )
+    ):
+        return "lifecycle application or clock mismatch"
+    last = clock.last_repeat_turn_serial
+    if last is not None and not clock.applied_turn_serial <= last <= state.turn_serial:
+        return "repeat clock is outside combat history"
+    expected_clock = OngoingEffectLifecycle.from_application(
+        identity, clock.application, clock.applied_turn_serial, clock.applied_round
+    )
+    if clock != replace(expected_clock, last_repeat_turn_serial=last):
+        return "lifecycle expiry contradicts captured rule"
+    return None
 
 
 def concentration_support_failure(
@@ -155,11 +218,6 @@ def concentration_support_failure(
     spell = loader.get_spell("hold-person")
     if spell is None or spell != get_default_ruleset().get_spell("hold-person"):
         return "Hold Person differs from the reviewed pinned declaration"
-    activity = spell.activities[0]
-    assert isinstance(activity, SaveActivity)
-    binding = activity.effects[0]
-    assert binding.lifecycle is not None
-    definition = next(p for p in spell.passive_effects if p.id == binding.id)
     if anchor and (
         snapshot.effect_states[0] != effect_state(concentration_anchor(spell, target_id))
         or links[chain[0]].statuses
@@ -168,56 +226,12 @@ def concentration_support_failure(
         return "anchor differs from the exact canonical empty caster-side effect"
     for identity in () if anchor else chain:
         effect, clock, link = effects[identity], clocks[identity].state, links[identity]
-        app = effect.lifecycle
-        if app is None or (
-            app.source_id != target_id
-            or app.source_kind != "spell"
-            or app.source_slug != spell.slug
-            or app.activity_id != activity.id
-            or app.save_ability != "wis"
-            or app.save_dc is None
-            or app.save_dc < 0
-            or not app.is_magical
-            or identity[0] not in actors
-            or identity[0] == target_id
-        ):
+        if identity[0] not in actors:
             return "wrong or incomplete effect source/target/save capture"
-        expected = bind_effect_lifecycle(
-            passive_effect_to_active_effect(definition, target_id=identity[0], caster_id=target_id),
-            binding.lifecycle,
-            source_id=target_id,
-            source_kind="spell",
-            source_slug=spell.slug,
-            activity_id=activity.id,
-            save_ability="wis",
-            save_dc=app.save_dc,
-            is_magical=True,
-        )
-        # Actual cast marks concentration on the applied passive effect.
-        expected = expected.model_copy(update={"flags": {**expected.flags, "concentration": True}})
-        if (
-            effect != effect_state(expected)
-            or caster.concentration_effect_id != effect.id
-            or link.statuses != ["paralyzed"]
-        ):
+        if failure := hold_person_member_failure(effect, clock, state, target_id, spell):
+            return failure
+        if caster.concentration_effect_id != effect.id or link.statuses != ["paralyzed"]:
             return "effect or condition lineage differs from the captured pinned definition"
-        if (
-            _canonical(clock.application) != _canonical(app)
-            or clock.identity != identity
-            or not (
-                1 <= clock.applied_turn_serial <= state.turn_serial
-                and 1 <= clock.applied_round <= state.round_number
-            )
-        ):
-            return "lifecycle application or clock mismatch"
-        last = clock.last_repeat_turn_serial
-        if last is not None and not clock.applied_turn_serial <= last <= state.turn_serial:
-            return "repeat clock is outside combat history"
-        expected_clock = OngoingEffectLifecycle.from_application(
-            identity, clock.application, clock.applied_turn_serial, clock.applied_round
-        )
-        if clock != replace(expected_clock, last_repeat_turn_serial=last):
-            return "lifecycle expiry contradicts captured rule"
 
     identity_failure = partial(
         concentration_identity_failure, snapshot=snapshot, loader=loader, composed=composed

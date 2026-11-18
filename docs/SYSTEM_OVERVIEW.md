@@ -24,6 +24,12 @@ RE main `d26b59d` 以 Snapshot `/20` 的 `casting_state` 来源记录承载已�
 探索自饮使用 `world.use_item` 和 evaluation `/28`，沿用非战斗 Snapshot `/20`。
 RE 求值选中的普通治疗药水，返回回血、物品消耗、事件与 RNG 提案，提交仍由 SM 负责。
 
+探索施法使用 `world.cast_spell` 和 evaluation `/29`。RE 依据固定的法术、
+施法者与目标资料，返回法术位支付和有期限的持续效果。SM 使用自己的游戏时钟
+安排到期。在受支持的 Hold Person 图上，`drop_concentration` 提议解除
+施法者维持的效果并保留其他来源。协议和范围见
+[Stateless 合同](dev/stateless-evaluation.md#timed-spell-creation-and-voluntary-concentration-release)。
+
 ## 2. 包和主要规则模块
 
 下表中 Engine 文件均相对 `packages/dnd5e-engine/src/dnd5e_engine/`；其他包写完整路径。

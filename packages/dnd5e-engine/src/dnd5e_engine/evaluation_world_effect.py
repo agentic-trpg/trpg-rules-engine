@@ -1,4 +1,4 @@
-"""Stateless timed-effect application for the reviewed Longstrider spell.
+"""Uncommitted world-time effect proposals and the legacy Longstrider planner.
 
 The host admits the cast and owns game time, scheduling, effect persistence, and
 transaction commit. The result is a proposal, not world state.
@@ -42,7 +42,7 @@ class EffectExpiryPolicy(EvaluationModel):
 
 
 class WorldEffectApplication(EvaluationModel):
-    """The exact proposed effect, duration, and terminal policy."""
+    """Associate one proposed effect and terminal policy with its original invocation."""
 
     session_id: str
     command_id: str

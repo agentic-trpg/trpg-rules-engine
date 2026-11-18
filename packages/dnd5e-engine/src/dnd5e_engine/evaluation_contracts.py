@@ -24,13 +24,14 @@ from dnd5e_engine.intents import PlayerIntent
 from dnd5e_engine.rules.skills import Skill
 from dnd5e_engine.types.checks import CheckRequest, GrantedDie
 
-SCHEMA_VERSION = "engine-evaluation/28"
+SCHEMA_VERSION = "engine-evaluation/29"
 EvaluationVersion = Literal[
     "engine-evaluation/24",
     "engine-evaluation/25",
     "engine-evaluation/26",
     "engine-evaluation/27",
     "engine-evaluation/28",
+    "engine-evaluation/29",
 ]
 
 
@@ -50,6 +51,23 @@ class ExplorationItemUsePayload(EvaluationModel):
     instance_id: Annotated[str, Field(min_length=1)]
     activity_id: Annotated[str, Field(min_length=1)]
     target_id: Annotated[str, Field(min_length=1)]
+
+
+class ExplorationSpellCastPayload(EvaluationModel):
+    """Select one prepared spell source, slot and target for exploration casting."""
+
+    kind: Literal["world.cast_spell"]
+    spell_id: Annotated[str, Field(min_length=1)]
+    spell_source_id: Annotated[str, Field(min_length=1)]
+    slot_level: Annotated[int, Field(ge=1, le=9)]
+    target_id: Annotated[str, Field(min_length=1)]
+
+
+class ExplorationSpellPositions(EvaluationModel):
+    """Provide caster and target cells in the request's fixed scene grid."""
+
+    source_cell: Annotated[str, Field(min_length=1)]
+    target_cell: Annotated[str, Field(min_length=1)]
 
 
 class CheckPayload(CheckRequest):
@@ -131,6 +149,7 @@ class RuleEvaluationRequest(EvaluationModel):
         "rules.save",
         "rules.rest",
         "world.use_item",
+        "world.cast_spell",
     ]
     actor_id: Annotated[str, Field(min_length=1)]
     payload: (
@@ -139,12 +158,16 @@ class RuleEvaluationRequest(EvaluationModel):
         | CombatClosePayload
         | ItemUsePayload
         | ExplorationItemUsePayload
+        | ExplorationSpellCastPayload
         | SavePayload
         | RestPayload
     )
     state_snapshot: StateSnapshot
     ruleset_binding: RulesetBinding
     rng_context: RNGContext
+    spell_positions: ExplorationSpellPositions | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
     @field_validator("payload", mode="before")
     @classmethod
@@ -178,9 +201,12 @@ class RuleEvaluationRequest(EvaluationModel):
             "engine-evaluation/26": "engine-snapshot/19",
             "engine-evaluation/27": "engine-snapshot/20",
             "engine-evaluation/28": "engine-snapshot/20",
+            "engine-evaluation/29": "engine-snapshot/20",
         }
         if self.state_snapshot.snapshot_schema_version != version_pairs[self.schema_version]:
             raise ValueError("evaluation and snapshot versions differ")
+        if self.spell_positions is not None and self.operation_kind != "world.cast_spell":
+            raise ValueError("spell positions require world.cast_spell")
         if self.operation_kind == "rules.rest":
             if not isinstance(self.payload, RestPayload) or self.payload.target_id != self.actor_id:
                 raise ValueError("rules.rest requires the actual resting actor")
@@ -203,6 +229,17 @@ class RuleEvaluationRequest(EvaluationModel):
             ):
                 raise ValueError(
                     "world.use_item requires evaluation/28 and a noncombat item request"
+                )
+            return self
+        if self.operation_kind == "world.cast_spell":
+            if (
+                self.schema_version != "engine-evaluation/29"
+                or not isinstance(self.payload, ExplorationSpellCastPayload)
+                or not isinstance(self.state_snapshot, NonCombatSnapshot)
+                or self.state_snapshot.combat_setup is not None
+            ):
+                raise ValueError(
+                    "world.cast_spell requires evaluation/29 and a noncombat spell request"
                 )
             return self
         if self.operation_kind == "combat.intent":

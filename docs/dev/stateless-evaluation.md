@@ -1,5 +1,29 @@
 # Stateless rule evaluation: current local contract
 
+## Timed spell creation and voluntary concentration release
+
+Evaluator binding `dnd5e-evaluation/43` adds exploration casting through
+`world.cast_spell`, using `engine-evaluation/29` with a noncombat Snapshot
+`/20`. The command identifies a prepared spell, its source, the ordinary
+base-level slot and one target. A distinct touch target requires the two
+actual cells supplied by the host within the fixed scene grid. The evaluator
+checks the spell's supported utility and passive-effect profile, the caster's
+bound source and components, touch delivery and slot availability.
+
+Successful casts propose a guarded `ResourceUpdate` and `WorldEffectCreate`
+with a positive relative duration in seconds and terminal removal. Longstrider
+exercises this typed profile. The host computes the deadline from its current
+game clock and adopts the slot and effect in one transaction. Evaluation holds
+no game clock and spends no RNG for this operation.
+
+The existing `combat.intent` wire label `drop_concentration` now evaluates
+voluntary release of the requesting caster's current supported Hold Person
+group on any actor's turn. The result removes the exact members, preserves
+other providers of the same condition and clears the concentration reference.
+It does not spend actions, advance the turn or draw RNG. A linked status ending
+may update its affected target's remaining movement from the existing ledger.
+Ordinary combat actions retain their current supported effect profiles.
+
 ## Scoped operation admission — 2026-11-18
 
 Evaluator binding `dnd5e-evaluation/42` retains the existing request, snapshot,

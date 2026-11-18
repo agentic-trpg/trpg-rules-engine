@@ -112,6 +112,12 @@ async def evaluate(
         result = RuleEvaluationResult(**common, **item, stage_facts=_stage_coverage(item["status"]))
         result.verify_request(request)
         return result
+    if request.operation_kind == "world.cast_spell":
+        from dnd5e_engine.evaluation_timed_spells import evaluate_timed_spell
+
+        result = _turn_result(common, evaluate_timed_spell(request, assets))
+        result.verify_request(request)
+        return result
     if request.operation_kind == "rules.rest":
         result = _turn_result(common, evaluate_rest(request, assets))
         result.verify_request(request)
@@ -153,6 +159,12 @@ async def evaluate(
         )
     if request.payload.intent_type in {"cast_spell", "use_feature"}:
         result = _turn_result(common, evaluate_invocation(request, assets))
+        result.verify_request(request)
+        return result
+    if request.payload.intent_type == "drop_concentration":
+        from dnd5e_engine.evaluation_effect_release import evaluate_effect_release
+
+        result = _turn_result(common, evaluate_effect_release(request, assets))
         result.verify_request(request)
         return result
     snapshot = request.state_snapshot

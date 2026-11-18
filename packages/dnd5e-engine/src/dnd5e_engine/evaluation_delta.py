@@ -1,4 +1,4 @@
-"""Closed typed delta operations for the admitted basic attack slice."""
+"""Closed typed proposals for the supported stateless operations."""
 
 from typing import Annotated, Literal, Self
 
@@ -22,6 +22,7 @@ from dnd5e_engine.evaluation_state import (
     LifecycleRecord,
     MovementLedgerState,
 )
+from dnd5e_engine.evaluation_world_effect import WorldEffectApplication
 from dnd5e_engine.outcome import DeathRecord
 
 
@@ -339,6 +340,35 @@ class ResourceUpdate(EvaluationModel):
         return self
 
 
+class WorldEffectCreate(EvaluationModel):
+    """Propose temporary passive state while guarding against existing instances."""
+
+    kind: Literal["world.effect_create"]
+    expected_absent: Literal[True]
+    value: WorldEffectApplication
+
+    @model_validator(mode="after")
+    def world_time_passive(self) -> Self:
+        """Require a passive effect with only an elapsed-seconds duration."""
+        effect = self.value.effect
+        if (
+            effect.disabled
+            or effect.transfer
+            or effect.flags
+            or effect.action_policy is not None
+            or effect.lifecycle is not None
+            or effect.end_effects
+            or effect.statuses
+            or not effect.changes
+            or effect.duration.rounds is not None
+            or effect.duration.turns is not None
+            or effect.duration.start_round is not None
+            or effect.duration.start_turn is not None
+        ):
+            raise ValueError("world effect creation requires a world-time-only passive effect")
+        return self
+
+
 class EffectLifecycleUpdate(EvaluationModel):
     """Local C-15 candidate: atomic selected effect/clock/lineage transition."""
 
@@ -535,6 +565,7 @@ StateDeltaOperation = Annotated[
     | InventoryConsume
     | CombatCreationCandidate
     | ResourceUpdate
+    | WorldEffectCreate
     | EffectLifecycleUpdate
     | ConcentrationUpdate
     | SlotSpendLedgerUpdate

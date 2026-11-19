@@ -25,6 +25,7 @@ from dnd5e_srd_data.schema.condition import (
 )
 
 from dnd5e_engine.rules.character import ABILITY_NAME_BY_CODE
+from dnd5e_engine.rules.dice import MAX_DICE_TERM
 from dnd5e_engine.types.effects import ActiveEffect, ActiveEffectChange
 
 
@@ -263,9 +264,17 @@ def roll_dice_str(expr: str, rng: random.Random | None = None) -> int:
     come through here — they use the seeded generator threaded from
     ``start_combat(rng_seed=...)``.
     """
-    expr = expr.strip()
-    if not expr:
+    if not expr.strip():
         return 0
+    sign, count, sides, flat = _dice_str_parts(expr)
+    draw = (rng or random).randint
+    total = sum(draw(1, sides) for _ in range(count))
+    return sign * (total + flat)
+
+
+def _dice_str_parts(expr: str) -> tuple[int, int, int, int]:
+    """Parse the sign, count, sides and flat adjustment used by effect rolls."""
+    expr = expr.strip()
     sign = 1
     if expr.startswith("-"):
         sign = -1
@@ -283,11 +292,7 @@ def roll_dice_str(expr: str, rng: random.Random | None = None) -> int:
         dice_part = expr
         flat_v = 0
     n_str, _, d_str = dice_part.partition("d")
-    n = int(n_str or "1")
-    d = int(d_str)
-    draw = (rng or random).randint
-    total = sum(draw(1, d) for _ in range(n))
-    return sign * (total + flat_v)
+    return sign, int(n_str or "1"), int(d_str), flat_v
 
 
 def filter_changes_by_bucket(
@@ -319,6 +324,20 @@ def _numeric_value(value: bool | int | str) -> int | None:
         return int(value.strip())
     except ValueError:
         return None
+
+
+def validate_check_bonus_change(change: ActiveEffectChange) -> None:
+    """Validate one applicable numeric change before the check restores its RNG."""
+    if change.mode == "add":
+        if isinstance(change.value, str) and "d" in change.value:
+            _, count, sides, _ = _dice_str_parts(change.value)
+            if not 0 <= count <= MAX_DICE_TERM or not 1 <= sides <= MAX_DICE_TERM:
+                raise ValueError("invalid check bonus dice count or size")
+            return
+    elif change.mode not in ("multiply", "upgrade", "downgrade"):
+        raise ValueError("unsupported numeric check bonus mode")
+    if _numeric_value(change.value) is None:
+        raise ValueError("invalid numeric check bonus")
 
 
 def apply_changes_to_check(

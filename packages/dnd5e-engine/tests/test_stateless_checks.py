@@ -5,8 +5,10 @@ from typing import get_args
 
 import pytest
 from dnd5e_srd_data import MemoryAssetLoader
+from dnd5e_srd_data.schema.common import PassiveEffect, PassiveEffectChange
 from pydantic import ValidationError
 
+from dnd5e_engine.activities.effects import passive_effect_to_active_effect
 from dnd5e_engine.check import CheckSpec, resolve_check
 from dnd5e_engine.effect_lifecycle import conditions_after_effect_application
 from dnd5e_engine.evaluation_contracts import (
@@ -310,9 +312,7 @@ def test_actor_target_effect_binding_and_fault_boundaries(monkeypatch):
     assert execute(missing).status == "rejected"
     assert execute(check_case(actor_updates={"hp_current": 0})).status == "rejected"
     assert execute(check_case(target_id="missing")).status == "rejected"
-    effect = effect_state(
-        ActiveEffect(id="guidance", name="Guidance", target_id=HERO, origin="synthetic")
-    )
+    effect = effect_state(ActiveEffect(id="guidance", name="Guidance", target_id=HERO, origin=" "))
     affected = request.model_copy(
         update={
             "state_snapshot": request.state_snapshot.model_copy(update={"effect_states": (effect,)})
@@ -438,14 +438,14 @@ def test_poison_on_another_actor_does_not_change_the_rollers_check(named_target)
         "missing_effect",
         "ambiguous",
         "wrong_source",
-        "modifier",
+        "invalid_modifier",
         "other_region_status",
         "malformed_region_id",
         "malformed_region_origin",
         "combat_region",
     ],
 )
-def test_unreviewed_poison_profiles_fail_before_rng(fault, monkeypatch):
+def test_invalid_effect_profiles_fail_before_rng(fault, monkeypatch):
     effect = _poison_effect()
     if fault in ("other_region_status", "combat_region"):
         rule_ref = "condition:deafened" if fault == "other_region_status" else "condition:poisoned"
@@ -470,12 +470,12 @@ def test_unreviewed_poison_profiles_fail_before_rng(fault, monkeypatch):
         records = [condition.model_copy(update={"source_entity_id": "trap:012345abcdef"})]
     elif fault == "combat_region":
         records = [condition.model_copy(update={"scope": "combat"})]
-    elif fault == "modifier":
+    elif fault == "invalid_modifier":
         effects = (
             effect.model_copy(
                 update={
                     "changes": [
-                        EffectChangeState(key="check.bonus", mode="add", value="1d4", priority=20)
+                        EffectChangeState(key="check.bonus", mode="add", value="1d0", priority=20)
                     ]
                 }
             ),
@@ -492,6 +492,171 @@ def test_unreviewed_poison_profiles_fail_before_rng(fault, monkeypatch):
     assert result.error.code == "check.effects"
     assert result.state_delta is result.rng_transition is None
     assert result.proposed_events == ()
+
+
+def test_typed_effect_changes_and_general_conditions_use_the_existing_check_fold():
+    changes = [
+        EffectChangeState(key="check.skill.perception.bonus", mode="add", value=4, priority=0),
+        EffectChangeState(key="check.wis.bonus", mode="add", value="1d4", priority=20),
+        EffectChangeState(
+            key="flags.advantage.check.wisdom", mode="override", value=True, priority=20
+        ),
+        EffectChangeState(key="speed.multiplier", mode="multiply", value=2, priority=0),
+    ]
+    effect = effect_state(
+        ActiveEffect(
+            id="effect:practice",
+            name="Practice",
+            origin="training:focus",
+            target_id=HERO,
+            statuses={"deafened", "poisoned", "stunned"},
+            changes=changes,
+        )
+    )
+    linked, _ = conditions_after_effect_application((), effect.id, sorted(effect.statuses))
+    exhaustion = ActiveCondition(
+        condition="exhaustion",
+        source_entity_id="implied:fatigue",
+        scope="session",
+        exhaustion_level=2,
+    )
+    request = check_case(
+        seed=5,
+        ability="wis",
+        skill="perception",
+        actor_updates={
+            "conditions": [
+                ConditionRecord.model_validate(c.model_dump()) for c in (*linked, exhaustion)
+            ]
+        },
+    )
+    baseline = execute(check_case(seed=5, ability="wis", skill="perception"))
+    request = request.model_copy(
+        update={
+            "state_snapshot": request.state_snapshot.model_copy(update={"effect_states": (effect,)})
+        }
+    )
+    result = execute(request)
+    assert result.status == "accepted", result.error
+    (event,) = result.proposed_events
+    assert event.advantage == "normal"
+    assert event.advantage_sources == ["effect"]
+    assert event.disadvantage_sources == ["condition:attacker"]
+    rng = request.rng_context.state.restore()
+    assert event.natural == rng.randint(1, 20)
+    assert event.modifier == baseline.proposed_events[0].modifier + 4 - 4 + rng.randint(1, 4)
+    assert result.rng_transition.next_state == RNGState.capture(rng)
+    assert result.state_delta.operations == ()
+
+    other_skill = request.model_copy(
+        update={"payload": request.payload.model_copy(update={"skill": "survival"})}
+    )
+    other_result = execute(other_skill)
+    assert other_result.status == "accepted", other_result.error
+    assert other_result.proposed_events[0].modifier == event.modifier - 4
+    assert other_result.rng_transition == result.rng_transition
+
+
+def test_only_the_rollers_fear_requires_visibility_before_rng(monkeypatch):
+    request = check_case(target_id=FOE, social_interaction=True)
+    snapshot = request.state_snapshot
+    actor, target = snapshot.character_states
+    condition = ConditionRecord.model_validate(
+        ActiveCondition(
+            condition="frightened", source_entity_id="npc:012345abcdef", scope="session"
+        ).model_dump()
+    )
+    target_fears = snapshot.model_copy(
+        update={"character_states": (actor, target.model_copy(update={"conditions": [condition]}))}
+    )
+    assert execute(request.model_copy(update={"state_snapshot": target_fears})) == execute(request)
+
+    roller_fears = snapshot.model_copy(
+        update={"character_states": (actor.model_copy(update={"conditions": [condition]}), target)}
+    )
+    monkeypatch.setattr(RNGState, "restore", lambda self: pytest.fail("RNG before unsupported"))
+    result = execute(request.model_copy(update={"state_snapshot": roller_fears}))
+    assert result.status == "unsupported"
+    assert result.error.code == "check.effects"
+    assert "visibility" in result.error.reason
+    assert result.rng_transition is None
+
+
+@pytest.mark.parametrize(("flag", "advantage"), [("true", "advantage"), ("false", "normal")])
+def test_native_passive_check_modifiers_keep_scoped_values(flag, advantage):
+    effect = effect_state(
+        passive_effect_to_active_effect(
+            PassiveEffect(
+                name="Acoustics",
+                transfer=False,
+                changes=[
+                    PassiveEffectChange(key="check.skill.perception.bonus", mode=2, value="+3"),
+                    PassiveEffectChange(key="flags.advantage.check.perception", mode=5, value=flag),
+                    PassiveEffectChange(key="system.bonuses.abilities.save", mode=2, value="+9"),
+                ],
+            ),
+            target_id=HERO,
+            caster_id=HERO,
+        )
+    )
+    request = check_case(ability="wis", skill="perception")
+    baseline = execute(request).proposed_events[0]
+    request = request.model_copy(
+        update={
+            "state_snapshot": request.state_snapshot.model_copy(update={"effect_states": (effect,)})
+        }
+    )
+    result = execute(request)
+    assert result.status == "accepted", result.error
+    (event,) = result.proposed_events
+    assert event.modifier == baseline.modifier + 3
+    assert event.advantage == advantage
+    assert event.advantage_sources == (["effect"] if flag == "true" else [])
+
+
+def test_cast_linked_charmer_applies_only_to_their_explicit_social_check(monkeypatch):
+    request = check_case(target_id=FOE, social_interaction=True)
+    snapshot = request.state_snapshot
+    actor, target = snapshot.character_states
+    effect = effect_state(
+        ActiveEffect(
+            id="effect:charm",
+            name="Charm",
+            origin=f"cast:charm:{HERO}",
+            target_id=FOE,
+            statuses={"charmed"},
+        )
+    )
+    (linked,), _ = conditions_after_effect_application((), effect.id, effect.statuses)
+    charmed_target = target.model_copy(
+        update={"conditions": [ConditionRecord.model_validate(linked.model_dump())]}
+    )
+    charmed_snapshot = snapshot.model_copy(
+        update={"character_states": (actor, charmed_target), "effect_states": (effect,)}
+    )
+    request = request.model_copy(update={"state_snapshot": charmed_snapshot})
+    result = execute(request)
+    assert result.status == "accepted", result.error
+    assert result.proposed_events[0].advantage_sources == ["charmed"]
+    nonsocial = request.model_copy(
+        update={"payload": request.payload.model_copy(update={"social_interaction": False})}
+    )
+    assert execute(nonsocial).proposed_events[0].advantage == "normal"
+
+    unknown_source = effect.model_copy(update={"origin": "environment:charm"})
+    unresolved = request.model_copy(
+        update={
+            "state_snapshot": charmed_snapshot.model_copy(
+                update={"effect_states": (unknown_source,)}
+            )
+        }
+    )
+    monkeypatch.setattr(RNGState, "restore", lambda self: pytest.fail("RNG before unsupported"))
+    refused = execute(unresolved)
+    assert refused.status == "unsupported"
+    assert refused.error.code == "check.effects"
+    assert "source identity" in refused.error.reason
+    assert refused.rng_transition is None
 
 
 def test_supplied_poison_clause_must_agree_with_the_bound_evaluator(monkeypatch):

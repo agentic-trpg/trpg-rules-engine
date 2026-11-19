@@ -26,36 +26,37 @@ The supported stateless graph contains one Haste or one Lethargy. Haste's
 overlap, replacement, damage-driven concentration transitions and granted
 actions remain outside this stateless profile.
 
-## Fixed exploration region conditions
+## Fixed exploration region effects
 
-Evaluator binding `dnd5e-evaluation/45` uses an explicit rule reference for each
-fixed region source. `evaluation_region_effect.plan_region_condition_transition`
-verifies the binding and proposes `add`, `remove`, or `none` for the reviewed
-`condition:poisoned` and `condition:deafened` rules. The host supplies the Scene
-and region source identities, target, coverage edge, and presence of the exact
-effect. Target immunity blocks addition. Departure removes only that source's
-existing effect, including when the target now has immunity. Poisoned retains
-its original identity and works with reduced loaders that omit the compiled
-Poisoned definition. Deafened requires its canonical rule definition in the
-bound data.
+Evaluator binding `dnd5e-evaluation/46` accepts a bound `condition:<slug>` rule
+or a configured `PassiveEffect` for a fixed region source. The condition form
+uses the bound definition and the compiled semantics that a coverage edge can
+apply. The passive form uses the standard passive-to-active adapter. Coverage
+owns the lifetime, so the source definition supplies no independent timer or
+action policy. The legacy Poisoned rule retains its original identity and can
+use the compiled mechanics with reduced loaders.
 
 The complete effect identity is `(target_id, effect_id, origin)`. The effect ID
 is stable across targets of one source, and its origin records the actual Scene
-and source. An addition carries an untimed `EffectState` for a session-scoped
-condition link. The host evaluates spatial coverage and adopts the exact
-transition through its own Effects owner. The planner has no clock, resource
-payment, or RNG and does not extend the `evaluate` operation union.
+and source. `evaluation_region_effect.plan_region_effect_transition` verifies
+the binding and proposes `add`, `remove`, or `none`. The host supplies the
+target, coverage edge and presence of the exact effect. The addition carries
+an untimed `EffectState` and respects condition immunity. Departure removes
+the exact source's effect, including when the target now has immunity. The
+host evaluates spatial coverage and adopts the proposal through Effects.
+The planner uses neither a clock nor RNG.
 
-## Poisoned exploration checks
+## Effects on exploration checks
 
-An ordinary, explicitly adjudicated noncombat ability or skill check accepts
-active Poisoned supplied as a condition or as a condition-only effect with
-matching active lineage. The shared check resolver counts Poisoned once as a
-disadvantage source, even with overlapping providers. An applicable advantage
-source cancels the disadvantage. The evaluator preserves the existing no-write
-Delta and returns the RNG transition for the actual roll. Admission uses the
-actor's supplied state regardless of which source applied Poisoned. Other
-effect profiles and sense-dependent requests retain their existing limits.
+An ordinary, explicitly adjudicated noncombat ability or skill check supplies
+the roller's active effects and condition facts to the existing check resolver.
+The resolver folds modifiers and roll modes applicable to the request. For
+example, an effect with `check.skill.perception.bonus` contributes to Perception,
+and Poisoned contributes disadvantage once even with overlapping sources.
+Admission verifies any bound condition definitions, effect lineage and rule
+facts required by the selected check. The evaluator proposes an empty Delta
+and returns the RNG transition from the actual roll. Sense-dependent requests
+still require a separate integration with the corresponding facts.
 
 ## Timed spell creation and voluntary concentration release
 

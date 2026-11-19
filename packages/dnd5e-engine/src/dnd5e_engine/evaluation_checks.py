@@ -6,7 +6,10 @@ from dnd5e_srd_data.loader import AssetLoader
 from pydantic import ValidationError
 
 from dnd5e_engine.activities.actor_stats import _SCORE_ATTR, skill_ability
-from dnd5e_engine.activities.check_pipeline import resolve_check_request
+from dnd5e_engine.activities.check_pipeline import (
+    resolve_check_request,
+    validate_check_effect_change,
+)
 from dnd5e_engine.activities.context import ActivityResolutionContext
 from dnd5e_engine.effect_lifecycle import conditions_after_effect_application
 from dnd5e_engine.evaluation_actor import combatant
@@ -17,24 +20,26 @@ from dnd5e_engine.evaluation_contracts import (
     RuleEvaluationRequest,
 )
 from dnd5e_engine.evaluation_delta import StateDelta
-from dnd5e_engine.evaluation_effects import EffectDurationState, EffectState
+from dnd5e_engine.evaluation_effects import EffectState, explicit_effect_fields
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError
 from dnd5e_engine.evaluation_region_effect import (
     claims_region_condition_identity,
-    region_condition_status,
+    is_fixed_region_effect,
 )
 from dnd5e_engine.evaluation_rng import RNGTransition
 from dnd5e_engine.evaluation_state import CharacterStateV2, NonCombatSnapshot
 from dnd5e_engine.events import CheckRolled
-from dnd5e_engine.rules.conditions import Condition, standalone_condition_matches_compiled
+from dnd5e_engine.rules.conditions import (
+    Condition,
+    condition_matches_compiled,
+    conditions_charmer_social_advantage,
+    conditions_grant_disadvantage_on_ability_checks,
+)
+from dnd5e_engine.rules.effects import effective_effects
 from dnd5e_engine.rules.skills import Skill
 from dnd5e_engine.types.checks import CheckActorState
 from dnd5e_engine.types.conditions import ActiveCondition
-
-_POISONED = Condition.POISONED.value
-_UNTIMED = EffectDurationState(
-    rounds=None, turns=None, seconds=None, start_round=None, start_turn=None
-)
+from dnd5e_engine.types.effects import ActiveEffect
 
 
 class CheckEvaluation(TypedDict):
@@ -46,6 +51,10 @@ class CheckEvaluation(TypedDict):
     rng_transition: RNGTransition | None
     choice: CheckAdjudicationChoice | None
     error: RuleError | None
+
+
+class _InvalidCheckFactsError(ValueError):
+    """Identify unsupported or inconsistent mechanical inputs before RNG use."""
 
 
 def _refuse(status: Literal["rejected", "unsupported"], code: str, reason: str) -> CheckEvaluation:
@@ -67,14 +76,14 @@ def evaluate_check(
     tool_slug: str | None = None,
     tool_advantage: bool = False,
 ) -> CheckEvaluation:
-    """Resolve an admitted noncombat check with supplied active Poisoned facts.
+    """Resolve a noncombat check with the admitted snapshot conditions and effects.
 
     Return uncommitted check evidence and RNG transition through the shared resolver.
     """
     admission = _admit_check(request, loader)
     if isinstance(admission, dict):
         return admission
-    actor, target = admission
+    actor, target, check_states = admission
     payload, snapshot = request.payload, request.state_snapshot
     if not isinstance(payload, CheckPayload) or not isinstance(snapshot, NonCombatSnapshot):
         raise EvaluationInvariantError("unreachable admitted check types")
@@ -105,7 +114,7 @@ def evaluate_check(
         caster_abilities={
             ability: getattr(caster, field) for ability, field in _SCORE_ATTR.items()
         },
-        check_states={c.entity_id: CheckActorState() for c in (caster, *targets)},
+        check_states=check_states,
     )
     event = (
         resolve_check_request(payload, ctx, tool_slug=tool_slug, tool_advantage=tool_advantage)
@@ -130,77 +139,120 @@ def check_support_failure(
     return admission if isinstance(admission, dict) else None
 
 
-def _check_condition_failure(
-    actors: dict[str, CharacterStateV2], effects: tuple[EffectState, ...], loader: AssetLoader
-) -> str | None:
-    """Validate active Poisoned and exact links to the admitted condition-only effects."""
-    pending_links: dict[str, dict[str, bool]] = {actor_id: {} for actor_id in actors}
+def _linked_condition_effect(
+    condition: ActiveCondition, pending_links: dict[tuple[str, str], EffectState]
+) -> EffectState | None:
+    """Match an effect-supplied condition to its unique projected status and scope."""
+    if condition.source_effect_id is None:
+        if condition.source_entity_id == "implied:effect":
+            raise _InvalidCheckFactsError("effect-sourced condition is missing its lineage")
+        return None
+    effect = pending_links.pop((condition.source_effect_id, condition.condition), None)
+    if effect is None:
+        raise _InvalidCheckFactsError("active condition has missing or duplicate effect lineage")
+    if claims_region_condition_identity(effect.id, effect.origin) and condition.scope != "session":
+        raise _InvalidCheckFactsError("regional condition lineage requires session scope")
+    expected, _ = conditions_after_effect_application(
+        (), effect.id, (condition.condition,), scope=condition.scope
+    )
+    if condition != expected[0]:
+        raise _InvalidCheckFactsError(
+            "active condition differs from its effect's projected lineage"
+        )
+    return effect
+
+
+def _charmer_id(condition: ActiveCondition, effect: EffectState | None) -> str:
+    """Resolve a social check's source from a direct condition or its linked cast."""
+    source = condition.source_entity_id
+    if effect is not None:
+        origin_type, _, origin_detail = effect.origin.partition(":")
+        origin_name, _, origin_actor = origin_detail.partition(":")
+        if origin_type == "cast" and origin_name and origin_actor:
+            source = origin_actor
+            if effect.lifecycle is not None and effect.lifecycle.source_id != source:
+                raise _InvalidCheckFactsError(
+                    "charmer's effect origin differs from its captured source"
+                )
+        elif effect.lifecycle is not None:
+            source = effect.lifecycle.source_id
+    if not source.strip() or source.startswith("implied:"):
+        raise _InvalidCheckFactsError("social check requires the active charmer's source identity")
+    return source
+
+
+def _check_actor_effects(
+    actor: CharacterStateV2,
+    effects: list[EffectState],
+    payload: CheckPayload,
+    loader: AssetLoader,
+) -> CheckActorState:
+    """Validate one relevant actor's effect facts and project the shared check inputs."""
+    pending_links: dict[tuple[str, str], EffectState] = {}
+    active: list[ActiveEffect] = []
     for effect in effects:
-        links = pending_links.get(effect.target_id)
-        if links is None:
-            continue
-        if (
-            not effect.id.strip()
-            or not effect.origin.strip()
-            or effect.id in links
-            or effect.statuses != {_POISONED}
-            or effect.duration != _UNTIMED
-            or effect.disabled
-            or effect.transfer
-            or effect.changes
-            or effect.action_policy is not None
-            or effect.flags
-            or effect.lifecycle is not None
-            or effect.end_effects
-        ):
-            return "only unambiguous, untimed Poisoned status effects are migrated"
+        if not effect.id.strip() or not effect.origin.strip():
+            raise _InvalidCheckFactsError("active effect identity or origin is empty")
         regional = claims_region_condition_identity(effect.id, effect.origin)
-        if regional and region_condition_status(effect.id, effect.origin) != _POISONED:
-            return "regional effect identity does not match its Poisoned status"
-        links[effect.id] = regional
+        if regional and not is_fixed_region_effect(effect):
+            raise _InvalidCheckFactsError("regional effect identity or definition is invalid")
+        if effect.disabled:
+            continue
+        for status in effect.statuses:
+            key = (effect.id, status)
+            if key in pending_links:
+                raise _InvalidCheckFactsError("active condition has ambiguous effect lineage")
+            pending_links[key] = effect
+        active.append(ActiveEffect.model_validate(explicit_effect_fields(effect)))
 
-    if any(actor.conditions for actor in actors.values()):
-        # The compiled rule is part of the verified evaluator binding. Reduced
-        # loaders may omit it, while supplied overrides must still agree.
-        definition = loader.get_condition(_POISONED)
+    charmer_ids: list[str] = []
+    statuses = {condition.condition for condition in actor.conditions}
+    for status in sorted(statuses):
+        if status not in Condition:
+            raise _InvalidCheckFactsError("active condition identity is unknown")
+        # Compiled rules are covered by the evaluator binding when reduced
+        # loaders omit the corresponding assets.
+        definition = loader.get_condition(status)
         if definition is not None and (
-            definition.slug != _POISONED or not standalone_condition_matches_compiled(definition)
+            definition.slug != status or not condition_matches_compiled(definition)
         ):
-            return "Poisoned clauses differ from the pinned compiled rule projection"
-
-    for actor_id, actor in actors.items():
-        links = pending_links[actor_id]
-        for condition in actor.conditions:
-            if condition.condition != _POISONED:
-                return "only active Poisoned is migrated for noncombat checks"
-            effect_id = condition.source_effect_id
-            if effect_id is None:
-                if condition.source_entity_id == "implied:effect":
-                    return "effect-sourced condition is missing its lineage"
-                try:
-                    ActiveCondition.model_validate(condition.model_dump())
-                except ValidationError:
-                    return "active condition source is invalid"
-                continue
-            regional_link = links.pop(effect_id, None)
-            if regional_link is None:
-                return "active condition has missing or duplicate effect lineage"
-            if regional_link and condition.scope != "session":
-                return "regional condition lineage requires session scope"
-            expected, _ = conditions_after_effect_application(
-                (), effect_id, (_POISONED,), scope=condition.scope
+            raise _InvalidCheckFactsError(
+                f"{status} clauses differ from the pinned compiled rule projection"
             )
-            if condition.model_dump() != expected[0].model_dump():
-                return "active condition differs from its effect's projected lineage"
-        if links:
-            return "active effect is missing its projected condition"
-    return None
+    for record in actor.conditions:
+        condition = ActiveCondition.model_validate(record.model_dump())
+        if condition.condition == Condition.EXHAUSTION and condition.exhaustion_level < 1:
+            raise _InvalidCheckFactsError("active Exhaustion requires a positive level")
+        linked_effect = _linked_condition_effect(condition, pending_links)
+
+        if (
+            payload.social_interaction
+            and actor.entity_id == payload.target_id
+            and conditions_charmer_social_advantage([condition.condition])
+        ):
+            charmer_ids.append(_charmer_id(condition, linked_effect))
+    if pending_links:
+        raise _InvalidCheckFactsError("active effect is missing its projected condition")
+
+    if actor.entity_id == payload.actor_id:
+        names = sorted(statuses)
+        if conditions_grant_disadvantage_on_ability_checks(
+            names, fear_source_in_sight=True
+        ) != conditions_grant_disadvantage_on_ability_checks(names, fear_source_in_sight=False):
+            raise _InvalidCheckFactsError("ability check requires the fear source's visibility")
+        for active_effect in effective_effects(active):
+            for change in active_effect.changes:
+                try:
+                    validate_check_effect_change(change, payload)
+                except ValueError as exc:
+                    raise _InvalidCheckFactsError(f"invalid {change.key} change: {exc}") from exc
+    return CheckActorState(effects=tuple(active), charmer_ids=tuple(charmer_ids))
 
 
 def _admit_check(
     request: RuleEvaluationRequest, loader: AssetLoader
-) -> CheckEvaluation | tuple[CharacterStateV2, CharacterStateV2 | None]:
-    """Admit the roller and named target, including reviewed Poisoned facts."""
+) -> CheckEvaluation | tuple[CharacterStateV2, CharacterStateV2 | None, dict[str, CheckActorState]]:
+    """Admit the roller and named target with their relevant fixed check inputs."""
     snapshot, payload = request.state_snapshot, request.payload
     if not isinstance(snapshot, NonCombatSnapshot):
         return _refuse("unsupported", "check.snapshot", "checks require a noncombat snapshot")
@@ -260,8 +312,21 @@ def _admit_check(
             "check.effects",
             "actor concentration and feature sources are not migrated",
         )
-    if failure := _check_condition_failure(actors, snapshot.effect_states, loader):
-        return _refuse("unsupported", "check.effects", failure)
+    effects_by_actor: dict[str, list[EffectState]] = {actor_id: [] for actor_id in actors}
+    for effect in snapshot.effect_states:
+        if effect.target_id in effects_by_actor:
+            effects_by_actor[effect.target_id].append(effect)
+    try:
+        check_states = {
+            actor_id: _check_actor_effects(state, effects_by_actor[actor_id], payload, loader)
+            for actor_id, state in actors.items()
+        }
+    except ValidationError:
+        return _refuse(
+            "unsupported", "check.effects", "active condition or effect facts are invalid"
+        )
+    except _InvalidCheckFactsError as exc:
+        return _refuse("unsupported", "check.effects", str(exc))
     for a in actors.values():
         if any(not 1 <= getattr(a, field) <= 30 for field in _SCORE_ATTR.values()) or (
             not 1 <= a.character_level <= 20
@@ -281,4 +346,4 @@ def _admit_check(
                 return _refuse(
                     "unsupported", "check.equipment", "equipment passive effects require migration"
                 )
-    return actor, target
+    return actor, target, check_states

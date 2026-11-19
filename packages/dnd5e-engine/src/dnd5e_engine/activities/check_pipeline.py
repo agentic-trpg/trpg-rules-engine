@@ -7,7 +7,7 @@ orchestrator, infers semantics from a skill name, or draws during projection.
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, get_args
 
 from dnd5e_srd_data.schema.monster import MonsterTraitMechanic
 
@@ -24,16 +24,104 @@ from dnd5e_engine.rules.conditions import (
 from dnd5e_engine.rules.effects import (
     apply_changes_to_check,
     effective_effects,
-    projected_boolean_flag,
+    validate_check_bonus_change,
 )
 from dnd5e_engine.rules.skill_bonuses import SKILL_CHECK_CHANGE_KEYS
-from dnd5e_engine.rules.skills import SKILL_CODE_TO_SLUG
+from dnd5e_engine.rules.skills import SKILL_CODE_TO_SLUG, Skill
 from dnd5e_engine.types.checks import CheckActorState, CheckRequest
 from dnd5e_engine.types.combat import Combatant
-from dnd5e_engine.types.effects import ActiveEffect
+from dnd5e_engine.types.effects import ActiveEffect, ActiveEffectChange
 
 if TYPE_CHECKING:
     from .context import ActivityResolutionContext
+
+
+_BONUS_KEY_ALIASES = {
+    "abilities.check": "check.bonus",
+    "system.bonuses.abilities.check": "check.bonus",
+    "abilities.skill": "check.skill_check.bonus",
+    "system.bonuses.abilities.skill": "check.skill_check.bonus",
+    **{key: f"check.skill.{skill}.bonus" for key, skill in SKILL_CHECK_CHANGE_KEYS.items()},
+}
+_CHECK_BONUS_KEYS = {
+    "check.bonus",
+    "check.skill_check.bonus",
+    "check.ability_check.bonus",
+    *(f"check.{ability}.bonus" for ability in _SCORE_ATTR),
+    *(f"check.skill.{skill}.bonus" for skill in get_args(Skill)),
+}
+_CHECK_FLAGS = {
+    prefix: {
+        f"flags.{prefix}.check",
+        *(
+            f"flags.{prefix}.check.{scope}"
+            for scope in (*_SCORE_ATTR, *_SCORE_ATTR.values(), *get_args(Skill))
+        ),
+    }
+    for prefix in ("advantage", "disadvantage")
+}
+_CHECK_ROLL_MODES = {
+    ability: f"system.abilities.{ability}.check.roll.mode" for ability in _SCORE_ATTR
+}
+
+
+def _bonus_buckets(request: CheckRequest) -> list[str]:
+    """List the numeric buckets consumed by this request in fold order."""
+    buckets = ["check.bonus", f"check.{request.ability}.bonus"]
+    if request.skill or request.tool:
+        buckets.append("check.skill_check.bonus")
+        if request.skill:
+            buckets.append(f"check.skill.{request.skill}.bonus")
+    else:
+        buckets.append("check.ability_check.bonus")
+    return buckets
+
+
+def _check_flag_keys(request: CheckRequest, prefix: str) -> list[str]:
+    """List the general, ability and skill flags applicable to this request."""
+    base = f"flags.{prefix}.check"
+    keys = [base, f"{base}.{request.ability}", f"{base}.{_SCORE_ATTR[request.ability]}"]
+    if request.skill:
+        keys.append(f"{base}.{request.skill}")
+    return keys
+
+
+def _check_flag_value(change: ActiveEffectChange) -> bool | None:
+    """Read the boolean override in either runtime or native authoring form."""
+    if change.mode != "override":
+        return None
+    value = change.value
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return {"true": True, "false": False}.get(value.strip().lower())
+    return None
+
+
+def validate_check_effect_change(
+    change: ActiveEffectChange, request: CheckRequest | None = None
+) -> bool:
+    """Validate a supported check change, optionally limited to this request's keys.
+
+    Return False for changes outside the selected check vocabulary. Raise
+    ValueError for changes on a selected key whose mode or value cannot apply.
+    """
+    key = _BONUS_KEY_ALIASES.get(change.key, change.key)
+    if key in (_bonus_buckets(request) if request else _CHECK_BONUS_KEYS):
+        validate_check_bonus_change(change)
+        return True
+    if any(
+        key in (_check_flag_keys(request, prefix) if request else flags)
+        for prefix, flags in _CHECK_FLAGS.items()
+    ):
+        if _check_flag_value(change) is None:
+            raise ValueError("invalid boolean check advantage or disadvantage")
+        return True
+    if key in ((_CHECK_ROLL_MODES[request.ability],) if request else _CHECK_ROLL_MODES.values()):
+        if change.mode != "add" or change.value not in ("1", "-1"):
+            raise ValueError("invalid check roll mode")
+        return True
+    return False
 
 
 def activity_check_modifier(
@@ -100,19 +188,13 @@ def _sources(
             adv.append("charmed")
     changes = [c for effect in effective_effects(state.effects) for c in effect.changes]
     for prefix, sources in (("advantage", adv), ("disadvantage", dis)):
-        keys = [
-            f"flags.{prefix}.check",
-            f"flags.{prefix}.check.{request.ability}",
-            f"flags.{prefix}.check.{_SCORE_ATTR[request.ability]}",
-        ]
-        if request.skill:
-            keys.append(f"flags.{prefix}.check.{request.skill}")
-        if any(projected_boolean_flag(changes, key) for key in keys):
+        keys = _check_flag_keys(request, prefix)
+        if any(change.key in keys and _check_flag_value(change) is True for change in changes):
             sources.append("effect")
         # Audited Foundry ability-check mode: +1/-1 affects checks only.
         value = "1" if prefix == "advantage" else "-1"
         if any(
-            change.key == f"system.abilities.{request.ability}.check.roll.mode"
+            change.key == _CHECK_ROLL_MODES[request.ability]
             and change.mode == "add"
             and change.value == value
             for change in changes
@@ -127,32 +209,19 @@ def _effect_bonus(
     # Normalize audited Foundry aliases once, then use the existing effect
     # arithmetic. Projection remains draw-free; bonus dice roll AFTER the d20.
     """Evaluate an applicable effect bonus through the check's resolution context."""
-    aliases = {
-        "abilities.check": "check.bonus",
-        "system.bonuses.abilities.check": "check.bonus",
-        "abilities.skill": "check.skill_check.bonus",
-        "system.bonuses.abilities.skill": "check.skill_check.bonus",
-        **{key: f"check.skill.{skill}.bonus" for key, skill in SKILL_CHECK_CHANGE_KEYS.items()},
-    }
     effects: list[ActiveEffect] = [
         effect.model_copy(
             update={
                 "changes": [
-                    c.model_copy(update={"key": aliases.get(c.key, c.key)}) for c in effect.changes
+                    c.model_copy(update={"key": _BONUS_KEY_ALIASES.get(c.key, c.key)})
+                    for c in effect.changes
                 ]
             }
         )
         for effect in effective_effects(state.effects)
     ]
     total = 0
-    buckets = ["check.bonus", f"check.{request.ability}.bonus"]
-    if request.skill or request.tool:
-        buckets.append("check.skill_check.bonus")
-        if request.skill:
-            buckets.append(f"check.skill.{request.skill}.bonus")
-    else:
-        buckets.append("check.ability_check.bonus")
-    for bucket in buckets:
+    for bucket in _bonus_buckets(request):
         total, _ = apply_changes_to_check(total, bucket, effects, ctx.rng)
     return total
 

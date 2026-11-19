@@ -11,6 +11,8 @@ import random
 import re
 from dataclasses import dataclass
 
+from dnd5e_engine.rules.dice import MAX_DICE_TERM
+
 
 @dataclass(frozen=True)
 class Expression:
@@ -113,7 +115,11 @@ class _Parser:
             self.take()
             size = self.take()
             count = scalar(node)
-            if not size.isdecimal() or not 1 <= int(size) <= 10000 or not 0 <= count <= 10000:
+            if (
+                not size.isdecimal()
+                or not 1 <= int(size) <= MAX_DICE_TERM
+                or not 0 <= count <= MAX_DICE_TERM
+            ):
                 raise ValueError("invalid dice count or size")
             node = Expression("dice", int(size), (Expression("int", count),))
         return node

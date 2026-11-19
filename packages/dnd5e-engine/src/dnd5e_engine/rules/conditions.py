@@ -149,12 +149,14 @@ _DECLARATIVE_CONDITION_EFFECTS: dict[str, tuple[ConditionEffect, ...]] = {
 }
 
 
-def standalone_condition_matches_compiled(definition: ConditionDefinition) -> bool:
-    """Check that a standalone bound condition agrees with the compiled mechanical clauses."""
+def condition_matches_compiled(definition: ConditionDefinition) -> bool:
+    """Check the bound mechanical clauses and implied conditions against the compiled rules."""
     expected = _DECLARATIVE_CONDITION_EFFECTS.get(definition.slug)
+    if expected is None:
+        return False
+    implied = CONDITION_IMPLIES.get(Condition(definition.slug), ())
     return (
-        expected is not None
-        and not definition.implies
+        tuple(definition.implies) == tuple(implied)
         and len(definition.effects) == len(expected)
         and all(
             actual == compiled
@@ -162,6 +164,11 @@ def standalone_condition_matches_compiled(definition: ConditionDefinition) -> bo
             for actual, compiled in zip(definition.effects, expected, strict=True)
         )
     )
+
+
+def standalone_condition_matches_compiled(definition: ConditionDefinition) -> bool:
+    """Check that a condition with no implications matches the compiled mechanics."""
+    return not definition.implies and condition_matches_compiled(definition)
 
 
 def _project_condition_changes(conditions: list[str]) -> list[ActiveEffectChange]:

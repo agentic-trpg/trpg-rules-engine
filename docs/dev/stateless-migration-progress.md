@@ -1,5 +1,14 @@
 # Stateful → Stateless migration progress
 
+## Passive fixed-region effects and exploration checks — 2026-11-19
+
+Evaluator `/46` converts configured passive templates through the shared effect
+adapter. Each environment source keeps its own effect identity and can carry
+modifiers alongside eligible bound condition statuses. The ordinary check
+resolver consumes the applicable effects from the noncombat Snapshot. See
+[fixed region effects](stateless-evaluation.md#fixed-exploration-region-effects)
+and [effects on exploration checks](stateless-evaluation.md#effects-on-exploration-checks).
+
 ## Configured region conditions and Poisoned checks — 2026-11-19
 
 Evaluator `/45` uses reviewed rule references to resolve fixed-area Poisoned
@@ -7,8 +16,8 @@ and Deafened transitions through the same planner. Ordinary noncombat ability
 and skill checks consume the actor's active Poisoned state through the shared
 check resolver. Coverage includes exact source lineage, overlap, immunity and
 the RNG transition for disadvantage and cancellation. See
-[fixed region conditions](stateless-evaluation.md#fixed-exploration-region-conditions)
-and [Poisoned checks](stateless-evaluation.md#poisoned-exploration-checks).
+[fixed region effects](stateless-evaluation.md#fixed-exploration-region-effects)
+and [effects on exploration checks](stateless-evaluation.md#effects-on-exploration-checks).
 
 ## Combat Haste and effect follow-ups — 2026-11-19
 
@@ -20,7 +29,7 @@ tracked in the consuming repository.
 
 ## Fixed exploration region conditions — 2026-11-19
 
-The RE branch adds a [fixed-region planner](stateless-evaluation.md#fixed-exploration-region-conditions)
+The RE branch adds a [fixed-region planner](stateless-evaluation.md#fixed-exploration-region-effects)
 for the Poisoned exploration fixture. It proposes exact source transitions and
 reuses the shared condition immunity rule. The attached condition can be
 projected with session scope while combat callers retain the existing default.

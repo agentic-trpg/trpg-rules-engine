@@ -17,6 +17,7 @@ from dataclasses import dataclass
 # The process-global ``random`` module satisfies the small surface these
 # helpers use (``randint``), so it doubles as the default generator.
 _Rng = random.Random
+MAX_DICE_TERM = 10_000
 
 
 @dataclass(frozen=True)

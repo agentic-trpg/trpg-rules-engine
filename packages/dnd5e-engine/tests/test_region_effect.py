@@ -2,6 +2,7 @@
 
 import pytest
 from dnd5e_srd_data import MemoryAssetLoader
+from dnd5e_srd_data.schema.common import PassiveEffect
 
 from dnd5e_engine.effect_lifecycle import (
     conditions_after_effect_application,
@@ -11,10 +12,13 @@ from dnd5e_engine.evaluation_effects import EffectState
 from dnd5e_engine.evaluation_region_effect import (
     claims_region_condition_identity,
     is_fixed_region_condition_effect,
+    is_fixed_region_effect,
     is_region_condition,
     plan_region_condition_transition,
+    plan_region_effect_transition,
     region_condition_identity,
     resolve_region_condition_rule,
+    validate_region_effect_rule,
 )
 from dnd5e_engine.evaluation_ruleset import RulesetBindingError, freeze_ruleset, get_default_ruleset
 
@@ -130,11 +134,93 @@ def test_fixed_area_rule_requires_its_bound_asset_except_for_legacy_poisoned() -
         resolve_region_condition_rule(
             "condition:deafened", ruleset_binding=empty.binding, loader=empty
         )
-    for invalid in ("deafened", "condition:unknown", "condition:blinded"):
+    for invalid in ("deafened", "condition:unknown"):
         with pytest.raises(ValueError, match="Unknown fixed-area condition rule"):
             resolve_region_condition_rule(
                 invalid, ruleset_binding=canonical.binding, loader=canonical
             )
+
+
+@pytest.mark.parametrize("status", ["blinded", "prone", "restrained"])
+def test_region_refuses_bound_conditions_without_a_supported_exit(status: str) -> None:
+    with pytest.raises(ValueError, match="prevent a supported exploration exit"):
+        _plan(entering=True, present=False, rule_ref=f"condition:{status}")
+
+
+@pytest.mark.parametrize("status", ["charmed", "exhaustion", "frightened"])
+def test_region_refuses_condition_with_missing_context_or_state(status: str) -> None:
+    with pytest.raises(ValueError, match="additional rule context or state changes"):
+        _plan(entering=True, present=False, rule_ref=f"condition:{status}")
+
+
+def test_region_converts_configured_numeric_effect_with_no_condition_link() -> None:
+    canonical = get_default_ruleset()
+    effect = PassiveEffect.model_validate(
+        {
+            "name": "Sluggish air",
+            "transfer": False,
+            "changes": [{"key": "check.bonus", "mode": 2, "value": "-3"}],
+        }
+    )
+    arguments = dict(
+        ruleset_binding=canonical.binding,
+        scene_id="scene-a",
+        source_id="local-a",
+        target_id="target-a",
+        condition_immunities=("poisoned",),
+        rule=effect,
+    )
+    enter = plan_region_effect_transition(**arguments, entering=True, present=False)
+    leave = plan_region_effect_transition(**arguments, entering=False, present=True)
+    assert enter.operation == "add"
+    assert leave.operation == "remove"
+    assert enter.identity == leave.identity
+    assert enter.effect is not None
+    assert is_fixed_region_effect(enter.effect)
+    assert not enter.effect.statuses
+    (change,) = enter.effect.changes
+    assert (change.key, change.mode, change.value) == ("check.bonus", "add", "-3")
+
+
+def test_region_refuses_malformed_known_modifier_at_configuration() -> None:
+    canonical = get_default_ruleset()
+    effect = PassiveEffect.model_validate(
+        {
+            "name": "Opaque effect",
+            "transfer": False,
+            "changes": [{"key": "check.bonus", "mode": 2, "value": "oops"}],
+        }
+    )
+    with pytest.raises(ValueError, match="invalid numeric check bonus"):
+        validate_region_effect_rule(effect, ruleset_binding=canonical.binding)
+
+
+def test_native_region_projects_multiple_statuses_and_noncheck_modifiers() -> None:
+    canonical = get_default_ruleset()
+    rule = PassiveEffect.model_validate(
+        {
+            "name": "Fog",
+            "transfer": False,
+            "statuses": ["poisoned", "deafened"],
+            "changes": [{"key": "attack.roll.bonus", "mode": 2, "value": "-3"}],
+        }
+    )
+    validate_region_effect_rule(rule, ruleset_binding=canonical.binding)
+    result = plan_region_effect_transition(
+        ruleset_binding=canonical.binding,
+        scene_id="scene-a",
+        source_id="local-a",
+        target_id="target-a",
+        entering=True,
+        present=False,
+        condition_immunities=("poisoned",),
+        rule=rule,
+    )
+    assert result.effect is not None
+    assert result.effect.statuses == {"deafened"}
+    assert is_fixed_region_effect(result.effect)
+    assert not is_fixed_region_effect(result.effect.model_copy(update={"statuses": {"prone"}}))
+    assert [change.key for change in result.effect.changes] == ["attack.roll.bonus"]
 
 
 @pytest.mark.parametrize("status", ["poisoned", "deafened"])

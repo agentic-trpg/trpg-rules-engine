@@ -29,7 +29,8 @@ The standard-library selector in `tools/validation_scope.py` includes staged,
 unstaged and untracked files. An explicit BASE also includes committed changes since
 that exact commit. Without BASE, dirty files define the batch; a clean checkout uses
 the latest commit. Invalid bases fail, rather than silently narrowing validation.
-CI supplies push.before, or the PR merge-base; initial branch pushes compare main.
+PR validation supplies the PR merge-base. Manual `fast` and `integration` runs use the
+selector's clean-checkout default.
 
 - Engine source changes use the reverse Python import closure through source modules
   and test helpers, plus a small fixed regression set for deterministic combat,
@@ -65,13 +66,10 @@ are not repeatedly resolved or installed. GitHub uses setup-uv's lock-keyed cach
 See [uv's CI guidance](https://docs.astral.sh/uv/guides/integration/github/) and
 [sync semantics](https://docs.astral.sh/uv/concepts/projects/sync/).
 
-CI runs on branch pushes and PRs. An open PR owns validation for its branch, so the
-duplicate push validation job is visibly skipped. API lookup failures conservatively
-keep the push check. An initial push before opening a PR can still have a Fast run
-followed by PR validation; no expensive Full work is automatically duplicated.
-New commits cancel obsolete runs within the same event/branch. The stable checks are
+Run validation locally before pushing. GitHub's CI workflow runs for pull requests and
+manual dispatches. PRs use `make check-auto`, and the logs state the selected tier and
+plan. New commits cancel obsolete runs for the same PR. The stable checks are
 `Select validation`, `Fast / Focused Validation`, and manual `Full Validation`.
-PR and push validation both use `make check-auto`; logs state the actual tier and plan.
 
 Full is available from CI's workflow_dispatch tier choice; it is never automatic.
 Provenance regeneration and release publishing retain their independent maintainer
@@ -80,7 +78,7 @@ workflows. No Python compatibility matrix is added to ordinary batches.
 Pages is currently unconfigured (repository Pages API returned 404 during this audit).
 `Deploy docs` is manual-only and builds by default. To deploy in the future, configure
 Pages with GitHub Actions as its source, set repository variable `PAGES_ENABLED=true`,
-and dispatch on main with `deploy=true`. Automatic documentation validation uses CI's
+and dispatch on main with `deploy=true`. PR documentation validation uses CI's
 strict build and never calls Pages. `make docs` builds locally; `make smoke` exercises
 fresh data/engine wheels against locked third-party dependencies without editable
 installs, PYTHONPATH, or the Unix-only venv activation assumed by the older package script.

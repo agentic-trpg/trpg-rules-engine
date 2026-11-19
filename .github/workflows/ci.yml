@@ -1,8 +1,6 @@
 name: CI
 
 on:
-  push:
-    branches: ['**']
   pull_request:
   workflow_dispatch:
     inputs:
@@ -14,7 +12,6 @@ on:
 
 permissions:
   contents: read
-  pull-requests: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
@@ -27,43 +24,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      run: ${{ steps.scope.outputs.run }}
       base: ${{ steps.scope.outputs.base }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Select diff and avoid duplicate push/PR runs
+      - name: Select PR comparison base
         id: scope
+        if: github.event_name == 'pull_request'
         env:
-          GH_TOKEN: ${{ github.token }}
-          EVENT: ${{ github.event_name }}
-          BEFORE: ${{ github.event.before }}
           PR_BASE: ${{ github.event.pull_request.base.sha }}
           PR_HEAD: ${{ github.event.pull_request.head.sha }}
-          BRANCH: ${{ github.ref_name }}
         run: |
-          echo "run=true" >> "$GITHUB_OUTPUT"
-          if [ "$EVENT" = pull_request ]; then
-            echo "base=$(git merge-base "$PR_BASE" "$PR_HEAD")" >> "$GITHUB_OUTPUT"
-          elif [ "$EVENT" = push ]; then
-            if ! count=$(gh api --method GET "repos/$GITHUB_REPOSITORY/pulls" -f state=open -f "head=$GITHUB_REPOSITORY_OWNER:$BRANCH" --jq length); then
-              echo "PR lookup unavailable; conservatively keep push validation."
-            elif [ "$count" -gt 0 ]; then
-              echo "run=false" >> "$GITHUB_OUTPUT"
-              echo "Open PR owns validation; push validation is explicitly skipped."
-            fi
-            if [ "$BEFORE" != 0000000000000000000000000000000000000000 ]; then
-              echo "base=$BEFORE" >> "$GITHUB_OUTPUT"
-            else
-              echo "base=$(git merge-base HEAD origin/main)" >> "$GITHUB_OUTPUT"
-            fi
-          fi
+          echo "base=$(git merge-base "$PR_BASE" "$PR_HEAD")" >> "$GITHUB_OUTPUT"
 
   validation:
     name: Fast / Focused Validation
     needs: scope
-    if: needs.scope.outputs.run == 'true' && inputs.level != 'full'
+    if: inputs.level != 'full'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

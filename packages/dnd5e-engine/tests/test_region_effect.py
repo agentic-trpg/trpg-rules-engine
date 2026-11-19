@@ -1,6 +1,7 @@
 """Exercise the fixed exploration region planner and its condition projection."""
 
 import pytest
+from dnd5e_srd_data import MemoryAssetLoader
 
 from dnd5e_engine.effect_lifecycle import (
     conditions_after_effect_application,
@@ -8,11 +9,14 @@ from dnd5e_engine.effect_lifecycle import (
 )
 from dnd5e_engine.evaluation_effects import EffectState
 from dnd5e_engine.evaluation_region_effect import (
+    claims_region_condition_identity,
+    is_fixed_region_condition_effect,
     is_region_condition,
     plan_region_condition_transition,
     region_condition_identity,
+    resolve_region_condition_rule,
 )
-from dnd5e_engine.evaluation_ruleset import RulesetBindingError, get_default_ruleset
+from dnd5e_engine.evaluation_ruleset import RulesetBindingError, freeze_ruleset, get_default_ruleset
 
 
 def _plan(
@@ -21,6 +25,7 @@ def _plan(
     present: bool,
     condition_immunities: tuple[str, ...] = (),
     source_id: str = "fog-a",
+    rule_ref: str = "condition:poisoned",
 ):
     return plan_region_condition_transition(
         ruleset_binding=get_default_ruleset().binding,
@@ -30,6 +35,7 @@ def _plan(
         entering=entering,
         present=present,
         condition_immunities=condition_immunities,
+        rule_ref=rule_ref,
     )
 
 
@@ -40,6 +46,7 @@ def test_identity_separates_scenes_and_sources_and_remains_stable() -> None:
     other_target = region_condition_identity("隧道:a", "fog:west", "target-b")
 
     assert first == region_condition_identity("隧道:a", "fog:west", "target-a")
+    assert first[2] == r'region:poisoned:["\u96a7\u9053:a","fog:west"]'
     assert len({first[1], second[1], other_scene[1]}) == 3
     assert first[1:] == other_target[1:]
     assert "fog:west" not in first[1]
@@ -48,6 +55,9 @@ def test_identity_separates_scenes_and_sources_and_remains_stable() -> None:
     assert not is_region_condition(first[1], second[2])
     assert not is_region_condition("effect:longstrider", first[2])
     assert not is_region_condition(first[1], "region:poisoned:invalid")
+    assert claims_region_condition_identity("effect:longstrider", first[2])
+    assert claims_region_condition_identity(first[1], "spell:longstrider")
+    assert not claims_region_condition_identity("effect:longstrider", "spell:longstrider")
 
 
 @pytest.mark.parametrize(
@@ -84,6 +94,60 @@ def test_add_projects_a_durable_untimed_effect() -> None:
     assert not restored.end_effects
     assert restored.action_policy is None
     assert restored.lifecycle is None
+
+
+def test_explicit_deafened_rule_uses_bound_content_and_its_own_identity() -> None:
+    result = _plan(entering=True, present=False, rule_ref="condition:deafened")
+    assert result.effect is not None
+    assert result.effect.name == "Deafened"
+    assert result.effect.statuses == {"deafened"}
+    assert is_fixed_region_condition_effect(result.effect)
+    assert not is_fixed_region_condition_effect(
+        result.effect.model_copy(update={"statuses": {"poisoned"}})
+    )
+    assert result.identity != region_condition_identity("scene-a", "fog-a", "target-a")
+    assert (
+        _plan(
+            entering=True,
+            present=False,
+            rule_ref="condition:deafened",
+            condition_immunities=("deafened",),
+        ).operation
+        == "none"
+    )
+    removal = _plan(entering=False, present=True, rule_ref="condition:deafened")
+    assert removal.operation == "remove"
+    assert removal.identity == result.identity
+
+
+def test_fixed_area_rule_requires_its_bound_asset_except_for_legacy_poisoned() -> None:
+    empty = freeze_ruleset(MemoryAssetLoader())
+    canonical = get_default_ruleset()
+    assert resolve_region_condition_rule(
+        "condition:poisoned", ruleset_binding=empty.binding, loader=empty
+    ) == ("poisoned", "Poisoned")
+    with pytest.raises(ValueError, match="standalone condition asset"):
+        resolve_region_condition_rule(
+            "condition:deafened", ruleset_binding=empty.binding, loader=empty
+        )
+    for invalid in ("deafened", "condition:unknown", "condition:blinded"):
+        with pytest.raises(ValueError, match="Unknown fixed-area condition rule"):
+            resolve_region_condition_rule(
+                invalid, ruleset_binding=canonical.binding, loader=canonical
+            )
+
+
+@pytest.mark.parametrize("status", ["poisoned", "deafened"])
+def test_fixed_area_rule_rejects_modified_bound_mechanics(status: str) -> None:
+    definition = get_default_ruleset().get_condition(status)
+    assert definition is not None
+    modified = freeze_ruleset(
+        MemoryAssetLoader(conditions=[definition.model_copy(update={"effects": []})])
+    )
+    with pytest.raises(ValueError, match="modified condition mechanics"):
+        resolve_region_condition_rule(
+            f"condition:{status}", ruleset_binding=modified.binding, loader=modified
+        )
 
 
 def test_projected_session_conditions_retain_overlapping_sources() -> None:

@@ -3,10 +3,12 @@
 from typing import Literal, TypedDict, get_args
 
 from dnd5e_srd_data.loader import AssetLoader
+from pydantic import ValidationError
 
 from dnd5e_engine.activities.actor_stats import _SCORE_ATTR, skill_ability
 from dnd5e_engine.activities.check_pipeline import resolve_check_request
 from dnd5e_engine.activities.context import ActivityResolutionContext
+from dnd5e_engine.effect_lifecycle import conditions_after_effect_application
 from dnd5e_engine.evaluation_actor import combatant
 from dnd5e_engine.evaluation_contracts import (
     CheckAdjudicationChoice,
@@ -15,12 +17,24 @@ from dnd5e_engine.evaluation_contracts import (
     RuleEvaluationRequest,
 )
 from dnd5e_engine.evaluation_delta import StateDelta
+from dnd5e_engine.evaluation_effects import EffectDurationState, EffectState
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError
+from dnd5e_engine.evaluation_region_effect import (
+    claims_region_condition_identity,
+    region_condition_status,
+)
 from dnd5e_engine.evaluation_rng import RNGTransition
 from dnd5e_engine.evaluation_state import CharacterStateV2, NonCombatSnapshot
 from dnd5e_engine.events import CheckRolled
+from dnd5e_engine.rules.conditions import Condition, standalone_condition_matches_compiled
 from dnd5e_engine.rules.skills import Skill
 from dnd5e_engine.types.checks import CheckActorState
+from dnd5e_engine.types.conditions import ActiveCondition
+
+_POISONED = Condition.POISONED.value
+_UNTIMED = EffectDurationState(
+    rounds=None, turns=None, seconds=None, start_round=None, start_turn=None
+)
 
 
 class CheckEvaluation(TypedDict):
@@ -53,8 +67,9 @@ def evaluate_check(
     tool_slug: str | None = None,
     tool_advantage: bool = False,
 ) -> CheckEvaluation:
-    """Evaluate an admitted noncombat check, returning uncommitted evidence and RNG
-    transition.
+    """Resolve an admitted noncombat check with supplied active Poisoned facts.
+
+    Return uncommitted check evidence and RNG transition through the shared resolver.
     """
     admission = _admit_check(request, loader)
     if isinstance(admission, dict):
@@ -115,10 +130,77 @@ def check_support_failure(
     return admission if isinstance(admission, dict) else None
 
 
+def _check_condition_failure(
+    actors: dict[str, CharacterStateV2], effects: tuple[EffectState, ...], loader: AssetLoader
+) -> str | None:
+    """Validate active Poisoned and exact links to the admitted condition-only effects."""
+    pending_links: dict[str, dict[str, bool]] = {actor_id: {} for actor_id in actors}
+    for effect in effects:
+        links = pending_links.get(effect.target_id)
+        if links is None:
+            continue
+        if (
+            not effect.id.strip()
+            or not effect.origin.strip()
+            or effect.id in links
+            or effect.statuses != {_POISONED}
+            or effect.duration != _UNTIMED
+            or effect.disabled
+            or effect.transfer
+            or effect.changes
+            or effect.action_policy is not None
+            or effect.flags
+            or effect.lifecycle is not None
+            or effect.end_effects
+        ):
+            return "only unambiguous, untimed Poisoned status effects are migrated"
+        regional = claims_region_condition_identity(effect.id, effect.origin)
+        if regional and region_condition_status(effect.id, effect.origin) != _POISONED:
+            return "regional effect identity does not match its Poisoned status"
+        links[effect.id] = regional
+
+    if any(actor.conditions for actor in actors.values()):
+        # The compiled rule is part of the verified evaluator binding. Reduced
+        # loaders may omit it, while supplied overrides must still agree.
+        definition = loader.get_condition(_POISONED)
+        if definition is not None and (
+            definition.slug != _POISONED or not standalone_condition_matches_compiled(definition)
+        ):
+            return "Poisoned clauses differ from the pinned compiled rule projection"
+
+    for actor_id, actor in actors.items():
+        links = pending_links[actor_id]
+        for condition in actor.conditions:
+            if condition.condition != _POISONED:
+                return "only active Poisoned is migrated for noncombat checks"
+            effect_id = condition.source_effect_id
+            if effect_id is None:
+                if condition.source_entity_id == "implied:effect":
+                    return "effect-sourced condition is missing its lineage"
+                try:
+                    ActiveCondition.model_validate(condition.model_dump())
+                except ValidationError:
+                    return "active condition source is invalid"
+                continue
+            regional_link = links.pop(effect_id, None)
+            if regional_link is None:
+                return "active condition has missing or duplicate effect lineage"
+            if regional_link and condition.scope != "session":
+                return "regional condition lineage requires session scope"
+            expected, _ = conditions_after_effect_application(
+                (), effect_id, (_POISONED,), scope=condition.scope
+            )
+            if condition.model_dump() != expected[0].model_dump():
+                return "active condition differs from its effect's projected lineage"
+        if links:
+            return "active effect is missing its projected condition"
+    return None
+
+
 def _admit_check(
     request: RuleEvaluationRequest, loader: AssetLoader
 ) -> CheckEvaluation | tuple[CharacterStateV2, CharacterStateV2 | None]:
-    """Admit the roller and named target while preserving the snapshot effect gate."""
+    """Admit the roller and named target, including reviewed Poisoned facts."""
     snapshot, payload = request.state_snapshot, request.payload
     if not isinstance(snapshot, NonCombatSnapshot):
         return _refuse("unsupported", "check.snapshot", "checks require a noncombat snapshot")
@@ -162,9 +244,8 @@ def _admit_check(
             "check.capability",
             "tools, resources, senses, derived sources and action checks are not migrated",
         )
-    if snapshot.effect_states or any(
-        a.conditions
-        or a.concentration_effect_id
+    if any(
+        a.concentration_effect_id
         or a.trait_mechanics
         or a.classes
         or a.class_slug
@@ -175,8 +256,12 @@ def _admit_check(
         for a in actors.values()
     ):
         return _refuse(
-            "unsupported", "check.effects", "actor effects and feature sources are not migrated"
+            "unsupported",
+            "check.effects",
+            "actor concentration and feature sources are not migrated",
         )
+    if failure := _check_condition_failure(actors, snapshot.effect_states, loader):
+        return _refuse("unsupported", "check.effects", failure)
     for a in actors.values():
         if any(not 1 <= getattr(a, field) <= 30 for field in _SCORE_ATTR.values()) or (
             not 1 <= a.character_level <= 20

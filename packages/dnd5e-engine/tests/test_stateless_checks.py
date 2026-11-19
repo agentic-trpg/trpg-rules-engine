@@ -4,22 +4,30 @@ from copy import deepcopy
 from typing import get_args
 
 import pytest
+from dnd5e_srd_data import MemoryAssetLoader
 from pydantic import ValidationError
 
 from dnd5e_engine.check import CheckSpec, resolve_check
+from dnd5e_engine.effect_lifecycle import conditions_after_effect_application
 from dnd5e_engine.evaluation_contracts import (
     CheckPayload,
     RuleEvaluationRequest,
     RuleEvaluationResult,
 )
-from dnd5e_engine.evaluation_effects import effect_state
+from dnd5e_engine.evaluation_effects import EffectChangeState, effect_state
+from dnd5e_engine.evaluation_region_effect import region_condition_identity
 from dnd5e_engine.evaluation_rng import RNGState
-from dnd5e_engine.evaluation_ruleset import RulesetBindingError
-from dnd5e_engine.evaluation_state import NonCombatSnapshot
+from dnd5e_engine.evaluation_ruleset import (
+    RulesetBindingError,
+    get_default_ruleset,
+    ruleset_binding,
+)
+from dnd5e_engine.evaluation_state import ConditionRecord, NonCombatSnapshot
 from dnd5e_engine.events import CheckRolled
 from dnd5e_engine.rules.skills import SKILL_ABILITIES, Skill
+from dnd5e_engine.types.conditions import ActiveCondition
 from dnd5e_engine.types.effects import ActiveEffect
-from tests.evaluation_support import FOE, HERO
+from tests.evaluation_support import FOE, HERO, WEAPON, synthetic_loader
 from tests.test_stateless_attack import execute, request_and_live
 
 
@@ -349,4 +357,160 @@ def test_variant_ability_cannot_silently_drop_a_supplied_skill_bonus(monkeypatch
     assert result.status == "unsupported"
     assert result.error.code == "check.skill_bonus"
     assert result.state_delta is result.rng_transition is None
+    assert result.proposed_events == ()
+
+
+def _poison_effect(target=HERO, *, origin="trap:needle"):
+    return effect_state(
+        ActiveEffect(
+            id="condition:trap-poison",
+            name="Needle Poison",
+            origin=origin,
+            target_id=target,
+            statuses={"poisoned"},
+        )
+    )
+
+
+def _linked_poison(effect, *, scope="session"):
+    (condition,), _ = conditions_after_effect_application(
+        (), effect.id, effect.statuses, scope=scope
+    )
+    return ConditionRecord.model_validate(condition.model_dump())
+
+
+@pytest.mark.parametrize("linked", [False, True])
+def test_active_trap_poison_disadvantages_an_ability_check(linked):
+    effect = _poison_effect()
+    direct = ActiveCondition(
+        condition="poisoned", source_entity_id="trap:012345abcdef", scope="session"
+    )
+    condition = (
+        _linked_poison(effect, scope="combat")
+        if linked
+        else ConditionRecord.model_validate(direct.model_dump())
+    )
+    request = check_case(seed=5, skill=None, actor_updates={"conditions": [condition]})
+    if linked:
+        request = request.model_copy(
+            update={
+                "state_snapshot": request.state_snapshot.model_copy(
+                    update={"effect_states": (effect,)}
+                )
+            }
+        )
+    result = execute(request)
+    assert result.status == "accepted", result.error
+    (event,) = result.proposed_events
+    rng = request.rng_context.state.restore()
+    rolls = (rng.randint(1, 20), rng.randint(1, 20))
+    assert rolls[0] > rolls[1]
+    assert event.advantage == "disadvantage"
+    assert event.rolled_natural == min(rolls)
+    assert event.disadvantage_sources == ["condition:attacker"]
+    assert result.rng_transition.next_state == RNGState.capture(rng)
+    assert result.state_delta.operations == ()
+
+
+@pytest.mark.parametrize("named_target", [False, True])
+def test_poison_on_another_actor_does_not_change_the_rollers_check(named_target):
+    request = check_case(target_id=FOE if named_target else None, social_interaction=named_target)
+    expected = execute(request)
+    snapshot = request.state_snapshot
+    roller, target = snapshot.character_states
+    effect = _poison_effect(FOE)
+    target = target.model_copy(update={"conditions": [_linked_poison(effect)]})
+    affected = request.model_copy(
+        update={
+            "state_snapshot": snapshot.model_copy(
+                update={"character_states": (roller, target), "effect_states": (effect,)}
+            )
+        }
+    )
+    assert expected.status == "accepted"
+    assert execute(affected) == expected
+
+
+@pytest.mark.parametrize(
+    "fault",
+    [
+        "missing_condition",
+        "missing_effect",
+        "ambiguous",
+        "wrong_source",
+        "modifier",
+        "other_region_status",
+        "malformed_region_id",
+        "malformed_region_origin",
+        "combat_region",
+    ],
+)
+def test_unreviewed_poison_profiles_fail_before_rng(fault, monkeypatch):
+    effect = _poison_effect()
+    if fault in ("other_region_status", "combat_region"):
+        rule_ref = "condition:deafened" if fault == "other_region_status" else "condition:poisoned"
+        _, effect_id, origin = region_condition_identity(
+            "scene.trap", "source.trap", HERO, rule_ref=rule_ref
+        )
+        effect = effect.model_copy(update={"id": effect_id, "origin": origin})
+    elif fault == "malformed_region_id":
+        effect = effect.model_copy(update={"id": "effect:region-poisoned:forged"})
+    elif fault == "malformed_region_origin":
+        effect = effect.model_copy(update={"origin": "region:poisoned:forged"})
+    effects = (effect,)
+    condition = _linked_poison(effect)
+    records = [condition]
+    if fault == "missing_condition":
+        records.clear()
+    elif fault == "missing_effect":
+        effects = ()
+    elif fault == "ambiguous":
+        effects = (effect, _poison_effect(origin="trap:other"))
+    elif fault == "wrong_source":
+        records = [condition.model_copy(update={"source_entity_id": "trap:012345abcdef"})]
+    elif fault == "combat_region":
+        records = [condition.model_copy(update={"scope": "combat"})]
+    elif fault == "modifier":
+        effects = (
+            effect.model_copy(
+                update={
+                    "changes": [
+                        EffectChangeState(key="check.bonus", mode="add", value="1d4", priority=20)
+                    ]
+                }
+            ),
+        )
+    request = check_case(actor_updates={"conditions": records})
+    request = request.model_copy(
+        update={
+            "state_snapshot": request.state_snapshot.model_copy(update={"effect_states": effects})
+        }
+    )
+    monkeypatch.setattr(RNGState, "restore", lambda self: pytest.fail("RNG before unsupported"))
+    result = execute(request)
+    assert result.status == "unsupported"
+    assert result.error.code == "check.effects"
+    assert result.state_delta is result.rng_transition is None
+    assert result.proposed_events == ()
+
+
+def test_supplied_poison_clause_must_agree_with_the_bound_evaluator(monkeypatch):
+    condition = get_default_ruleset().get_condition("poisoned")
+    loader = MemoryAssetLoader(
+        items=[synthetic_loader().get_item(WEAPON)],
+        conditions=[condition.model_copy(update={"effects": []})],
+    )
+    direct = ActiveCondition(
+        condition="poisoned", source_entity_id="trap:012345abcdef", scope="session"
+    )
+    request = check_case(
+        actor_updates={"conditions": [ConditionRecord.model_validate(direct.model_dump())]}
+    )
+    request = request.model_copy(update={"ruleset_binding": ruleset_binding(loader)})
+    monkeypatch.setattr(RNGState, "restore", lambda self: pytest.fail("RNG before unsupported"))
+    result = execute(request, loader)
+    assert result.status == "unsupported"
+    assert result.error.code == "check.effects"
+    assert "compiled rule" in result.error.reason
+    assert result.rng_transition is None
     assert result.proposed_events == ()

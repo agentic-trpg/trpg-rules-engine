@@ -19,6 +19,8 @@ from dnd5e_engine.rules.effects import (
 from dnd5e_engine.types.effects import ActiveEffectChange
 
 if TYPE_CHECKING:
+    from dnd5e_srd_data.schema.condition import Condition as ConditionDefinition
+
     from dnd5e_engine.types.conditions import ActiveCondition, ConditionScope
 
 
@@ -145,6 +147,21 @@ _DECLARATIVE_CONDITION_EFFECTS: dict[str, tuple[ConditionEffect, ...]] = {
     for slug in _DECLARATIVE_CONDITION_MIGRATIONS
     if (definition := get_default_ruleset().get_condition(slug)) is not None
 }
+
+
+def standalone_condition_matches_compiled(definition: ConditionDefinition) -> bool:
+    """Check that a standalone bound condition agrees with the compiled mechanical clauses."""
+    expected = _DECLARATIVE_CONDITION_EFFECTS.get(definition.slug)
+    return (
+        expected is not None
+        and not definition.implies
+        and len(definition.effects) == len(expected)
+        and all(
+            actual == compiled
+            or actual.model_copy(update={"qualifier": compiled.qualifier}) == compiled
+            for actual, compiled in zip(definition.effects, expected, strict=True)
+        )
+    )
 
 
 def _project_condition_changes(conditions: list[str]) -> list[ActiveEffectChange]:

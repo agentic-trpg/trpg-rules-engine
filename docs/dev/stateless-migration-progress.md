@@ -1,5 +1,15 @@
 # Stateful → Stateless migration progress
 
+## Configured region conditions and Poisoned checks — 2026-11-19
+
+Evaluator `/45` uses reviewed rule references to resolve fixed-area Poisoned
+and Deafened transitions through the same planner. Ordinary noncombat ability
+and skill checks consume the actor's active Poisoned state through the shared
+check resolver. Coverage includes exact source lineage, overlap, immunity and
+the RNG transition for disadvantage and cancellation. See
+[fixed region conditions](stateless-evaluation.md#fixed-exploration-region-conditions)
+and [Poisoned checks](stateless-evaluation.md#poisoned-exploration-checks).
+
 ## Combat Haste and effect follow-ups — 2026-11-19
 
 The [stateless Haste profile](stateless-evaluation.md#combat-haste-and-effect-follow-ups)

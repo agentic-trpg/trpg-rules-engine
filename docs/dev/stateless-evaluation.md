@@ -28,13 +28,16 @@ actions remain outside this stateless profile.
 
 ## Fixed exploration region conditions
 
-`evaluation_region_effect.plan_region_condition_transition` verifies the fixed
-ruleset binding and proposes `add`, `remove`, or `none` for the Poisoned profile
-of a fixed region. The host supplies the Scene and region source identities,
-the target, a coverage edge, the presence of that exact effect, and the target's
-condition immunities. Entry proposes an addition only for a non-immune target
-without that source's effect. Departure proposes removal of that source alone,
-including when the target now has immunity.
+Evaluator binding `dnd5e-evaluation/45` uses an explicit rule reference for each
+fixed region source. `evaluation_region_effect.plan_region_condition_transition`
+verifies the binding and proposes `add`, `remove`, or `none` for the reviewed
+`condition:poisoned` and `condition:deafened` rules. The host supplies the Scene
+and region source identities, target, coverage edge, and presence of the exact
+effect. Target immunity blocks addition. Departure removes only that source's
+existing effect, including when the target now has immunity. Poisoned retains
+its original identity and works with reduced loaders that omit the compiled
+Poisoned definition. Deafened requires its canonical rule definition in the
+bound data.
 
 The complete effect identity is `(target_id, effect_id, origin)`. The effect ID
 is stable across targets of one source, and its origin records the actual Scene
@@ -42,6 +45,17 @@ and source. An addition carries an untimed `EffectState` for a session-scoped
 condition link. The host evaluates spatial coverage and adopts the exact
 transition through its own Effects owner. The planner has no clock, resource
 payment, or RNG and does not extend the `evaluate` operation union.
+
+## Poisoned exploration checks
+
+An ordinary, explicitly adjudicated noncombat ability or skill check accepts
+active Poisoned supplied as a condition or as a condition-only effect with
+matching active lineage. The shared check resolver counts Poisoned once as a
+disadvantage source, even with overlapping providers. An applicable advantage
+source cancels the disadvantage. The evaluator preserves the existing no-write
+Delta and returns the RNG transition for the actual roll. Admission uses the
+actor's supplied state regardless of which source applied Poisoned. Other
+effect profiles and sense-dependent requests retain their existing limits.
 
 ## Timed spell creation and voluntary concentration release
 

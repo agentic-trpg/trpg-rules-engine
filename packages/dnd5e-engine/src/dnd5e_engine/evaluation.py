@@ -28,7 +28,7 @@ from dnd5e_engine.evaluation_saves import evaluate_save
 from dnd5e_engine.evaluation_spells import evaluate_invocation
 from dnd5e_engine.evaluation_stages import EventStageFacts
 from dnd5e_engine.evaluation_state import CombatSnapshot
-from dnd5e_engine.evaluation_turn import TurnEvaluation, evaluate_turn
+from dnd5e_engine.evaluation_turn import TurnEvaluation, _refuse, evaluate_turn
 from dnd5e_engine.lib_loader import scoped_lib_loader
 
 
@@ -200,17 +200,31 @@ async def evaluate(
         rng = request.rng_context.state.restore()
         computed = execute_attack(snapshot, request.payload, admission.plan, rng, loader=assets)
         after = computed.candidate_state
+        profile = admission.plan.effect_profile
+        if profile == "held_target" and any(
+            actor.entity_id == admission.plan.target.entity_id and actor.hp_current == 0
+            for actor in after.character_states
+        ):
+            # A surviving Hold Person graph needs a living target for later turn handling.
+            return _turn_result(
+                common,
+                _refuse(
+                    "unsupported",
+                    "attack.effect_consequence",
+                    "zero HP on a held target exceeds the supported Hold Person lifecycle",
+                ),
+            )
         from dnd5e_engine.evaluation_concentration import concentration_delta
-        from dnd5e_engine.evaluation_shield import has_shield, shield_delta
+        from dnd5e_engine.evaluation_shield import shield_delta
 
         result = RuleEvaluationResult(
             **common,
             status="accepted",
             state_delta=(
                 shield_delta
-                if has_shield(snapshot)
+                if profile == "shield"
                 else concentration_delta
-                if snapshot.effect_states
+                if profile in {"concentration", "held_target"}
                 else attack_delta
             )(snapshot, after),
             proposed_events=computed.proposed_events,

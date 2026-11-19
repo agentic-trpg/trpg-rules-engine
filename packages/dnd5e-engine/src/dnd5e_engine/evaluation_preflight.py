@@ -25,6 +25,8 @@ from dnd5e_engine.spatial import GridTopology, parse_cell
 from dnd5e_engine.specs import GridScene
 from dnd5e_engine.types.combat import Combatant
 
+_AttackProfile = Literal["ordinary", "shield", "concentration", "held_target"]
+
 
 @dataclass(frozen=True)
 class AttackAdmission:
@@ -45,6 +47,8 @@ class AttackPlan:
     weapon: Weapon | None
     activity: AttackActivity
     distance_ft: int | None
+    effect_profile: _AttackProfile
+    target_walk_bonus: int
 
 
 def refused(status: Literal["rejected", "unsupported"], code: str, reason: str) -> AttackAdmission:
@@ -63,6 +67,7 @@ def snapshot_support_failure(
     reviewed_effects: bool = False,
     reviewed_sap: bool = False,
     reviewed_conditions: bool = False,
+    reviewed_world_effects: bool = False,
 ) -> str | None:
     """Return a reason when snapshot mechanics exceed the supported operation profile.
 
@@ -77,7 +82,7 @@ def snapshot_support_failure(
         return failure
     # Full dependencies remain in the DTO, even when this slice cannot execute them.
     unsupported = (
-        snapshot.effect_states if not reviewed_effects else (),
+        snapshot.effect_states if not (reviewed_effects or reviewed_world_effects) else (),
         state.timed_activities.pending,
         state.persistent_areas.areas,
         state.persistent_areas.next_turn_start_effects,
@@ -476,6 +481,73 @@ def weapon_admission(
     return None
 
 
+def _attack_dependencies(
+    snapshot: CombatSnapshot,
+    intent: CombatIntentPayload,
+    loader: AssetLoader,
+) -> tuple[_AttackProfile, int, str | None]:
+    """Validate an attack profile and return the target's admitted walking modifier, if any."""
+    from dnd5e_engine.evaluation_class_dependencies import operation_dependencies
+    from dnd5e_engine.evaluation_shield import has_shield, shield_support_failure
+
+    state = snapshot.combat_state
+    current_snapshot = snapshot.snapshot_schema_version == "engine-snapshot/20"
+    target_walk_bonus = 0
+    reviewed_world_effects = False
+    if (
+        current_snapshot
+        and len(snapshot.effect_states) == 1
+        and snapshot.effect_states[0].duration.seconds is not None
+        and not state.concentration_chain
+    ):
+        # Elapsed-time effects can share a display-derived identity with Shield.
+        from dnd5e_engine.evaluation_timed_spells import attack_world_spell_walk_bonus
+
+        effect = snapshot.effect_states[0]
+        try:
+            walk_bonus = attack_world_spell_walk_bonus(effect)
+        except ValueError as error:
+            return "ordinary", 0, str(error)
+        reviewed_world_effects = True
+        if effect.target_id == intent.target_id:
+            target_walk_bonus = walk_bonus
+    elif has_shield(snapshot):
+        return "shield", 0, shield_support_failure(snapshot, loader)
+    elif snapshot.effect_states or state.concentration_chain:
+        from dnd5e_engine.evaluation_concentration import concentration_support_failure
+
+        profile: _AttackProfile = "concentration"
+        concentration_source = intent.target_id or ""
+        if (
+            current_snapshot
+            and intent.stat_block_action_id is None
+            and len(state.concentration_chain) == len(snapshot.effect_states) == 1
+        ):
+            source, chain = next(iter(state.concentration_chain.items()))
+            if source != intent.target_id and len(chain) == 1 and chain[0][0] == intent.target_id:
+                concentration_source = source
+                profile = "held_target"
+        support = concentration_support_failure(
+            snapshot,
+            concentration_source,
+            loader,
+            composed=True,
+        )
+        return profile, 0, support
+    return (
+        "ordinary",
+        target_walk_bonus,
+        operation_dependencies(
+            snapshot,
+            loader,
+            attack=True,
+            reviewed_sap=True,
+            allow_difficult_terrain=True,
+            reviewed_world_effects=reviewed_world_effects,
+        ),
+    )
+
+
 def prepare_attack(
     snapshot: CombatSnapshot,
     actor_id: str,
@@ -485,21 +557,7 @@ def prepare_attack(
     common_weapons: bool = False,
 ) -> AttackAdmission:
     """Prepare attack qualification, target, payment and resolution inputs before RNG use."""
-    from dnd5e_engine.evaluation_class_dependencies import operation_dependencies
-    from dnd5e_engine.evaluation_shield import has_shield, shield_support_failure
-
-    if has_shield(snapshot):
-        support = shield_support_failure(snapshot, loader)
-    elif snapshot.effect_states or snapshot.combat_state.concentration_chain:
-        from dnd5e_engine.evaluation_concentration import concentration_support_failure
-
-        support = concentration_support_failure(
-            snapshot, intent.target_id or "", loader, composed=True
-        )
-    else:
-        support = operation_dependencies(
-            snapshot, loader, attack=True, reviewed_sap=True, allow_difficult_terrain=True
-        )
+    profile, target_walk_bonus, support = _attack_dependencies(snapshot, intent, loader)
     if support:
         return refused("unsupported", "snapshot.capability", support)
     support = template_support_failure(snapshot, loader)
@@ -616,5 +674,6 @@ def prepare_attack(
     ):
         return refused("rejected", "out_of_range", "target is beyond the attack reach or range")
     return AttackAdmission(
-        status="accepted", plan=AttackPlan(current, target, weapon, activity, distance)
+        status="accepted",
+        plan=AttackPlan(current, target, weapon, activity, distance, profile, target_walk_bonus),
     )

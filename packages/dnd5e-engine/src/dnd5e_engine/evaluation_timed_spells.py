@@ -10,6 +10,7 @@ from dnd5e_srd_data.schema.common import (
     ConsumptionBlock,
     DurationBlock,
     PassiveEffect,
+    PassiveEffectChange,
     RangeBlock,
     UsesBlock,
     UtilityActivity,
@@ -24,7 +25,7 @@ from dnd5e_engine.areas import has_line_of_effect
 from dnd5e_engine.evaluation_casting import CastingStateV20
 from dnd5e_engine.evaluation_contracts import ExplorationSpellCastPayload, RuleEvaluationRequest
 from dnd5e_engine.evaluation_delta import StateDelta, WorldEffectCreate
-from dnd5e_engine.evaluation_effects import effect_state
+from dnd5e_engine.evaluation_effects import EffectState, effect_state
 from dnd5e_engine.evaluation_payments import spell_payment
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError
 from dnd5e_engine.evaluation_rng import RNGTransition
@@ -46,13 +47,24 @@ from dnd5e_engine.spellcasting import (
     spell_component_metadata,
     spell_range_ft,
 )
-from dnd5e_engine.types.effects import ActiveEffect, ActiveEffectDuration
+from dnd5e_engine.types.effects import ActiveEffect, ActiveEffectChange, ActiveEffectDuration
 
 _SECONDS_PER_UNIT = {
     SpellDurationUnits.MINUTE: 60,
     SpellDurationUnits.HOUR: 3600,
     SpellDurationUnits.DAY: 86400,
 }
+
+
+def _flat_skill_bonus(change: ActiveEffectChange) -> bool:
+    """Identify one named skill's reviewed additive bonus without a dice expression."""
+    return (
+        change.key.startswith("check.skill.")
+        and change.mode == "add"
+        and isinstance(change.value, str)
+        and "d" not in change.value
+        and validate_check_effect_change(change)
+    )
 
 
 def _validate_passive_changes(passive: PassiveEffect, active: ActiveEffect) -> None:
@@ -63,12 +75,7 @@ def _validate_passive_changes(passive: PassiveEffect, active: ActiveEffect) -> N
             raise ValueError("timed spell modifiers require concrete values")
         if source.key.startswith(("system.attributes.movement.", "system.attributes.senses.")):
             stat_changes.append(source)
-        elif not (
-            change.key.startswith("check.skill.")
-            and change.mode == "add"
-            and "d" not in source.value
-            and validate_check_effect_change(change)
-        ):
+        elif not _flat_skill_bonus(change):
             raise ValueError("requires movement, sense or flat additive skill-check modifiers")
     if (
         stat_changes
@@ -172,6 +179,58 @@ def _passive_profile(
     active = passive_effect_to_active_effect(passive, target_id=target_id, caster_id=caster_id)
     _validate_passive_changes(passive, active)
     return activity, active.model_copy(update={"duration": ActiveEffectDuration(seconds=seconds)})
+
+
+def attack_world_spell_walk_bonus(effect: EffectState) -> int:
+    """Validate the resolved world spell shape and return its attack-relevant walk bonus.
+
+    The fixed effect carries the resolved cast data. Its origin names the application,
+    while its host owns the world deadline. Unreviewed modifiers or lifecycle fields
+    raise ValueError before payment or RNG use.
+    """
+    label = effect.id.removeprefix("effect:")
+    prefix = f"cast:{label}:"
+    duration = effect.duration
+    if (
+        not effect.id.startswith("effect:")
+        or not label
+        or not effect.origin.startswith(prefix)
+        or not effect.origin.removeprefix(prefix).strip()
+        or effect.disabled
+        or effect.transfer
+        or not effect.changes
+        or effect.action_policy is not None
+        or effect.statuses
+        or effect.flags
+        or effect.lifecycle is not None
+        or effect.end_effects
+        or duration.seconds is None
+        or duration.seconds <= 0
+        or any(
+            value is not None
+            for value in (
+                duration.rounds,
+                duration.turns,
+                duration.start_round,
+                duration.start_turn,
+            )
+        )
+    ):
+        raise ValueError("attack requires an enabled elapsed-time passive spell effect")
+    walk = []
+    for change in effect.changes:
+        if (
+            change.key == "system.attributes.movement.walk"
+            and change.mode == "add"
+            and isinstance(change.value, str)
+        ):
+            walk.append(PassiveEffectChange(key=change.key, mode=2, value=change.value))
+        elif not _flat_skill_bonus(change):
+            raise ValueError("world spell may affect unreviewed attack dependencies")
+    stats = interpret_passive_stats(changes=walk, trait_grants=(), species_senses=None)
+    if stats.skipped_keys:
+        raise ValueError("world spell requires a flat walking-speed bonus")
+    return stats.walk_speed_bonus
 
 
 def _source_failure(

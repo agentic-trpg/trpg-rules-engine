@@ -58,6 +58,25 @@ facts required by the selected check. The evaluator proposes an empty Delta
 and returns the RNG transition from the actual roll. Sense-dependent requests
 still require a separate integration with the corresponding facts.
 
+## Ordinary attacks with active effects
+
+Evaluator binding `dnd5e-evaluation/48` composes ordinary Attack and its read-only
+preflight on Snapshot `/20` with one active exploration spell carrying only flat
+walking or named skill adds. Admission uses the resolved effect's typed fields.
+Its cast identity names the application and may differ from the spell's asset slug.
+The target's walk add participates in Dodge eligibility. Combat handoff uses the
+existing movement budget and the host still owns expiry at the world-clock deadline.
+This profile covers held weapons and the existing ordinary stat-block attacks.
+
+With one existing Hold Person link, a separate attacker can target the held actor
+with an ordinary held weapon. The shared condition resolver grants Advantage and
+turns a hit from within 5 feet into a critical hit. The existing typed graph remains
+part of evaluation and Delta validation. An attack that would end its own ongoing
+concentration source's turn remains outside this profile. If calculation brings
+the held target to zero HP, the evaluator returns `attack.effect_consequence`
+without a Delta, events or RNG transition. Mixed effect graphs, unreviewed
+modifiers and additional reaction or lifecycle dependencies are refused.
+
 ## Timed spell creation and voluntary concentration release
 
 Evaluator binding `dnd5e-evaluation/43` adds exploration casting through

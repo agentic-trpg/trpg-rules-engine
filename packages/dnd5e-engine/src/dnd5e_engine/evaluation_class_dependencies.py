@@ -236,11 +236,13 @@ def operation_dependencies(
     reviewed_reactions: bool = False,
     equipped: bool = False,
     reviewed_sap: bool = False,
+    reviewed_world_effects: bool = False,
 ) -> str | None:
     """Pass/reset, walking, initialization and closure do not activate these grants.
 
     Attack/AC/damage/save operations must supply their own reviewed profile.
-    Effects, reactions, traits and all non-class mechanics retain ordinary guards.
+    Any world effect must already have been verified by the requesting operation.
+    Other effects, reactions, traits and non-class mechanics retain ordinary guards.
     """
     from dnd5e_engine.evaluation_preflight import snapshot_support_failure
 
@@ -297,4 +299,5 @@ def operation_dependencies(
         reviewed_reactions=reviewed_reactions,
         reviewed_sap=reviewed_sap,
         reviewed_conditions=reviewed_sap,
+        reviewed_world_effects=reviewed_world_effects,
     )

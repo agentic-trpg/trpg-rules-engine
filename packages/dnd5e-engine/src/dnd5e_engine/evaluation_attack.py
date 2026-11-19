@@ -39,13 +39,13 @@ def execute_attack(
     loader: AssetLoader | None = None,
 ) -> CombatComputationResult:
     """Compute a private post-state for closed delta projection, never publication."""
-    from dnd5e_engine.evaluation_shield import ShieldComputation, has_shield
+    from dnd5e_engine.evaluation_shield import ShieldComputation
 
-    if has_shield(snapshot):
+    if plan.effect_profile == "shield":
         if loader is None:
             raise RuntimeError("Shield computation requires the explicit verified loader")
         computation: _AttackComputation = ShieldComputation(snapshot, rng, loader)
-    elif snapshot.effect_states:
+    elif plan.effect_profile in {"concentration", "held_target"}:
         from dnd5e_engine.evaluation_concentration import ConcentrationComputation
 
         computation = ConcentrationComputation(snapshot, rng)
@@ -76,8 +76,15 @@ def execute_attack(
         positions=state.actor_zone,
         topology=topology,
         can_see=lambda hostile, attacker: True,
-    )  # admission requires bright, unobstructed geometry and no conditions
+    )  # Admission requires bright, unobstructed geometry.
     bands = attack_rules.weapon_attack_range_ft(plan.weapon)
+    # Dodge reads the reviewed world spell's bonus. Turn handoff uses the base
+    # combat ledgers. The host may expire the spell at the same round boundary.
+    dodge_speed_actor = plan.target
+    if plan.target_walk_bonus:
+        dodge_speed_actor = plan.target.model_copy(
+            update={"base_speed": plan.target.base_speed + plan.target_walk_bonus}
+        )
     ctx = build_activity_context(
         actor,
         [plan.target],
@@ -95,7 +102,7 @@ def execute_attack(
         else {},
         target_dodging={
             plan.target.entity_id: attack_rules.dodge_benefit_active(
-                plan.target, effective_speed=computation.speed(plan.target)
+                plan.target, effective_speed=computation.speed(dodge_speed_actor)
             )
         },
         target_beyond_normal_range={

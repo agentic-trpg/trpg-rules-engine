@@ -174,7 +174,7 @@ def concentration_support_failure(
         and not turn_lifecycle
         and state.initiative_ids[state.current_turn_index] == target_id
     ):
-        return "self-damage with source turn-end concentration expiry is not migrated"
+        return "source turn-end concentration expiry is not migrated for this operation"
     actors = {a.entity_id: a for a in snapshot.character_states}
     caster = actors.get(target_id)
     if (

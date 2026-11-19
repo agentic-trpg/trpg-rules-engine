@@ -195,6 +195,37 @@ def test_mechanically_equivalent_asset_with_different_id_and_values() -> None:
     assert refused.error.code == "target_invalid"
 
 
+@pytest.mark.parametrize("with_movement", [False, True])
+def test_timed_spell_proposes_a_flat_skill_check_bonus(with_movement: bool) -> None:
+    """Pass a skill bonus and optional movement change through one typed timed effect."""
+    data = _longstrider().model_dump(mode="json")
+    data.update(slug="keen-notice-test", name="Keen Notice", foundry_uuid="")
+    changes = [{"key": "check.skill.perception.bonus", "mode": 2, "value": "+2"}]
+    if with_movement:
+        changes.extend(data["passive_effects"][0]["changes"])
+    data["passive_effects"][0].update(
+        name="Keen Notice",
+        changes=changes,
+    )
+    wire, loader = spell_wire(Spell.model_validate(data))
+    request = RuleEvaluationRequest.model_validate_json(json.dumps(wire))
+
+    result = execute(request, loader)
+
+    assert result.status == "accepted", result.error
+    payment, creation = result.state_delta.operations
+    assert isinstance(payment, ResourceUpdate)
+    assert payment.amount == -1
+    assert isinstance(creation, WorldEffectCreate)
+    assert creation.value.identity == (FOE, "effect:keen_notice", f"cast:keen_notice:{HERO}")
+    assert creation.value.duration_seconds == 3600
+    assert [
+        (change.key, change.mode, change.value) for change in creation.value.effect.changes
+    ] == [(change["key"], "add", change["value"]) for change in changes]
+    result.rng_transition.verify_input(request.rng_context)
+    assert not result.rng_transition.state_changed
+
+
 @pytest.mark.parametrize(
     ("invalid", "code"),
     [
@@ -278,6 +309,30 @@ def test_timed_spell_admission_fails_without_cost_or_rng(invalid: str, code: str
         (("passive_effects", 0, "duration", "seconds"), 12),
         (("passive_effects", 0, "statuses"), ["prone"]),
         (("passive_effects", 0, "changes", 0, "key"), "unsupported.modifier"),
+        (
+            ("passive_effects", 0, "changes", 0),
+            {"key": "check.skill.unknown.bonus", "mode": 2, "value": "+2"},
+        ),
+        (
+            ("passive_effects", 0, "changes", 0),
+            {"key": "check.wis.bonus", "mode": 2, "value": "+2"},
+        ),
+        (
+            ("passive_effects", 0, "changes", 0),
+            {"key": "check.skill.perception.bonus", "mode": 4, "value": "+2"},
+        ),
+        (
+            ("passive_effects", 0, "changes", 0),
+            {"key": "check.skill.perception.bonus", "mode": 2, "value": "+1d4"},
+        ),
+        (
+            ("passive_effects", 0, "changes", 0),
+            {"key": "check.skill.perception.bonus", "mode": 2, "value": "@prof"},
+        ),
+        (
+            ("passive_effects", 0, "changes", 0),
+            {"key": "check.skill.perception.bonus", "mode": 2, "value": "2.5"},
+        ),
     ],
 )
 def test_same_spell_id_cannot_bypass_mechanism_admission(path: tuple, value) -> None:

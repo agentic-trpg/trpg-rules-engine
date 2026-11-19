@@ -17,6 +17,7 @@ from dnd5e_srd_data.schema.common import (
 )
 from dnd5e_srd_data.schema.spell import Spell, SpellDurationUnits, SpellRangeUnits
 
+from dnd5e_engine.activities.check_pipeline import validate_check_effect_change
 from dnd5e_engine.activities.effects import passive_effect_to_active_effect
 from dnd5e_engine.activities.passive_stats import interpret_passive_stats
 from dnd5e_engine.areas import has_line_of_effect
@@ -45,7 +46,7 @@ from dnd5e_engine.spellcasting import (
     spell_component_metadata,
     spell_range_ft,
 )
-from dnd5e_engine.types.effects import ActiveEffectDuration
+from dnd5e_engine.types.effects import ActiveEffect, ActiveEffectDuration
 
 _SECONDS_PER_UNIT = {
     SpellDurationUnits.MINUTE: 60,
@@ -54,8 +55,34 @@ _SECONDS_PER_UNIT = {
 }
 
 
-def _passive_profile(spell: Spell) -> tuple[UtilityActivity, PassiveEffect, int]:
-    """Read the supported base-level utility, passive modifier and duration from rule data."""
+def _validate_passive_changes(passive: PassiveEffect, active: ActiveEffect) -> None:
+    """Require concrete movement, sense or flat additive skill-check modifiers."""
+    stat_changes = []
+    for source, change in zip(passive.changes, active.changes, strict=True):
+        if "@" in source.value:
+            raise ValueError("timed spell modifiers require concrete values")
+        if source.key.startswith(("system.attributes.movement.", "system.attributes.senses.")):
+            stat_changes.append(source)
+        elif not (
+            change.key.startswith("check.skill.")
+            and change.mode == "add"
+            and "d" not in source.value
+            and validate_check_effect_change(change)
+        ):
+            raise ValueError("requires movement, sense or flat additive skill-check modifiers")
+    if (
+        stat_changes
+        and interpret_passive_stats(
+            changes=stat_changes, trait_grants=(), species_senses=None
+        ).skipped_keys
+    ):
+        raise ValueError("unsupported passive movement or sense modifier")
+
+
+def _passive_profile(
+    spell: Spell, *, target_id: str, caster_id: str
+) -> tuple[UtilityActivity, ActiveEffect]:
+    """Build the supported base-level utility and its elapsed-time effect from rule data."""
     seconds_per_unit = _SECONDS_PER_UNIT.get(spell.duration.units)
     if (
         spell.review.requires_user_decision
@@ -142,16 +169,9 @@ def _passive_profile(spell: Spell) -> tuple[UtilityActivity, PassiveEffect, int]
         or not passive.changes
     ):
         raise ValueError("requires an enabled passive effect with matching elapsed duration")
-    modifiers = interpret_passive_stats(
-        changes=passive.changes, trait_grants=(), species_senses=None
-    )
-    if modifiers.skipped_keys or any(
-        not change.key.startswith(("system.attributes.movement.", "system.attributes.senses."))
-        or "@" in change.value
-        for change in passive.changes
-    ):
-        raise ValueError("requires concrete passive movement or sense modifiers")
-    return activity, passive, seconds
+    active = passive_effect_to_active_effect(passive, target_id=target_id, caster_id=caster_id)
+    _validate_passive_changes(passive, active)
+    return activity, active.model_copy(update={"duration": ActiveEffectDuration(seconds=seconds)})
 
 
 def _source_failure(
@@ -252,8 +272,9 @@ def _touch_reaches(
 def evaluate_timed_spell(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEvaluation:
     """Admit one exploration cast and propose its atomic slot and effect changes.
 
-    The result carries ordered cast evidence and an unchanged RNG successor. The
-    host owns effect persistence, elapsed time and expiry.
+    The supported passive changes cover movement, senses and flat additive skill
+    bonuses. The result carries ordered cast evidence and an unchanged RNG successor.
+    The host owns effect persistence, elapsed time and expiry.
     """
     snapshot, payload = request.state_snapshot, request.payload
     if not isinstance(snapshot, NonCombatSnapshot) or not isinstance(
@@ -270,7 +291,9 @@ def evaluate_timed_spell(request: RuleEvaluationRequest, loader: AssetLoader) ->
             "unsupported", "spell.slot", "cast requires a single ordinary base-level slot"
         )
     try:
-        activity, passive, seconds = _passive_profile(spell)
+        activity, active = _passive_profile(
+            spell, target_id=payload.target_id, caster_id=request.actor_id
+        )
     except ValueError as exc:
         return _refuse("unsupported", "spell.mechanism", str(exc))
 
@@ -300,10 +323,6 @@ def evaluate_timed_spell(request: RuleEvaluationRequest, loader: AssetLoader) ->
     if failure := _source_failure(snapshot, actor, payload, spell, loader):
         return _refuse("rejected", "spell.source", failure)
 
-    active = passive_effect_to_active_effect(
-        passive, target_id=target.entity_id, caster_id=actor.entity_id
-    )
-    active = active.model_copy(update={"duration": ActiveEffectDuration(seconds=seconds)})
     if any(
         current.target_id == target.entity_id and current.id == active.id
         for current in snapshot.effect_states

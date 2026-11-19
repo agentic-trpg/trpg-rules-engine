@@ -68,6 +68,12 @@ actual cells supplied by the host within the fixed scene grid. The evaluator
 checks the spell's supported utility and passive-effect profile, the caster's
 bound source and components, touch delivery and slot availability.
 
+Evaluator binding `dnd5e-evaluation/47` extends this profile to flat additive
+bonuses on a named skill check, such as `check.skill.perception.bonus` with
+value `+2`. The spell can also carry supported movement and sense changes.
+The same check resolver folds this modifier and those from fixed region
+effects. Dice and variable expressions are outside this timed spell profile.
+
 Successful casts propose a guarded `ResourceUpdate` and `WorldEffectCreate`
 with a positive relative duration in seconds and terminal removal. Longstrider
 exercises this typed profile. The host computes the deadline from its current

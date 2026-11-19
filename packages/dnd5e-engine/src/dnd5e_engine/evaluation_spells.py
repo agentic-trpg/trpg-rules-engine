@@ -112,7 +112,7 @@ def _ordinary_spell_profile(spell: Spell) -> OrdinarySpellMechanism | None:
         spell.level not in (0, 1)
         or spell.ritual
         or spell.concentration
-        or spell.casting_time.unit != CastingTimeUnit.ACTION
+        or spell.casting_time.unit not in (CastingTimeUnit.ACTION, CastingTimeUnit.BONUS)
         or spell.casting_time.value != 1
         or spell.duration.units != SpellDurationUnits.INSTANT
         or spell.range.units not in (SpellRangeUnits.TOUCH, SpellRangeUnits.FEET)
@@ -125,6 +125,14 @@ def _ordinary_spell_profile(spell: Spell) -> OrdinarySpellMechanism | None:
     if (
         not isinstance(activity, (HealActivity, SaveActivity, AttackActivity))
         or activity.activation.type != "action"
+        or (
+            spell.casting_time.unit == CastingTimeUnit.BONUS
+            and (
+                not isinstance(activity, HealActivity)
+                or activity.activation.override
+                or spell.casting_time.condition
+            )
+        )
         or activity.duration.units != "inst"
         or activity.timing != ActivityTiming()
         or activity.effects
@@ -370,10 +378,16 @@ def spell_plan(
     ):
         return _refuse("rejected", "spell.source", failure)
     actor = next(a for a in snapshot.character_states if a.entity_id == request.actor_id)
-    if spell.level > 0 and (
-        actor.action_taken_this_turn
-        or actor.bonus_action_taken_this_turn
-        or not actor.reaction_available
+    # An empty encounter expenditure proves no paid spell here. Once nonempty,
+    # this ledger cannot place a payment on the current turn when a budget was used.
+    if (
+        spell.level > 0
+        and any(snapshot.combat_state.expended_resources.get(request.actor_id, {}).values())
+        and (
+            actor.action_taken_this_turn
+            or actor.bonus_action_taken_this_turn
+            or not actor.reaction_available
+        )
     ):
         return _refuse(
             "unsupported", "spell.turn_history", "first-slot casting window cannot be proved"
@@ -583,13 +597,15 @@ def evaluate_invocation(request: RuleEvaluationRequest, loader: AssetLoader) -> 
     ):
         return _refuse("unsupported", "healing.dependencies", failure)
     actor = combatant(current)
-    bonus = intent.intent_type == "use_feature"
+    feature = intent.intent_type == "use_feature"
+    # An inherited activity activation describes its payload, not the spell's cost.
+    bonus = feature or (spell is not None and spell.casting_time.unit == CastingTimeUnit.BONUS)
     if action_economy_gate_failure(actor, intent, is_bonus_action=bonus, is_reaction_cast=False):
         return _refuse("rejected", "no_action_economy", "required action budget is unavailable")
     with scoped_lib_loader(loader):
         plan = (
             feature_plan(request, loader)
-            if bonus
+            if feature
             else spell_plan(request, loader, spell, mechanism)
         )
         if not isinstance(plan, InvocationPlan):

@@ -30,7 +30,7 @@ from tests.test_stateless_attack import apply_delta, execute, request_and_live
 from tests.test_stateless_item_closure_core import isolate
 
 
-def healing_case(*, feature=False, seed=0, hp=10, swarm=False):
+def healing_case(*, feature=False, seed=0, hp=10, swarm=False, spell="cure-wounds"):
     request, handle, live = request_and_live(seed=seed)
     canonical = BundledAssetLoader()
     loader = MemoryAssetLoader(
@@ -45,7 +45,7 @@ def healing_case(*, feature=False, seed=0, hp=10, swarm=False):
                 "weapon-mastery",
             )
         ],
-        spells=[canonical.get_spell("cure-wounds")],
+        spells=[canonical.get_spell(spell)],
     )
     slug = "fighter" if feature else "cleric"
     grants = tuple(
@@ -78,7 +78,7 @@ def healing_case(*, feature=False, seed=0, hp=10, swarm=False):
     live.ruleset_loader = loader
     live.spell_slots_by_entity = {HERO: {} if feature else {1: 2}, FOE: {}}
     live.pact_slots_by_entity = {HERO: {}, FOE: {}}
-    live.spells_known_by_entity = {HERO: [] if feature else ["cure-wounds"], FOE: []}
+    live.spells_known_by_entity = {HERO: [] if feature else [spell], FOE: []}
     live.custom_counters_by_entity = {
         HERO: {"feature_use:second-wind": {"spent": 0}} if feature else {},
         FOE: {},
@@ -113,8 +113,8 @@ def healing_case(*, feature=False, seed=0, hp=10, swarm=False):
                             source_id="class:cleric",
                             class_slug="cleric",
                             ability="wis",
-                            known_spells=("cure-wounds",),
-                            prepared_spells=("cure-wounds",),
+                            known_spells=(spell,),
+                            prepared_spells=(spell,),
                         ),
                     ),
                 ),
@@ -140,7 +140,7 @@ def healing_case(*, feature=False, seed=0, hp=10, swarm=False):
         if feature
         else CombatIntentPayload(
             intent_type="cast_spell",
-            spell_id="cure-wounds",
+            spell_id=spell,
             target_id=FOE,
             slot_level=1,
             spell_source_id="class:cleric",
@@ -154,6 +154,70 @@ def healing_case(*, feature=False, seed=0, hp=10, swarm=False):
         }
     )
     return request, loader, handle, live
+
+
+@pytest.mark.parametrize(
+    ("spell", "cells", "accepted"),
+    [
+        ("cure-wounds", 1, True),
+        ("cure-wounds", 2, False),
+        ("healing-word", 12, True),
+        ("healing-word", 13, False),
+    ],
+)
+def test_public_healing_range_and_payment(spell, cells, accepted):
+    request, loader, _, _ = healing_case(spell=spell)
+    before = request.state_snapshot
+    grid = before.scene_state.grid.model_copy(update={"width": 15})
+    scene = before.scene_state.model_copy(update={"grid": grid})
+    combat = before.combat_state.model_copy(update={"actor_zone": {HERO: "0,0", FOE: f"{cells},0"}})
+    before = before.model_copy(update={"scene_state": scene, "combat_state": combat})
+    result = execute(request.model_copy(update={"state_snapshot": before}), loader)
+    if not accepted:
+        assert result.status == "rejected", result.error
+        assert result.error.code == "target_invalid"
+        assert result.state_delta is None
+        assert result.rng_transition is None
+        assert not result.proposed_events
+        return
+    assert result.status == "accepted", result.error
+    assert RuleEvaluationResult.model_validate_json(result.model_dump_json()) == result
+    after = apply_healing(before, result)
+    hero = next(actor for actor in after.character_states if actor.entity_id == HERO)
+    bonus = spell == "healing-word"
+    assert hero.action_available is bonus
+    assert hero.bonus_action_available is not bonus
+    assert after.combat_state.turn_serial == before.combat_state.turn_serial + int(not bonus)
+    assert after.resource_state.pools[0].current == before.resource_state.pools[0].current - 1
+
+
+def test_bonus_cast_after_spent_action_uses_available_slot_history():
+    """A spent action only makes slot timing ambiguous after an encounter slot spend."""
+    request, loader, _, _ = healing_case(spell="healing-word")
+    before = request.state_snapshot
+    hero, foe = before.character_states
+    after_action = hero.model_copy(
+        update={"action_available": False, "action_taken_this_turn": True}
+    )
+    before = before.model_copy(update={"character_states": (after_action, foe)})
+    request = request.model_copy(update={"state_snapshot": before})
+    result = execute(request, loader)
+    assert result.status == "accepted", result.error
+    after = apply_healing(before, result)
+    assert not after.character_states[0].action_available
+    assert not after.character_states[0].bonus_action_available
+    assert after.combat_state.turn_serial == before.combat_state.turn_serial
+
+    unknown = before.combat_state.model_copy(
+        update={"expended_resources": {HERO: {"spell_slot:1": 1}}}
+    )
+    before = before.model_copy(update={"combat_state": unknown})
+    result = execute(request.model_copy(update={"state_snapshot": before}), loader)
+    assert result.status == "unsupported"
+    assert result.error.code == "spell.turn_history"
+    assert result.state_delta is None
+    assert result.rng_transition is None
+    assert not result.proposed_events
 
 
 def apply_healing(snapshot, result, *, world_version=None):

@@ -309,10 +309,8 @@ class CombatComputation:
         """
         actor = self.actors[actor_id]
         # All other payment/windows are explicitly excluded by admission.
-        if not force and (
-            actor.action_available
-            or not attack_rules.attack_action_is_spent(actor)
-            or (allow_movement and actor.movement_remaining > 0 and self.speed(actor) > 0)
+        if not force and attack_rules.can_retain_turn(
+            actor, movement_speed=self.speed if allow_movement else None
         ):
             self.death_save(actor_id)
             return

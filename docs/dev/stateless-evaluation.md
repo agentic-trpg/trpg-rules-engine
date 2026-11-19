@@ -963,6 +963,22 @@ not establish source, turn, target, reaction or resource legality; evaluation
 checks those on the fixed Snapshot. No evaluation or Snapshot wire version,
 ruleset identity or canonical asset changed in this RE batch.
 
+## Ordinary instant spell casting payment
+
+The same `combat.intent` evaluates canonical Healing Word and Cure Wounds for
+the reviewed level 1 Cleric. Both resolve through the typed `HealActivity`.
+Casting time determines the budget payment. Healing Word pays a Bonus Action
+and one level 1 slot. It keeps the turn while an Action remains. Cure Wounds pays
+an Action and one level 1 slot and uses the ordinary turn transition. The existing
+budget, resource and encounter expenditure Delta operations carry these results.
+
+The encounter expenditure ledger is cumulative. An empty caster ledger can prove
+there has been no paid cast in the encounter. If a caster has spent a slot and a
+budget marker leaves the current turn's history ambiguous, the evaluator returns
+`spell.turn_history` before resolving the cast. The public tests cover a subsequent
+turn with refreshed budgets and the touch and 60-foot range boundaries.
+See [SRD 5.2.1, pp. 105 and 139](https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf#page=105).
+
 ## R25 bounded authorized weapon Opportunity Attack
 
 `engine-snapshot/13` changes the existing pending declaration component to a closed

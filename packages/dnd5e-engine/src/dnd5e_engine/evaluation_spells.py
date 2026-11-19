@@ -5,8 +5,25 @@ from dataclasses import dataclass, replace
 from typing import Literal
 
 from dnd5e_srd_data.loader import AssetLoader
-from dnd5e_srd_data.schema.common import ActivityTiming, HealActivity, SaveActivity
-from dnd5e_srd_data.schema.spell import CastingTimeUnit, Spell, SpellDurationUnits, SpellRangeUnits
+from dnd5e_srd_data.schema.common import (
+    ActivationBlock,
+    ActivityTiming,
+    AttackActivity,
+    AttackBlock,
+    AttackTypeBlock,
+    DamageCustomBlock,
+    DamageScalingBlock,
+    HealActivity,
+    SaveActivity,
+)
+from dnd5e_srd_data.schema.spell import (
+    CastingTimeUnit,
+    Spell,
+    SpellComponent,
+    SpellDurationUnits,
+    SpellMaterials,
+    SpellRangeUnits,
+)
 
 from dnd5e_engine import attack_rules
 from dnd5e_engine.action_economy_rules import action_economy_gate_failure
@@ -28,7 +45,10 @@ from dnd5e_engine.evaluation_reactions import (
 )
 from dnd5e_engine.evaluation_rng import RNGTransition
 from dnd5e_engine.evaluation_ruleset import get_default_ruleset
-from dnd5e_engine.evaluation_spell_dependencies import invocation_dependencies
+from dnd5e_engine.evaluation_spell_dependencies import (
+    attack_spell_dependencies,
+    invocation_dependencies,
+)
 from dnd5e_engine.evaluation_state import CombatSnapshot
 from dnd5e_engine.evaluation_turn import TurnEvaluation, _refuse
 from dnd5e_engine.events import CastFailed, IntentSubmitted, SpellCast
@@ -54,22 +74,24 @@ from dnd5e_engine.turn_rules import (
     record_budget_changes,
 )
 
+type OrdinarySpellMechanism = Literal["healing", "save_damage", "attack_damage"]
+
 
 @dataclass(frozen=True)
 class InvocationPlan:
     """Retain an admitted spell/feature delivery plan and its payment inputs."""
 
-    activity: HealActivity | SaveActivity
+    activity: HealActivity | SaveActivity | AttackActivity
     target_id: str
     ability: str | None
     payment: tuple[ResourceUpdate, ...]
     spell: Spell | None
     slot_level: int | None
+    attack_distance_ft: int | None = None
+    hostile_adjacent: bool = False
 
 
-def ordinary_spell_mechanism(
-    loader: AssetLoader, spell_id: str
-) -> Literal["healing", "save_damage"] | None:
+def ordinary_spell_mechanism(loader: AssetLoader, spell_id: str) -> OrdinarySpellMechanism | None:
     """Classify one bound, complete instant spell without actor state or RNG.
 
     This is the ordinary-cast admission profile shared with the SM preflight.
@@ -84,7 +106,7 @@ def ordinary_spell_mechanism(
     return _ordinary_spell_profile(spell)
 
 
-def _ordinary_spell_profile(spell: Spell) -> Literal["healing", "save_damage"] | None:
+def _ordinary_spell_profile(spell: Spell) -> OrdinarySpellMechanism | None:
     """Select a complete typed ordinary activity from an already resolved spell."""
     if (
         spell.level not in (0, 1)
@@ -101,7 +123,7 @@ def _ordinary_spell_profile(spell: Spell) -> Literal["healing", "save_damage"] |
         return None
     activity = spell.activities[0]
     if (
-        not isinstance(activity, (HealActivity, SaveActivity))
+        not isinstance(activity, (HealActivity, SaveActivity, AttackActivity))
         or activity.activation.type != "action"
         or activity.duration.units != "inst"
         or activity.timing != ActivityTiming()
@@ -111,7 +133,6 @@ def _ordinary_spell_profile(spell: Spell) -> Literal["healing", "save_damage"] |
         or activity.persistent_area is not None
         or activity.reaction is not None
         or activity.forced_movement is not None
-        or activity.target.affects.type != "creature"
         or activity.target.affects.count != "1"
         or activity.target.affects.choice
         or activity.target.affects.special
@@ -119,6 +140,10 @@ def _ordinary_spell_profile(spell: Spell) -> Literal["healing", "save_damage"] |
         or activity.target.area_semantics is not None
         or activity.target.creature_filter is not None
     ):
+        return None
+    if isinstance(activity, AttackActivity):
+        return "attack_damage" if _ordinary_spell_attack(spell, activity) else None
+    if activity.target.affects.type != "creature":
         return None
     if isinstance(activity, HealActivity):
         if spell.level != 1 or activity.healing.types != ["healing"]:
@@ -135,6 +160,49 @@ def _ordinary_spell_profile(spell: Spell) -> Literal["healing", "save_damage"] |
     return "save_damage"
 
 
+def _ordinary_spell_attack(spell: Spell, activity: AttackActivity) -> bool:
+    """Recognize a reviewed single ranged cantrip hit with ordinary typed damage dice."""
+    default = AttackActivity()
+    if (
+        spell.level != 0
+        or spell.casting_time.condition
+        or spell.duration.value is not None
+        or spell.range.units != SpellRangeUnits.FEET
+        or not spell.range.value
+        or spell.range.special
+        or set(spell.components) != {SpellComponent.VOCAL, SpellComponent.SOMATIC}
+        or spell.materials != SpellMaterials()
+        or (review := spell_review(spell)) is None
+        or review.classification != "executable"
+        or len(review.activities) != 1
+        or review.activities[0].role != "cast"
+        or activity.activation != ActivationBlock(type="action")
+        or activity.duration != default.duration
+        or activity.range != default.range
+        or activity.consumption != default.consumption
+        or activity.uses != default.uses
+        or activity.visibility != default.visibility
+        or activity.flags
+        or activity.action_type is not None
+        or activity.target.override
+        or activity.target.affects.type not in ("creature", "creatureOrObject")
+        or activity.attack != AttackBlock(type=AttackTypeBlock(value="ranged"))
+        or activity.damage.critical != default.damage.critical
+        or len(activity.damage.parts) != 1
+    ):
+        return False
+    part = activity.damage.parts[0]
+    return (
+        part.number == 1
+        and part.denomination in (4, 6, 8, 10, 12)
+        and len(part.types) == 1
+        and bool(part.types[0])
+        and not part.bonus
+        and part.custom == DamageCustomBlock()
+        and part.scaling == DamageScalingBlock(mode="whole", number=1)
+    )
+
+
 def invocation_context(
     computation: CombatComputation,
     plan: InvocationPlan,
@@ -148,12 +216,20 @@ def invocation_context(
         {actor.class_slug: actor.character_level} if actor.class_slug else {}
     )
     target = computation.actors[plan.target_id]
-    save_projection = project_passive_save_modifiers(active_condition_names(target.conditions))
-    if attack_rules.dodge_benefit_active(target, effective_speed=computation.speed(target)):
-        save_projection["passive_save_adv"].append("DEX")
+    dodging = attack_rules.dodge_benefit_active(target, effective_speed=computation.speed(target))
+    is_attack = isinstance(plan.activity, AttackActivity)
+    save_modifiers = {}
+    if not is_attack:
+        save_projection = project_passive_save_modifiers(active_condition_names(target.conditions))
+        if dodging:
+            save_projection["passive_save_adv"].append("DEX")
+        save_modifiers[target.entity_id] = {
+            "saves": {ab: save_modifier(target, ab).total for ab in ABILITY_CODES},
+            **save_projection,
+        }
     context = build_activity_context(
         actor,
-        [computation.actors[plan.target_id]],
+        [target],
         rng=rng,
         event_emitter=computation.emit,
         slot_level=plan.slot_level,
@@ -163,17 +239,14 @@ def invocation_context(
         source_passive_effects=[],
         spell_book={},
         passive_damage_modifiers=attack_rules.damage_modifiers(computation.actors.values()),
-        save_modifiers={
-            target.entity_id: {
-                "saves": {ab: save_modifier(target, ab).total for ab in ABILITY_CODES},
-                **save_projection,
-            }
-        },
-        target_dodging={
-            target.entity_id: attack_rules.dodge_benefit_active(
-                target, effective_speed=computation.speed(target)
-            )
-        },
+        save_modifiers=save_modifiers,
+        target_dodging={target.entity_id: dodging},
+        target_distance_ft=(
+            {target.entity_id: plan.attack_distance_ft}
+            if plan.attack_distance_ft is not None
+            else {}
+        ),
+        attack_origin="spell" if is_attack else "default",
         damage_instance_id_provider=computation.next_damage_id,
         damage_instance_resolved=computation.damage_completed,
         class_levels=levels,
@@ -188,13 +261,18 @@ def invocation_context(
     )
     return replace(
         context,
+        attacker_ranged_spell_in_melee=plan.hostile_adjacent,
         save_is_magical=plan.spell is not None,
         activity_source_id=f"spell:{plan.spell.slug}:{plan.activity.id}" if plan.spell else None,
     )
 
 
 def source_failure(
-    snapshot: CombatSnapshot, actor_id: str, source_id: str | None, spell: Spell
+    snapshot: CombatSnapshot,
+    actor_id: str,
+    source_id: str | None,
+    spell: Spell,
+    mechanism: OrdinarySpellMechanism,
 ) -> str | None:
     """Check that the invocation source is present and supported by the bound dataset."""
     component = snapshot.casting_state
@@ -203,14 +281,25 @@ def source_failure(
         next((a for a in component.actors if a.actor_id == actor_id), None) if component else None
     )
     source = next((s for s in entry.sources if s.source_id == source_id), None) if entry else None
-    # The reviewed Cleric source includes the admitted instant spell profiles.
-    if entry is None or source is None or source.class_slug != "cleric" or source.ability != "wis":
-        return "explicit reviewed Cleric casting source is required"
+    attack = mechanism == "attack_damage"
+    class_slug, ability = ("wizard", "int") if attack else ("cleric", "wis")
+    if (
+        entry is None
+        or source is None
+        or source.class_slug != class_slug
+        or source.ability != ability
+        or (attack and source.source_id != "class:wizard")
+    ):
+        return f"explicit reviewed {class_slug.capitalize()} casting source is required"
     levels = actor.classes or (
         {actor.class_slug: actor.character_level} if actor.class_slug else {}
     )
-    if levels != {"cleric": 1} or actor.spellcasting_ability != source.ability:
+    if levels != {class_slug: 1} or actor.spellcasting_ability != source.ability:
         return "casting source contradicts class/ability facts"
+    if attack and (
+        actor.attack_bonus is not None or actor.proficiency_bonus_override not in (None, 2)
+    ):
+        return "Wizard spell attack requires the ordinary Intelligence and proficiency formula"
     if spell.slug not in source.known_spells or (
         spell.level > 0 and spell.slug not in source.prepared_spells
     ):
@@ -247,7 +336,7 @@ def spell_plan(
     request: RuleEvaluationRequest,
     loader: AssetLoader,
     spell: Spell | None,
-    mechanism: Literal["healing", "save_damage"] | None,
+    mechanism: OrdinarySpellMechanism | None,
 ) -> InvocationPlan | TurnEvaluation:
     """Prepare the admitted spell delivery and payment plan."""
     snapshot, intent = request.state_snapshot, request.payload
@@ -276,7 +365,9 @@ def spell_plan(
             "no_slot",
             "Cantrip requires no slot; level 1 spell requires explicit level 1",
         )
-    if failure := source_failure(snapshot, request.actor_id, intent.spell_source_id, spell):
+    if failure := source_failure(
+        snapshot, request.actor_id, intent.spell_source_id, spell, mechanism
+    ):
         return _refuse("rejected", "spell.source", failure)
     actor = next(a for a in snapshot.character_states if a.entity_id == request.actor_id)
     if spell.level > 0 and (
@@ -290,6 +381,11 @@ def spell_plan(
     creatures = [combatant(a) for a in snapshot.character_states]
     topology = GridTopology(GridScene.model_validate(snapshot.scene_state.grid.model_dump()))
     state = snapshot.combat_state
+    caster_is_party = request.actor_id in state.party_ids
+    enemies = state.encounter_ids if caster_is_party else state.party_ids
+    allies = state.party_ids if caster_is_party else state.encounter_ids
+    if mechanism == "attack_damage" and intent.target_id not in enemies:
+        return _refuse("rejected", "target_invalid", "target must be a present opposing actor")
     try:
         delivery = plan_delivery(
             spell.activities,
@@ -298,12 +394,8 @@ def spell_plan(
             topology=topology,
             positions=state.actor_zone,
             creatures=creatures,
-            enemy_ids=frozenset(
-                state.encounter_ids if request.actor_id in state.party_ids else state.party_ids
-            ),
-            ally_ids=frozenset(
-                state.party_ids if request.actor_id in state.party_ids else state.encounter_ids
-            ),
+            enemy_ids=frozenset(enemies),
+            ally_ids=frozenset(allies),
             range_ft=spell_range_ft(spell),
             default_target_ids=(intent.target_id,) if intent.target_id else (),
             execution=True,
@@ -323,10 +415,26 @@ def spell_plan(
     except ValueError:
         return _refuse("rejected", "no_slot", "no owned slot remains")
     assert intent.target_id is not None
-    assert isinstance(spell.activities[0], (HealActivity, SaveActivity))
-    return InvocationPlan(
-        spell.activities[0], intent.target_id, "wis", payments, spell, spell.level
-    )
+    activity = spell.activities[0]
+    if isinstance(activity, AttackActivity):
+        distance = topology.distance_ft(
+            state.actor_zone[request.actor_id], state.actor_zone[intent.target_id]
+        )
+        assert distance is not None
+        adjacent = attack_rules.hostile_adjacent_to_attacker(
+            next(creature for creature in creatures if creature.entity_id == request.actor_id),
+            creatures,
+            allies=allies,
+            dead_ids=state.dead_ids,
+            positions=state.actor_zone,
+            topology=topology,
+            can_see=lambda hostile, attacker: True,
+        )  # Dependencies admit only bright, unobstructed geometry.
+        return InvocationPlan(
+            activity, intent.target_id, "int", payments, spell, None, distance, adjacent
+        )
+    assert isinstance(activity, (HealActivity, SaveActivity))
+    return InvocationPlan(activity, intent.target_id, "wis", payments, spell, spell.level)
 
 
 def feature_plan(
@@ -463,7 +571,10 @@ def evaluate_invocation(request: RuleEvaluationRequest, loader: AssetLoader) -> 
             "spell.capability",
             "ordinary spell lacks a complete reviewed instant single-target mechanism",
         )
-    if failure := invocation_dependencies(
+    if mechanism == "attack_damage":
+        if failure := attack_spell_dependencies(snapshot, loader, intent.target_id):
+            return _refuse("unsupported", "spell.attack_dependencies", failure)
+    elif failure := invocation_dependencies(
         snapshot,
         loader,
         intent.target_id,

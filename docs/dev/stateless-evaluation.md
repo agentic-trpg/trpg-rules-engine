@@ -1,5 +1,24 @@
 # Stateless rule evaluation: current local contract
 
+## Ordinary ranged spell attacks
+
+Evaluator binding `dnd5e-evaluation/49` classifies an ordinary instant
+single-target ranged cantrip AttackActivity as `attack_damage` when the complete
+bound canonical definition and execution review match. The current definitions in
+this profile are Fire Bolt and Poison Spray. `combat.intent` uses the existing
+`cast_spell` payload with `spell_source_id="class:wizard"` and one living enemy
+creature as `target_id`. The source supplies a known cantrip, Intelligence and
+the complete Wizard 1 grant and resource facts. Casting spends an ordinary Action
+and draws no slot. Object targets, additional activity mechanics, other casting
+profiles, active effects and reactions are outside this profile.
+
+The delivery planner uses the bound range on a plain, bright grid. Dodge and
+adjacent hostiles feed the shared `AttackActivity` resolver, which proposes
+`AttackRolled` and on-hit `DamageApplied` with the bound activity identity,
+including zero damage on an immune hit. The result carries the existing guarded
+turn and damage Delta and the seeded RNG transition. Read-only action availability
+still covers the reviewed weapon and stat-block attack intents.
+
 ## Combat Haste and effect follow-ups
 
 Evaluator binding `dnd5e-evaluation/44` adds the reviewed combat Haste profile on

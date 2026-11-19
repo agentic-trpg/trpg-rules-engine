@@ -1,5 +1,14 @@
 # Stateful → Stateless migration progress
 
+## Ordinary ranged spell attacks — 2026-11-19
+
+Evaluator `/49` admits the bound Fire Bolt and Poison Spray cantrips through
+the ordinary single-target invocation and shared AttackActivity resolver. The
+reviewed Wizard 1 source supplies Intelligence and pays one Action with no slot.
+See [ordinary ranged spell attacks](stateless-evaluation.md#ordinary-ranged-spell-attacks)
+for target, geometry and dependency limits. SM adoption and persistence are
+tracked in the consuming repository.
+
 ## Passive fixed-region effects and exploration checks — 2026-11-19
 
 Evaluator `/46` converts configured passive templates through the shared effect

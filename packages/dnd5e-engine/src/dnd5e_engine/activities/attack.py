@@ -184,6 +184,7 @@ def resolve_attack(
             break
         distance_ft = ctx.target_distance_ft.get(target.entity_id)
         sources, _target_vex_advantage = _attack_roll_sources(
+            activity,
             ctx,
             target,
             weapon,
@@ -364,6 +365,7 @@ def _resolve_cleave_chain(
         candidate.conditions
     )
     sources, _vex = _attack_roll_sources(
+        activity,
         ctx,
         candidate,
         weapon,
@@ -522,6 +524,7 @@ def _adjudicate_hit_reaction(
 
 
 def _attack_roll_sources(
+    activity: AttackActivity,
     ctx: ActivityResolutionContext,
     target: Combatant,
     weapon: Weapon | None,
@@ -614,11 +617,14 @@ def _attack_roll_sources(
     # Disadvantage on the roll if you are within 5 feet of an enemy who
     # can see you and doesn't have the Incapacitated condition." The
     # spatial/incapacitated/vision predicate is pre-resolved orchestrator
-    # -side (``_hostile_adjacent_to_attacker``) into the per-ATTACKER
-    # ``ctx.attacker_ranged_in_melee`` flag; this pure resolver only
-    # gates it on the attack itself being effectively ranged (a melee
-    # swing, even with a hostile adjacent, is never penalized).
-    if ctx.attacker_ranged_in_melee and _attack_is_effectively_ranged(weapon, distance_ft):
+    # -side (``_hostile_adjacent_to_attacker``). The weapon and spell paths
+    # supply their own adjacency flags. Each applies only to a ranged attack
+    # of its reviewed kind.
+    if (ctx.attacker_ranged_in_melee and _attack_is_effectively_ranged(weapon, distance_ft)) or (
+        ctx.attacker_ranged_spell_in_melee
+        and _attack_origin(ctx) == "spell"
+        and _is_ranged_spell_attack(activity, weapon)
+    ):
         dis_sources.append("ranged_in_melee")
     # SRD 5.2 Heavy — no dedicated ``AdvantageSource`` exists (controller
     # ruling, C15 task-3 brief): reuses ``"trait"``. Ability-invariant
@@ -892,10 +898,8 @@ def _attack_is_effectively_ranged(weapon: Weapon | None, distance_ft: int | None
     melee reach (5 ft, or 10 ft with the Reach property) — mirroring the
     orchestrator's range-tier split (``_weapon_attack_range_ft``): within
     reach it's an ordinary melee swing (never penalized here), beyond reach
-    it's a thrown ranged attack. An ordinary melee-only weapon (no Thrown)
-    is never ranged, and a spell attack (no weapon) never triggers this
-    weapon-keyed gate — see the migration note on the monster attack ctx
-    site (``orchestrator.py``) for why.
+    it's a thrown ranged attack. The caller checks a ranged spell activity
+    separately using its explicit attack origin.
     """
     if weapon is None:
         return False

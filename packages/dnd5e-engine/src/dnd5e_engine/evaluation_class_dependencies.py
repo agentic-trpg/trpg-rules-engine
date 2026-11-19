@@ -19,7 +19,7 @@ from dnd5e_engine.feature_runtime import DrawFreeRandom, scalar_formula
 # Canonical grants are reviewed together with the operation, not globally disabled.
 # Divine Order/Defense/mastery affect equipment, skills or attacks, not this
 # unarmored heal. Second Wind is separately priced; Spellcasting supplies slots.
-_REVIEWED = {"cleric": 1, "fighter": 1, "wizard": 5}
+_REVIEWED = {("cleric", 1), ("fighter", 1), ("wizard", 1), ("wizard", 5)}
 
 
 def _class_equipment_profile(
@@ -125,7 +125,7 @@ def class_dependencies(
     if len(levels) != 1 or sum(levels.values()) != actor.character_level:
         return "only an explicit single-class profile is reviewed"
     slug, level = next(iter(levels.items()))
-    if _REVIEWED.get(slug) != level or actor.class_slug not in (None, slug):
+    if (slug, level) not in _REVIEWED or actor.class_slug not in (None, slug):
         return "class/level has unreviewed operation dependencies"
     cls = loader.get_class(slug)
     if cls is None or cls != canonical.get_class(slug):
@@ -133,7 +133,7 @@ def class_dependencies(
     grants = {g.slug for g in cls.granted_features if g.ref_type == "feature" and g.level <= level}
     if equipped and has_equipment and slug == "cleric":
         grants.add("divine-order-protector")
-    if slug == "wizard":
+    if levels == {"wizard": 5}:
         additional = evoker_grants(loader, canonical, level)
         if additional is None:
             return "subclass definition differs from reviewed binding"

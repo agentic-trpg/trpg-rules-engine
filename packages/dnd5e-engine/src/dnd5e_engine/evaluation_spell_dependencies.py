@@ -4,14 +4,30 @@ from dnd5e_srd_data.loader import AssetLoader
 from dnd5e_srd_data.schema.monster import MonsterTraitMechanic
 
 from dnd5e_engine.evaluation_class_dependencies import class_dependencies
+from dnd5e_engine.evaluation_death import turn_lifecycle_support_failure
 from dnd5e_engine.evaluation_equipment_dependencies import (
     HEALING_POTION_SLUG,
     reviewed_healing_potion_owners,
 )
-from dnd5e_engine.evaluation_preflight import snapshot_support_failure
+from dnd5e_engine.evaluation_preflight import snapshot_support_failure, template_support_failure
 from dnd5e_engine.evaluation_reactions import reaction_dependencies
 from dnd5e_engine.evaluation_ruleset import get_default_ruleset
 from dnd5e_engine.evaluation_state import CharacterStateV2, CombatSnapshot
+
+
+def attack_spell_dependencies(
+    snapshot: CombatSnapshot, loader: AssetLoader, target_id: str
+) -> str | None:
+    """Check instant spell attack and turn dependencies on a plain combat snapshot."""
+    if snapshot.combat_state.pending_reactions:
+        return "instant spell attack reactions are not migrated"
+    if any(actor.trait_mechanics for actor in snapshot.character_states):
+        return "unreviewed spell attack or damage trait"
+    return (
+        healing_dependencies(snapshot, loader, target_id, allow_stowed_healing_potions=True)
+        or template_support_failure(snapshot, loader)
+        or turn_lifecycle_support_failure(snapshot)
+    )
 
 
 def invocation_dependencies(

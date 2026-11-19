@@ -426,6 +426,9 @@ class ActivityResolutionContext:
     # Default ``False`` keeps the golden corpus identical (no adjacency
     # geometry).
     attacker_ranged_in_melee: bool = False
+    # Reviewed spell delivery separately supplies the qualifying hostile for
+    # close-combat disadvantage on a ranged spell AttackActivity.
+    attacker_ranged_spell_in_melee: bool = False
     # SRD 5.2 §Actions in Combat — Dodge (C14 Task 3). Per-TARGET whether the
     # Dodge benefit is currently active (``dodging`` AND not Incapacitated
     # AND Speed > 0 — the SRD loss clause), projected once per resolution by

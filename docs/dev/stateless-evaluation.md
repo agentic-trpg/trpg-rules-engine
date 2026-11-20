@@ -1,5 +1,10 @@
 # Stateless rule evaluation: current local contract
 
+Evaluator binding `dnd5e-evaluation/53` adds one reviewed elapsed walking-speed
+modifier on the target of a spell-hit speed rider and the instantaneous
+exploration touch-healing profile. Both use the existing request, events and
+guarded Delta formats.
+
 Evaluator binding `dnd5e-evaluation/52` adds the reviewed spell-hit speed
 effect profile on `engine-evaluation/30` and `engine-snapshot/20`.
 
@@ -52,9 +57,12 @@ The saved application serial must remain within the initiative slots traversed
 from the source to the current actor. Currently dead slots may have been
 skipped. The source must remain eligible for a future initiative turn.
 
-This slice admits plain walking and Pass with one active speed graph. An initial cast
-requires a combat snapshot free of other active effects. The evaluator also refuses a cast
-that would create and expire that effect during the same advancement, such as
+This slice admits plain walking and Pass with one active combat speed rider.
+The target can also carry one reviewed elapsed walking modifier. The evaluator
+uses both effects for the walking ledger and removes only the combat rider
+at its turn boundary. The host still owns the elapsed deadline.
+The evaluator refuses a cast that would create and expire the combat rider
+during the same advancement, such as
 when a lethal hit skips the final foe directly to the caster's next turn.
 Supporting that case requires atomic adoption of same-command application and
 expiry through the applicable turn or combat closure.

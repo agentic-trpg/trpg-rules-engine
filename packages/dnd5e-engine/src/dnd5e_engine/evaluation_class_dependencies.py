@@ -149,8 +149,9 @@ def class_dependencies(
     if equipped and has_equipment and slug == "cleric":
         grants.add("divine-order-protector")
     if levels == {"wizard": 5} or lore_bard:
-        # Cutting Words requires a D20 roll, and Font of Inspiration changes
-        # rest/recovery and Inspiration payments. Neither fires on the heal.
+        # Cutting Words reacts to attack rolls, ability checks, or damage rolls.
+        # Font of Inspiration changes rest, recovery, and Inspiration payments.
+        # Neither applies during this heal.
         subclass_slug = "lore" if lore_bard else "evoker"
         additional = _reviewed_subclass_grants(loader, canonical, subclass_slug, slug, level)
         if additional is None:

@@ -1,5 +1,8 @@
 # Stateless rule evaluation: current local contract
 
+Evaluator binding `dnd5e-evaluation/51` adds the reviewed ordered multi-target
+healing profile below with the existing request and guarded Delta operations.
+
 Evaluator binding `dnd5e-evaluation/50` covers the instant healing casting-time
 payment and timed ordinary walking described below. Both use the existing
 request, event, and guarded Delta types.

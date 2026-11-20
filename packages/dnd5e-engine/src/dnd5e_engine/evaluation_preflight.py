@@ -17,7 +17,11 @@ from dnd5e_engine.action_economy_rules import action_economy_gate_failure
 from dnd5e_engine.activities.dice import validate_expression
 from dnd5e_engine.evaluation_actor import combatant
 from dnd5e_engine.evaluation_contracts import CombatIntentPayload, PreflightChoice, RuleError
-from dnd5e_engine.evaluation_death import death_consistency, turn_lifecycle_support_failure
+from dnd5e_engine.evaluation_death import (
+    death_consistency,
+    reviewed_terminal_unconscious,
+    turn_lifecycle_support_failure,
+)
 from dnd5e_engine.evaluation_state import CharacterStateV2, CombatSnapshot
 from dnd5e_engine.events import AttackFailed, CastFailed, DamageType
 from dnd5e_engine.intents import IntentRejectedError
@@ -68,11 +72,13 @@ def snapshot_support_failure(
     reviewed_sap: bool = False,
     reviewed_conditions: bool = False,
     reviewed_world_effects: bool = False,
+    reviewed_closure: bool = False,
 ) -> str | None:
     """Return a reason when snapshot mechanics exceed the supported operation profile.
 
     Movement evaluates terrain costs. Ordinary attacks can admit terrain as an
     independent input without enabling movement geometry.
+    Closure can admit the implied Unconscious condition of a recorded dead Character.
     """
     state = snapshot.combat_state
     failure = death_consistency(snapshot, allow_dying=turn_lifecycle)
@@ -142,6 +148,7 @@ def snapshot_support_failure(
                 and not turn_lifecycle
                 and not reviewed_effects
                 and not reviewed_conditions
+                and not (reviewed_closure and reviewed_terminal_unconscious(actor, state.dead_ids))
             )
             or (actor.concentration_effect_id and not reviewed_effects)
             or (

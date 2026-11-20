@@ -87,11 +87,13 @@ def class_dependencies(
     allow_stowed_healing_potions: bool = False,
     stowed_consumable_ids: frozenset[str] = frozenset(),
     reviewed_lore_bard: bool = False,
+    reviewed_wizard_pouch: bool = False,
 ) -> str | None:
     """Check class dependencies within the caller's reviewed operation profile.
 
     The reviewed Lore Bard profile requires empty equipment and the complete
     Bard/Lore grants. This profile does not admit Bard feature invocations.
+    A caller can admit only the reviewed Wizard pouch without enabling other equipment.
     """
     if actor.species_slug:
         return "subclass/species operation dependencies are not migrated"
@@ -114,7 +116,7 @@ def class_dependencies(
         snapshot,
         loader,
         canonical,
-        equipped=equipped,
+        equipped=equipped or (reviewed_wizard_pouch and levels == {"wizard": 5}),
         allow_stowed_healing_potions=allow_stowed_healing_potions,
         stowed_consumable_ids=stowed_consumable_ids,
     )
@@ -263,6 +265,7 @@ def operation_dependencies(
     reviewed_world_effects: bool = False,
     allow_stowed_healing_potions: bool = False,
     reviewed_class_lifecycle: bool = False,
+    reviewed_closure: bool = False,
 ) -> str | None:
     """Pass/reset, walking, initialization and closure do not activate these grants.
 
@@ -270,6 +273,7 @@ def operation_dependencies(
     Any world effect must already have been verified by the requesting operation.
     Plain Pass can keep reviewed stowed healing potions in the equipment closure.
     Foundation admission and neutral Pass can opt in to the reviewed Lore Bard.
+    Modern closure can retain the reviewed Wizard pouch and terminal unconscious state.
     Other effects, reactions, traits and non-class mechanics retain ordinary guards.
     """
     from dnd5e_engine.evaluation_preflight import snapshot_support_failure
@@ -308,6 +312,7 @@ def operation_dependencies(
             equipped=equipped or attack,
             allow_stowed_healing_potions=actor.entity_id in potion_owners,
             reviewed_lore_bard=reviewed_class_lifecycle,
+            reviewed_wizard_pouch=reviewed_closure,
         )
 
     if reviewed_sap:
@@ -341,4 +346,5 @@ def operation_dependencies(
         reviewed_sap=reviewed_sap,
         reviewed_conditions=reviewed_sap,
         reviewed_world_effects=reviewed_world_effects,
+        reviewed_closure=reviewed_closure,
     )

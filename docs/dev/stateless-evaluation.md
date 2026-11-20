@@ -1,5 +1,10 @@
 # Stateless rule evaluation: current local contract
 
+Evaluator binding `dnd5e-evaluation/54` admits the reviewed Evoker 5 component
+pouch and a recorded dead Character's retained implied combat Unconscious condition
+in `combat.close` on `engine-snapshot/20`. Closure evaluates the full snapshot and
+retains its existing outcome and RNG contract.
+
 Evaluator binding `dnd5e-evaluation/53` adds one reviewed elapsed walking-speed
 modifier on the target of a spell-hit speed rider and the instantaneous
 exploration touch-healing profile. Both use the existing request, events and

@@ -17,7 +17,7 @@ from dnd5e_engine.evaluation_contracts import (
 from dnd5e_engine.evaluation_rng import RNGState
 from dnd5e_engine.evaluation_ruleset import RulesetBindingError
 from dnd5e_engine.evaluation_snapshot import capture_combat_snapshot
-from dnd5e_engine.evaluation_state import CombatSnapshot, InventoryState
+from dnd5e_engine.evaluation_state import CombatSnapshot, ConditionRecord, InventoryState
 from dnd5e_engine.events import CombatEnded
 from dnd5e_engine.outcome import DeathRecord, LootDrop
 from dnd5e_engine.specs import GridScene
@@ -174,6 +174,105 @@ def test_nonterminal_and_alien_actor_rejected_without_rng(monkeypatch):
         assert result.state_delta is None
         assert result.rng_transition is None
         assert not result.proposed_events
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [None, "pouch", "source", "duration", "other_condition", "dying", "missing_record"],
+)
+def test_equipped_wizard_closure_with_recorded_death_save(monkeypatch, mutation):
+    """The closure consumes complete equipment, condition and terminal death facts."""
+    from tests.test_stateless_casting_v20 import canonical_healing_wire
+    from tests.test_stateless_hold_cast import cast_case
+
+    opening, _, _, loader = cast_case(pc=True)
+    wire, _ = canonical_healing_wire(opening)
+    wire.update(schema_version="engine-evaluation/30", operation_kind="combat.close")
+    wire["payload"] = {"kind": "combat.close"}
+    snapshot = wire["state_snapshot"]
+    inventory = snapshot["inventory_state"]["entries"]
+    for enemy in snapshot["character_states"]:
+        if weapon := enemy["weapon_in_hands"]:
+            weapon_id = f"weapon:{enemy['entity_id']}"
+            enemy.update(held_weapon_instance_id=weapon_id, carried_item_slugs=[weapon])
+            inventory.append(
+                {
+                    "instance_id": weapon_id,
+                    "owner_id": enemy["entity_id"],
+                    "item_slug": weapon,
+                    "quantity": 1,
+                    "charges_remaining_per_unit": 0,
+                    "accessible": True,
+                }
+            )
+    spells = snapshot["casting_state"]["actors"][0]["sources"][0]["spells"]
+    next(spell for spell in spells if spell["spell_id"] == "hold-person")["material"] = {
+        "inventory_instance_id": "pouch:wizard",
+        "available": True,
+    }
+    wizard = next(a for a in snapshot["character_states"] if a["entity_id"] == FOE)
+    wizard.update(hp_current=0, is_alive=False)
+    wizard["death_saves"] = {"successes": 0, "failures": 3, "is_stable": False}
+    condition = ConditionRecord(
+        condition="unconscious",
+        source_entity_id="implied:event",
+        scope="combat",
+        duration_rounds=None,
+        save_dc=None,
+        applied_round=1,
+        exhaustion_level=1,
+        source_effect_id=None,
+    ).model_dump()
+    wizard["conditions"] = [condition]
+    state = snapshot["combat_state"]
+    state["dead_ids"] = [FOE]
+    state["deaths_recorded"] = [
+        {
+            "target_id": FOE,
+            "target_kind": "character",
+            "location_id": snapshot["scene_state"]["scene_id"],
+            "reason": "death_saves",
+            "killer_id": None,
+        }
+    ]
+    if mutation == "pouch":
+        inventory[0]["accessible"] = False
+    elif mutation == "source":
+        condition["source_entity_id"] = "implied:revive"
+    elif mutation == "duration":
+        condition["duration_rounds"] = 1
+    elif mutation == "other_condition":
+        condition["condition"] = "prone"
+    elif mutation == "dying":
+        state["dead_ids"] = []
+        state["deaths_recorded"] = []
+        wizard["is_alive"] = True
+        wizard["death_saves"]["failures"] = 2
+    elif mutation == "missing_record":
+        state["deaths_recorded"] = []
+
+    request = RuleEvaluationRequest.model_validate_json(to_json(wire))
+    before = deepcopy(request)
+    monkeypatch.setattr(RNGState, "restore", lambda self: pytest.fail("RNG restored"))
+    result = execute(request, loader)
+    assert request == before
+    if mutation:
+        assert result.status == "unsupported"
+        assert result.error.code == "closure.capability"
+        assert result.state_delta is None
+        assert result.rng_transition is None
+        assert not result.proposed_events
+        return
+
+    assert result.status == "accepted", result.error
+    (closure,) = result.state_delta.operations
+    assert isinstance(closure, delta.CombatClose)
+    assert closure.reason == "defeat_tpk"
+    assert [record.model_dump() for record in closure.historical.deaths] == [
+        record.model_dump() for record in request.state_snapshot.combat_state.deaths_recorded
+    ]
+    assert result.proposed_events == (CombatEnded(reason="defeat_tpk"),)
+    assert not result.rng_transition.state_changed
 
 
 @pytest.mark.parametrize(

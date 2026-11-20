@@ -377,7 +377,7 @@
   "ruleset_binding": {
     "ruleset_id": "dnd-2024-srd-5.2.1",
     "data_revision": "sha256:82d568f4f3fe90520cf5193ee38a5e2a26fc02b32af1022b46e6de77d80469dc",
-    "evaluator_version": "dnd5e-evaluation/53"
+    "evaluator_version": "dnd5e-evaluation/54"
   },
   "rng_context": {
     "stream_id": "main",

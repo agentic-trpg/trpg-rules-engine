@@ -59,7 +59,11 @@ def evaluate_closure(request: RuleEvaluationRequest, loader: AssetLoader) -> Clo
         return _refuse("rejected", "actor_invalid", "closure actor is absent from the roster")
     if state.ended:
         return _refuse("rejected", "combat_ended", "combat has already ended")
-    failure = operation_dependencies(snapshot, loader) or template_support_failure(snapshot, loader)
+    failure = operation_dependencies(
+        snapshot,
+        loader,
+        reviewed_closure=snapshot.snapshot_schema_version == "engine-snapshot/20",
+    ) or template_support_failure(snapshot, loader)
     if failure:
         return _refuse("unsupported", "closure.capability", failure)
     failure = death_consistency(snapshot)

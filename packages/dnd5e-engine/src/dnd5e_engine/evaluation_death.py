@@ -1,6 +1,6 @@
 """Shared admission of complete terminal death facts; no death rule inference."""
 
-from dnd5e_engine.evaluation_state import CombatSnapshot
+from dnd5e_engine.evaluation_state import CharacterStateV2, CombatSnapshot, ConditionRecord
 
 
 def death_consistency(snapshot: CombatSnapshot, *, allow_dying: bool = False) -> str | None:
@@ -38,19 +38,38 @@ def death_consistency(snapshot: CombatSnapshot, *, allow_dying: bool = False) ->
     return None
 
 
+def _is_permanent_implied_combat_condition(condition: ConditionRecord) -> bool:
+    """Identify an implied condition without expiry, source-effect or save hooks."""
+    return (
+        condition.source_entity_id in {"implied:event", "implied:revive"}
+        and condition.scope == "combat"
+        and condition.duration_rounds is None
+        and condition.save_dc is None
+        and condition.source_effect_id is None
+        and condition.exhaustion_level == 1
+    )
+
+
+def reviewed_terminal_unconscious(actor: CharacterStateV2, dead_ids: set[str]) -> bool:
+    """Recognize the retained knockout condition after validated Character death."""
+    return (
+        actor.entity_type == "Character"
+        and actor.entity_id in dead_ids
+        and len(actor.conditions) == 1
+        and actor.conditions[0].condition == "unconscious"
+        and actor.conditions[0].source_entity_id == "implied:event"
+        and _is_permanent_implied_combat_condition(actor.conditions[0])
+    )
+
+
 def turn_lifecycle_support_failure(snapshot: CombatSnapshot) -> str | None:
     """Only permanent implied unconscious/prone and consistent bounded PC dying state."""
     for actor in snapshot.character_states:
         for condition in actor.conditions:
-            if (
-                condition.condition not in {"unconscious", "prone"}
-                or condition.source_entity_id not in {"implied:event", "implied:revive"}
-                or condition.scope != "combat"
-                or condition.duration_rounds is not None
-                or condition.save_dc is not None
-                or condition.source_effect_id is not None
-                or condition.exhaustion_level != 1
-            ):
+            if condition.condition not in {
+                "unconscious",
+                "prone",
+            } or not _is_permanent_implied_combat_condition(condition):
                 return "condition expiry, provenance or save hooks are not migrated"
             if condition.condition == "unconscious" and actor.hp_current > 0:
                 return "unconscious source is outside the bounded dying state"

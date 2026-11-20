@@ -44,6 +44,11 @@ selector's clean-checkout default.
 - Data/schema/canonical or package dependency/configuration changes expand according
   to `data -> engine -> bridge/demo`. Fast runs data tests plus downstream contracts;
   Focused runs all affected runtime suites. Root dependencies expand the entire workspace.
+- Scoped validation runs the serialized event-stage example with schema export and
+  the reproducible spell-execution inventory before package suites when Engine or
+  SRD Data runtime inputs or workspace dependencies change. Changes to the serialized
+  example or inventory itself select its corresponding check. Any later engine suite
+  skips the exact nodes already run by this check.
 - Bridge/demo changes run their respective suites; individual test changes select that
   file (plus engine regressions when applicable). Shared test fixtures/helpers and deleted
   files fall back to package-wide tests and necessary downstream checks.

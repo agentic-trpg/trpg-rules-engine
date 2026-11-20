@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from validation_scope import (  # noqa: E402
     CONTRACTS,
     CORE,
+    ENGINE_BINDING_TEST_INPUTS,
     PACKAGES,
     ROOT,
     Plan,
@@ -62,6 +63,7 @@ class ScopeTests(unittest.TestCase):
             plan = self.plan(PACKAGES[owner] + "/src/changed.py")
             self.assertEqual(plan.packages, [owner])
             self.assertEqual(plan.tests, {owner: ["tests"]})
+            self.assertEqual(plan.engine_binding_tests, [])
 
     def test_docs_only_has_no_python_tests_or_examples(self) -> None:
         plan = self.plan("docs/dev/spell-area-delivery.md", "README.md", "mkdocs.yml")
@@ -69,6 +71,32 @@ class ScopeTests(unittest.TestCase):
         self.assertFalse(plan.tooling)
         self.assertFalse(plan.examples)
         self.assertEqual(plan.tests, {})
+        self.assertEqual(plan.engine_binding_tests, [])
+
+    def test_binding_inputs_select_the_corresponding_early_node(self) -> None:
+        for node, inputs in ENGINE_BINDING_TEST_INPUTS.items():
+            for path in inputs:
+                with self.subTest(path=path):
+                    plan = self.plan(path)
+                    self.assertEqual(plan.engine_binding_tests, [node])
+                    self.assertEqual(plan.packages, ["engine"])
+                    self.assertFalse(plan.integration_required)
+
+    def test_binding_dependencies_select_both_early_nodes(self) -> None:
+        paths = (
+            "uv.lock",
+            "pyproject.toml",
+            ".python-version",
+            PACKAGES["engine"] + "/pyproject.toml",
+            PACKAGES["data"] + "/pyproject.toml",
+            PACKAGES["engine"] + "/src/dnd5e_engine/evaluation_ruleset.py",
+            PACKAGES["data"] + "/src/dnd5e_srd_data/canonical/spells/ray-of-frost.json",
+        )
+        for level in ("fast", "integration"):
+            for path in paths:
+                with self.subTest(level=level, path=path):
+                    plan = self.plan(path, level=level)
+                    self.assertEqual(plan.engine_binding_tests, sorted(ENGINE_BINDING_TEST_INPUTS))
 
     def test_dependencies_and_member_configuration(self) -> None:
         for path in ("uv.lock", "pyproject.toml", PACKAGES["data"] + "/pyproject.toml"):
@@ -106,9 +134,10 @@ class ScopeTests(unittest.TestCase):
             self.assertEqual(plan.tests["engine"], ["tests"])
 
     def test_full_retains_all_capabilities(self) -> None:
-        plan = self.plan("README.md", level="full")
+        plan = self.plan("README.md", "uv.lock", level="full")
         self.assertEqual(plan.tests, {key: ["tests"] for key in PACKAGES})
         self.assertTrue(plan.docs and plan.tooling and plan.examples)
+        self.assertEqual(plan.engine_binding_tests, [])
 
     def test_no_duplicate_tests_or_recursive_full_suite_overlap(self) -> None:
         plan = self.plan(

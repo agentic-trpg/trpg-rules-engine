@@ -39,6 +39,18 @@ CONTRACTS = {
     "bridge": ["tests/test_combat_e2e.py"],
     "demo": ["tests/test_engine_surface_usage.py", "tests/test_replay.py"],
 }
+WORKSPACE_CONFIGURATION = {"pyproject.toml", "uv.lock", ".python-version"}
+SPELL_EXECUTION_AUDIT = "docs/audits/spell-execution.json"
+ENGINE_BINDING_TEST_INPUTS = {
+    "tests/test_event_stage_measurements.py::test_real_serialized_example_and_schema_export": {
+        "examples/event_stage_evaluation.py",
+        "examples/event_stage_request.json",
+    },
+    (
+        "tests/test_spell_execution_admission.py"
+        "::test_inventory_matches_every_canonical_spell_activity_and_is_reproducible"
+    ): {SPELL_EXECUTION_AUDIT},
+}
 PUBLIC_ENGINE = {
     "__init__.py",
     "orchestrator.py",
@@ -62,9 +74,12 @@ PUBLIC_ENGINE = {
 
 @dataclass
 class Plan:
+    """Package checks and any engine binding tests that must run first."""
+
     level: str
     changed: list[str]
     tests: dict[str, list[str]] = field(default_factory=dict)
+    engine_binding_tests: list[str] = field(default_factory=list)
     packages: list[str] = field(default_factory=list)
     docs: bool = False
     tooling: bool = False
@@ -178,8 +193,10 @@ def related_engine_tests(paths: list[str], root: Path) -> list[str]:
 
 
 def build_plan(paths: list[str], level: str = "fast", root: Path = ROOT) -> Plan:
+    """Select affected checks, with binding tests first in scoped runtime plans."""
     plan = Plan(level=level, changed=sorted(set(paths)))
     selected: dict[str, set[str]] = {}
+    binding_tests: set[str] = set()
     owners: set[str] = set()
     expanded: set[str] = set()
     engine_sources: list[str] = []
@@ -189,12 +206,26 @@ def build_plan(paths: list[str], level: str = "fast", root: Path = ROOT) -> Plan
 
     for path in plan.changed:
         owner = next((key for key, value in PACKAGES.items() if path.startswith(value + "/")), None)
+        relative = path[len(PACKAGES[owner]) + 1 :] if owner else ""
         if path.startswith("docs/") or path.endswith(".md") or path == "mkdocs.yml":
             plan.docs = True
             if path == "AGENTS.md":
                 plan.tooling = True
+            if path != SPELL_EXECUTION_AUDIT:
+                continue
+        if level in {"fast", "integration"}:
+            runtime_change = owner in {"engine", "data"} and (
+                relative.startswith("src/") or relative == "pyproject.toml"
+            )
+            if runtime_change or path in WORKSPACE_CONFIGURATION:
+                binding_tests.update(ENGINE_BINDING_TEST_INPUTS)
+            else:
+                binding_tests.update(
+                    node for node, inputs in ENGINE_BINDING_TEST_INPUTS.items() if path in inputs
+                )
+        if path == SPELL_EXECUTION_AUDIT:
             continue
-        if path in {"pyproject.toml", "uv.lock", ".python-version"}:
+        if path in WORKSPACE_CONFIGURATION:
             expanded.update(PACKAGES)
             plan.reasons.append(f"workspace dependency/configuration: {path}")
         elif path.startswith(("tools/", ".github/")) or path == "Makefile":
@@ -207,7 +238,6 @@ def build_plan(paths: list[str], level: str = "fast", root: Path = ROOT) -> Plan
             add("engine", CORE)
         elif owner:
             owners.add(owner)
-            relative = path[len(PACKAGES[owner]) + 1 :]
             if relative == "Makefile" or relative.startswith("scripts/smoke_clean_install"):
                 plan.tooling = True
                 expanded.update(DOWNSTREAM[owner])
@@ -268,6 +298,9 @@ def build_plan(paths: list[str], level: str = "fast", root: Path = ROOT) -> Plan
     if level == "full":
         selected = {key: {"tests"} for key in PACKAGES}
         plan.docs = plan.tooling = plan.examples = True
+    if binding_tests:
+        plan.engine_binding_tests = sorted(binding_tests)
+        add("engine", [])
     plan.packages = [key for key in PACKAGES if key in selected]
     plan.tests = {
         key: ["tests"] if "tests" in selected[key] else sorted(selected[key])

@@ -23,6 +23,7 @@ def run(command: list[str], cwd: Path = ROOT) -> None:
 
 
 def main() -> None:
+    """Run scoped binding checks before package suites or delegate the full gate."""
     started = time.perf_counter()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("level", choices=["fast", "integration", "full", "docs", "smoke"])
@@ -82,6 +83,9 @@ def main() -> None:
     os.environ["UV_NO_SYNC"] = "1"
     os.environ["UV_LOCKED"] = "1"
     uv = ["uv", "run", "--no-sync"]
+    pytest = uv + ["pytest", "-q"]
+    if plan.engine_binding_tests:
+        run(pytest + plan.engine_binding_tests, ROOT / PACKAGES["engine"])
     if plan.tooling:
         run(uv + ["ruff", "check", "tools"])
         run(uv + ["ruff", "format", "--check", "tools"])
@@ -91,13 +95,20 @@ def main() -> None:
         cwd = ROOT / PACKAGES[package]
         if plan.level == "full":
             run(["make", "check"], cwd)
-        else:
+        elif tests := plan.tests[package]:
             # Retain configured package lint/type rules; runtime tests carry no coverage overhead.
             targets = ["src", "tests"] + (["tools"] if package == "data" else [])
             run(uv + ["ruff", "check", *targets], cwd)
             run(uv + ["ruff", "format", "--check", *targets], cwd)
             run(uv + ["mypy", "src"], cwd)
-            run(uv + ["pytest", "-q", *plan.tests[package]], cwd)
+            # The early gate already ran these exact nodes, including for a full
+            # package collection selected by scoped integration.
+            deselect = [
+                f"--deselect={node}"
+                for node in plan.engine_binding_tests
+                if package == "engine" and ("tests" in tests or node.split("::")[0] in tests)
+            ]
+            run(pytest + deselect + tests, cwd)
     if plan.examples:
         for name in ("grid_combat", "skill_check", "build_party_member"):
             run(uv + ["python", f"examples/{name}.py"])

@@ -55,6 +55,29 @@ class RunnerTests(unittest.TestCase):
         self.assertTrue(all(command[-1] == "tests" for command in pytest))
         self.assertFalse(any(command[0] == "make" for command in commands))
 
+    def test_binding_nodes_run_before_all_package_suites_and_only_once(self) -> None:
+        commands = self.commands("fast", "--auto", "--files", "uv.lock")
+        self.assertEqual(commands[0][:3], ["uv", "sync", "--locked"])
+        early = commands[1]
+        self.assertEqual(early[:5], ["uv", "run", "--no-sync", "pytest", "-q"])
+        self.assertEqual(len(early[5:]), 2)
+        pytest = [command for command in commands[2:] if "pytest" in command]
+        self.assertEqual(len(pytest), 4)
+        self.assertTrue(all(command[-1] == "tests" for command in pytest))
+        self.assertEqual(pytest[1][5:-1], [f"--deselect={node}" for node in early[5:]])
+        self.assertTrue(
+            all(len(command) == 6 for index, command in enumerate(pytest) if index != 1)
+        )
+
+    def test_audit_alone_runs_only_the_inventory_node(self) -> None:
+        commands = self.commands("fast", "--auto", "--files", "docs/audits/spell-execution.json")
+        self.assertEqual(len(commands), 3)
+        self.assertEqual(commands[-1][-3:], ["mkdocs", "build", "--strict"])
+        pytest = [command for command in commands if "pytest" in command]
+        self.assertEqual(len(pytest), 1)
+        self.assertEqual(len(pytest[0]), 6)
+        self.assertIn("::test_inventory_matches_every_canonical_spell_activity", pytest[0][-1])
+
     def test_bridge_does_not_install_unrelated_dev_packages(self) -> None:
         commands = self.commands("fast", "--files", "packages/nat20-bridge/src/server.py")
         self.assertEqual(

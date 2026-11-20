@@ -17,7 +17,14 @@ from dnd5e_engine.evaluation_haste_delta import application_clock
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError, attack_delta
 from dnd5e_engine.evaluation_ruleset import get_default_ruleset
 from dnd5e_engine.evaluation_state import CharacterStateV2, CombatSnapshot, ConditionLink
-from dnd5e_engine.events import AttackRolled, CombatEvent, EffectApplied, EffectExpired, TurnEnded
+from dnd5e_engine.events import (
+    AttackRolled,
+    CombatEvent,
+    DamageApplied,
+    EffectApplied,
+    EffectExpired,
+    TurnEnded,
+)
 from dnd5e_engine.movement import MovementMode, SpeedModifier, project_speeds, speed_for_mode
 from dnd5e_engine.rules.conditions import active_condition_names, exhaustion_level_of
 from dnd5e_engine.types.combat import Combatant
@@ -188,6 +195,16 @@ def speed_effect_support_failure(snapshot: CombatSnapshot, loader: AssetLoader) 
         or round_number < state.round_number - 1
     ):
         return "speed effect is outside its source-turn application interval"
+    initiative = state.initiative_ids
+    traversed = (current_index - source_index) % len(initiative)
+    # Every still-live slot on this arc must have started a turn. A currently
+    # dead actor may have acted before dying, so that slot only raises the upper bound.
+    minimum_starts = sum(
+        initiative[(source_index + offset) % len(initiative)] not in state.dead_ids
+        for offset in range(1, traversed + 1)
+    )
+    if not minimum_starts <= state.turn_serial - serial <= traversed:
+        return "speed effect serial contradicts the reachable initiative slots"
     target = next(a for a in snapshot.character_states if a.entity_id == effect.target_id)
     ledger = state.movement_ledgers[effect.target_id]
     if target.movement_remaining != ledger.remaining(
@@ -310,7 +327,7 @@ def verify_speed_effect_creation(
     request: RuleEvaluationRequest,
     proposed_events: Sequence[CombatEvent],
 ) -> None:
-    """Bind a creation to its exact hit, effect evidence, combat and applying turn."""
+    """Bind a creation to its hit, damage and effect evidence and the applying turn."""
     from dnd5e_engine.evaluation_contracts import CombatIntentPayload
 
     snapshot, intent = request.state_snapshot, request.payload
@@ -344,17 +361,33 @@ def verify_speed_effect_creation(
     rolls = [
         (i, event) for i, event in enumerate(proposed_events) if isinstance(event, AttackRolled)
     ]
+    damages = [
+        (i, event) for i, event in enumerate(proposed_events) if isinstance(event, DamageApplied)
+    ]
     effects = [
         (i, event) for i, event in enumerate(proposed_events) if isinstance(event, EffectApplied)
     ]
     ended = [i for i, event in enumerate(proposed_events) if isinstance(event, TurnEnded)]
+    spell, activity, _ = definition
     if (
         len(rolls) != 1
+        or len(damages) != 1
         or len(effects) != 1
-        or not rolls[0][0] < effects[0][0] < min(ended, default=len(proposed_events))
+        or not rolls[0][0]
+        < damages[0][0]
+        < effects[0][0]
+        < min(ended, default=len(proposed_events))
         or not rolls[0][1].is_hit
+        or rolls[0][1].is_opportunity_attack
         or rolls[0][1].attacker_id != request.actor_id
         or rolls[0][1].target_id != intent.target_id
+        or damages[0][1].source_actor_id != request.actor_id
+        or damages[0][1].target_id != intent.target_id
+        or damages[0][1].source_id != f"spell:{spell.slug}:{activity.id}"
+        or damages[0][1].damage_type != activity.damage.parts[0].types[0]
+        or damages[0][1].amount < 0
         or effect_state(effects[0][1].effect) != operation.effect
     ):
-        raise ValueError("combat effect creation requires its matching attack hit and effect event")
+        raise ValueError(
+            "combat effect creation requires its matching attack hit, damage and effect"
+        )

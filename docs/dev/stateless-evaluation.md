@@ -40,7 +40,7 @@ hit deals zero damage. A miss consumes the ordinary Action and attack draw.
 `combat.effect_create` carries the combat ID, effect identity, absence guard,
 complete effect, initial lifecycle clock and condition lineage. The speed effect
 has empty condition lineage. The result binds creation to the input combat,
-applying turn and matching hit and effect evidence. The host decides whether to
+applying turn and matching hit, damage and effect evidence. The host decides whether to
 adopt the proposed change.
 
 Walking prices against reduced Speed while the effect is present. Explicit Pass
@@ -48,6 +48,9 @@ and reviewed ordinary spell-attack turn advancement can bring the caster to the
 next turn start. The evaluator emits `EffectExpired` after the turn-start marker and uses
 `combat.effect_lifecycle_update` to remove the exact effect, clock and lineage.
 The movement ledger preserves distance already spent when Speed changes.
+The saved application serial must remain within the initiative slots traversed
+from the source to the current actor. Currently dead slots may have been
+skipped.
 
 This slice admits one active speed graph and plain walking. It refuses a cast
 that would create and expire that effect during the same advancement, such as

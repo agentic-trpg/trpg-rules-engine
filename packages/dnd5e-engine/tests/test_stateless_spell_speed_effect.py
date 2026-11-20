@@ -254,16 +254,27 @@ def test_speed_graph_forgery_and_old_creation_versions_fail_closed():
     with pytest.raises(ValidationError, match="creation requires evaluation/30"):
         RuleEvaluationResult.model_validate_json(dumps(wire))
     hit = next(event for event in result.proposed_events if isinstance(event, AttackRolled))
-    forged = result.model_copy(
+    wrong_rolls = ({"is_hit": False}, {"is_opportunity_attack": True})
+    for wrong_roll in wrong_rolls:
+        forged = result.model_copy(
+            update={
+                "proposed_events": tuple(
+                    event.model_copy(update=wrong_roll) if event is hit else event
+                    for event in result.proposed_events
+                )
+            }
+        )
+        with pytest.raises(ValueError, match="matching attack hit"):
+            forged.verify_request(request)
+    missing_damage = result.model_copy(
         update={
             "proposed_events": tuple(
-                event.model_copy(update={"is_hit": False}) if event is hit else event
-                for event in result.proposed_events
+                event for event in result.proposed_events if not isinstance(event, DamageApplied)
             )
         }
     )
-    with pytest.raises(ValueError, match="matching attack hit"):
-        forged.verify_request(request)
+    with pytest.raises(ValueError, match="matching attack hit, damage and effect"):
+        missing_damage.verify_request(request)
     slowed = adopt(request.state_snapshot, result)
     rerouted = slowed.model_copy(
         update={"combat_state": slowed.combat_state.model_copy(update={"conditions_by_effect": ()})}
@@ -273,6 +284,30 @@ def test_speed_graph_forgery_and_old_creation_versions_fail_closed():
     assert rejected.error.code == "turn.capability"
     assert rejected.rng_transition is None
     assert rejected.proposed_events == ()
+
+
+def test_serialized_speed_clock_requires_a_reachable_application_turn():
+    loader = get_default_ruleset()
+    wire = cast_request().model_dump(mode="json")
+    wire["state_snapshot"]["combat_state"].update(round_number=8, turn_serial=41)
+    request = RuleEvaluationRequest.model_validate_json(dumps(wire))
+    cast = execute(request, loader)
+    assert cast.status == "accepted", cast.error
+    slowed = adopt(request.state_snapshot, cast)
+    assert slowed.combat_state.turn_serial == 42
+    assert slowed.combat_state.effect_lifecycles[0].state.applied_turn_serial == 41
+    ending = next_request(request, slowed, cast, "pass")
+    assert execute(ending, loader).status == "accepted"
+
+    forged = ending.model_dump(mode="json")
+    clock = forged["state_snapshot"]["combat_state"]["effect_lifecycles"][0]["state"]
+    clock["applied_turn_serial"] = 0
+    result = execute(RuleEvaluationRequest.model_validate_json(dumps(forged)), loader)
+    assert result.status == "unsupported"
+    assert "reachable initiative slots" in result.error.reason
+    assert result.state_delta is None
+    assert result.proposed_events == ()
+    assert result.rng_transition is None
 
 
 def test_existing_legacy_cast_uses_the_same_reduction_and_exact_expiry():

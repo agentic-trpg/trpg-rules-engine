@@ -37,11 +37,16 @@ def invocation_dependencies(
     *,
     damaging: bool,
     ordinary_spell: bool = False,
+    lore_healing_caster_id: str | None = None,
 ) -> str | None:
     """Check invocation dependencies, allowing stowed stock for ordinary instant spells."""
     if not damaging:
         return healing_dependencies(
-            snapshot, loader, target_id, allow_stowed_healing_potions=ordinary_spell
+            snapshot,
+            loader,
+            target_id,
+            allow_stowed_healing_potions=ordinary_spell,
+            lore_healing_caster_id=lore_healing_caster_id,
         )
     if snapshot.combat_state.pending_reactions:
         return "instant damage spell reactions are not migrated"
@@ -73,6 +78,7 @@ def healing_dependencies(
     target_id: str,
     *,
     allow_stowed_healing_potions: bool = False,
+    lore_healing_caster_id: str | None = None,
 ) -> str | None:
     """Check shared invocation dependencies and optionally admit canonical stowed potions."""
     if failure := reaction_dependencies(snapshot, loader):
@@ -94,6 +100,7 @@ def healing_dependencies(
             canonical,
             equipped=True,
             allow_stowed_healing_potions=actor_has_stowed_stock,
+            reviewed_lore_bard=actor.entity_id == lore_healing_caster_id,
         ):
             return f"unreviewed spell component/equipment profile: {failure}"
         if not (actor.class_slug or actor.classes) and (
@@ -112,7 +119,8 @@ def healing_dependencies(
             ):
                 return "unreviewed healing equipment dependency"
         if actor.trait_mechanics and not (
-            actor.entity_id == target_id
+            lore_healing_caster_id is None
+            and actor.entity_id == target_id
             and actor.entity_type != "Character"
             and set(actor.trait_mechanics) == {MonsterTraitMechanic.SWARM}
         ):

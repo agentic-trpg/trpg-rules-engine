@@ -86,8 +86,13 @@ def class_dependencies(
     equipped: bool = False,
     allow_stowed_healing_potions: bool = False,
     stowed_consumable_ids: frozenset[str] = frozenset(),
+    reviewed_lore_bard: bool = False,
 ) -> str | None:
-    """Check class dependencies with any caller-proved stowed inventory instances."""
+    """Check class dependencies within the caller's reviewed operation profile.
+
+    The reviewed Lore Bard profile requires empty equipment and the complete
+    Bard/Lore grants. This profile does not admit Bard feature invocations.
+    """
     if actor.species_slug:
         return "subclass/species operation dependencies are not migrated"
     levels = actor.classes or (
@@ -119,14 +124,23 @@ def class_dependencies(
         return "unreviewed fighting style"
     if any(not k.startswith("feature_use:") for k in actor.custom_counters):
         return "unreviewed mechanical counter"
-    if actor.subclass_slug and not (levels == {"wizard": 5} and actor.subclass_slug == "evoker"):
+    lore_bard = reviewed_lore_bard and levels == {"bard": 5}
+    if lore_bard and (
+        actor.subclass_slug != "lore"
+        or has_equipment
+        or actor.proficiency_bonus_override is not None
+    ):
+        return "Lore Bard requires the ordinary unencumbered level-5 profile"
+    if actor.subclass_slug and not (
+        lore_bard or (levels == {"wizard": 5} and actor.subclass_slug == "evoker")
+    ):
         return "unreviewed subclass dependencies"
     if levels == {"wizard": 5} and actor.subclass_slug != "evoker":
         return "complete reviewed Evoker 5 subclass is required"
     if len(levels) != 1 or sum(levels.values()) != actor.character_level:
         return "only an explicit single-class profile is reviewed"
     slug, level = next(iter(levels.items()))
-    if (slug, level) not in _REVIEWED or actor.class_slug not in (None, slug):
+    if (not lore_bard and (slug, level) not in _REVIEWED) or actor.class_slug not in (None, slug):
         return "class/level has unreviewed operation dependencies"
     cls = loader.get_class(slug)
     if cls is None or cls != canonical.get_class(slug):
@@ -134,8 +148,11 @@ def class_dependencies(
     grants = {g.slug for g in cls.granted_features if g.ref_type == "feature" and g.level <= level}
     if equipped and has_equipment and slug == "cleric":
         grants.add("divine-order-protector")
-    if levels == {"wizard": 5}:
-        additional = evoker_grants(loader, canonical, level)
+    if levels == {"wizard": 5} or lore_bard:
+        # Cutting Words requires a D20 roll, and Font of Inspiration changes
+        # rest/recovery and Inspiration payments. Neither fires on the heal.
+        subclass_slug = "lore" if lore_bard else "evoker"
+        additional = _reviewed_subclass_grants(loader, canonical, subclass_slug, slug, level)
         if additional is None:
             return "subclass definition differs from reviewed binding"
         grants |= additional
@@ -212,15 +229,20 @@ def pool_dependencies(
 
 def evoker_grants(loader: AssetLoader, canonical: AssetLoader, level: int) -> set[str] | None:
     """Resolve the reviewed Evoker feature grants from the bound and canonical datasets."""
-    subclass = loader.get_subclass("evoker")
+    return _reviewed_subclass_grants(loader, canonical, "evoker", "wizard", level)
+
+
+def _reviewed_subclass_grants(
+    loader: AssetLoader, canonical: AssetLoader, subclass_slug: str, class_slug: str, level: int
+) -> set[str] | None:
+    """Resolve feature grants only when the subclass matches its canonical identity."""
+    subclass = loader.get_subclass(subclass_slug)
     if (
         subclass is None
-        or subclass != canonical.get_subclass("evoker")
-        or subclass.class_identifier != "wizard"
+        or subclass != canonical.get_subclass(subclass_slug)
+        or subclass.class_identifier != class_slug
     ):
         return None
-    # The full Evoker 5 grants are neutral to instant Abjuration saves and
-    # ordinary healing/turns; retain all facts in computation and output.
     return {
         g.slug for g in subclass.granted_features if g.ref_type == "feature" and g.level <= level
     }
@@ -239,12 +261,14 @@ def operation_dependencies(
     reviewed_sap: bool = False,
     reviewed_world_effects: bool = False,
     allow_stowed_healing_potions: bool = False,
+    reviewed_class_lifecycle: bool = False,
 ) -> str | None:
     """Pass/reset, walking, initialization and closure do not activate these grants.
 
     Attack/AC/damage/save operations must supply their own reviewed profile.
     Any world effect must already have been verified by the requesting operation.
     Plain Pass can keep reviewed stowed healing potions in the equipment closure.
+    Foundation admission and neutral Pass can opt in to the reviewed Lore Bard.
     Other effects, reactions, traits and non-class mechanics retain ordinary guards.
     """
     from dnd5e_engine.evaluation_preflight import snapshot_support_failure
@@ -282,6 +306,7 @@ def operation_dependencies(
             canonical,
             equipped=equipped or attack,
             allow_stowed_healing_potions=actor.entity_id in potion_owners,
+            reviewed_lore_bard=reviewed_class_lifecycle,
         )
 
     if reviewed_sap:

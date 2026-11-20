@@ -148,6 +148,7 @@ def evaluate_turn(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
             equipped=True,
             reviewed_sap=not bool(state.pending_reactions),
             allow_stowed_healing_potions=not (state.pending_reactions or state.sap_marks),
+            reviewed_class_lifecycle=not (state.pending_reactions or state.sap_marks),
         )
         or template_support_failure(snapshot, loader)
     )

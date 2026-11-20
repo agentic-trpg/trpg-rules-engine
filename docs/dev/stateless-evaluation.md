@@ -990,6 +990,16 @@ budget marker leaves the current turn's history ambiguous, the evaluator returns
 turn with refreshed budgets and the touch and 60-foot range boundaries.
 See [SRD 5.2.1, pp. 105 and 139](https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf#page=105).
 
+The reviewed level 3 Bonus Action healing profile admits canonical Mass Healing
+Word with an explicit level 5 Lore Bard source on the plain bright-grid combat
+profile. The primary target is the first entry in the optional ordered
+`target_ids` selection. Delivery admits up to six distinct living, positive-HP
+creatures within range. The existing activity rolls once per selected creature.
+One ordered healing event per creature accompanies a capped HP Delta when its
+HP changes, and the cast pays one Bonus Action and one level 3 spell slot.
+Upcasting and other higher-level healing profiles remain outside this slice.
+See [SRD 5.2.1, pp. 34 and 148](https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf#page=148).
+
 ## R25 bounded authorized weapon Opportunity Attack
 
 `engine-snapshot/13` changes the existing pending declaration component to a closed

@@ -49,7 +49,7 @@ from dnd5e_engine.evaluation_spell_dependencies import (
     attack_spell_dependencies,
     invocation_dependencies,
 )
-from dnd5e_engine.evaluation_state import CombatSnapshot
+from dnd5e_engine.evaluation_state import CharacterStateV2, CombatSnapshot
 from dnd5e_engine.evaluation_turn import TurnEvaluation, _refuse
 from dnd5e_engine.events import CastFailed, IntentSubmitted, SpellCast
 from dnd5e_engine.feature_runtime import DrawFreeRandom, FeatureInvocation, preflight_feature
@@ -82,7 +82,7 @@ class InvocationPlan:
     """Retain an admitted spell/feature delivery plan and its payment inputs."""
 
     activity: HealActivity | SaveActivity | AttackActivity
-    target_id: str
+    target_ids: tuple[str, ...]
     ability: str | None
     payment: tuple[ResourceUpdate, ...]
     spell: Spell | None
@@ -106,10 +106,22 @@ def ordinary_spell_mechanism(loader: AssetLoader, spell_id: str) -> OrdinarySpel
     return _ordinary_spell_profile(spell)
 
 
+def _reviewed_multi_healing(spell: Spell) -> bool:
+    """Recognize the narrow rank-3 Bonus Action profile before common spell checks."""
+    return (
+        spell.level == 3
+        and spell.casting_time.unit == CastingTimeUnit.BONUS
+        and len(spell.activities) == 1
+        and isinstance(activity := spell.activities[0], HealActivity)
+        and activity.target.affects.count == "6"
+    )
+
+
 def _ordinary_spell_profile(spell: Spell) -> OrdinarySpellMechanism | None:
     """Select a complete typed ordinary activity from an already resolved spell."""
+    multi_healing = _reviewed_multi_healing(spell)
     if (
-        spell.level not in (0, 1)
+        spell.level not in ((3,) if multi_healing else (0, 1))
         or spell.ritual
         or spell.concentration
         or spell.casting_time.unit not in (CastingTimeUnit.ACTION, CastingTimeUnit.BONUS)
@@ -141,7 +153,7 @@ def _ordinary_spell_profile(spell: Spell) -> OrdinarySpellMechanism | None:
         or activity.persistent_area is not None
         or activity.reaction is not None
         or activity.forced_movement is not None
-        or activity.target.affects.count != "1"
+        or activity.target.affects.count != ("6" if multi_healing else "1")
         or activity.target.affects.choice
         or activity.target.affects.special
         or activity.target.template.type
@@ -154,9 +166,11 @@ def _ordinary_spell_profile(spell: Spell) -> OrdinarySpellMechanism | None:
     if activity.target.affects.type != "creature":
         return None
     if isinstance(activity, HealActivity):
-        if spell.level != 1 or activity.healing.types != ["healing"]:
+        if spell.level == 0 or activity.healing.types != ["healing"]:
             return None
         return "healing"
+    if multi_healing:
+        return None
     if (
         len(activity.save.ability) != 1
         or activity.save.dc.calculation != "spellcasting"
@@ -223,21 +237,27 @@ def invocation_context(
     levels = actor.classes or (
         {actor.class_slug: actor.character_level} if actor.class_slug else {}
     )
-    target = computation.actors[plan.target_id]
-    dodging = attack_rules.dodge_benefit_active(target, effective_speed=computation.speed(target))
+    targets = [computation.actors[target_id] for target_id in plan.target_ids]
     is_attack = isinstance(plan.activity, AttackActivity)
     save_modifiers = {}
-    if not is_attack:
-        save_projection = project_passive_save_modifiers(active_condition_names(target.conditions))
-        if dodging:
-            save_projection["passive_save_adv"].append("DEX")
-        save_modifiers[target.entity_id] = {
-            "saves": {ab: save_modifier(target, ab).total for ab in ABILITY_CODES},
-            **save_projection,
-        }
+    target_dodging = {}
+    if isinstance(plan.activity, (AttackActivity, SaveActivity)):
+        (target,) = targets
+        dodging = attack_rules.dodge_benefit_active(
+            target, effective_speed=computation.speed(target)
+        )
+        target_dodging[target.entity_id] = dodging
+        if not is_attack:
+            projection = project_passive_save_modifiers(active_condition_names(target.conditions))
+            if dodging:
+                projection["passive_save_adv"].append("DEX")
+            save_modifiers[target.entity_id] = {
+                "saves": {ab: save_modifier(target, ab).total for ab in ABILITY_CODES},
+                **projection,
+            }
     context = build_activity_context(
         actor,
-        [target],
+        targets,
         rng=rng,
         event_emitter=computation.emit,
         slot_level=plan.slot_level,
@@ -246,11 +266,13 @@ def invocation_context(
         concentration=False,
         source_passive_effects=[],
         spell_book={},
-        passive_damage_modifiers=attack_rules.damage_modifiers(computation.actors.values()),
+        passive_damage_modifiers={}
+        if isinstance(plan.activity, HealActivity)
+        else attack_rules.damage_modifiers(computation.actors.values()),
         save_modifiers=save_modifiers,
-        target_dodging={target.entity_id: dodging},
+        target_dodging=target_dodging,
         target_distance_ft=(
-            {target.entity_id: plan.attack_distance_ft}
+            {plan.target_ids[0]: plan.attack_distance_ft}
             if plan.attack_distance_ft is not None
             else {}
         ),
@@ -290,7 +312,13 @@ def source_failure(
     )
     source = next((s for s in entry.sources if s.source_id == source_id), None) if entry else None
     attack = mechanism == "attack_damage"
-    class_slug, ability = ("wizard", "int") if attack else ("cleric", "wis")
+    multi_healing = _reviewed_multi_healing(spell)
+    if multi_healing:
+        class_slug, ability, level = "bard", "cha", 5
+    elif attack:
+        class_slug, ability, level = "wizard", "int", 1
+    else:
+        class_slug, ability, level = "cleric", "wis", 1
     if (
         entry is None
         or source is None
@@ -302,7 +330,7 @@ def source_failure(
     levels = actor.classes or (
         {actor.class_slug: actor.character_level} if actor.class_slug else {}
     )
-    if levels != {class_slug: 1} or actor.spellcasting_ability != source.ability:
+    if levels != {class_slug: level} or actor.spellcasting_ability != source.ability:
         return "casting source contradicts class/ability facts"
     if attack and (
         actor.attack_bonus is not None or actor.proficiency_bonus_override not in (None, 2)
@@ -345,6 +373,7 @@ def spell_plan(
     loader: AssetLoader,
     spell: Spell | None,
     mechanism: OrdinarySpellMechanism | None,
+    actors: dict[str, CharacterStateV2],
 ) -> InvocationPlan | TurnEvaluation:
     """Prepare the admitted spell delivery and payment plan."""
     snapshot, intent = request.state_snapshot, request.payload
@@ -354,30 +383,52 @@ def spell_plan(
         return _refuse(
             "unsupported",
             "spell.capability",
-            "ordinary spell lacks a complete reviewed instant single-target mechanism",
+            "ordinary spell lacks a complete reviewed instant mechanism",
         )
+    assert spell is not None
+    multi_healing = _reviewed_multi_healing(spell)
     basic = CombatIntentPayload(
         intent_type="cast_spell",
         source_id=intent.source_id,
         spell_id=intent.spell_id,
         target_id=intent.target_id,
+        target_ids=intent.target_ids if multi_healing else None,
         slot_level=intent.slot_level,
         spell_source_id=intent.spell_source_id,
     )
     if intent != basic:
         return _refuse("unsupported", "spell.inputs", "additional casting choices are not migrated")
-    assert spell is not None
-    if intent.slot_level not in ((None, 0) if spell.level == 0 else (1,)):
+    if intent.slot_level not in ((None, 0) if spell.level == 0 else (spell.level,)):
         return _refuse(
             "rejected",
             "no_slot",
-            "Cantrip requires no slot; level 1 spell requires explicit level 1",
+            "Cantrips require no slot; a leveled spell requires its explicit base slot level",
         )
+    assert intent.target_id is not None  # The public evaluator already admitted the primary.
+    selected = intent.target_ids if intent.target_ids is not None else (intent.target_id,)
+    if not selected or selected[0] != intent.target_id:
+        return _refuse("rejected", "target_invalid", "first selected creature must be the primary")
+    if multi_healing:
+        if (
+            snapshot.snapshot_schema_version != "engine-snapshot/20"
+            or snapshot.combat_state.pending_reactions
+        ):
+            return _refuse(
+                "unsupported", "spell.inputs", "multiple-target heal requires a plain v20 cast"
+            )
+        if any(
+            (creature := actors.get(identity)) is None
+            or not creature.is_alive
+            or creature.hp_current <= 0
+            or identity in snapshot.combat_state.dead_ids
+            for identity in selected
+        ):
+            return _refuse("rejected", "target_invalid", "every target must be a living creature")
     if failure := source_failure(
         snapshot, request.actor_id, intent.spell_source_id, spell, mechanism
     ):
         return _refuse("rejected", "spell.source", failure)
-    actor = next(a for a in snapshot.character_states if a.entity_id == request.actor_id)
+    actor = actors[request.actor_id]
     # An empty encounter expenditure proves no paid spell here. Once nonempty,
     # this ledger cannot place a payment on the current turn when a budget was used.
     if (
@@ -403,7 +454,7 @@ def spell_plan(
     try:
         delivery = plan_delivery(
             spell.activities,
-            SpellDeliverySpec(primary_target_id=intent.target_id),
+            SpellDeliverySpec(primary_target_id=intent.target_id, selected_target_ids=selected),
             actor_id=request.actor_id,
             topology=topology,
             positions=state.actor_zone,
@@ -411,24 +462,23 @@ def spell_plan(
             enemy_ids=frozenset(enemies),
             ally_ids=frozenset(allies),
             range_ft=spell_range_ft(spell),
-            default_target_ids=(intent.target_id,) if intent.target_id else (),
             execution=True,
             cast_level=spell.level,
             base_level=spell.level,
         )
-        if len(delivery.activities) != 1 or delivery.activities[0].target_ids != (
-            intent.target_id,
-        ):
-            return _refuse("rejected", "target_invalid", "one in-range creature is required")
+        if len(delivery.activities) != 1 or delivery.activities[0].target_ids != selected:
+            return _refuse("rejected", "target_invalid", "every target must be in range")
+        target_ids = delivery.activities[0].target_ids
         assert snapshot.resource_state is not None
         payments = (
-            (spell_payment(snapshot.resource_state, request.actor_id, 1),) if spell.level else ()
+            (spell_payment(snapshot.resource_state, request.actor_id, spell.level),)
+            if spell.level
+            else ()
         )
     except DeliveryPlanningError as exc:
         return _refuse("rejected", exc.reason, str(exc))
     except ValueError:
         return _refuse("rejected", "no_slot", "no owned slot remains")
-    assert intent.target_id is not None
     activity = spell.activities[0]
     if isinstance(activity, AttackActivity):
         distance = topology.distance_ft(
@@ -445,10 +495,12 @@ def spell_plan(
             can_see=lambda hostile, attacker: True,
         )  # Dependencies admit only bright, unobstructed geometry.
         return InvocationPlan(
-            activity, intent.target_id, "int", payments, spell, None, distance, adjacent
+            activity, target_ids, "int", payments, spell, None, distance, adjacent
         )
     assert isinstance(activity, (HealActivity, SaveActivity))
-    return InvocationPlan(activity, intent.target_id, "wis", payments, spell, spell.level)
+    return InvocationPlan(
+        activity, target_ids, "cha" if multi_healing else "wis", payments, spell, spell.level
+    )
 
 
 def feature_plan(
@@ -486,7 +538,7 @@ def feature_plan(
         return _refuse(
             "rejected", "feature.activity", "explicit canonical healing activity is required"
         )
-    stub = InvocationPlan(activity, request.actor_id, None, (), None, None)
+    stub = InvocationPlan(activity, (request.actor_id,), None, (), None, None)
     context = invocation_context(
         CombatComputation(snapshot, DrawFreeRandom(0)),
         stub,
@@ -509,7 +561,7 @@ def feature_plan(
         payments = feature_payments(snapshot.resource_state, request.actor_id, invocation.payments)
     except ValueError as exc:
         return _refuse("rejected", "feature.exhausted", str(exc))
-    return InvocationPlan(activity, request.actor_id, None, payments, None, None)
+    return InvocationPlan(activity, (request.actor_id,), None, payments, None, None)
 
 
 def evaluate_invocation(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEvaluation:
@@ -583,7 +635,7 @@ def evaluate_invocation(request: RuleEvaluationRequest, loader: AssetLoader) -> 
         return _refuse(
             "unsupported",
             "spell.capability",
-            "ordinary spell lacks a complete reviewed instant single-target mechanism",
+            "ordinary spell lacks a complete reviewed instant mechanism",
         )
     if mechanism == "attack_damage":
         if failure := attack_spell_dependencies(snapshot, loader, intent.target_id):
@@ -594,6 +646,9 @@ def evaluate_invocation(request: RuleEvaluationRequest, loader: AssetLoader) -> 
         intent.target_id,
         damaging=mechanism == "save_damage",
         ordinary_spell=mechanism is not None,
+        lore_healing_caster_id=(
+            request.actor_id if spell is not None and _reviewed_multi_healing(spell) else None
+        ),
     ):
         return _refuse("unsupported", "healing.dependencies", failure)
     actor = combatant(current)
@@ -606,7 +661,7 @@ def evaluate_invocation(request: RuleEvaluationRequest, loader: AssetLoader) -> 
         plan = (
             feature_plan(request, loader)
             if feature
-            else spell_plan(request, loader, spell, mechanism)
+            else spell_plan(request, loader, spell, mechanism, targets)
         )
         if not isinstance(plan, InvocationPlan):
             return plan

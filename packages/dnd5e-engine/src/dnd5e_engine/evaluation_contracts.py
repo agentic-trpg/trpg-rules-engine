@@ -6,7 +6,7 @@ from pydantic import ConfigDict, Field, ValidationInfo, field_validator, model_v
 from pydantic_core import to_json
 
 from dnd5e_engine.evaluation_base import EvaluationModel
-from dnd5e_engine.evaluation_delta import StateDelta
+from dnd5e_engine.evaluation_delta import CombatEffectCreate, StateDelta
 from dnd5e_engine.evaluation_resources import HitDieSpend
 from dnd5e_engine.evaluation_rng import RNGContext, RNGTransition
 from dnd5e_engine.evaluation_ruleset import RulesetBinding
@@ -356,6 +356,11 @@ class RuleEvaluationResult(EvaluationModel):
                 raise ValueError("accepted forbids choice/error")
             if self.state_delta.expected_world_version != self.input_world_version:
                 raise ValueError("delta and result world versions differ")
+            creations = sum(
+                isinstance(op, CombatEffectCreate) for op in self.state_delta.operations
+            )
+            if creations and (self.schema_version != "engine-evaluation/30" or creations != 1):
+                raise ValueError("one combat effect creation requires evaluation/30")
         else:
             if (
                 self.state_delta is not None
@@ -395,6 +400,7 @@ class RuleEvaluationResult(EvaluationModel):
                 HasteGraphCreate,
                 verify_haste_creation,
             )
+            from dnd5e_engine.evaluation_speed_effects import verify_speed_effect_creation
 
             for operation in self.state_delta.operations:
                 if isinstance(operation, (HasteGraphCreate, EffectFollowUpCreate)):
@@ -402,6 +408,8 @@ class RuleEvaluationResult(EvaluationModel):
                         raise ValueError("new combat effect operations require evaluation/30")
                     if isinstance(operation, HasteGraphCreate):
                         verify_haste_creation(operation, request, self.proposed_events)
+                elif isinstance(operation, CombatEffectCreate):
+                    verify_speed_effect_creation(operation, request, self.proposed_events)
         if self.rng_transition is not None:
             self.rng_transition.verify_input(request.rng_context)
         if self.stage_facts is not None:

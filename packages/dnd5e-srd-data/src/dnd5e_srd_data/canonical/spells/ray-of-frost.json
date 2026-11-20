@@ -71,6 +71,13 @@
             "max": null,
             "min": null
           },
+          "lifecycle": {
+            "expire_on_positive_damage": false,
+            "expiry_boundary": "source_next_turn_start",
+            "maximum_rounds": null,
+            "one_use_modifiers": [],
+            "repeat_save": null
+          },
           "on_save": null,
           "riders": null
         }
@@ -153,41 +160,15 @@
     {
       "changes": [
         {
-          "key": "system.attributes.movement.walk",
+          "key": "speed.reduction",
           "mode": 2,
           "priority": null,
-          "value": "-10"
-        },
-        {
-          "key": "system.attributes.movement.swim",
-          "mode": 2,
-          "priority": null,
-          "value": "-10"
-        },
-        {
-          "key": "system.attributes.movement.climb",
-          "mode": 2,
-          "priority": null,
-          "value": "-10"
-        },
-        {
-          "key": "system.attributes.movement.fly",
-          "mode": 2,
-          "priority": null,
-          "value": "-10"
-        },
-        {
-          "key": "system.attributes.movement.burrow",
-          "mode": 2,
-          "priority": null,
-          "value": "-10"
+          "value": "10"
         }
       ],
       "description": "<p>The target's Speed is reduced by 10 feet until the start of your next turn.</p>",
       "disabled": false,
-      "duration": {
-        "rounds": 1
-      },
+      "duration": null,
       "id": "7dnnwBMWLykrVJub",
       "name": "Reduced Movement",
       "statuses": [],

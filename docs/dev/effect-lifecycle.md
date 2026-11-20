@@ -211,10 +211,10 @@ Run from `packages/dnd5e-srd-data`:
 uv run python -m tools.effect_lifecycle_audit --output ../../docs/dev/effect-lifecycle-audit.json
 ```
 
-The [deterministic inventory](effect-lifecycle-audit.json) has 189 rows:
-134 spell, 17 feature and 38 item rows. Nine bindings have executable typed
-lifecycles; 38 typed duration/overlap bindings are supported, including B4's two
-Sunbeam source-next-turn-start bindings. The other 142 rows
+The [deterministic inventory](effect-lifecycle-audit.json) has 190 rows across
+135 spell bindings, 17 feature bindings and 38 item bindings. Nine have executable
+typed lifecycles and 39 cover typed duration or overlap. Ray of Frost and both
+Sunbeam bindings use source-next-turn-start expiration. The other 142 rows
 are explicit deferred or candidate records: 38 repeat-save candidates,
 23 damage-break candidates and 81 other deferred rows. Candidate discovery during ingestion does not
 authorize runtime execution. Dominate variants' damage-triggered escape saves

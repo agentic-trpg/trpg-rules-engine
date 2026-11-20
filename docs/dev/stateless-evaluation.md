@@ -1,5 +1,8 @@
 # Stateless rule evaluation: current local contract
 
+Evaluator binding `dnd5e-evaluation/52` adds the reviewed spell-hit speed
+effect profile on `engine-evaluation/30` and `engine-snapshot/20`.
+
 Evaluator binding `dnd5e-evaluation/51` adds the reviewed ordered multi-target
 healing profile below with the existing request and guarded Delta operations.
 
@@ -11,13 +14,13 @@ request, event, and guarded Delta types.
 
 Evaluator binding `dnd5e-evaluation/49` classifies an ordinary instant
 single-target ranged cantrip AttackActivity as `attack_damage` when the complete
-bound canonical definition and execution review match. The current definitions in
-this profile are Fire Bolt and Poison Spray. `combat.intent` uses the existing
+bound canonical definition and execution review match. Fire Bolt, Poison Spray
+and Ray of Frost use this profile. `combat.intent` uses the existing
 `cast_spell` payload with `spell_source_id="class:wizard"` and one living enemy
 creature as `target_id`. The source supplies a known cantrip, Intelligence and
 the complete Wizard 1 grant and resource facts. Casting spends an ordinary Action
-and draws no slot. Object targets, additional activity mechanics, other casting
-profiles, active effects and reactions are outside this profile.
+and draws no slot. The exact speed rider below can extend the bare attack.
+Object targets, other riders, casting profiles and reactions are outside this profile.
 
 The delivery planner uses the bound range on a plain, bright grid. Dodge and
 adjacent hostiles feed the shared `AttackActivity` resolver, which proposes
@@ -25,6 +28,32 @@ adjacent hostiles feed the shared `AttackActivity` resolver, which proposes
 including zero damage on an immune hit. The result carries the existing guarded
 turn and damage Delta and the seeded RNG transition. Read-only action availability
 still covers the reviewed weapon and stat-block attack intents.
+
+### On-hit combat speed effects
+
+Ray of Frost's bound activity references one unconditional hit effect that
+reduces Speed by 10 feet until the caster's next turn starts. The same shared
+attack resolver emits `EffectApplied` after damage, including when a confirmed
+hit deals zero damage. A miss consumes the ordinary Action and attack draw.
+[Ray of Frost, D&D Beyond](https://www.dndbeyond.com/spells/2618930-ray-of-frost)
+
+`combat.effect_create` carries the combat ID, effect identity, absence guard,
+complete effect, initial lifecycle clock and condition lineage. The speed effect
+has empty condition lineage. The result binds creation to the input combat,
+applying turn and matching hit and effect evidence. The host decides whether to
+adopt the proposed change.
+
+Walking prices against reduced Speed while the effect is present. Explicit Pass
+and reviewed ordinary spell-attack turn advancement can bring the caster to the
+next turn start. The evaluator emits `EffectExpired` after the turn-start marker and uses
+`combat.effect_lifecycle_update` to remove the exact effect, clock and lineage.
+The movement ledger preserves distance already spent when Speed changes.
+
+This slice admits one active speed graph and plain walking. It refuses a cast
+that would create and expire that effect during the same advancement, such as
+when a lethal hit skips the final foe directly to the caster's next turn.
+Supporting that case requires atomic adoption of same-command application and
+expiry through the applicable turn or combat closure.
 
 ## Combat Haste and effect follow-ups
 

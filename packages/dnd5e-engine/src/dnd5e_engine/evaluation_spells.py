@@ -45,13 +45,21 @@ from dnd5e_engine.evaluation_reactions import (
 )
 from dnd5e_engine.evaluation_rng import RNGTransition
 from dnd5e_engine.evaluation_ruleset import get_default_ruleset
+from dnd5e_engine.evaluation_speed_effects import (
+    SpeedEffectComputation,
+    attack_speed_effect_template,
+    has_speed_effects,
+    speed_effect_delta,
+    speed_effect_support_failure,
+    without_speed_effect,
+)
 from dnd5e_engine.evaluation_spell_dependencies import (
     attack_spell_dependencies,
     invocation_dependencies,
 )
 from dnd5e_engine.evaluation_state import CharacterStateV2, CombatSnapshot
 from dnd5e_engine.evaluation_turn import TurnEvaluation, _refuse
-from dnd5e_engine.events import CastFailed, IntentSubmitted, SpellCast
+from dnd5e_engine.events import CastFailed, EffectApplied, IntentSubmitted, SpellCast
 from dnd5e_engine.feature_runtime import DrawFreeRandom, FeatureInvocation, preflight_feature
 from dnd5e_engine.lib_loader import scoped_lib_loader
 from dnd5e_engine.rules.conditions import (
@@ -73,6 +81,7 @@ from dnd5e_engine.turn_rules import (
     ordinary_action_payment,
     record_budget_changes,
 )
+from dnd5e_engine.types.combat import Combatant
 
 type OrdinarySpellMechanism = Literal["healing", "save_damage", "attack_damage"]
 
@@ -128,7 +137,6 @@ def _ordinary_spell_profile(spell: Spell) -> OrdinarySpellMechanism | None:
         or spell.casting_time.value != 1
         or spell.duration.units != SpellDurationUnits.INSTANT
         or spell.range.units not in (SpellRangeUnits.TOUCH, SpellRangeUnits.FEET)
-        or spell.passive_effects
         or len(spell.activities) != 1
         or admission_failure(spell, spell.activities)
     ):
@@ -147,7 +155,6 @@ def _ordinary_spell_profile(spell: Spell) -> OrdinarySpellMechanism | None:
         )
         or activity.duration.units != "inst"
         or activity.timing != ActivityTiming()
-        or activity.effects
         or activity.applied_effects
         or activity.effect_selection is not None
         or activity.persistent_area is not None
@@ -162,7 +169,15 @@ def _ordinary_spell_profile(spell: Spell) -> OrdinarySpellMechanism | None:
     ):
         return None
     if isinstance(activity, AttackActivity):
-        return "attack_damage" if _ordinary_spell_attack(spell, activity) else None
+        if not _ordinary_spell_attack(spell, activity):
+            return None
+        if (activity.effects or spell.passive_effects) and attack_speed_effect_template(
+            spell, activity
+        ) is None:
+            return None
+        return "attack_damage"
+    if activity.effects or spell.passive_effects:
+        return None
     if activity.target.affects.type != "creature":
         return None
     if isinstance(activity, HealActivity):
@@ -264,7 +279,7 @@ def invocation_context(
         base_spell_level=plan.spell.level if plan.spell else None,
         spellcasting_ability=plan.ability,
         concentration=False,
-        source_passive_effects=[],
+        source_passive_effects=plan.spell.passive_effects if plan.spell else [],
         spell_book={},
         passive_damage_modifiers={}
         if isinstance(plan.activity, HealActivity)
@@ -294,6 +309,8 @@ def invocation_context(
         attacker_ranged_spell_in_melee=plan.hostile_adjacent,
         save_is_magical=plan.spell is not None,
         activity_source_id=f"spell:{plan.spell.slug}:{plan.activity.id}" if plan.spell else None,
+        lifecycle_source_kind="spell" if plan.spell else "feature",
+        lifecycle_source_slug=plan.spell.slug if plan.spell else "",
     )
 
 
@@ -637,8 +654,28 @@ def evaluate_invocation(request: RuleEvaluationRequest, loader: AssetLoader) -> 
             "spell.capability",
             "ordinary spell lacks a complete reviewed instant mechanism",
         )
+    creates_speed_effect = (
+        mechanism == "attack_damage"
+        and spell is not None
+        and isinstance(spell.activities[0], AttackActivity)
+        and attack_speed_effect_template(spell, spell.activities[0]) is not None
+    )
+    active_speed_effect = mechanism == "attack_damage" and has_speed_effects(snapshot)
+    if creates_speed_effect and (
+        request.schema_version != "engine-evaluation/30" or snapshot.effect_states
+    ):
+        return _refuse(
+            "unsupported",
+            "spell.effect_dependencies",
+            "initial speed rider requires plain /30 combat",
+        )
+    dependencies = snapshot
+    if active_speed_effect:
+        if failure := speed_effect_support_failure(snapshot, loader):
+            return _refuse("unsupported", "spell.effect_dependencies", failure)
+        dependencies = without_speed_effect(snapshot)
     if mechanism == "attack_damage":
-        if failure := attack_spell_dependencies(snapshot, loader, intent.target_id):
+        if failure := attack_spell_dependencies(dependencies, loader, intent.target_id):
             return _refuse("unsupported", "spell.attack_dependencies", failure)
     elif failure := invocation_dependencies(
         snapshot,
@@ -665,70 +702,113 @@ def evaluate_invocation(request: RuleEvaluationRequest, loader: AssetLoader) -> 
         )
         if not isinstance(plan, InvocationPlan):
             return plan
-        reaction = (
-            prepare_counterspell(snapshot, request.actor_id, plan.spell, loader)
-            if plan.spell
-            else None
+        return _resolve_invocation(
+            request,
+            loader,
+            plan,
+            actor,
+            bonus=bonus,
+            speed_profile=creates_speed_effect or active_speed_effect,
+            creates_speed_effect=creates_speed_effect,
         )
-        rng = request.rng_context.state.restore()
-        if snapshot.effect_states:
-            from dnd5e_engine.evaluation_concentration import ConcentrationComputation
 
-            computation: CombatComputation = ConcentrationComputation(snapshot, rng)
-        else:
-            computation = CombatComputation(snapshot, rng)
+
+def _resolve_invocation(
+    request: RuleEvaluationRequest,
+    loader: AssetLoader,
+    plan: InvocationPlan,
+    actor: Combatant,
+    *,
+    bonus: bool,
+    speed_profile: bool,
+    creates_speed_effect: bool,
+) -> TurnEvaluation:
+    """Resolve the admitted activity and project its private candidate and payments."""
+    snapshot, intent = request.state_snapshot, request.payload
+    assert isinstance(snapshot, CombatSnapshot)
+    assert isinstance(intent, CombatIntentPayload)
+    state = snapshot.combat_state
+    reaction = (
+        prepare_counterspell(snapshot, request.actor_id, plan.spell, loader) if plan.spell else None
+    )
+    rng = request.rng_context.state.restore()
+    if speed_profile:
+        computation: CombatComputation = SpeedEffectComputation(snapshot, rng)
+    elif snapshot.effect_states:
+        from dnd5e_engine.evaluation_concentration import ConcentrationComputation
+
+        computation = ConcentrationComputation(snapshot, rng)
+    else:
+        computation = CombatComputation(snapshot, rng)
+    computation.emit(
+        IntentSubmitted(
+            actor_id=request.actor_id,
+            intent_type=intent.intent_type,
+            spell_id=intent.spell_id,
+            target_id=intent.target_id,
+            item_id=intent.item_id,
+        )
+    )
+    computation.actors[request.actor_id] = actor.model_copy(
+        update=bonus_action_payment() if bonus else ordinary_action_payment(actor)
+    )
+    cancelled = resolve_counterspell(computation, reaction, rng) if reaction else False
+    payments: tuple[ResourceUpdate, ...] = (reaction.payment,) if reaction else ()
+    if cancelled:
         computation.emit(
-            IntentSubmitted(
-                actor_id=request.actor_id,
-                intent_type=intent.intent_type,
-                spell_id=intent.spell_id,
-                target_id=intent.target_id,
-                item_id=intent.item_id,
-            )
+            CastFailed(actor_id=request.actor_id, spell_id=intent.spell_id, reason="countered")
         )
-        computation.actors[request.actor_id] = actor.model_copy(
-            update=bonus_action_payment() if bonus else ordinary_action_payment(actor)
+    else:
+        payments += plan.payment
+        if plan.spell is not None:
+            computation.emit(spell_event(request.actor_id, plan.spell, plan.slot_level or None))
+        resolve_activity(
+            plan.activity, invocation_context(computation, plan, loader, request.actor_id, rng)
         )
-        cancelled = resolve_counterspell(computation, reaction, rng) if reaction else False
-        payments: tuple[ResourceUpdate, ...] = (reaction.payment,) if reaction else ()
-        if cancelled:
-            computation.emit(
-                CastFailed(actor_id=request.actor_id, spell_id=intent.spell_id, reason="countered")
-            )
-        else:
-            payments += plan.payment
-            if plan.spell is not None:
-                computation.emit(spell_event(request.actor_id, plan.spell, plan.slot_level or None))
-            resolve_activity(
-                plan.activity, invocation_context(computation, plan, loader, request.actor_id, rng)
-            )
-        computation.finish_turn(request.actor_id, allow_movement=bonus)
-        computation.actors[request.actor_id] = record_budget_changes(
-            actor, computation.actors[request.actor_id]
-        )
-        ledgers = tuple(
-            slot_ledger(snapshot, payment)
-            for payment in payments
-            if payment.value.kind in ("spell_slot", "pact_slot")
-        )
-        if ledgers:
-            computation.state = computation.state.model_copy(
-                update={
-                    "expended_resources": {
-                        **state.expended_resources,
-                        **{ledger.owner_id: ledger.value for ledger in ledgers},
-                    }
+    computation.finish_turn(request.actor_id, allow_movement=bonus)
+    computation.actors[request.actor_id] = record_budget_changes(
+        actor, computation.actors[request.actor_id]
+    )
+    ledgers = tuple(
+        slot_ledger(snapshot, payment)
+        for payment in payments
+        if payment.value.kind in ("spell_slot", "pact_slot")
+    )
+    if ledgers:
+        computation.state = computation.state.model_copy(
+            update={
+                "expended_resources": {
+                    **state.expended_resources,
+                    **{ledger.owner_id: ledger.value for ledger in ledgers},
                 }
-            )
-        if computation.damage:
-            raise RuntimeError("invocation left an incomplete damage instance")
-        computed = computation.result()
-        after = payment_post_state(computed.candidate_state, payments)
-        return dict(
-            status="accepted",
-            state_delta=reaction_paid_delta(snapshot, after, payments, ledgers),
-            proposed_events=computed.proposed_events,
-            rng_transition=RNGTransition.between(request.rng_context, rng),
-            choice=None,
-            error=None,
+            }
         )
+    if computation.damage:
+        raise RuntimeError("invocation left an incomplete damage instance")
+    computed = computation.result()
+    after = payment_post_state(computed.candidate_state, payments)
+    if speed_profile:
+        if payments or ledgers:
+            raise RuntimeError("speed effect spell attack attempted an unsupported payment")
+        if (
+            creates_speed_effect
+            and not after.effect_states
+            and any(isinstance(event, EffectApplied) for event in computed.proposed_events)
+        ):
+            return _refuse(
+                "unsupported",
+                "spell.effect_consequence",
+                "initial effect would also expire during this attack's turn advance",
+            )
+    return dict(
+        status="accepted",
+        state_delta=(
+            speed_effect_delta(snapshot, after)
+            if speed_profile
+            else reaction_paid_delta(snapshot, after, payments, ledgers)
+        ),
+        proposed_events=computed.proposed_events,
+        rng_transition=RNGTransition.between(request.rng_context, rng),
+        choice=None,
+        error=None,
+    )

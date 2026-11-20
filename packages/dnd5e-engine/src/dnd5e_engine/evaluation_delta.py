@@ -6,7 +6,11 @@ from pydantic import Field, model_validator
 
 from dnd5e_engine.evaluation_base import EvaluationModel
 from dnd5e_engine.evaluation_effects import EffectState
-from dnd5e_engine.evaluation_haste_delta import EffectFollowUpCreate, HasteGraphCreate
+from dnd5e_engine.evaluation_haste_delta import (
+    EffectFollowUpCreate,
+    HasteGraphCreate,
+    application_clock,
+)
 from dnd5e_engine.evaluation_hold_delta import HoldPersonGraphCreate
 from dnd5e_engine.evaluation_reaction_state import PredeclaredReactionState
 from dnd5e_engine.evaluation_resources import ResourcePool
@@ -370,6 +374,40 @@ class WorldEffectCreate(EvaluationModel):
         return self
 
 
+class CombatEffectCreate(EvaluationModel):
+    """Propose creation of one effect with its initial clock and condition lineage."""
+
+    kind: Literal["combat.effect_create"]
+    combat_id: Annotated[str, Field(min_length=1)]
+    identity: tuple[str, str, str]
+    expected_absent: Literal[True]
+    effect: EffectState
+    lifecycle: LifecycleRecord
+    lineage: ConditionLink
+
+    @model_validator(mode="after")
+    def complete_application(self) -> Self:
+        """Require coherent identities, application clock and initial lineage."""
+        effect = self.effect
+        clock = self.lifecycle.state
+        if (
+            not all(self.identity)
+            or self.identity != (effect.target_id, effect.id, effect.origin)
+            or effect.lifecycle is None
+            or effect.disabled
+            or effect.transfer
+            or self.lineage.identity != self.identity
+            or len(set(self.lineage.statuses)) != len(self.lineage.statuses)
+            or set(self.lineage.statuses) != effect.statuses
+            or clock.applied_turn_serial < 0
+            or clock.applied_round < 1
+            or self.lifecycle
+            != application_clock(effect, clock.applied_turn_serial, clock.applied_round)
+        ):
+            raise ValueError("combat effect creation requires an initial, coherent effect graph")
+        return self
+
+
 class EffectLifecycleUpdate(EvaluationModel):
     """Local C-15 candidate: atomic selected effect/clock/lineage transition."""
 
@@ -567,6 +605,7 @@ StateDeltaOperation = Annotated[
     | CombatCreationCandidate
     | ResourceUpdate
     | WorldEffectCreate
+    | CombatEffectCreate
     | EffectLifecycleUpdate
     | ConcentrationUpdate
     | SlotSpendLedgerUpdate

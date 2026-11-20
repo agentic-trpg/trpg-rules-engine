@@ -1,5 +1,13 @@
 # Stateful → Stateless migration progress
 
+## Ray of Frost hit effect — 2026-11-20
+
+Evaluator `/52` uses the ordinary ranged cantrip path and adds an initial
+combat effect proposal on evaluation `/30`. A hit applies the bound speed
+reduction. Walking reads it and the caster's next turn start removes it with the
+existing lifecycle transition. See the [spell-hit speed contract](stateless-evaluation.md#on-hit-combat-speed-effects)
+for dependency and turn-advancement limits. Host adoption is tracked in SM.
+
 ## Ordinary ranged spell attacks — 2026-11-19
 
 Evaluator `/49` admits the bound Fire Bolt and Poison Spray cantrips through

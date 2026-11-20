@@ -120,7 +120,7 @@ def test_default_identity_retains_pre_snapshot_canonical_digest():
     fixed = rules.get_default_ruleset()
     assert fixed.binding == rules.ruleset_binding(BundledAssetLoader())
     assert fixed.binding.data_revision == (
-        "sha256:f1f2b8d5e9bef154940cb14c615f2f4ac7301a4ab9d869841bc1b86e9664c44e"
+        "sha256:82d568f4f3fe90520cf5193ee38a5e2a26fc02b32af1022b46e6de77d80469dc"
     )
 
 

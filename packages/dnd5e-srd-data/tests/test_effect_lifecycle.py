@@ -201,11 +201,11 @@ def test_lifecycle_audit_is_deterministic_matches_golden_and_keeps_deferrals_exp
         "finite_reviewed_duration": 31,
         "typed_one_use_modifier": 2,
         "typed_effect_end_follow_up": 1,
-        "supported_lifecycle": 47,
+        "supported_lifecycle": 48,
         "deferred": 142,
     }
     assert {row["source_kind"] for row in first["rows"]} == {"spell", "feature", "item"}
-    assert first["inventory_rows"] == 189
+    assert first["inventory_rows"] == 190
     [slow] = [row for row in first["rows"] if row["source_slug"] == "slow"]
     assert slow["fully_executable"] and slow["lifecycle"]["repeat_save"]
     beams = [row for row in first["rows"] if row["source_slug"] == "sunbeam"]

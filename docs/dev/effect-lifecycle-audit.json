@@ -4,13 +4,13 @@
     "deferred": 81,
     "executable_typed_lifecycle": 9,
     "repeated_save_candidate": 38,
-    "typed_duration_only": 38
+    "typed_duration_only": 39
   },
-  "inventory_rows": 189,
+  "inventory_rows": 190,
   "source_counts": {
     "feature": 17,
     "item": 38,
-    "spell": 134
+    "spell": 135
   },
   "producer_counts": {
     "typed_repeat_save": 6,
@@ -18,7 +18,7 @@
     "finite_reviewed_duration": 31,
     "typed_one_use_modifier": 2,
     "typed_effect_end_follow_up": 1,
-    "supported_lifecycle": 47,
+    "supported_lifecycle": 48,
     "deferred": 142
   },
   "inventory_notes": {
@@ -2353,6 +2353,29 @@
       "fully_executable": false,
       "classification": "repeated_save_candidate",
       "deferred_reason": "requires separate initial-success/initial-failure effects, Strength-test modifiers and damage penalties"
+    },
+    {
+      "source_kind": "spell",
+      "source_slug": "ray-of-frost",
+      "activity_id": "VQQgdw0BEVD6wapC",
+      "effect_id": "7dnnwBMWLykrVJub",
+      "path": "/activities/0/effects/0",
+      "lifecycle": {
+        "repeat_save": null,
+        "maximum_rounds": null,
+        "expiry_boundary": "source_next_turn_start",
+        "expire_on_positive_damage": false,
+        "one_use_modifiers": []
+      },
+      "consumer": "typed_effect_lifecycle",
+      "repeat_save_candidate": false,
+      "damage_break_candidate": false,
+      "one_use_modifier_candidate": false,
+      "finite_reviewed_duration": false,
+      "display_duration": null,
+      "fully_executable": true,
+      "classification": "typed_duration_only",
+      "deferred_reason": null
     },
     {
       "source_kind": "spell",

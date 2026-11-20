@@ -18,6 +18,13 @@ from dnd5e_engine.evaluation_opportunity import (
 from dnd5e_engine.evaluation_preflight import template_support_failure
 from dnd5e_engine.evaluation_projection import attack_delta
 from dnd5e_engine.evaluation_rng import RNGTransition
+from dnd5e_engine.evaluation_speed_effects import (
+    SpeedEffectComputation,
+    has_speed_effects,
+    speed_effect_support_failure,
+    speed_with_effects,
+    without_speed_effect,
+)
 from dnd5e_engine.evaluation_state import CharacterStateV2, CombatSnapshot, MovementLedgerState
 from dnd5e_engine.evaluation_timed_spells import attack_world_spell_walk_bonus
 from dnd5e_engine.evaluation_turn import TurnEvaluation, _refuse
@@ -70,6 +77,19 @@ def walk_speed(actor: CharacterStateV2 | Combatant, bonus: int = 0) -> int:
         condition_names=active_condition_names(actor.conditions),
         exhaustion_level=exhaustion_level_of(actor.conditions),
     ).walk
+
+
+def _movement_effects(
+    snapshot: CombatSnapshot, loader: AssetLoader, *, walking: bool
+) -> tuple[bool, tuple[str, int] | None]:
+    """Admit the relevant movement effect profile or explain its refusal."""
+    if has_speed_effects(snapshot):
+        if not walking:
+            raise ValueError("speed effect currently admits walking only")
+        if failure := speed_effect_support_failure(snapshot, loader):
+            raise ValueError(failure)
+        return True, None
+    return False, timed_walk_bonus(snapshot) if walking else None
 
 
 def _walk_step_cost(
@@ -136,19 +156,26 @@ def evaluate_movement(request: RuleEvaluationRequest, loader: AssetLoader) -> Tu
         return _refuse("unsupported", "movement.template", failure)
     if state.movement_ledgers[actor_id].active_mode != "walk":
         return _refuse("unsupported", "movement.mode", "only an active walking ledger is admitted")
-    timed = None
-    if intent.intent_type == "move":
-        try:
-            timed = timed_walk_bonus(snapshot)
-        except ValueError as error:
-            return _refuse("unsupported", "movement.capability", str(error))
+    try:
+        speed_effect, timed = _movement_effects(
+            snapshot, loader, walking=intent.intent_type == "move"
+        )
+    except ValueError as error:
+        return _refuse("unsupported", "movement.capability", str(error))
     bonus = timed[1] if timed is not None and timed[0] == actor_id else 0
-    speed = walk_speed(actor, bonus) if intent.intent_type == "move" else actor.base_speed
+    speed = (
+        speed_with_effects(actor, snapshot.effect_states)
+        if speed_effect
+        else walk_speed(actor, bonus)
+        if intent.intent_type == "move"
+        else actor.base_speed
+    )
+    dependencies = without_speed_effect(snapshot) if speed_effect else snapshot
     opportunity, failure = opportunity_dependencies(snapshot, loader)
     failure = (
         failure
         or operation_dependencies(
-            snapshot,
+            dependencies,
             loader,
             movement=True,
             attack=bool(state.pending_reactions),
@@ -191,7 +218,9 @@ def evaluate_movement(request: RuleEvaluationRequest, loader: AssetLoader) -> Tu
     elif not actor.action_available:
         return _refuse("rejected", "no_action_economy", "ordinary Action is unavailable")
     rng = request.rng_context.state.restore()
-    computation = CombatComputation(snapshot, rng)
+    computation = (
+        SpeedEffectComputation(snapshot, rng) if speed_effect else CombatComputation(snapshot, rng)
+    )
     if intent.intent_type == "move":
         computation.enable_stages()
     current = computation.actors[actor_id]
@@ -332,7 +361,7 @@ def _execute_walk(
         cost = _walk_step_cost(grid, occupied, allied, actor, a, b)
         if cost is None:
             raise RuntimeError("preflight omitted an illegal movement step")
-        speed = walk_speed(actor, bonus)
+        speed = walk_speed(actor, bonus) if bonus else computation.speed(actor)
         ledger = computation.state.movement_ledgers[actor_id].spend(
             cost_ft=cost,
             distance_ft=grid.cell_size_ft,

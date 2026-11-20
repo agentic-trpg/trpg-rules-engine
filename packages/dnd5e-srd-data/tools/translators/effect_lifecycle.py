@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from dnd5e_srd_data.schema.common import Activity, PassiveEffect
+from dnd5e_srd_data.schema.common import Activity, PassiveEffect, PassiveEffectChange
 from dnd5e_srd_data.schema.lifecycle import EffectLifecycleSpec, RepeatSaveSpec
 
 LifecycleSourceKind = Literal["spell", "feature", "item"]
@@ -11,6 +11,9 @@ _MINUTE_REPEAT = EffectLifecycleSpec(repeat_save=RepeatSaveSpec(), maximum_round
 _MAPPINGS: dict[tuple[LifecycleSourceKind, str, str, str], EffectLifecycleSpec] = {
     ("spell", "hold-person", "dnd5eactivity000", "PklwZi3SKQ3JU2M2"): _REPEAT,
     ("spell", "hold-monster", "dnd5eactivity000", "vC7qgyy8cjgi3t0T"): _REPEAT,
+    ("spell", "ray-of-frost", "VQQgdw0BEVD6wapC", "7dnnwBMWLykrVJub"): EffectLifecycleSpec(
+        expiry_boundary="source_next_turn_start"
+    ),
     ("feature", "cunning-strike", "n64fvJMT9fPUy7DH", "RazTM6biKVtNtjEW"): _MINUTE_REPEAT,
     ("feature", "devious-strikes", "3eq7lcmpkJJBU2KO", "C2IGgt4PnRMxZVey"): EffectLifecycleSpec(
         repeat_save=RepeatSaveSpec(), maximum_rounds=10, expire_on_positive_damage=True
@@ -73,7 +76,19 @@ def effect_lifecycle_activities(
 def effect_lifecycle_effects(
     source_kind: LifecycleSourceKind, slug: str, effects: list[PassiveEffect]
 ) -> list[PassiveEffect]:
-    """Correct the reviewed one-minute feature's erroneous display counter."""
+    """Apply reviewed duration and effect-value corrections to source templates."""
+    if (source_kind, slug) == ("spell", "ray-of-frost"):
+        return [
+            effect.model_copy(
+                update={
+                    "duration": None,
+                    "changes": [PassiveEffectChange(key="speed.reduction", mode=2, value="10")],
+                }
+            )
+            if effect.id == "7dnnwBMWLykrVJub"
+            else effect
+            for effect in effects
+        ]
     if (source_kind, slug) != ("feature", "intimidating-presence"):
         return effects
     return [

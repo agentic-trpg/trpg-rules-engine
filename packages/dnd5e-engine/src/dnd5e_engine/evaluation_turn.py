@@ -11,6 +11,13 @@ from dnd5e_engine.evaluation_delta import StateDelta
 from dnd5e_engine.evaluation_preflight import template_support_failure
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError, attack_delta
 from dnd5e_engine.evaluation_rng import RNGTransition
+from dnd5e_engine.evaluation_speed_effects import (
+    SpeedEffectComputation,
+    has_speed_effects,
+    speed_effect_delta,
+    speed_effect_support_failure,
+    without_speed_effect,
+)
 from dnd5e_engine.evaluation_stages import EventStageFacts
 from dnd5e_engine.evaluation_state import CombatSnapshot
 from dnd5e_engine.events import CombatEvent, IntentSubmitted
@@ -131,7 +138,11 @@ def evaluate_turn(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
     _, reaction_failure = opportunity_dependencies(snapshot, loader)
     if reaction_failure:
         return _refuse("unsupported", "turn.reaction", reaction_failure)
-    has_effect = bool(snapshot.effect_states)
+    speed_effect = has_speed_effects(snapshot)
+    if speed_effect and (failure := speed_effect_support_failure(snapshot, loader)):
+        return _refuse("unsupported", "turn.capability", failure)
+    dependencies = without_speed_effect(snapshot) if speed_effect else snapshot
+    has_effect = bool(dependencies.effect_states)
     has_concentration = bool(state.concentration_chain)
     failure = (
         hold_turn_support_failure(snapshot, loader)
@@ -139,7 +150,7 @@ def evaluate_turn(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
         else effect_turn_support_failure(snapshot, loader)
         if has_effect
         else operation_dependencies(
-            snapshot,
+            dependencies,
             loader,
             turn_lifecycle=True,
             movement=True,
@@ -160,6 +171,8 @@ def evaluate_turn(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
         if has_concentration
         else EffectTurnComputation
         if has_effect
+        else SpeedEffectComputation
+        if speed_effect
         else CombatComputation
     )
     computation = computation_type(snapshot, rng)
@@ -176,6 +189,8 @@ def evaluate_turn(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
             if has_concentration
             else effect_turn_delta
             if has_effect
+            else speed_effect_delta
+            if speed_effect
             else attack_delta
         )(snapshot, after),
         proposed_events=computed.proposed_events,

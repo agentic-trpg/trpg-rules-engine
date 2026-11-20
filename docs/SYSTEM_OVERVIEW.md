@@ -6,6 +6,10 @@
 跨模块权威是 sibling 文档库的 `docs/MODULE_CONTRACTS.md`，尤其 §2.3／§4／§6；
 在平行 worktree 中按逻辑父目录定位，不从目标示例猜测现行 ABI。
 
+候选 RE `/52` 的法术命中路径可以返回新建战斗效果、初始生命周期和来源关联。
+普通步行读取已生效的减速，回合推进计算到期，SM 采用有类型的创建或移除结果。
+参见[命中速度效果](dev/stateless-evaluation.md#on-hit-combat-speed-effects)。
+
 ## 1. 仓库定位与实际边界
 
 本库是包含 Engine、SRD Data、Bridge、Demo 的 uv workspace。Engine 对显式输入

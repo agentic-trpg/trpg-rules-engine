@@ -125,6 +125,17 @@ class CombatComputation:
         )
         return speed_for_mode(speeds, mode)
 
+    def refresh_movement_remaining(self, actor_id: str) -> None:
+        """Refresh available movement from the actor's ledger and candidate speed."""
+        actor = self.actors[actor_id]
+        ledger = self.state.movement_ledgers[actor_id]
+        remaining = ledger.remaining(self.speed(actor, ledger.active_mode))
+        self.actors[actor_id] = actor.model_copy(update={"movement_remaining": remaining})
+
+    def on_turn_start(self, actor_id: str) -> CombatEvent | None:
+        """Apply start mechanics before budget reset and return any event for the start phase."""
+        return None
+
     def emit(self, event: CombatEvent) -> None:
         """Append an event and fold its mechanics into this computation's candidate state.
 
@@ -320,13 +331,8 @@ class CombatComputation:
         self.emit(TurnEnded(actor_id=actor_id))
         # The empty-area boundary still projects every active movement ledger.
         # No area hooks run: admission has excluded their state and effects.
-        for key, value in self.actors.items():
-            ledger = self.state.movement_ledgers[key]
-            self.actors[key] = value.model_copy(
-                update={
-                    "movement_remaining": ledger.remaining(self.speed(value, ledger.active_mode))
-                }
-            )
+        for key in self.actors:
+            self.refresh_movement_remaining(key)
         next_turn = next_turn_index(
             self.state.initiative_ids, self.state.dead_ids, self.state.current_turn_index + 1
         )
@@ -379,6 +385,7 @@ class CombatComputation:
                 },
             }
         )
+        start_event = self.on_turn_start(next_actor)
         self.actors[next_actor] = reset_turn_budget(
             self.actors[next_actor], effective_speed=self.speed(self.actors[next_actor]), attacks=1
         )
@@ -389,6 +396,8 @@ class CombatComputation:
         self.emit(
             TurnPhase(actor_id=next_actor, phase="turn_start", round_number=self.state.round_number)
         )
+        if start_event is not None:
+            self.emit(start_event)
         self.death_save(next_actor)
 
     def candidate_state(self) -> CombatSnapshot:

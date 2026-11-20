@@ -11,7 +11,7 @@ in the current user task when they differ. Keep changes scoped to the requested 
 
 ## Start and architecture
 
-- 查看、认领或更新待办时，读 [Linear 项目与 Issue 流程](https://github.com/agentic-trpg/agentic-trpg/blob/3b362cb2f51b63bf6ce8b0fc0dbe64671d5efb45/docs/LINEAR_WORKFLOW.md)。
+- 查看、认领或更新待办时，读 [Linear 项目与 Issue 流程](https://github.com/agentic-trpg/agentic-trpg/blob/main/docs/LINEAR_WORKFLOW.md)。
 
 - Check `git branch --show-current`, `git status --short --branch`, and record the
   starting HEAD before editing. Inspect relevant code, tests, and development docs first.

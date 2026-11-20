@@ -43,16 +43,17 @@ has empty condition lineage. The result binds creation to the input combat,
 applying turn and matching hit, damage and effect evidence. The host decides whether to
 adopt the proposed change.
 
-Walking prices against reduced Speed while the effect is present. Explicit Pass
-and reviewed ordinary spell-attack turn advancement can bring the caster to the
-next turn start. The evaluator emits `EffectExpired` after the turn-start marker and uses
+While the effect is active, walking prices against reduced Speed and explicit
+Pass advances turns until the caster's next turn starts. The evaluator emits
+`EffectExpired` after the turn-start marker and uses
 `combat.effect_lifecycle_update` to remove the exact effect, clock and lineage.
 The movement ledger preserves distance already spent when Speed changes.
 The saved application serial must remain within the initiative slots traversed
 from the source to the current actor. Currently dead slots may have been
-skipped.
+skipped. The source must remain eligible for a future initiative turn.
 
-This slice admits one active speed graph and plain walking. It refuses a cast
+This slice admits plain walking and Pass with one active speed graph. An initial cast
+requires a combat snapshot free of other active effects. The evaluator also refuses a cast
 that would create and expire that effect during the same advancement, such as
 when a lethal hit skips the final foe directly to the caster's next turn.
 Supporting that case requires atomic adoption of same-command application and

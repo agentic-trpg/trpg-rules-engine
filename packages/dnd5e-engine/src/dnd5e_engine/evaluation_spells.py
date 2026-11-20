@@ -48,10 +48,7 @@ from dnd5e_engine.evaluation_ruleset import get_default_ruleset
 from dnd5e_engine.evaluation_speed_effects import (
     SpeedEffectComputation,
     attack_speed_effect_template,
-    has_speed_effects,
     speed_effect_delta,
-    speed_effect_support_failure,
-    without_speed_effect,
 )
 from dnd5e_engine.evaluation_spell_dependencies import (
     attack_spell_dependencies,
@@ -660,7 +657,6 @@ def evaluate_invocation(request: RuleEvaluationRequest, loader: AssetLoader) -> 
         and isinstance(spell.activities[0], AttackActivity)
         and attack_speed_effect_template(spell, spell.activities[0]) is not None
     )
-    active_speed_effect = mechanism == "attack_damage" and has_speed_effects(snapshot)
     if creates_speed_effect and (
         request.schema_version != "engine-evaluation/30" or snapshot.effect_states
     ):
@@ -669,13 +665,8 @@ def evaluate_invocation(request: RuleEvaluationRequest, loader: AssetLoader) -> 
             "spell.effect_dependencies",
             "initial speed rider requires plain /30 combat",
         )
-    dependencies = snapshot
-    if active_speed_effect:
-        if failure := speed_effect_support_failure(snapshot, loader):
-            return _refuse("unsupported", "spell.effect_dependencies", failure)
-        dependencies = without_speed_effect(snapshot)
     if mechanism == "attack_damage":
-        if failure := attack_spell_dependencies(dependencies, loader, intent.target_id):
+        if failure := attack_spell_dependencies(snapshot, loader, intent.target_id):
             return _refuse("unsupported", "spell.attack_dependencies", failure)
     elif failure := invocation_dependencies(
         snapshot,
@@ -708,7 +699,6 @@ def evaluate_invocation(request: RuleEvaluationRequest, loader: AssetLoader) -> 
             plan,
             actor,
             bonus=bonus,
-            speed_profile=creates_speed_effect or active_speed_effect,
             creates_speed_effect=creates_speed_effect,
         )
 
@@ -720,7 +710,6 @@ def _resolve_invocation(
     actor: Combatant,
     *,
     bonus: bool,
-    speed_profile: bool,
     creates_speed_effect: bool,
 ) -> TurnEvaluation:
     """Resolve the admitted activity and project its private candidate and payments."""
@@ -732,7 +721,7 @@ def _resolve_invocation(
         prepare_counterspell(snapshot, request.actor_id, plan.spell, loader) if plan.spell else None
     )
     rng = request.rng_context.state.restore()
-    if speed_profile:
+    if creates_speed_effect:
         computation: CombatComputation = SpeedEffectComputation(snapshot, rng)
     elif snapshot.effect_states:
         from dnd5e_engine.evaluation_concentration import ConcentrationComputation
@@ -787,13 +776,11 @@ def _resolve_invocation(
         raise RuntimeError("invocation left an incomplete damage instance")
     computed = computation.result()
     after = payment_post_state(computed.candidate_state, payments)
-    if speed_profile:
+    if creates_speed_effect:
         if payments or ledgers:
             raise RuntimeError("speed effect spell attack attempted an unsupported payment")
-        if (
-            creates_speed_effect
-            and not after.effect_states
-            and any(isinstance(event, EffectApplied) for event in computed.proposed_events)
+        if not after.effect_states and any(
+            isinstance(event, EffectApplied) for event in computed.proposed_events
         ):
             return _refuse(
                 "unsupported",
@@ -804,7 +791,7 @@ def _resolve_invocation(
         status="accepted",
         state_delta=(
             speed_effect_delta(snapshot, after)
-            if speed_profile
+            if creates_speed_effect
             else reaction_paid_delta(snapshot, after, payments, ledgers)
         ),
         proposed_events=computed.proposed_events,

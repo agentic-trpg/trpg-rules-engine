@@ -173,6 +173,8 @@ def speed_effect_support_failure(snapshot: CombatSnapshot, loader: AssetLoader) 
         or (app.source_id in state.encounter_ids and effect.target_id in state.party_ids)
     ):
         return "speed effect requires present opposing source and target"
+    if app.source_id in state.dead_ids:
+        return "speed effect source has no future initiative turn"
     identity = (effect.target_id, effect.id, effect.origin)
     (record,) = state.effect_lifecycles
     (lineage,) = state.conditions_by_effect

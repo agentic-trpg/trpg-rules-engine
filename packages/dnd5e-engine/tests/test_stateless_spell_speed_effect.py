@@ -21,6 +21,7 @@ from dnd5e_engine.events import (
     ActorMoved,
     AttackRolled,
     DamageApplied,
+    Death,
     EffectApplied,
     EffectExpired,
 )
@@ -217,6 +218,52 @@ def test_same_command_application_and_expiry_is_unsupported():
     assert request == before
 
 
+@pytest.mark.parametrize("seed, slowed", [(6, True), (31, False)])
+def test_opposing_wizard_cast_requires_a_plain_snapshot(seed, slowed):
+    loader = get_default_ruleset()
+    wire = cast_request(seed=seed).model_dump(mode="json")
+    snapshot = wire["state_snapshot"]
+    source, target = snapshot["character_states"]
+    target.update({**source, "entity_id": FOE})
+    source["hp_current"] = 1
+    casters = snapshot["casting_state"]["actors"]
+    casters.append({**casters[0], "actor_id": FOE})
+    pools = snapshot["resource_state"]["pools"]
+    pools.extend([{**pool, "owner_id": FOE} for pool in pools])
+    snapshot["combat_state"].update(
+        party_ids=[FOE], encounter_ids=[HERO], xp_value_by_entity={HERO: 0}
+    )
+    initial = RuleEvaluationRequest.model_validate_json(dumps(wire))
+    ray = execute(initial, loader)
+    assert ray.status == "accepted", ray.error
+    current = adopt(initial.state_snapshot, ray)
+    assert bool(current.effect_states) is slowed
+    fire_bolt = next_request(
+        initial,
+        current,
+        ray,
+        "cast_spell",
+        spell_id="fire-bolt",
+        target_id=HERO,
+        spell_source_id="class:wizard",
+    )
+    assert fire_bolt.actor_id == FOE
+    before = deepcopy(fire_bolt)
+    result = execute(fire_bolt, loader)
+    assert fire_bolt == before
+    if not slowed:
+        assert result.status == "accepted", result.error
+        assert any(
+            isinstance(event, Death) and event.target_id == HERO for event in result.proposed_events
+        )
+        return
+    assert result.status == "unsupported"
+    assert result.error.code == "spell.attack_dependencies"
+    assert result.state_delta is None
+    assert result.proposed_events == ()
+    assert result.rng_transition is None
+
+
 def test_lethal_hit_keeps_the_effect_until_source_start_when_another_actor_is_alive():
     request = cast_request(hit_points=1)
     wire = request.model_dump(mode="json")
@@ -242,6 +289,34 @@ def test_lethal_hit_keeps_the_effect_until_source_start_when_another_actor_is_al
     ended = execute(after, loader)
     assert ended.status == "accepted", ended.error
     assert not adopt(slain, ended).effect_states
+
+
+def test_imported_speed_effect_rejects_a_dead_source():
+    loader = get_default_ruleset()
+    initial = cast_request()
+    cast = execute(initial, loader)
+    assert cast.status == "accepted", cast.error
+    slowed = adopt(initial.state_snapshot, cast)
+    wire = next_request(initial, slowed, cast, "pass").model_dump(mode="json")
+    snapshot = wire["state_snapshot"]
+    snapshot["character_states"][0].update(hp_current=0, is_alive=False)
+    state = snapshot["combat_state"]
+    state["dead_ids"] = [HERO]
+    state["deaths_recorded"] = [
+        {
+            "target_id": HERO,
+            "target_kind": "character",
+            "location_id": snapshot["scene_state"]["scene_id"],
+            "reason": "damage",
+            "killer_id": FOE,
+        }
+    ]
+    result = execute(RuleEvaluationRequest.model_validate_json(dumps(wire)), loader)
+    assert result.status == "unsupported"
+    assert result.error.reason == "speed effect source has no future initiative turn"
+    assert result.state_delta is None
+    assert result.proposed_events == ()
+    assert result.rng_transition is None
 
 
 def test_speed_graph_forgery_and_old_creation_versions_fail_closed():

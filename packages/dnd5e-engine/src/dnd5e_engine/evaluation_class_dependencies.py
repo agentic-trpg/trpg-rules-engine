@@ -10,6 +10,7 @@ from dnd5e_engine.evaluation_equipment_dependencies import (
     HEALING_POTION_SLUG,
     equipped_dependencies,
     is_stowed_healing_potion,
+    reviewed_healing_potion_owners,
 )
 from dnd5e_engine.evaluation_resources import FeatureResource, SlotResource
 from dnd5e_engine.evaluation_ruleset import get_default_ruleset
@@ -237,16 +238,23 @@ def operation_dependencies(
     equipped: bool = False,
     reviewed_sap: bool = False,
     reviewed_world_effects: bool = False,
+    allow_stowed_healing_potions: bool = False,
 ) -> str | None:
     """Pass/reset, walking, initialization and closure do not activate these grants.
 
     Attack/AC/damage/save operations must supply their own reviewed profile.
     Any world effect must already have been verified by the requesting operation.
+    Plain Pass can keep reviewed stowed healing potions in the equipment closure.
     Other effects, reactions, traits and non-class mechanics retain ordinary guards.
     """
     from dnd5e_engine.evaluation_preflight import snapshot_support_failure
 
     canonical = get_default_ruleset()
+    potion_owners = (
+        reviewed_healing_potion_owners(snapshot, loader, canonical)
+        if allow_stowed_healing_potions
+        else set()
+    )
 
     def dependencies(actor: CharacterStateV2) -> str | None:
         """Check the complete rules dependency set for the enclosing operation."""
@@ -267,7 +275,14 @@ def operation_dependencies(
             or actor.weapon_mastery_slugs
         ):
             return None
-        return class_dependencies(actor, snapshot, loader, canonical, equipped=equipped or attack)
+        return class_dependencies(
+            actor,
+            snapshot,
+            loader,
+            canonical,
+            equipped=equipped or attack,
+            allow_stowed_healing_potions=actor.entity_id in potion_owners,
+        )
 
     if reviewed_sap:
         if not turn_lifecycle:

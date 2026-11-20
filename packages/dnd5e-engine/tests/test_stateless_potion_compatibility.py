@@ -165,6 +165,22 @@ def test_cure_wounds_leaves_spare_potions_and_uses_one_spell_slot():
     assert any(isinstance(op, HPDelta) for op in result.state_delta.operations)
 
 
+@pytest.mark.parametrize("offhand", [False, True], ids=["different-asset", "equipped-potion"])
+def test_plain_pass_still_refuses_unreviewed_potion_equipment(offhand, monkeypatch):
+    wire, _, loader = potion_cleric(
+        offhand=offhand,
+        potion_changes=None if offhand else {"description": "Different bound potion asset."},
+    )
+    wire["payload"] = {"intent_type": "pass"}
+    request = RuleEvaluationRequest.model_validate_json(json.dumps(wire))
+    monkeypatch.setattr(RNGState, "restore", lambda self: pytest.fail("refusal restored RNG"))
+    result = execute(request, loader)
+    assert result.error.code == "turn.capability", result.error
+    assert result.state_delta is None
+    assert result.rng_transition is None
+    assert not result.proposed_events
+
+
 def test_sacred_flame_with_stowed_potions_matches_no_stock():
     """Stowed stock has no effect on save, damage, RNG or payment proposals."""
     wire, _, loader = potion_cleric(spell="sacred-flame", seed=2)

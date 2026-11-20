@@ -113,9 +113,9 @@ async def evaluate(
         result.verify_request(request)
         return result
     if request.operation_kind == "world.cast_spell":
-        from dnd5e_engine.evaluation_timed_spells import evaluate_timed_spell
+        from dnd5e_engine.evaluation_timed_spells import evaluate_exploration_spell
 
-        result = _turn_result(common, evaluate_timed_spell(request, assets))
+        result = _turn_result(common, evaluate_exploration_spell(request, assets))
         result.verify_request(request)
         return result
     if request.operation_kind == "rules.rest":

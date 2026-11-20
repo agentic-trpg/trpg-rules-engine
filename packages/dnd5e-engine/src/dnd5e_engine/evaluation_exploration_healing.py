@@ -1,0 +1,130 @@
+"""Resolve a reviewed instantaneous healing spell during exploration."""
+
+from dnd5e_srd_data.loader import AssetLoader
+from dnd5e_srd_data.schema.common import HealActivity
+from dnd5e_srd_data.schema.spell import CastingTimeUnit, Spell, SpellRangeUnits
+
+from dnd5e_engine.activities.build_context import build_activity_context
+from dnd5e_engine.activities.resolver import resolve_activity
+from dnd5e_engine.damage_rules import healing_balance
+from dnd5e_engine.evaluation_actor import combatant
+from dnd5e_engine.evaluation_class_dependencies import class_dependencies
+from dnd5e_engine.evaluation_contracts import ExplorationSpellCastPayload, RuleEvaluationRequest
+from dnd5e_engine.evaluation_delta import HPDelta, ResourceUpdate, StateDelta
+from dnd5e_engine.evaluation_equipment_dependencies import reviewed_healing_potion_owners
+from dnd5e_engine.evaluation_projection import EvaluationInvariantError
+from dnd5e_engine.evaluation_rng import RNGTransition
+from dnd5e_engine.evaluation_ruleset import get_default_ruleset
+from dnd5e_engine.evaluation_spells import ordinary_spell_mechanism, spell_event
+from dnd5e_engine.evaluation_state import CharacterStateV2, NonCombatSnapshot
+from dnd5e_engine.evaluation_turn import TurnEvaluation, _refuse
+from dnd5e_engine.events import CombatEvent, HealingApplied, IntentSubmitted
+
+
+def exploration_healing_activity(loader: AssetLoader, spell: Spell) -> HealActivity | None:
+    """Select a canonical single-creature, first-level Action heal with touch delivery."""
+    if (
+        spell.level != 1
+        or spell.casting_time.unit != CastingTimeUnit.ACTION
+        or spell.range.units != SpellRangeUnits.TOUCH
+        or ordinary_spell_mechanism(loader, spell.slug) != "healing"
+    ):
+        return None
+    activity = spell.activities[0]
+    assert isinstance(activity, HealActivity)
+    return activity
+
+
+def evaluate_exploration_healing(
+    request: RuleEvaluationRequest,
+    spell: Spell,
+    activity: HealActivity,
+    actor: CharacterStateV2,
+    target: CharacterStateV2,
+    payment: ResourceUpdate,
+    loader: AssetLoader,
+) -> TurnEvaluation:
+    """Run the shared heal over fixed actors and project the uncommitted payment and HP.
+
+    A living creature at full HP is a legal target. It still produces the rolled
+    evidence and uses one slot, with no HP edit when the capped HP is unchanged.
+    """
+    snapshot, payload = request.state_snapshot, request.payload
+    assert isinstance(snapshot, NonCombatSnapshot)
+    assert isinstance(payload, ExplorationSpellCastPayload)
+    if target.hp_current <= 0:
+        return _refuse("rejected", "target_invalid", "healing requires a living positive-HP target")
+    if any(creature.trait_mechanics for creature in snapshot.character_states) or any(
+        not effect.disabled for effect in snapshot.effect_states
+    ):
+        return _refuse("unsupported", "healing.dependencies", "unreviewed healing trait or effect")
+    canonical = get_default_ruleset()
+    potion_owners = reviewed_healing_potion_owners(snapshot, loader, canonical)
+    if failure := class_dependencies(
+        actor,
+        snapshot,
+        loader,
+        canonical,
+        equipped=True,
+        allow_stowed_healing_potions=actor.entity_id in potion_owners,
+    ):
+        return _refuse("unsupported", "healing.dependencies", failure)
+
+    rng = request.rng_context.state.restore()
+    events: list[CombatEvent] = [
+        IntentSubmitted(
+            actor_id=actor.entity_id,
+            intent_type="cast_spell",
+            spell_id=spell.slug,
+            target_id=target.entity_id,
+            source_id=payload.spell_source_id,
+            activity_id=activity.id,
+        ),
+        spell_event(actor.entity_id, spell, payload.slot_level),
+    ]
+    caster = combatant(actor)
+    context = build_activity_context(
+        caster,
+        [caster if actor.entity_id == target.entity_id else combatant(target)],
+        rng=rng,
+        event_emitter=events.append,
+        slot_level=payload.slot_level,
+        base_spell_level=spell.level,
+        spellcasting_ability=actor.spellcasting_ability,
+        concentration=False,
+        source_passive_effects=spell.passive_effects,
+        spell_book={},
+        passive_damage_modifiers={},
+        save_modifiers={},
+    )
+    resolve_activity(activity, context)
+    if (
+        len(events) != 3
+        or not isinstance(healing := events[2], HealingApplied)
+        or healing.target_id != target.entity_id
+    ):
+        raise EvaluationInvariantError("exploration heal must produce one healing event")
+    if healing.amount < 0:
+        return _refuse("unsupported", "healing.amount", "negative healing is outside this profile")
+    hp = healing_balance(target.hp_current, target.hp_max, healing.amount)
+    operations: list[ResourceUpdate | HPDelta] = [payment]
+    if hp != target.hp_current:
+        operations.append(
+            HPDelta(
+                kind="actor.hp_delta",
+                target_id=target.entity_id,
+                expected_hp=target.hp_current,
+                amount=hp - target.hp_current,
+                resulting_hp=hp,
+            )
+        )
+    return dict(
+        status="accepted",
+        state_delta=StateDelta(
+            expected_world_version=snapshot.world_version, operations=tuple(operations)
+        ),
+        proposed_events=tuple(events),
+        rng_transition=RNGTransition.between(request.rng_context, rng),
+        choice=None,
+        error=None,
+    )

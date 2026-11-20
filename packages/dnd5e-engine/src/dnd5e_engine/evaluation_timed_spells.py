@@ -1,4 +1,4 @@
-"""Evaluate direct exploration casts that create one elapsed-time passive modifier."""
+"""Admit direct exploration casts and resolve elapsed-time passive modifiers."""
 
 from typing import cast
 
@@ -26,9 +26,14 @@ from dnd5e_engine.evaluation_casting import CastingStateV20
 from dnd5e_engine.evaluation_contracts import ExplorationSpellCastPayload, RuleEvaluationRequest
 from dnd5e_engine.evaluation_delta import StateDelta, WorldEffectCreate
 from dnd5e_engine.evaluation_effects import EffectState, effect_state
+from dnd5e_engine.evaluation_exploration_healing import (
+    evaluate_exploration_healing,
+    exploration_healing_activity,
+)
 from dnd5e_engine.evaluation_payments import spell_payment
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError
 from dnd5e_engine.evaluation_rng import RNGTransition
+from dnd5e_engine.evaluation_spells import source_failure
 from dnd5e_engine.evaluation_state import CharacterStateV2, NonCombatSnapshot
 from dnd5e_engine.evaluation_turn import TurnEvaluation, _refuse
 from dnd5e_engine.evaluation_world_effect import EffectExpiryPolicy, WorldEffectApplication
@@ -328,12 +333,14 @@ def _touch_reaches(
     )
 
 
-def evaluate_timed_spell(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEvaluation:
-    """Admit one exploration cast and propose its atomic slot and effect changes.
+def evaluate_exploration_spell(
+    request: RuleEvaluationRequest, loader: AssetLoader
+) -> TurnEvaluation:
+    """Admit one exploration cast and propose its slot and mechanical changes.
 
-    The supported passive changes cover movement, senses and flat additive skill
-    bonuses. The result carries ordered cast evidence and an unchanged RNG successor.
-    The host owns effect persistence, elapsed time and expiry.
+    A reviewed touch heal resolves immediately. The timed branch supports
+    movement, senses and flat additive skill bonuses with unchanged RNG.
+    The host owns persistence, elapsed time and expiry.
     """
     snapshot, payload = request.state_snapshot, request.payload
     if not isinstance(snapshot, NonCombatSnapshot) or not isinstance(
@@ -349,12 +356,14 @@ def evaluate_timed_spell(request: RuleEvaluationRequest, loader: AssetLoader) ->
         return _refuse(
             "unsupported", "spell.slot", "cast requires a single ordinary base-level slot"
         )
-    try:
-        activity, active = _passive_profile(
-            spell, target_id=payload.target_id, caster_id=request.actor_id
-        )
-    except ValueError as exc:
-        return _refuse("unsupported", "spell.mechanism", str(exc))
+    healing = exploration_healing_activity(loader, spell)
+    if healing is None:
+        try:
+            activity, active = _passive_profile(
+                spell, target_id=payload.target_id, caster_id=request.actor_id
+            )
+        except ValueError as exc:
+            return _refuse("unsupported", "spell.mechanism", str(exc))
 
     actors = {actor.entity_id: actor for actor in snapshot.character_states}
     actor = actors.get(request.actor_id)
@@ -375,14 +384,19 @@ def evaluate_timed_spell(request: RuleEvaluationRequest, loader: AssetLoader) ->
         if not _touch_reaches(request, snapshot, spell):
             return _refuse("rejected", "target_invalid", "target must be reachable by touch")
     if any(
-        active.target_id == actor.entity_id and not active.disabled and active.action_policy
-        for active in snapshot.effect_states
+        effect.target_id == actor.entity_id and not effect.disabled and effect.action_policy
+        for effect in snapshot.effect_states
     ):
         return _refuse("unsupported", "spell.action_policy", "caster has an active action policy")
-    if failure := _source_failure(snapshot, actor, payload, spell, loader):
+    failure = (
+        source_failure(snapshot, actor.entity_id, payload.spell_source_id, spell, "healing")
+        if healing is not None
+        else _source_failure(snapshot, actor, payload, spell, loader)
+    )
+    if failure:
         return _refuse("rejected", "spell.source", failure)
 
-    if any(
+    if healing is None and any(
         current.target_id == target.entity_id and current.id == active.id
         for current in snapshot.effect_states
     ):
@@ -392,6 +406,8 @@ def evaluate_timed_spell(request: RuleEvaluationRequest, loader: AssetLoader) ->
     payment = spell_payment(snapshot.resource_state, actor.entity_id, payload.slot_level)
     if payment.expected.kind != "spell_slot":
         raise EvaluationInvariantError("world spell payment must use an ordinary slot")
+    if healing is not None:
+        return evaluate_exploration_healing(request, spell, healing, actor, target, payment, loader)
     creation = WorldEffectCreate(
         kind="world.effect_create",
         expected_absent=True,

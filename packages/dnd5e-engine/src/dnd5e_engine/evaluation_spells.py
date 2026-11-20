@@ -54,7 +54,7 @@ from dnd5e_engine.evaluation_spell_dependencies import (
     attack_spell_dependencies,
     invocation_dependencies,
 )
-from dnd5e_engine.evaluation_state import CharacterStateV2, CombatSnapshot
+from dnd5e_engine.evaluation_state import CharacterStateV2, CombatSnapshot, NonCombatSnapshot
 from dnd5e_engine.evaluation_turn import TurnEvaluation, _refuse
 from dnd5e_engine.events import CastFailed, EffectApplied, IntentSubmitted, SpellCast
 from dnd5e_engine.feature_runtime import DrawFreeRandom, FeatureInvocation, preflight_feature
@@ -312,7 +312,7 @@ def invocation_context(
 
 
 def source_failure(
-    snapshot: CombatSnapshot,
+    snapshot: CombatSnapshot | NonCombatSnapshot,
     actor_id: str,
     source_id: str | None,
     spell: Spell,

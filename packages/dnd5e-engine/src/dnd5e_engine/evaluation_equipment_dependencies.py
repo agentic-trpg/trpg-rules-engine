@@ -24,7 +24,7 @@ HEALING_POTION_SLUG = "potion-of-healing"
 
 
 def reviewed_healing_potion_owners(
-    snapshot: CombatSnapshot, loader: AssetLoader, canonical: AssetLoader
+    snapshot: CombatSnapshot | NonCombatSnapshot, loader: AssetLoader, canonical: AssetLoader
 ) -> set[str]:
     """Identify owners whose canonical potion instances are all outside equipment slots."""
     if snapshot.snapshot_schema_version != "engine-snapshot/20":

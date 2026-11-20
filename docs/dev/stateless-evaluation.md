@@ -1,5 +1,9 @@
 # Stateless rule evaluation: current local contract
 
+Evaluator binding `dnd5e-evaluation/50` covers the instant healing casting-time
+payment and timed ordinary walking described below. Both use the existing
+request, event, and guarded Delta types.
+
 ## Ordinary ranged spell attacks
 
 Evaluator binding `dnd5e-evaluation/49` classifies an ordinary instant

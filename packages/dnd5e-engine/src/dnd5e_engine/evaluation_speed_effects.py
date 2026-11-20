@@ -116,12 +116,83 @@ def has_speed_effects(snapshot: CombatSnapshot) -> bool:
     )
 
 
+def is_bound_attack_speed_effect(effect: EffectState, loader: AssetLoader) -> bool:
+    """Check an effect against its exact canonical spell rider and application identity."""
+    app = effect.lifecycle
+    definition = _spell_speed_definition(loader, app.source_slug) if app is not None else None
+    return (
+        app is not None
+        and definition is not None
+        and effect == _bound_effect(definition, app.source_id, effect.target_id)
+    )
+
+
+def world_walk_bonus(effect: EffectState) -> int:
+    """Read an admitted elapsed passive effect's flat walking-speed change."""
+    from dnd5e_engine.evaluation_timed_spells import attack_world_spell_walk_bonus
+
+    bonus = attack_world_spell_walk_bonus(effect)
+    if not any(change.key == "system.attributes.movement.walk" for change in effect.changes):
+        raise ValueError("timed walking requires a flat walking-speed modifier")
+    return bonus
+
+
+def _speed_world_effect_failure(
+    effects: Sequence[EffectState], target_id: str, mode: MovementMode
+) -> str | None:
+    """Admit an optional single elapsed walk modifier on the attack rider target."""
+    if not effects:
+        return None
+    if len(effects) != 1 or effects[0].target_id != target_id:
+        return "speed rider admits one elapsed walk modifier on its target"
+    if mode != "walk":
+        return "elapsed walk modifier and speed rider require a walking ledger"
+    try:
+        world_walk_bonus(effects[0])
+    except ValueError as error:
+        return str(error)
+    return None
+
+
+def speed_cast_support_failure(snapshot: CombatSnapshot, target_id: str) -> str | None:
+    """Admit a fresh speed rider with optional same-target elapsed walking support."""
+    state = snapshot.combat_state
+    if (
+        state.effect_lifecycles
+        or state.conditions_by_effect
+        or state.concentration_chain
+        or state.concentration_rounds_remaining
+    ):
+        return "initial speed rider requires an empty turn effect graph"
+    if not snapshot.effect_states:
+        return None
+    ledger = state.movement_ledgers.get(target_id)
+    if ledger is None:
+        return "elapsed walk modifier requires a target movement ledger"
+    return _speed_world_effect_failure(snapshot.effect_states, target_id, ledger.active_mode)
+
+
 def speed_with_effects(
     actor: CharacterStateV2 | Combatant,
     effects: Sequence[EffectState],
     mode: MovementMode = "walk",
 ) -> int:
-    """Project one actor's speed with admitted effects and existing condition locks."""
+    """Project speed with an admitted elapsed walk modifier and attack reduction."""
+    bonus = sum(
+        world_walk_bonus(effect)
+        for effect in effects
+        if mode == "walk" and effect.target_id == actor.entity_id and effect.lifecycle is None
+    )
+    return _speed_with_reductions(actor, effects, mode, bonus)
+
+
+def _speed_with_reductions(
+    actor: CharacterStateV2 | Combatant,
+    effects: Sequence[EffectState],
+    mode: MovementMode,
+    walk_bonus: int,
+) -> int:
+    """Apply reductions to the current speed with any already-interpreted walk bonus."""
     modifiers = [
         SpeedModifier("reduce", int(change.value))
         for effect in effects
@@ -134,7 +205,7 @@ def speed_with_effects(
     ]
     return speed_for_mode(
         project_speeds(
-            actor.base_speed,
+            actor.base_speed + (walk_bonus if mode == "walk" else 0),
             actor.movement_modes,
             condition_names=active_condition_names(actor.conditions),
             exhaustion_level=exhaustion_level_of(actor.conditions),
@@ -145,11 +216,10 @@ def speed_with_effects(
 
 
 def speed_effect_support_failure(snapshot: CombatSnapshot, loader: AssetLoader) -> str | None:
-    """Check the one admitted combat speed effect, clock, lineage and target budget."""
+    """Check the one combat speed rider, any elapsed walk modifier, and its target budget."""
     state = snapshot.combat_state
     if (
         snapshot.snapshot_schema_version != "engine-snapshot/20"
-        or len(snapshot.effect_states) != 1
         or len(state.effect_lifecycles) != 1
         or len(state.conditions_by_effect) != 1
         or state.concentration_chain
@@ -159,14 +229,12 @@ def speed_effect_support_failure(snapshot: CombatSnapshot, loader: AssetLoader) 
         or state.reaction_effects_pending_expiry
     ):
         return "one reviewed speed effect requires a plain /20 combat graph"
-    (effect,) = snapshot.effect_states
+    combat_effects = tuple(effect for effect in snapshot.effect_states if effect.lifecycle)
+    if len(combat_effects) != 1:
+        return "speed effect requires exactly one attack rider"
+    (effect,) = combat_effects
     app = effect.lifecycle
-    definition = _spell_speed_definition(loader, app.source_slug) if app is not None else None
-    if (
-        app is None
-        or definition is None
-        or effect != _bound_effect(definition, app.source_id, effect.target_id)
-    ):
+    if app is None or not is_bound_attack_speed_effect(effect, loader):
         return "speed effect differs from the bound canonical attack rider"
     if not (
         (app.source_id in state.party_ids and effect.target_id in state.encounter_ids)
@@ -209,6 +277,12 @@ def speed_effect_support_failure(snapshot: CombatSnapshot, loader: AssetLoader) 
         return "speed effect serial contradicts the reachable initiative slots"
     target = next(a for a in snapshot.character_states if a.entity_id == effect.target_id)
     ledger = state.movement_ledgers[effect.target_id]
+    if failure := _speed_world_effect_failure(
+        tuple(other for other in snapshot.effect_states if other.lifecycle is None),
+        effect.target_id,
+        ledger.active_mode,
+    ):
+        return failure
     if target.movement_remaining != ledger.remaining(
         speed_with_effects(target, snapshot.effect_states, ledger.active_mode)
     ):
@@ -217,7 +291,7 @@ def speed_effect_support_failure(snapshot: CombatSnapshot, loader: AssetLoader) 
 
 
 def without_speed_effect(snapshot: CombatSnapshot) -> CombatSnapshot:
-    """Expose other dependencies after independently admitting the complete speed graph."""
+    """Expose ordinary dependencies after independently admitting the speed modifiers."""
     return snapshot.model_copy(
         update={
             "effect_states": (),
@@ -229,22 +303,27 @@ def without_speed_effect(snapshot: CombatSnapshot) -> CombatSnapshot:
 
 
 class SpeedEffectComputation(CombatComputation):
-    """Fold one verified hit rider and expire it on the source's next turn start."""
+    """Retain elapsed speed modifiers and fold one turn-bound hit rider."""
 
     def __init__(self, snapshot: CombatSnapshot, rng: random.Random) -> None:
         """Keep the active effect local to this evaluation."""
         super().__init__(snapshot, rng)
         self.effects = snapshot.effect_states
+        self.walk_bonuses = {
+            effect.target_id: world_walk_bonus(effect)
+            for effect in self.effects
+            if effect.lifecycle is None
+        }
 
     def emit(self, event: CombatEvent) -> None:
         """Capture the resolver's hit effect with the applying turn's clock."""
         super().emit(event)
         if isinstance(event, EffectApplied):
-            if self.effects:
+            if self.state.effect_lifecycles:
                 raise EvaluationInvariantError("speed computation cannot create a second effect")
             effect = effect_state(event.effect)
             record = application_clock(effect, self.state.turn_serial, self.state.round_number)
-            self.effects = (effect,)
+            self.effects = (*self.effects, effect)
             self.state = self.state.model_copy(
                 update={
                     "effect_lifecycles": (record,),
@@ -254,12 +333,14 @@ class SpeedEffectComputation(CombatComputation):
             self.refresh_movement_remaining(effect.target_id)
 
     def speed(self, actor: Combatant, mode: MovementMode = "walk") -> int:
-        """Project speed against the currently active candidate effect."""
-        return speed_with_effects(actor, self.effects, mode)
+        """Project speed against the currently active candidate effects."""
+        return _speed_with_reductions(
+            actor, self.effects, mode, self.walk_bonuses.get(actor.entity_id, 0)
+        )
 
     def on_turn_start(self, actor_id: str) -> EffectExpired | None:
         """Expire the effect when due and return its event for the start phase."""
-        if not self.effects:
+        if not self.state.effect_lifecycles:
             return None
         (record,) = self.state.effect_lifecycles
         if not record.state.expires_at(
@@ -267,7 +348,11 @@ class SpeedEffectComputation(CombatComputation):
         ):
             return None
         target_id, effect_id, origin = record.identity
-        self.effects = ()
+        self.effects = tuple(
+            effect
+            for effect in self.effects
+            if (effect.target_id, effect.id, effect.origin) != record.identity
+        )
         self.state = self.state.model_copy(
             update={"effect_lifecycles": (), "conditions_by_effect": ()}
         )
@@ -284,13 +369,17 @@ class SpeedEffectComputation(CombatComputation):
 def speed_effect_delta(before: CombatSnapshot, after: CombatSnapshot) -> StateDelta:
     """Project normal combat changes and the selected guarded creation or removal."""
     mechanical = attack_delta(without_speed_effect(before), without_speed_effect(after))
+    if tuple(e for e in before.effect_states if e.lifecycle is None) != tuple(
+        e for e in after.effect_states if e.lifecycle is None
+    ):
+        raise EvaluationInvariantError("combat speed transition changed an elapsed world effect")
     old = (
-        before.effect_states,
+        tuple(e for e in before.effect_states if e.lifecycle is not None),
         before.combat_state.effect_lifecycles,
         before.combat_state.conditions_by_effect,
     )
     new = (
-        after.effect_states,
+        tuple(e for e in after.effect_states if e.lifecycle is not None),
         after.combat_state.effect_lifecycles,
         after.combat_state.conditions_by_effect,
     )
@@ -340,9 +429,7 @@ def verify_speed_effect_creation(
         or intent.intent_type != "cast_spell"
         or not intent.spell_id
         or not intent.target_id
-        or snapshot.effect_states
-        or snapshot.combat_state.effect_lifecycles
-        or snapshot.combat_state.conditions_by_effect
+        or speed_cast_support_failure(snapshot, intent.target_id) is not None
     ):
         raise ValueError("combat effect creation requires a current initial spell attack")
     canonical = get_default_ruleset()

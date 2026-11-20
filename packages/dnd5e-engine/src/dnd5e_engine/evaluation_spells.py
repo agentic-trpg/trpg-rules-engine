@@ -48,7 +48,9 @@ from dnd5e_engine.evaluation_ruleset import get_default_ruleset
 from dnd5e_engine.evaluation_speed_effects import (
     SpeedEffectComputation,
     attack_speed_effect_template,
+    speed_cast_support_failure,
     speed_effect_delta,
+    without_speed_effect,
 )
 from dnd5e_engine.evaluation_spell_dependencies import (
     attack_spell_dependencies,
@@ -64,6 +66,7 @@ from dnd5e_engine.rules.conditions import (
     conditions_block_actions,
     project_passive_save_modifiers,
 )
+from dnd5e_engine.rules.dice import proficiency_bonus
 from dnd5e_engine.spatial import GridTopology
 from dnd5e_engine.specs import GridScene
 from dnd5e_engine.spell_delivery import DeliveryPlanningError, SpellDeliverySpec, plan_delivery
@@ -317,8 +320,10 @@ def source_failure(
     source_id: str | None,
     spell: Spell,
     mechanism: OrdinarySpellMechanism,
+    *,
+    composed_speed_rider: bool = False,
 ) -> str | None:
-    """Check that the invocation source is present and supported by the bound dataset."""
+    """Check the explicit source and the class profile admitted for this invocation."""
     component = snapshot.casting_state
     actor = next(a for a in snapshot.character_states if a.entity_id == actor_id)
     entry = (
@@ -344,10 +349,14 @@ def source_failure(
     levels = actor.classes or (
         {actor.class_slug: actor.character_level} if actor.class_slug else {}
     )
-    if levels != {class_slug: level} or actor.spellcasting_ability != source.ability:
+    reviewed_level = levels == {class_slug: level} or (
+        composed_speed_rider and levels == {"wizard": 5}
+    )
+    if not reviewed_level or actor.spellcasting_ability != source.ability:
         return "casting source contradicts class/ability facts"
     if attack and (
-        actor.attack_bonus is not None or actor.proficiency_bonus_override not in (None, 2)
+        actor.attack_bonus is not None
+        or actor.proficiency_bonus_override not in (None, proficiency_bonus(actor.character_level))
     ):
         return "Wizard spell attack requires the ordinary Intelligence and proficiency formula"
     if spell.slug not in source.known_spells or (
@@ -388,6 +397,8 @@ def spell_plan(
     spell: Spell | None,
     mechanism: OrdinarySpellMechanism | None,
     actors: dict[str, CharacterStateV2],
+    *,
+    composed_speed_rider: bool = False,
 ) -> InvocationPlan | TurnEvaluation:
     """Prepare the admitted spell delivery and payment plan."""
     snapshot, intent = request.state_snapshot, request.payload
@@ -439,7 +450,12 @@ def spell_plan(
         ):
             return _refuse("rejected", "target_invalid", "every target must be a living creature")
     if failure := source_failure(
-        snapshot, request.actor_id, intent.spell_source_id, spell, mechanism
+        snapshot,
+        request.actor_id,
+        intent.spell_source_id,
+        spell,
+        mechanism,
+        composed_speed_rider=composed_speed_rider,
     ):
         return _refuse("rejected", "spell.source", failure)
     actor = actors[request.actor_id]
@@ -657,16 +673,18 @@ def evaluate_invocation(request: RuleEvaluationRequest, loader: AssetLoader) -> 
         and isinstance(spell.activities[0], AttackActivity)
         and attack_speed_effect_template(spell, spell.activities[0]) is not None
     )
-    if creates_speed_effect and (
-        request.schema_version != "engine-evaluation/30" or snapshot.effect_states
-    ):
-        return _refuse(
-            "unsupported",
-            "spell.effect_dependencies",
-            "initial speed rider requires plain /30 combat",
+    dependencies = snapshot
+    if creates_speed_effect:
+        failure = (
+            "initial speed rider requires /30 combat"
+            if request.schema_version != "engine-evaluation/30"
+            else speed_cast_support_failure(snapshot, intent.target_id)
         )
+        if failure:
+            return _refuse("unsupported", "spell.effect_dependencies", failure)
+        dependencies = without_speed_effect(snapshot)
     if mechanism == "attack_damage":
-        if failure := attack_spell_dependencies(snapshot, loader, intent.target_id):
+        if failure := attack_spell_dependencies(dependencies, loader, intent.target_id):
             return _refuse("unsupported", "spell.attack_dependencies", failure)
     elif failure := invocation_dependencies(
         snapshot,
@@ -689,7 +707,14 @@ def evaluate_invocation(request: RuleEvaluationRequest, loader: AssetLoader) -> 
         plan = (
             feature_plan(request, loader)
             if feature
-            else spell_plan(request, loader, spell, mechanism, targets)
+            else spell_plan(
+                request,
+                loader,
+                spell,
+                mechanism,
+                targets,
+                composed_speed_rider=creates_speed_effect and bool(snapshot.effect_states),
+            )
         )
         if not isinstance(plan, InvocationPlan):
             return plan
@@ -779,7 +804,7 @@ def _resolve_invocation(
     if creates_speed_effect:
         if payments or ledgers:
             raise RuntimeError("speed effect spell attack attempted an unsupported payment")
-        if not after.effect_states and any(
+        if not after.combat_state.effect_lifecycles and any(
             isinstance(event, EffectApplied) for event in computed.proposed_events
         ):
             return _refuse(

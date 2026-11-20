@@ -24,9 +24,9 @@ from dnd5e_engine.evaluation_speed_effects import (
     speed_effect_support_failure,
     speed_with_effects,
     without_speed_effect,
+    world_walk_bonus,
 )
 from dnd5e_engine.evaluation_state import CharacterStateV2, CombatSnapshot, MovementLedgerState
-from dnd5e_engine.evaluation_timed_spells import attack_world_spell_walk_bonus
 from dnd5e_engine.evaluation_turn import TurnEvaluation, _refuse
 from dnd5e_engine.events import ActorMoved, DashTaken, IntentSubmitted
 from dnd5e_engine.movement import (
@@ -63,10 +63,7 @@ def timed_walk_bonus(snapshot: CombatSnapshot) -> tuple[str, int] | None:
     ):
         raise ValueError("timed walking requires one passive spell and no reaction or effect graph")
     effect = snapshot.effect_states[0]
-    bonus = attack_world_spell_walk_bonus(effect)
-    if not any(change.key == "system.attributes.movement.walk" for change in effect.changes):
-        raise ValueError("timed walking requires a flat walking-speed modifier")
-    return effect.target_id, bonus
+    return effect.target_id, world_walk_bonus(effect)
 
 
 def walk_speed(actor: CharacterStateV2 | Combatant, bonus: int = 0) -> int:

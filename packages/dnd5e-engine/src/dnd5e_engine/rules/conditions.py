@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 from dnd5e_srd_data.schema.condition import ConditionEffect, ConditionEffectKind
 
@@ -19,9 +19,25 @@ from dnd5e_engine.rules.effects import (
 from dnd5e_engine.types.effects import ActiveEffectChange
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from dnd5e_srd_data.schema.condition import Condition as ConditionDefinition
 
     from dnd5e_engine.types.conditions import ActiveCondition, ConditionScope
+
+
+class _ConditionFacts(Protocol):
+    """Read rule-relevant condition fields from fixed or working actor state."""
+
+    @property
+    def condition(self) -> str:
+        """Return the condition name."""
+        ...
+
+    @property
+    def exhaustion_level(self) -> int:
+        """Return the level stored on the condition."""
+        ...
 
 
 class Condition(StrEnum):
@@ -329,8 +345,8 @@ def get_condition_effects(condition: Condition) -> list[str]:
     return CONDITION_EFFECTS.get(condition, [])
 
 
-def active_condition_names(conditions: list[ActiveCondition]) -> list[str]:
-    """Extract string condition names from list[ActiveCondition] for legacy helper compatibility."""
+def active_condition_names(conditions: Sequence[_ConditionFacts]) -> list[str]:
+    """Extract condition names from the supplied live or snapshot records."""
     from dnd5e_engine.types.conditions import (
         ActiveCondition as _ActiveCondition,  # noqa: F401 (runtime import)
     )
@@ -574,7 +590,7 @@ def conditions_grant_advantage_on_attack(
 # ── SRD 5.2 condition predicates and numeric projections (C12) ──────────────
 
 
-def exhaustion_level_of(conditions: list[ActiveCondition]) -> int:
+def exhaustion_level_of(conditions: Sequence[_ConditionFacts]) -> int:
     """The creature's Exhaustion level: the highest ``exhaustion_level`` carried
     by any ``exhaustion`` entry (0 when the condition is absent)."""
     return max(

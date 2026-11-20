@@ -10,12 +10,11 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from fractions import Fraction
-from typing import Literal
+from typing import Literal, Protocol
 
 from dnd5e_srd_data.schema.monster import CreatureSize
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from dnd5e_engine.activities.passive_stats import CombatantMovementModes
 from dnd5e_engine.size import size_rank, two_or_more_sizes_apart
 
 MovementMode = Literal["walk", "crawl", "climb", "swim"]
@@ -200,9 +199,33 @@ def _modified_speed(speed: int, modifiers: Sequence[SpeedModifier]) -> int:
     return speed
 
 
+class _MovementSpeeds(Protocol):
+    """Read distinct movement modes from a fixed snapshot or working combatant."""
+
+    @property
+    def climb(self) -> int | None:
+        """Return the explicit climb speed if present."""
+        ...
+
+    @property
+    def swim(self) -> int | None:
+        """Return the explicit swim speed if present."""
+        ...
+
+    @property
+    def fly(self) -> int | None:
+        """Return the explicit fly speed if present."""
+        ...
+
+    @property
+    def burrow(self) -> int | None:
+        """Return the explicit burrow speed if present."""
+        ...
+
+
 def project_speeds(
     base_speed: int,
-    movement_modes: CombatantMovementModes,
+    movement_modes: _MovementSpeeds,
     *,
     condition_names: Sequence[str] = (),
     exhaustion_level: int = 0,

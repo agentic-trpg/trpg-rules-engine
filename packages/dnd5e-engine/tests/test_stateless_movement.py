@@ -473,3 +473,54 @@ def test_terrain_move_then_explicit_pass_completes_same_lifecycle(monkeypatch):
     after = parity(end, handle, live, result)
     assert after.combat_state.current_turn_index == 1
     assert after.character_states[1].movement_remaining == 30
+
+
+@pytest.mark.parametrize(
+    ("destination", "expected"), [("7,0", "accepted"), ("9,0", "movement.insufficient")]
+)
+def test_flat_timed_spell_extends_ordinary_walk(destination, expected):
+    """A typed 10-foot bonus extends walking without rewriting prior expenditure."""
+    from dnd5e_engine.activities.effects import passive_effect_to_active_effect
+    from dnd5e_engine.evaluation_effects import effect_state
+    from dnd5e_engine.types.effects import ActiveEffectDuration
+
+    request, _, _ = move_case(destination=destination)
+    raw = request.state_snapshot.model_dump(mode="json")
+    raw["snapshot_schema_version"] = "engine-snapshot/20"
+    for actor in raw["character_states"]:
+        actor.pop("spells_known", None)
+        actor.update(weapon_in_hands=None, weapon_grip="none")
+        if actor["entity_id"] == HERO:
+            actor["movement_remaining"] = 35
+    raw["combat_state"]["movement_ledgers"][HERO].update(spent_ft=5, distance_ft=5)
+    spell = get_default_ruleset().get_spell("longstrider")
+    resolved = passive_effect_to_active_effect(
+        spell.passive_effects[0], target_id=HERO, caster_id=HERO
+    )
+    effect = effect_state(
+        resolved.model_copy(update={"duration": ActiveEffectDuration(seconds=3600)})
+    )
+    raw["effect_states"] = [effect.model_dump(mode="json")]
+    request = request.model_copy(
+        update={
+            "schema_version": "engine-evaluation/28",
+            "state_snapshot": CombatSnapshot.model_validate_json(to_json(raw)),
+        }
+    )
+    result = execute(request)
+    if expected == "accepted":
+        assert result.status == "accepted", result.error
+        after = apply_delta(request.state_snapshot, result)
+        assert after.combat_state.actor_zone[HERO] == destination
+        assert after.combat_state.movement_ledgers[HERO].spent_ft == 40
+        assert after.combat_state.movement_ledgers[HERO].distance_ft == 40
+        actor = next(a for a in after.character_states if a.entity_id == HERO)
+        assert actor.movement_remaining == 0
+        assert actor.action_available
+        (event,) = result.proposed_events
+        assert (event.distance_ft, event.movement_cost_ft) == (35, 35)
+        assert not result.rng_transition.state_changed
+    else:
+        assert result.error.code == expected
+        assert not result.proposed_events
+        assert result.state_delta is None

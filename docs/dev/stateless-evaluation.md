@@ -633,11 +633,18 @@ these preconditions and commits without recomputing movement or pathfinding.
 Before RNG restoration/payment, paths that may leave a hostile reaction weapon reach
 return unsupported; Disengage suppresses that trigger. Conservative threat checks can
 refuse blocked-vision paths too. Bound stat-block reaction templates, non-walk modes,
-forced/granted movement, effects, areas, concentration and complex environment remain
+forced/granted movement, unreviewed effects, areas, concentration and complex environment remain
 unsupported. This limited geometry admission does not expand Attack/Item admission.
 Envelope /8 adds the local closed PositionUpdate; binding /14 rejects old evaluators.
 
-Explicit Pass also admits this static wall/terrain geometry, so a bounded terrain Move can end its turn through the same lifecycle. Effects and reactive hooks stay excluded.
+Explicit Pass also admits this static wall/terrain geometry, so a bounded terrain Move can end its turn through the same lifecycle. Its effect and reaction profiles are separate.
+
+A move with snapshot /20 can use one active elapsed-time passive spell with a flat
+walking-speed adjustment, such as Longstrider. The same walking allowance, route cost
+and already-spent feet apply. The host supplies the current derived movement budget
+from the fixed effect and ledger and owns the expiry boundary. The result retains the
+same guarded position, movement ledger, action budget and ActorMoved event. A timed
+walk has uncovered mechanical stages and excludes reactions and other effect graphs.
 
 ## R13 local combat initialization candidate and public ABI block
 

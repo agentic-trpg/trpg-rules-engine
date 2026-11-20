@@ -139,13 +139,16 @@ def step_reactors(
     to_cell: str,
     loader: AssetLoader,
     plan: OpportunityPlan | None,
+    *,
+    grid: GridTopology | None = None,
 ) -> tuple[bool, str | None]:
     """Reject an unrepresented choice; never elect an NPC/player to react."""
     state = snapshot.combat_state
     actors = {a.entity_id: a for a in snapshot.character_states}
     if actors[mover_id].disengaging_this_turn:
         return False, None
-    grid = GridTopology(GridScene.model_validate(snapshot.scene_state.grid.model_dump()))
+    if grid is None:
+        grid = GridTopology(GridScene.model_validate(snapshot.scene_state.grid.model_dump()))
     fires = False
     for owner_id in state.initiative_ids:
         owner = actors[owner_id]

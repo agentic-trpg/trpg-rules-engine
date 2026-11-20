@@ -19,12 +19,83 @@ from dnd5e_engine.evaluation_preflight import template_support_failure
 from dnd5e_engine.evaluation_projection import attack_delta
 from dnd5e_engine.evaluation_rng import RNGTransition
 from dnd5e_engine.evaluation_state import CharacterStateV2, CombatSnapshot, MovementLedgerState
+from dnd5e_engine.evaluation_timed_spells import attack_world_spell_walk_bonus
 from dnd5e_engine.evaluation_turn import TurnEvaluation, _refuse
 from dnd5e_engine.events import ActorMoved, DashTaken, IntentSubmitted
-from dnd5e_engine.movement import can_enter_creature_space, creature_space_is_difficult, step_cost
+from dnd5e_engine.movement import (
+    can_enter_creature_space,
+    creature_space_is_difficult,
+    project_speeds,
+    step_cost,
+)
+from dnd5e_engine.rules.conditions import active_condition_names, exhaustion_level_of
 from dnd5e_engine.spatial import GridTopology
 from dnd5e_engine.specs import GridScene
 from dnd5e_engine.turn_rules import ordinary_action_payment
+from dnd5e_engine.types.combat import Combatant
+
+
+def timed_walk_bonus(snapshot: CombatSnapshot) -> tuple[str, int] | None:
+    """Project the one supported elapsed passive spell over the fixed combat roster.
+
+    A caller admitting walking must reject other effect shapes. The host owns the
+    effect's deadline and includes only live effects in its fixed input.
+    """
+    if not snapshot.effect_states:
+        return None
+    state = snapshot.combat_state
+    if (
+        snapshot.snapshot_schema_version != "engine-snapshot/20"
+        or len(snapshot.effect_states) != 1
+        or state.concentration_chain
+        or state.conditions_by_effect
+        or state.effect_lifecycles
+        or state.pending_reactions
+        or state.active_reaction_responses
+        or state.reaction_effects_pending_expiry
+    ):
+        raise ValueError("timed walking requires one passive spell and no reaction or effect graph")
+    effect = snapshot.effect_states[0]
+    bonus = attack_world_spell_walk_bonus(effect)
+    if not any(change.key == "system.attributes.movement.walk" for change in effect.changes):
+        raise ValueError("timed walking requires a flat walking-speed modifier")
+    return effect.target_id, bonus
+
+
+def walk_speed(actor: CharacterStateV2 | Combatant, bonus: int = 0) -> int:
+    """Project walking speed with the admitted additive bonus and condition locks."""
+    return project_speeds(
+        actor.base_speed + bonus,
+        actor.movement_modes,
+        condition_names=active_condition_names(actor.conditions),
+        exhaustion_level=exhaustion_level_of(actor.conditions),
+    ).walk
+
+
+def _walk_step_cost(
+    grid: GridTopology,
+    occupied: dict[str, CharacterStateV2],
+    allied: set[str],
+    actor: CharacterStateV2 | Combatant,
+    start: str,
+    end: str,
+) -> int | None:
+    """Resolve a single walking edge with terrain and creature occupancy rules."""
+    edge = grid.edge_distance(start, end)
+    if edge is None:
+        return None
+    occupant = occupied.get(end)
+    difficult = False
+    if occupant is not None:
+        friend = occupant.entity_id in allied
+        if not can_enter_creature_space(actor.creature_size, occupant.creature_size, allied=friend):
+            return None
+        difficult = creature_space_is_difficult(occupant.creature_size, allied=friend)
+    return step_cost(
+        grid.cell_size_ft,
+        difficult_terrain=edge > grid.cell_size_ft,
+        creature_space_difficult=difficult,
+    )
 
 
 def evaluate_movement(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEvaluation:
@@ -65,6 +136,14 @@ def evaluate_movement(request: RuleEvaluationRequest, loader: AssetLoader) -> Tu
         return _refuse("unsupported", "movement.template", failure)
     if state.movement_ledgers[actor_id].active_mode != "walk":
         return _refuse("unsupported", "movement.mode", "only an active walking ledger is admitted")
+    timed = None
+    if intent.intent_type == "move":
+        try:
+            timed = timed_walk_bonus(snapshot)
+        except ValueError as error:
+            return _refuse("unsupported", "movement.capability", str(error))
+    bonus = timed[1] if timed is not None and timed[0] == actor_id else 0
+    speed = walk_speed(actor, bonus) if intent.intent_type == "move" else actor.base_speed
     opportunity, failure = opportunity_dependencies(snapshot, loader)
     failure = (
         failure
@@ -74,6 +153,7 @@ def evaluate_movement(request: RuleEvaluationRequest, loader: AssetLoader) -> Tu
             movement=True,
             attack=bool(state.pending_reactions),
             reviewed_reactions=bool(state.pending_reactions),
+            reviewed_world_effects=timed is not None,
             equipped=True,
         )
         or template_support_failure(snapshot, loader)
@@ -83,9 +163,9 @@ def evaluate_movement(request: RuleEvaluationRequest, loader: AssetLoader) -> Tu
     # Explicit occupancy includes every living actor; no hidden map/encounter state.
     grid = GridTopology(GridScene.model_validate(snapshot.scene_state.grid.model_dump()))
     occupied = {
-        state.actor_zone[a.entity_id]: a
-        for a in actors.values()
-        if a.entity_id != actor_id and a.is_alive and a.entity_id not in state.dead_ids
+        state.actor_zone[actor.entity_id]: actor
+        for actor in actors.values()
+        if actor.entity_id != actor_id and actor.is_alive and actor.entity_id not in state.dead_ids
     }
     if len(
         {
@@ -98,14 +178,14 @@ def evaluate_movement(request: RuleEvaluationRequest, loader: AssetLoader) -> Tu
     if any(not grid.is_valid_cell(cell) for cell in state.actor_zone.values()):
         return _refuse("unsupported", "movement.position", "actors require legal unblocked cells")
     ledger = state.movement_ledgers[actor_id]
-    if actor.movement_remaining != ledger.remaining(actor.base_speed):
+    if actor.movement_remaining != ledger.remaining(speed):
         return _refuse("unsupported", "movement.ledger", "walk budget and explicit ledger disagree")
     path: list[str] = []
     if intent.intent_type == "move":
-        planned = _move_plan(snapshot, actor_id, intent, grid, occupied, loader, opportunity)
+        planned = _move_plan(snapshot, actor, intent, grid, occupied, loader, opportunity, speed)
         if isinstance(planned, dict):
             return planned
-        path, _cost, _distance = planned
+        path = planned
     elif intent.intent_type not in {"dash", "disengage"}:
         return _refuse("unsupported", "movement.intent", "unsupported movement action")
     elif not actor.action_available:
@@ -116,7 +196,9 @@ def evaluate_movement(request: RuleEvaluationRequest, loader: AssetLoader) -> Tu
         computation.enable_stages()
     current = computation.actors[actor_id]
     if intent.intent_type == "move":
-        path = _execute_walk(computation, path, grid, occupied, loader, opportunity, actor_id)
+        path = _execute_walk(
+            computation, path, grid, occupied, loader, opportunity, actor_id, bonus
+        )
     else:
         current = current.model_copy(update=ordinary_action_payment(current))
         if intent.intent_type == "dash":
@@ -159,20 +241,20 @@ def evaluate_movement(request: RuleEvaluationRequest, loader: AssetLoader) -> Tu
 
 def _move_plan(
     snapshot: CombatSnapshot,
-    actor_id: str,
+    actor: CharacterStateV2,
     intent: CombatIntentPayload,
     grid: GridTopology,
     occupied: dict[str, CharacterStateV2],
     loader: AssetLoader,
     opportunity: OpportunityPlan | None,
-) -> tuple[list[str], int, int] | TurnEvaluation:
+    speed: int,
+) -> list[str] | TurnEvaluation:
     """Prepare the admitted route and its movement prerequisites."""
     state = snapshot.combat_state
-    actors = {a.entity_id: a for a in snapshot.character_states}
-    actor = actors[actor_id]
+    actor_id = actor.entity_id
     ledger = state.movement_ledgers[actor_id]
     start, destination = state.actor_zone[actor_id], intent.target_zone_id
-    if actor.base_speed <= 0:
+    if speed <= 0:
         return _refuse("rejected", "movement.speed", "Speed is zero")
     if destination is None or destination == start or not grid.is_valid_cell(destination):
         return _refuse("rejected", "movement.destination", "destination must be another legal cell")
@@ -184,36 +266,19 @@ def _move_plan(
 
     def price(a: str, b: str) -> int | None:
         """Compute movement cost for the next candidate step."""
-        edge = grid.edge_distance(a, b)
-        if edge is None:
-            return None
-        occupant = occupied.get(b)
-        difficult = False
-        if occupant is not None:
-            friend = occupant.entity_id in allied
-            if not can_enter_creature_space(
-                actor.creature_size, occupant.creature_size, allied=friend
-            ):
-                return None
-            difficult = creature_space_is_difficult(occupant.creature_size, allied=friend)
-        return step_cost(
-            grid.cell_size_ft,
-            difficult_terrain=edge > grid.cell_size_ft,
-            creature_space_difficult=difficult,
-        )
+        return _walk_step_cost(grid, occupied, allied, actor, a, b)
 
     path = grid.lowest_cost_path(start, destination, step_cost=price)
     if not path:
         return _refuse("rejected", "movement.unreachable", "no legal route")
     cost = sum(price(a, b) or 0 for a, b in pairwise(path))
-    distance = (len(path) - 1) * grid.cell_size_ft
-    if cost > ledger.remaining(actor.base_speed):
+    if cost > ledger.remaining(speed):
         return _refuse("rejected", "movement.insufficient", "route exceeds movement allowance")
     for a, b in pairwise(path):
-        _, failure = step_reactors(snapshot, actor_id, a, b, loader, opportunity)
+        _, failure = step_reactors(snapshot, actor_id, a, b, loader, opportunity, grid=grid)
         if failure:
             return _refuse("unsupported", "movement.opportunity_attack", failure)
-    return path, cost, distance
+    return path
 
 
 def _execute_walk(
@@ -224,6 +289,7 @@ def _execute_walk(
     loader: AssetLoader,
     opportunity: OpportunityPlan | None,
     actor_id: str,
+    bonus: int,
 ) -> list[str]:
     """Execute the validated route in isolated candidate state."""
     completed, run, run_cost = [path[0]], [path[0]], 0
@@ -246,39 +312,32 @@ def _execute_walk(
             run, run_cost = [run[-1]], 0
 
     for a, b in pairwise(path):
-        fires, failure = step_reactors(
-            computation.candidate_state(), actor_id, a, b, loader, opportunity
-        )
-        if failure:
-            raise RuntimeError("preflight omitted a reaction dependency")
-        if fires:
-            flush()
-            assert opportunity is not None
-            resolve_opportunity(computation, opportunity, actor_id)
-            if walk_stopped(computation, computation.actors[actor_id], a):
-                break
+        if opportunity is not None:
+            fires, failure = step_reactors(
+                computation.candidate_state(), actor_id, a, b, loader, opportunity, grid=grid
+            )
+            if failure:
+                raise RuntimeError("preflight omitted a reaction dependency")
+            if fires:
+                flush()
+                resolve_opportunity(computation, opportunity, actor_id)
+                if walk_stopped(computation, computation.actors[actor_id], a):
+                    break
         actor = computation.actors[actor_id]
-        occupant = occupied.get(b)
         allied = (
             computation.state.party_ids
             if actor_id in computation.state.party_ids
             else computation.state.encounter_ids
         )
-        cost = step_cost(
-            grid.cell_size_ft,
-            difficult_terrain=(grid.edge_distance(a, b) or 0) > grid.cell_size_ft,
-            creature_space_difficult=bool(
-                occupant
-                and creature_space_is_difficult(
-                    occupant.creature_size, allied=occupant.entity_id in allied
-                )
-            ),
-        )
+        cost = _walk_step_cost(grid, occupied, allied, actor, a, b)
+        if cost is None:
+            raise RuntimeError("preflight omitted an illegal movement step")
+        speed = walk_speed(actor, bonus)
         ledger = computation.state.movement_ledgers[actor_id].spend(
             cost_ft=cost,
             distance_ft=grid.cell_size_ft,
             mode="walk",
-            effective_speed=computation.speed(actor),
+            effective_speed=speed,
         )
         computation.state = computation.state.model_copy(
             update={
@@ -290,7 +349,7 @@ def _execute_walk(
             }
         )
         computation.actors[actor_id] = actor.model_copy(
-            update={"movement_remaining": ledger.remaining(computation.speed(actor))}
+            update={"movement_remaining": ledger.remaining(speed)}
         )
         computation.sample_stage("movement_step", (actor_id,))
         completed.append(b)

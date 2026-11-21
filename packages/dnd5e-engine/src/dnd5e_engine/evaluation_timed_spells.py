@@ -438,12 +438,13 @@ def exploration_source_failure(
     ):
         return "casting source conflicts with the actor's class and bound casting rules"
     progression = cast(ProgressionValue, str(class_asset.spellcasting.progression))
-    class_slots = (
-        derive_pact_slots(level)
+    # The single Pact slot level is the highest spell level the Warlock can prepare.
+    can_prepare_level = (
+        spell.level <= max(derive_pact_slots(level))
         if progression == "pact"
-        else slots_for_caster_level(effective_caster_level(progression, level))
+        else spell.level in slots_for_caster_level(effective_caster_level(progression, level))
     )
-    if spell.level and spell.level not in class_slots:
+    if spell.level and not can_prepare_level:
         return "the selected class cannot yet prepare spells at this level"
     selection = next((item for item in source.spells if item.spell_id == spell.slug), None)
     if selection is None or (spell.level and selection.prepared_order is None):

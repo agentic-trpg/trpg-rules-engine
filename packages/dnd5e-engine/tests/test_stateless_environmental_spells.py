@@ -26,10 +26,12 @@ from tests.test_stateless_attack import execute
 from tests.test_stateless_timed_spells import spell_wire
 
 
-def _wire(spell_id, *, point=False, slot=None):
+def _wire(spell_id, *, point=False, slot=None, caster_class="wizard"):
     """Supply a known spell, one ordinary slot when needed and fixed scene facts."""
     spell = BundledAssetLoader().get_spell(spell_id)
-    wire, loader = spell_wire(spell)
+    payment_level = slot or spell.level
+    class_level = max(1, 2 * payment_level - 1)
+    wire, loader = spell_wire(spell, caster_class=caster_class, caster_level=class_level)
     wire["schema_version"] = ENVIRONMENTAL_SPELL_SCHEMA_VERSION
     payload = wire["payload"]
     payload.pop("target_id")
@@ -43,9 +45,6 @@ def _wire(spell_id, *, point=False, slot=None):
     snapshot = wire["state_snapshot"]
     actor = snapshot["character_states"][0]
     if spell.level:
-        payment_level = slot or spell.level
-        class_level = 2 * payment_level - 1
-        actor.update(character_level=class_level, classes={"wizard": class_level})
         actor["spell_slots"] = {payment_level: 2}
         snapshot["resource_state"]["pools"][0].update(
             pool_id=f"slots:{payment_level}", level=payment_level
@@ -116,6 +115,42 @@ def test_darkness_prices_one_slot_and_preserves_spatial_lifetime(point):
     assert effect.concentration
     assert not effect.replace_same_caster_on_recast
     assert not result.rng_transition.state_changed
+
+
+def test_darkness_uses_higher_level_pact_slot_for_prepared_warlock_spell():
+    """A level-five Warlock can prepare Darkness and pays its owned level-three slot."""
+    wire, loader = _wire("darkness", point=True, slot=3, caster_class="warlock")
+    snapshot = wire["state_snapshot"]
+    actor = snapshot["character_states"][0]
+    actor.update(spell_slots={}, pact_slots={3: 2})
+    (pool,) = snapshot["resource_state"]["pools"]
+    pool.update(kind="pact_slot", pool_id="pact:3")
+
+    request = _request(wire)
+    result = execute(request, loader)
+
+    assert result.status == "accepted", result.error
+    spend, creation = result.state_delta.operations
+    assert isinstance(spend, ResourceUpdate)
+    assert (spend.expected.kind, spend.expected.level, spend.pool_id) == ("pact_slot", 3, "pact:3")
+    assert (spend.expected.current, spend.value.current) == (2, 1)
+    assert creation.value.slot_level == result.proposed_events[1].slot_level == 3
+    result.verify_request(request)
+
+
+def test_darkness_refuses_underleveled_warlock_source_even_with_ordinary_slot():
+    """A separate class's higher slot cannot raise the Warlock's preparation limit."""
+    wire, loader = _wire("darkness", point=True, slot=3, caster_class="warlock")
+    actor = wire["state_snapshot"]["character_states"][0]
+    actor.update(character_level=7, classes={"warlock": 2, "wizard": 5})
+
+    result = execute(_request(wire), loader)
+
+    assert result.status == "rejected"
+    assert result.error.code == "spell.source"
+    assert result.state_delta is None
+    assert result.proposed_events == ()
+    assert result.rng_transition is None
 
 
 @pytest.mark.parametrize(

@@ -13,15 +13,18 @@ from dnd5e_engine import orchestrator as orch
 from dnd5e_engine.activities.context import DamageInstanceContext
 from dnd5e_engine.activities.effects import bind_effect_lifecycle, passive_effect_to_active_effect
 from dnd5e_engine.evaluation_concentration import (
+    ConcentrationDamageCheckRequest,
     ConcentrationDamagePayload,
     ConcentrationDamageRequest,
     ResolvedDamageInstance,
     evaluate_concentration_candidate,
+    evaluate_concentration_damage_check,
 )
 from dnd5e_engine.evaluation_delta import ConcentrationUpdate, EffectLifecycleUpdate
 from dnd5e_engine.evaluation_rng import RNGState
 from dnd5e_engine.evaluation_ruleset import ruleset_binding
 from dnd5e_engine.evaluation_snapshot import capture_evaluation_snapshot
+from dnd5e_engine.evaluation_state import ConditionRecord
 from dnd5e_engine.events import DamageApplied, EffectApplied
 from dnd5e_engine.lib_loader import scoped_lib_loader
 from dnd5e_engine.specs import GridScene
@@ -106,6 +109,154 @@ def concentration_case(*, seed=0, amount=24, instances=1, npc=False, hp=40, temp
         rng_context=request.rng_context,
     )
     return candidate, handle, live, loader
+
+
+@pytest.mark.parametrize("seed,outcome", [(0, "retained"), (1, "broken")])
+def test_settled_damage_is_one_concentration_check_even_with_temp_hp(monkeypatch, seed, outcome):
+    combat, _, _, loader = concentration_case(seed=seed, amount=25, temp=20)
+    target = next(a for a in combat.state_snapshot.character_states if a.entity_id == HERO)
+    request = ConcentrationDamageCheckRequest(
+        target=target.model_copy(update={"hp_current": 35, "temp_hp": 0}),
+        amount=25,
+        damage_instance_id="mechanism:swinging-blade:packet-1",
+        ruleset_binding=combat.ruleset_binding,
+        rng_context=combat.rng_context,
+    )
+    original = deepcopy(request)
+    result = evaluate_concentration_damage_check(request, loader=loader)
+    assert result.outcome == outcome
+    assert result.check.dc == 12
+    assert result == evaluate_concentration_damage_check(request, loader=loader)
+    assert request == original
+    result.verify_request(request)
+    rng = Random(seed)
+    rng.randint(1, 20)
+    assert result.rng_transition.next_state == RNGState.capture(rng)
+
+    isolate(monkeypatch)
+    combat_result = evaluate_concentration_candidate(combat, loader=loader)
+    assert combat_result.status == "accepted", combat_result.error
+    assert [e for e in combat_result.proposed_events if e.type == "concentration_check"] == [
+        result.check
+    ]
+    assert combat_result.rng_transition == result.rng_transition
+
+    with pytest.raises(ValueError, match="does not match its request"):
+        result.verify_request(request.model_copy(update={"damage_instance_id": "different"}))
+    with pytest.raises(ValueError, match="does not match its request"):
+        result.verify_request(request.model_copy(update={"amount": 24}))
+    with pytest.raises(ValueError, match="evidence contradicts"):
+        result.model_copy(
+            update={"check": result.check.model_copy(update={"dc": 30})}
+        ).verify_request(request)
+    with pytest.raises(ValueError, match="input context"):
+        result.verify_request(
+            request.model_copy(
+                update={"rng_context": request.rng_context.model_copy(update={"version": 99})}
+            )
+        )
+
+
+@pytest.mark.parametrize(
+    "amount,alive,condition,outcome",
+    [
+        (0, True, None, "retained"),
+        (30, False, None, "ended"),
+        (30, True, "incapacitated", "ended"),
+        (30, True, "unconscious", "ended"),
+        (30, True, "exhaustion", "unsupported"),
+    ],
+)
+def test_settled_damage_only_rolls_for_capable_admitted_concentrator(
+    amount, alive, condition, outcome
+):
+    combat, _, _, _ = concentration_case()
+    target = next(a for a in combat.state_snapshot.character_states if a.entity_id == HERO)
+    conditions = (
+        [
+            ConditionRecord(
+                condition=condition,
+                source_entity_id=HERO,
+                scope="session",
+                duration_rounds=None,
+                save_dc=None,
+                applied_round=0,
+                exhaustion_level=1,
+                source_effect_id=None,
+            )
+        ]
+        if condition
+        else []
+    )
+    loader = BundledAssetLoader()
+    request = ConcentrationDamageCheckRequest(
+        target=target.model_copy(
+            update={
+                "is_alive": alive,
+                "hp_current": 0 if not alive or condition == "unconscious" else 10,
+                "conditions": conditions,
+            }
+        ),
+        amount=amount,
+        damage_instance_id="world:packet-2",
+        ruleset_binding=ruleset_binding(loader),
+        rng_context=combat.rng_context,
+    )
+    result = evaluate_concentration_damage_check(request, loader=loader)
+    assert result.outcome == outcome
+    assert result.check is None
+    if outcome == "unsupported":
+        assert result.rng_transition is None
+        assert (
+            result.error.reason == "exhaustion modifiers are outside this fixed-actor save profile"
+        )
+    else:
+        assert result.error is None
+        assert result.rng_transition.next_state == request.rng_context.state
+        assert not result.rng_transition.state_changed
+
+
+def test_settled_damage_accepts_complete_evoker_and_refuses_unreviewed_grants():
+    combat, _, _, _ = concentration_case()
+    target = next(a for a in combat.state_snapshot.character_states if a.entity_id == HERO)
+    loader = BundledAssetLoader()
+    wizard = loader.get_class("wizard")
+    evoker = loader.get_subclass("evoker")
+    grants = tuple(
+        g.slug
+        for g in (*wizard.granted_features, *evoker.granted_features)
+        if g.level <= 5 and g.ref_type == "feature"
+    )
+    request = ConcentrationDamageCheckRequest(
+        target=target.model_copy(
+            update={
+                "character_level": 5,
+                "classes": {"wizard": 5},
+                "subclass_slug": "evoker",
+                "granted_features": grants,
+                "weapon_in_hands": None,
+                "weapon_grip": "none",
+                "held_weapon_instance_id": None,
+                "carried_item_slugs": (),
+                "hp_current": 20,
+            }
+        ),
+        amount=100,
+        damage_instance_id="world:packet-3",
+        ruleset_binding=ruleset_binding(loader),
+        rng_context=combat.rng_context,
+    )
+    result = evaluate_concentration_damage_check(request, loader=loader)
+    assert result.outcome == "broken"
+    assert result.check.dc == 30
+
+    incomplete = request.model_copy(
+        update={"target": request.target.model_copy(update={"granted_features": grants[:-1]})}
+    )
+    refused = evaluate_concentration_damage_check(incomplete, loader=loader)
+    assert refused.outcome == "unsupported"
+    assert refused.check is None
+    assert refused.rng_transition is None
 
 
 def apply_candidate(snapshot, result, *, world_version=None):
@@ -356,13 +507,13 @@ def test_replay_concurrency_stale_commit_and_post_save_rollback(monkeypatch):
         apply_candidate(request.state_snapshot, results[0], world_version=8)
     with pytest.raises(AssertionError):
         apply_candidate(apply_candidate(request.state_snapshot, results[0]), results[0])
-    original = concentration.resolve_snapshot_save
+    original = concentration.roll_snapshot_save
 
     def fail(*args, **kwargs):
         original(*args, **kwargs)
         raise RuntimeError("after save")
 
-    monkeypatch.setattr(concentration, "resolve_snapshot_save", fail)
+    monkeypatch.setattr(concentration, "roll_snapshot_save", fail)
     with pytest.raises(RuntimeError, match="after save"):
         evaluate_concentration_candidate(request, loader=loader)
     assert request == before

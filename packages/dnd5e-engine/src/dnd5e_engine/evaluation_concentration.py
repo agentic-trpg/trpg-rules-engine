@@ -1,8 +1,8 @@
-"""Internal damage/lineage candidate, NOT a public rules.effect or source authority API.
+"""Evaluate concentration consequences of completed damage from fixed inputs.
 
-Actual Attack damage and the internal resolved-damage candidate share the completed
-instance fold for canonical existing Hold Person. No source is created here. C-15/C-16
-remain OPEN; the resolved-damage candidate is not exposed through evaluate or Bridge.
+Combat folds existing supported effect groups through the completed instance hook.
+The separate concentration check returns a decision and RNG evidence to the host, which
+owns the damage source and the full lifecycle and membership of the active group.
 """
 
 import random
@@ -18,7 +18,8 @@ from pydantic import Field
 
 from dnd5e_engine.activities.context import DamageInstanceContext
 from dnd5e_engine.activities.effects import bind_effect_lifecycle, passive_effect_to_active_effect
-from dnd5e_engine.concentration_rules import concentration_anchor
+from dnd5e_engine.activities.save_primitive import SaveRoll
+from dnd5e_engine.concentration_rules import concentration_anchor, roll_damage_concentration
 from dnd5e_engine.damage_rules import concentration_dc
 from dnd5e_engine.effect_lifecycle import (
     EffectIdentity,
@@ -37,7 +38,10 @@ from dnd5e_engine.evaluation_contracts import (
     SavePayload,
 )
 from dnd5e_engine.evaluation_delta import ConcentrationUpdate, EffectLifecycleUpdate, StateDelta
-from dnd5e_engine.evaluation_dependencies import damage_save_identity_failure
+from dnd5e_engine.evaluation_dependencies import (
+    concentration_save_identity_failure,
+    damage_save_identity_failure,
+)
 from dnd5e_engine.evaluation_effects import EffectState, effect_state
 from dnd5e_engine.evaluation_preflight import snapshot_support_failure
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError, attack_delta
@@ -48,7 +52,11 @@ from dnd5e_engine.evaluation_ruleset import (
     get_default_ruleset,
     verify_ruleset,
 )
-from dnd5e_engine.evaluation_saves import resolve_snapshot_save, save_actor_failure
+from dnd5e_engine.evaluation_saves import (
+    roll_snapshot_save,
+    save_actor_failure,
+    save_condition_failure,
+)
 from dnd5e_engine.evaluation_stages import EventStageFacts
 from dnd5e_engine.evaluation_state import CharacterStateV2, CombatSnapshot, CombatState
 from dnd5e_engine.events import (
@@ -64,7 +72,161 @@ from dnd5e_engine.events import (
     EffectExpired,
     EffectExpiryReason,
 )
-from dnd5e_engine.rules.conditions import conditions_break_concentration
+from dnd5e_engine.rules.conditions import Condition, conditions_break_concentration
+
+
+class ConcentrationDamageCheckRequest(EvaluationModel):
+    """Check one completed post-defense damage packet for an active concentrator.
+
+    The host supplies the target's settled condition and HP facts, verifies active group
+    membership and absence of unsupported effect modifiers, and correlates the packet
+    with its damage evidence. Amount includes damage absorbed by temporary HP.
+    """
+
+    target: CharacterStateV2
+    amount: Annotated[int, Field(ge=0)]
+    damage_instance_id: Annotated[str, Field(min_length=1)]
+    ruleset_binding: RulesetBinding
+    rng_context: RNGContext
+
+
+class ConcentrationDamageCheckResult(EvaluationModel):
+    """One uncommitted concentration decision and its optional Constitution-save evidence."""
+
+    target_id: Annotated[str, Field(min_length=1)]
+    damage_instance_id: Annotated[str, Field(min_length=1)]
+    damage_amount: Annotated[int, Field(ge=0)]
+    input_ruleset_binding: RulesetBinding
+    outcome: Literal["retained", "broken", "ended", "unsupported"]
+    check: ConcentrationCheck | None
+    rng_transition: RNGTransition | None
+    error: RuleError | None
+
+    def verify_request(self, request: ConcentrationDamageCheckRequest) -> None:
+        """Verify packet correlation and consistency of the decision, event and RNG fence."""
+        if (
+            self.target_id != request.target.entity_id
+            or self.damage_instance_id != request.damage_instance_id
+            or self.damage_amount != request.amount
+            or self.input_ruleset_binding != request.ruleset_binding
+        ):
+            raise ValueError("concentration check does not match its request")
+        check, transition = self.check, self.rng_transition
+        if self.outcome == "unsupported":
+            if self.error is None or check is not None or transition is not None:
+                raise ValueError("unsupported concentration check carries rule consequences")
+            return
+        if self.error is not None or transition is None:
+            raise ValueError("concentration decision lacks its RNG transition")
+        transition.verify_input(request.rng_context)
+        ended = _ends_concentration(request.target)
+        if not ended and request.target.hp_current <= 0:
+            raise ValueError("concentration decision lacks settled zero-HP lifecycle facts")
+        if ended or request.amount == 0:
+            expected = "ended" if ended else "retained"
+            if self.outcome != expected or check is not None or transition.state_changed:
+                raise ValueError("automatic concentration decision carries inconsistent evidence")
+        elif (
+            check is None
+            or not transition.state_changed
+            or check.target_id != self.target_id
+            or check.dc != concentration_dc(request.amount)
+            or check.natural is None
+            or not 1 <= check.natural <= 20
+            or check.modifier is None
+            or check.roll_total != check.natural + check.modifier
+            or check.succeeded != (check.roll_total >= check.dc)
+            or self.outcome != ("retained" if check.succeeded else "broken")
+        ):
+            raise ValueError("concentration save evidence contradicts the damage decision")
+
+
+def _ends_concentration(target: CharacterStateV2) -> bool:
+    """Return whether settled death or condition facts end concentration without a roll."""
+    return not target.is_alive or conditions_break_concentration(
+        [c.condition for c in target.conditions]
+    )
+
+
+def _snapshot_concentration_check(
+    target: CharacterStateV2, amount: int, rng: random.Random
+) -> ConcentrationCheck:
+    """Use the shared concentration rule with an admitted fixed-actor save profile."""
+
+    def constitution_save(dc: int) -> SaveRoll:
+        """Roll the target's Constitution save without cover, magic or explicit flags."""
+        return roll_snapshot_save(
+            target,
+            SavePayload(
+                kind="rules.save",
+                target_id=target.entity_id,
+                ability="con",
+                dc=dc,
+                advantage=(),
+                disadvantage=(),
+                is_magical=False,
+            ),
+            rng,
+        )
+
+    check, _ = roll_damage_concentration(target.entity_id, amount, constitution_save)
+    return check
+
+
+def evaluate_concentration_damage_check(
+    request: ConcentrationDamageCheckRequest, *, loader: AssetLoader
+) -> ConcentrationDamageCheckResult:
+    """Return an uncommitted check or automatic decision for a settled damage packet.
+
+    Invalid typed input and rule bindings raise. Unsupported save dependencies carry an
+    error and no RNG or rules evidence. An active group and its removal belong to the host.
+    """
+    request = ConcentrationDamageCheckRequest.model_validate(deepcopy(request))
+    verify_ruleset(request.ruleset_binding, loader)
+    target = request.target
+    ended = _ends_concentration(target)
+    failure = None
+    if target.is_alive:
+        if ended:
+            failure = save_condition_failure(target, loader, include_implied=True)
+        elif target.hp_current <= 0:
+            failure = "target lacks settled zero-HP lifecycle facts"
+        elif request.amount == 0:
+            failure = save_condition_failure(target, loader, include_implied=True)
+        elif target.weapon_mastery_slugs or target.fighting_styles:
+            failure = "unreviewed fighting style or weapon mastery dependencies"
+        elif any(c.condition == Condition.EXHAUSTION for c in target.conditions):
+            failure = "exhaustion modifiers are outside this fixed-actor save profile"
+        else:
+            failure = concentration_save_identity_failure(target, loader) or save_actor_failure(
+                target,
+                loader,
+                reviewed_identity=True,
+                reviewed_concentration=True,
+                include_implied_conditions=True,
+            )
+    error = RuleError(code="concentration.dependencies", reason=failure) if failure else None
+    check = None
+    transition = None
+    outcome: Literal["retained", "broken", "ended", "unsupported"] = "unsupported"
+    if error is None:
+        rng = request.rng_context.state.restore()
+        if not ended and request.amount:
+            check = _snapshot_concentration_check(target, request.amount, rng)
+        transition = RNGTransition.between(request.rng_context, rng)
+        outcome = "ended" if ended else "broken" if check and not check.succeeded else "retained"
+    result = ConcentrationDamageCheckResult(
+        target_id=target.entity_id,
+        damage_instance_id=request.damage_instance_id,
+        damage_amount=request.amount,
+        input_ruleset_binding=request.ruleset_binding,
+        outcome=outcome,
+        check=check,
+        rng_transition=transition,
+        error=error,
+    )
+    result.verify_request(request)
+    return result
 
 
 class ResolvedDamageInstance(EvaluationModel):
@@ -333,21 +495,13 @@ class ConcentrationComputation(CombatComputation):
             original = next(
                 a for a in self.snapshot.character_states if a.entity_id == damage.target_id
             )
-            save = resolve_snapshot_save(
+            check = _snapshot_concentration_check(
                 actor_state(self.actors[damage.target_id], original),
-                SavePayload(
-                    kind="rules.save",
-                    target_id=damage.target_id,
-                    ability="con",
-                    dc=concentration_dc(damage.amount),
-                    advantage=(),
-                    disadvantage=(),
-                    is_magical=False,
-                ),
+                damage.amount,
                 self.rng,
             )
-            self.events.append(ConcentrationCheck(**save.model_dump(exclude={"type", "ability"})))
-            if not save.succeeded:
+            self.events.append(check)
+            if not check.succeeded:
                 self.drop(damage.target_id)
         super().damage_completed(damage)
 

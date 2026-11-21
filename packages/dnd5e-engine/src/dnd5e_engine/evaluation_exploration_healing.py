@@ -15,6 +15,7 @@ from dnd5e_engine.evaluation_equipment_dependencies import reviewed_healing_poti
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError
 from dnd5e_engine.evaluation_rng import RNGTransition
 from dnd5e_engine.evaluation_ruleset import get_default_ruleset
+from dnd5e_engine.evaluation_speed_effects import world_walk_bonus
 from dnd5e_engine.evaluation_spells import ordinary_spell_mechanism, spell_event
 from dnd5e_engine.evaluation_state import CharacterStateV2, NonCombatSnapshot
 from dnd5e_engine.evaluation_turn import TurnEvaluation, _refuse
@@ -51,6 +52,21 @@ def exploration_healing_hp_delta(target: CharacterStateV2, amount: int) -> tuple
     )
 
 
+def _has_unreviewed_healing_dependencies(snapshot: NonCombatSnapshot) -> bool:
+    """Check the fixed heal actors for effects outside the reviewed passive walk profile."""
+    if any(actor.trait_mechanics for actor in snapshot.character_states):
+        return True
+    for effect in snapshot.effect_states:
+        if effect.disabled:
+            continue
+        try:
+            # The same complete shape checked for walking has no healing or action hook.
+            world_walk_bonus(effect)
+        except ValueError:
+            return True
+    return False
+
+
 def evaluate_exploration_healing(
     request: RuleEvaluationRequest,
     spell: Spell,
@@ -70,9 +86,7 @@ def evaluate_exploration_healing(
     assert isinstance(payload, ExplorationSpellCastPayload)
     if target.hp_current <= 0:
         return _refuse("rejected", "target_invalid", "healing requires a living positive-HP target")
-    if any(creature.trait_mechanics for creature in snapshot.character_states) or any(
-        not effect.disabled for effect in snapshot.effect_states
-    ):
+    if _has_unreviewed_healing_dependencies(snapshot):
         return _refuse("unsupported", "healing.dependencies", "unreviewed healing trait or effect")
     canonical = get_default_ruleset()
     potion_owners = reviewed_healing_potion_owners(snapshot, loader, canonical)

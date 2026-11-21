@@ -129,9 +129,11 @@ def is_bound_attack_speed_effect(effect: EffectState, loader: AssetLoader) -> bo
 
 def world_walk_bonus(effect: EffectState) -> int:
     """Read an admitted elapsed passive effect's flat walking-speed change."""
-    from dnd5e_engine.evaluation_timed_spells import attack_world_spell_walk_bonus
+    from dnd5e_engine.evaluation_timed_spells import attack_world_spell_modifiers
 
-    bonus = attack_world_spell_walk_bonus(effect)
+    bonus, armor_floor = attack_world_spell_modifiers(effect)
+    if armor_floor is not None:
+        raise ValueError("timed walking cannot compose an Armor Class floor")
     if not any(change.key == "system.attributes.movement.walk" for change in effect.changes):
         raise ValueError("timed walking requires a flat walking-speed modifier")
     return bonus

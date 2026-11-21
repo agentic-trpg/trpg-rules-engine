@@ -79,6 +79,7 @@ class ActiveEffectChange(BaseModel):
       condition.immunity     — override-mode string condition slug; consumers
                                 union scopes with static condition immunities
       ac.bonus, ac.override   — AC modifications
+      ac.min                   — upgrade-mode integer floor on final Armor Class
       speed.override         — scalar zero-speed override from condition
                                 projection, consumed by project_speed()
       speed.multiplier       — multiply-mode positive scalar on effective Speed

@@ -13,6 +13,11 @@ from dnd5e_engine.activities.context import AttackHitContext
 from dnd5e_engine.activities.effects import passive_effect_to_active_effect
 from dnd5e_engine.events import ProvisionalAttackEvidence
 from dnd5e_engine.reactions import ActiveReactionResponse
+from dnd5e_engine.rules.armor_class import (
+    ARMOR_CLASS_FLOOR_KEYS,
+    apply_armor_class_floor,
+    armor_class_floor_value,
+)
 from dnd5e_engine.types.effects import ActiveEffect, ActiveEffectChange
 
 
@@ -45,6 +50,25 @@ def scalar_ac_change_delta(before: Counter[str], after: Counter[str]) -> int:
         scalar(parse_expression(value, allow_dice=False)) * count
         for value, count in (before - after).items()
     )
+
+
+def effective_armor_class(ordinary_ac: int, effects: Sequence[HasACChanges]) -> int:
+    """Fold the applicable scalar bonuses, then enforce the greatest Armor Class floor.
+
+    Ordinary AC includes equipment and any contextual modifiers. The caller supplies
+    the effective, enabled effects for exactly one actor.
+    """
+    bonus = scalar_ac_change_delta(Counter(), effect_ac_changes(effects))
+    floor = max(
+        (
+            armor_class_floor_value(change)
+            for effect in effects
+            for change in effect.changes
+            if change.key in ARMOR_CLASS_FLOOR_KEYS
+        ),
+        default=None,
+    )
+    return apply_armor_class_floor(ordinary_ac + bonus, floor)
 
 
 def provisional_attack_evidence(

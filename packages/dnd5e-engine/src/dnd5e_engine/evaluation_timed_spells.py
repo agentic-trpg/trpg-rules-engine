@@ -16,7 +16,7 @@ from dnd5e_srd_data.schema.common import (
     UtilityActivity,
     VisibilityBlock,
 )
-from dnd5e_srd_data.schema.spell import Spell, SpellDurationUnits, SpellRangeUnits
+from dnd5e_srd_data.schema.spell import CastingTimeUnit, Spell, SpellDurationUnits, SpellRangeUnits
 
 from dnd5e_engine.activities.check_pipeline import validate_check_effect_change
 from dnd5e_engine.activities.effects import passive_effect_to_active_effect
@@ -42,6 +42,7 @@ from dnd5e_engine.evaluation_state import CharacterStateV2, NonCombatSnapshot
 from dnd5e_engine.evaluation_turn import TurnEvaluation, _refuse
 from dnd5e_engine.evaluation_world_effect import EffectExpiryPolicy, WorldEffectApplication
 from dnd5e_engine.events import EffectApplied, IntentSubmitted, SpellCast
+from dnd5e_engine.rules.armor_class import ARMOR_CLASS_FLOOR_KEYS, armor_class_floor_value
 from dnd5e_engine.rules.conditions import conditions_block_actions
 from dnd5e_engine.spatial import GridTopology, canonical_cell_id
 from dnd5e_engine.specs import GridScene
@@ -77,15 +78,17 @@ def _flat_skill_bonus(change: ActiveEffectChange) -> bool:
 
 
 def _validate_passive_changes(passive: PassiveEffect, active: ActiveEffect) -> None:
-    """Require concrete movement, sense or flat additive skill-check modifiers."""
+    """Validate each elapsed utility modifier before proposing payment."""
     stat_changes = []
     for source, change in zip(passive.changes, active.changes, strict=True):
         if "@" in source.value:
             raise ValueError("timed spell modifiers require concrete values")
         if source.key.startswith(("system.attributes.movement.", "system.attributes.senses.")):
             stat_changes.append(source)
+        elif change.key in ARMOR_CLASS_FLOOR_KEYS:
+            armor_class_floor_value(change)
         elif not _flat_skill_bonus(change):
-            raise ValueError("requires movement, sense or flat additive skill-check modifiers")
+            raise ValueError("unsupported timed spell modifier")
     if (
         stat_changes
         and interpret_passive_stats(
@@ -104,7 +107,7 @@ def _passive_profile(
         spell.review.requires_user_decision
         or spell.concentration
         or spell.ritual
-        or spell.casting_time.unit != "action"
+        or spell.casting_time.unit not in (CastingTimeUnit.ACTION, CastingTimeUnit.BONUS)
         or spell.casting_time.value != 1
         or spell.casting_time.condition
         or spell.range.units not in (SpellRangeUnits.TOUCH, SpellRangeUnits.SELF)
@@ -130,7 +133,7 @@ def _passive_profile(
     template = target.template
     activation = activity.activation
     if (
-        activation.type not in ("", "action")
+        activation.type not in ("", "action", spell.casting_time.unit)
         or activation.value not in (None, 1)
         or activation.condition
         or activation.override
@@ -190,8 +193,8 @@ def _passive_profile(
     return activity, active.model_copy(update={"duration": ActiveEffectDuration(seconds=seconds)})
 
 
-def attack_world_spell_walk_bonus(effect: EffectState) -> int:
-    """Validate the resolved world spell shape and return its attack-relevant walk bonus.
+def attack_world_spell_modifiers(effect: EffectState) -> tuple[int, int | None]:
+    """Verify the elapsed spell shape and return its walking bonus and Armor Class floor.
 
     The fixed effect carries the resolved cast data. Its origin names the application,
     while its host owns the world deadline. Unreviewed modifiers or lifecycle fields
@@ -227,6 +230,7 @@ def attack_world_spell_walk_bonus(effect: EffectState) -> int:
     ):
         raise ValueError("attack requires an enabled elapsed-time passive spell effect")
     walk = []
+    floors = []
     for change in effect.changes:
         if (
             change.key == "system.attributes.movement.walk"
@@ -234,12 +238,14 @@ def attack_world_spell_walk_bonus(effect: EffectState) -> int:
             and isinstance(change.value, str)
         ):
             walk.append(PassiveEffectChange(key=change.key, mode=2, value=change.value))
+        elif change.key in ARMOR_CLASS_FLOOR_KEYS:
+            floors.append(armor_class_floor_value(change))
         elif not _flat_skill_bonus(change):
             raise ValueError("world spell may affect unreviewed attack dependencies")
     stats = interpret_passive_stats(changes=walk, trait_grants=(), species_senses=None)
     if stats.skipped_keys:
         raise ValueError("world spell requires a flat walking-speed bonus")
-    return stats.walk_speed_bonus
+    return stats.walk_speed_bonus, max(floors, default=None)
 
 
 def exploration_source_failure(
@@ -345,7 +351,7 @@ def evaluate_exploration_spell(
     """Admit one exploration cast and propose its slot and mechanical changes.
 
     A reviewed touch heal resolves immediately. The timed branch supports
-    movement, senses and flat additive skill bonuses with unchanged RNG.
+    movement, senses, Armor Class floors and flat skill bonuses with unchanged RNG.
     A willing-creature profile requires self-targeting or verified willingness.
     A distinct target with unknown willingness yields a choice before payment.
     The host owns persistence, elapsed time and expiry.

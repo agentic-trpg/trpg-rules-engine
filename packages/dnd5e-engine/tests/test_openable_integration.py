@@ -81,7 +81,7 @@ def test_complete_result_transport_replay_and_ordinary_pipeline_parity(operation
     result = execute(spec, fixed)
     assert result.status == "accepted"
     assert result.schema_version == "engine-evaluation/24"
-    assert result.input_ruleset_binding.evaluator_version == "dnd5e-evaluation/56"
+    assert result.input_ruleset_binding.evaluator_version == "dnd5e-evaluation/57"
     assert result.state_delta.expected_world_version == req.state_snapshot.world_version
     assert result.state_delta.operations == ()
     assert [(r.kind, r.ref, r.version) for r in result.read_set] == [

@@ -199,6 +199,15 @@ target IDs. The result carries no mechanical changes, events or RNG
 transition. Canonical Darkvision uses one 2nd-level slot and gives 150 feet
 of Darkvision for eight hours, per [SRD 5.2.1, p. 122](https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf#page=122).
 
+Evaluator binding `dnd5e-evaluation/57` admits a single bonus-action utility
+cast with the reviewed timed spell shape. Canonical Barkskin waits for a
+distinct willing target and proposes a one-hour, nonconcentration AC floor of
+17. Apply the floor after ordinary AC modifiers, including cover where the
+attack supports it, as clarified by [2024 Sage Advice](https://www.dndbeyond.com/sources/dnd/sae/sage-advice-compendium#SAC-Spells-Barkskin1).
+The scoped character reader and admitted ordinary attack use the same floor
+rule. The ordinary attack profile admits one elapsed spell without Shield or
+another effect graph. The host still owns elapsed-time removal.
+
 Successful casts propose a guarded `ResourceUpdate` and `WorldEffectCreate`
 with a positive relative duration in seconds and terminal removal. Longstrider
 exercises this typed profile. The host computes the deadline from its current

@@ -216,6 +216,7 @@ def build_activity_context(
     check_states: dict[str, CheckActorState] | None = None,
     check_request: CheckRequest | None = None,
     target_cover: dict[str, str] | None = None,
+    target_ac_floor: dict[str, int] | None = None,
     target_distance_ft: dict[str, int] | None = None,
     attacker_grappler_id: str | None = None,
     d20_test_penalty: dict[str, int] | None = None,
@@ -521,6 +522,7 @@ def build_activity_context(
         passive_save_auto_fail=passive_save_auto_fail,
         passive_ac_bonus=passive_ac_bonus,
         target_cover=target_cover or {},
+        target_ac_floor=target_ac_floor or {},
         # C16b — SRD 5.2 "Unseen Attackers and Targets": the two PRE-RESOLVED
         # per-target visibility maps, computed by the orchestrator
         # (``_target_visibility_maps``, spatial-seam access there). This pure

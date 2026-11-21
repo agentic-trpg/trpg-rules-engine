@@ -92,6 +92,7 @@ from dnd5e_engine.events import (
     CombatEvent,
     DamageApplied,
 )
+from dnd5e_engine.rules.armor_class import apply_armor_class_floor
 from dnd5e_engine.rules.conditions import (
     active_condition_names,
     conditions_auto_crit_within_5ft,
@@ -216,11 +217,7 @@ def resolve_attack(
         # attack" a pre-armed reaction can land an AC-bonus active
         # effect on the target between the trigger and this comparison; the
         # natural roll itself is never touched, only this comparison.
-        effective_ac = (
-            target.ac
-            + cover_bonus(ctx.target_cover.get(target.entity_id, "none"))
-            + ctx.passive_ac_bonus.get(target.entity_id, 0)
-        )
+        effective_ac = _target_effective_ac(ctx, target)
         auto_crit = conditions_auto_crit_within_5ft(
             ctx.target_conditions.get(target.entity_id, []), distance_ft=distance_ft
         )
@@ -382,11 +379,7 @@ def _resolve_cleave_chain(
     total = roll.total
     if attack_bonus_expr:
         total += roll_expr(attack_bonus_expr, ctx.rng)
-    effective_ac = (
-        candidate.ac
-        + cover_bonus(ctx.target_cover.get(cid, "none"))
-        + ctx.passive_ac_bonus.get(cid, 0)
-    )
+    effective_ac = _target_effective_ac(ctx, candidate)
     auto_crit = conditions_auto_crit_within_5ft(candidate_conditions, distance_ft=distance_ft)
     is_crit, is_hit = _resolve_hit_outcome(
         roll.kept, total, effective_ac, activity, auto_crit_on_hit=auto_crit
@@ -491,6 +484,17 @@ def _attack_origin(ctx: ActivityResolutionContext) -> AttackOrigin:
         if ctx.is_opportunity_attack and ctx.attack_origin == "default"
         else ctx.attack_origin
     )
+
+
+def _target_effective_ac(ctx: ActivityResolutionContext, target: Combatant) -> int:
+    """Resolve the target's final Armor Class after ordinary attack-specific modifiers."""
+    target_id = target.entity_id
+    ordinary_ac = (
+        target.ac
+        + cover_bonus(ctx.target_cover.get(target_id, "none"))
+        + ctx.passive_ac_bonus.get(target_id, 0)
+    )
+    return apply_armor_class_floor(ordinary_ac, ctx.target_ac_floor.get(target_id))
 
 
 def _adjudicate_hit_reaction(

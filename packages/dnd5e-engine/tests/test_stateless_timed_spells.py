@@ -8,6 +8,7 @@ from dnd5e_srd_data.schema.spell import Spell
 
 from dnd5e_engine.evaluation_contracts import (
     SCHEMA_VERSION,
+    CombatIntentPayload,
     RuleEvaluationRequest,
     RuleEvaluationResult,
     SpellWillingnessChoice,
@@ -15,15 +16,23 @@ from dnd5e_engine.evaluation_contracts import (
 from dnd5e_engine.evaluation_delta import ResourceUpdate, WorldEffectCreate
 from dnd5e_engine.evaluation_effects import effect_state
 from dnd5e_engine.evaluation_ruleset import freeze_ruleset, ruleset_binding
-from dnd5e_engine.events import EffectApplied, IntentSubmitted, SpellCast
-from tests.evaluation_support import FOE, HERO
+from dnd5e_engine.evaluation_speed_effects import world_walk_bonus
+from dnd5e_engine.events import AttackRolled, EffectApplied, IntentSubmitted, SpellCast
+from dnd5e_engine.reaction_effect_rules import effective_armor_class
+from tests.evaluation_support import FOE, HERO, WEAPON
 from tests.test_stateless_attack import execute, request_and_live
 
 _POUCH = "inventory:component-pouch"
 
 
-def spell_wire(spell: Spell, *, target_id: str = FOE):
-    """Build fixed /20 exploration facts for one Wizard and one locally placed target."""
+def spell_wire(
+    spell: Spell, *, target_id: str = FOE, caster_class: str = "wizard", caster_level: int = 1
+):
+    """Build fixed /20 exploration facts for one prepared caster and a local target."""
+    canonical = BundledAssetLoader()
+    class_asset = canonical.get_class(caster_class)
+    ability = class_asset.spellcasting.ability
+    source_id = f"class:{caster_class}"
     combat, _, _ = request_and_live()
     wire = json.loads(combat.model_dump_json())
     wire.update(
@@ -32,7 +41,7 @@ def spell_wire(spell: Spell, *, target_id: str = FOE):
         payload={
             "kind": "world.cast_spell",
             "spell_id": spell.slug,
-            "spell_source_id": "class:wizard",
+            "spell_source_id": source_id,
             "slot_level": spell.level,
             "target_id": target_id,
         },
@@ -55,10 +64,10 @@ def spell_wire(spell: Spell, *, target_id: str = FOE):
             pact_slots={},
         )
     caster.update(
-        class_slug="wizard",
-        classes={"wizard": 1},
-        character_level=1,
-        spellcasting_ability="int",
+        class_slug=caster_class,
+        classes={caster_class: caster_level},
+        character_level=caster_level,
+        spellcasting_ability=ability,
         spell_slots={spell.level: 2},
         carried_item_slugs=["component-pouch"],
     )
@@ -81,9 +90,9 @@ def spell_wire(spell: Spell, *, target_id: str = FOE):
                 "verbal_available": True,
                 "sources": [
                     {
-                        "source_id": "class:wizard",
-                        "class_slug": "wizard",
-                        "ability": "int",
+                        "source_id": source_id,
+                        "class_slug": caster_class,
+                        "ability": ability,
                         "spells": [
                             {
                                 "spell_id": spell.slug,
@@ -108,12 +117,11 @@ def spell_wire(spell: Spell, *, target_id: str = FOE):
             }
         ]
     }
-    canonical = BundledAssetLoader()
     loader = freeze_ruleset(
         MemoryAssetLoader(
             items=[canonical.get_item("component-pouch")],
             spells=[spell],
-            classes=[canonical.get_class("wizard")],
+            classes=[class_asset],
         )
     )
     wire["ruleset_binding"] = ruleset_binding(loader).model_dump(mode="json")
@@ -231,6 +239,137 @@ def test_canonical_darkvision_requires_willing_target(target_id, verified, monke
     result.rng_transition.verify_input(request.rng_context)
     assert result.rng_transition.next_state == request.rng_context.state
     assert not result.rng_transition.state_changed
+
+
+def _barkskin_wire():
+    """Use the actual Druid and original canonical bonus-action spell."""
+    spell = BundledAssetLoader().get_spell("barkskin")
+    return spell_wire(spell, caster_class="druid", caster_level=3)
+
+
+def test_canonical_barkskin_waits_then_proposes_one_paid_armor_floor(monkeypatch) -> None:
+    """Admit the canonical touch spell while retaining the pre-payment consent seam."""
+    wire, loader = _barkskin_wire()
+    request = RuleEvaluationRequest.model_validate_json(json.dumps(wire))
+    with monkeypatch.context() as waiting:
+        waiting.setattr(
+            "dnd5e_engine.evaluation_timed_spells.spell_payment",
+            lambda *_: pytest.fail("payment evaluated without verified willingness"),
+        )
+        pending = execute(request, loader)
+    assert pending.status == "needs_choice"
+    assert pending.choice == SpellWillingnessChoice(
+        kind="spell.target_willingness", actor_id=HERO, target_id=FOE
+    )
+    assert pending.state_delta is None
+    assert pending.rng_transition is None
+    assert pending.proposed_events == ()
+
+    wire["spell_positions"]["willing_target_id"] = FOE
+    request = RuleEvaluationRequest.model_validate_json(json.dumps(wire))
+    result = execute(request, loader)
+    assert result.status == "accepted", result.error
+    payment, creation = result.state_delta.operations
+    assert isinstance(payment, ResourceUpdate)
+    assert (payment.pool_id, payment.amount, payment.expected.current, payment.value.current) == (
+        "slots:2",
+        -1,
+        2,
+        1,
+    )
+    assert isinstance(creation, WorldEffectCreate)
+    assert creation.value.identity == (FOE, "effect:bark-like_skin", f"cast:bark-like_skin:{HERO}")
+    assert creation.value.duration_seconds == 3600
+    assert creation.value.expiry.action == "remove"
+    (change,) = creation.value.effect.changes
+    assert (change.key, change.mode, change.value) == ("system.attributes.ac.min", "upgrade", "17")
+    _, cast, applied = result.proposed_events
+    assert isinstance(cast, SpellCast)
+    assert (cast.spell_id, cast.slot_level) == ("barkskin", 2)
+    assert isinstance(applied, EffectApplied)
+    assert effect_state(applied.effect) == creation.value.effect
+    result.verify_request(request)
+    assert not result.rng_transition.state_changed
+
+    # Ordinary AC already includes the +2 from Half Cover in the last example.
+    assert effective_armor_class(14, (creation.value.effect,)) == 17
+    assert effective_armor_class(19, (creation.value.effect,)) == 19
+    assert effective_armor_class(16 + 2, (creation.value.effect,)) == 18
+    assert effective_armor_class(14, ()) == 14
+    bonus = creation.value.effect.model_copy(
+        update={
+            "changes": [change.model_copy(update={"key": "ac.bonus", "mode": "add", "value": "+2"})]
+        }
+    )
+    assert effective_armor_class(16, (creation.value.effect, bonus)) == 18
+    assert effective_armor_class(13, (creation.value.effect, bonus)) == 17
+
+
+def test_canonical_barkskin_changes_ordinary_attack_outcome() -> None:
+    """Apply the emitted effect in the normal attack evaluator without changing base AC."""
+    cast_wire, loader = _barkskin_wire()
+    cast_wire["spell_positions"]["willing_target_id"] = FOE
+    cast = execute(RuleEvaluationRequest.model_validate_json(json.dumps(cast_wire)), loader)
+    assert cast.status == "accepted", cast.error
+    creation = cast.state_delta.operations[1]
+    assert isinstance(creation, WorldEffectCreate)
+
+    combat, _, live = request_and_live(seed=7, ac=14)
+    wire = combat.model_dump(mode="json")
+    wire["schema_version"] = "engine-evaluation/28"
+    snapshot = wire["state_snapshot"]
+    snapshot["snapshot_schema_version"] = "engine-snapshot/20"
+    caster, target = snapshot["character_states"]
+    caster.pop("spells_known")
+    target.pop("spells_known")
+    caster["held_weapon_instance_id"] = "weapon:held"
+    snapshot["inventory_state"]["entries"] = [
+        {
+            "instance_id": "weapon:held",
+            "owner_id": HERO,
+            "item_slug": WEAPON,
+            "quantity": 1,
+            "charges_remaining_per_unit": 0,
+            "accessible": True,
+        }
+    ]
+    wire["payload"] = CombatIntentPayload(
+        intent_type="attack", weapon_instance_id="weapon:held", target_id=FOE
+    ).model_dump(mode="json")
+    original = execute(
+        RuleEvaluationRequest.model_validate_json(json.dumps(wire)), live.ruleset_loader
+    )
+    assert original.status == "accepted", original.error
+    snapshot["effect_states"] = [creation.value.effect.model_dump(mode="json")]
+    protected = execute(
+        RuleEvaluationRequest.model_validate_json(json.dumps(wire)), live.ruleset_loader
+    )
+    assert protected.status == "accepted", protected.error
+    baseline_roll = next(
+        event for event in original.proposed_events if isinstance(event, AttackRolled)
+    )
+    protected_roll = next(
+        event for event in protected.proposed_events if isinstance(event, AttackRolled)
+    )
+    assert baseline_roll.roll_total == protected_roll.roll_total == 16
+    assert baseline_roll.is_hit
+    assert not protected_roll.is_hit
+    assert target["ac"] == 14
+
+
+def test_timed_walk_profile_keeps_armor_floor_outside_its_dependencies() -> None:
+    """Reject a combined floor when the speed profile has no Armor Class consumer."""
+    data = _longstrider().model_dump(mode="json")
+    data["passive_effects"][0]["changes"].append(
+        {"key": "system.attributes.ac.min", "mode": 4, "value": "17"}
+    )
+    wire, loader = spell_wire(Spell.model_validate(data), target_id=HERO)
+    cast = execute(RuleEvaluationRequest.model_validate_json(json.dumps(wire)), loader)
+    assert cast.status == "accepted", cast.error
+    creation = cast.state_delta.operations[1]
+    assert isinstance(creation, WorldEffectCreate)
+    with pytest.raises(ValueError, match="timed walking cannot compose an Armor Class floor"):
+        world_walk_bonus(creation.value.effect)
 
 
 @pytest.mark.parametrize(

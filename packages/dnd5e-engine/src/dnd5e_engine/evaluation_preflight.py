@@ -53,6 +53,7 @@ class AttackPlan:
     distance_ft: int | None
     effect_profile: _AttackProfile
     target_walk_bonus: int
+    target_ac_floor: int | None = None
 
 
 def refused(status: Literal["rejected", "unsupported"], code: str, reason: str) -> AttackAdmission:
@@ -494,14 +495,15 @@ def _attack_dependencies(
     snapshot: CombatSnapshot,
     intent: CombatIntentPayload,
     loader: AssetLoader,
-) -> tuple[_AttackProfile, int, str | None]:
-    """Validate an attack profile and return the target's admitted walking modifier, if any."""
+) -> tuple[_AttackProfile, int, int | None, str | None]:
+    """Validate an attack profile and project its target's admitted elapsed modifiers."""
     from dnd5e_engine.evaluation_class_dependencies import operation_dependencies
     from dnd5e_engine.evaluation_shield import has_shield, shield_support_failure
 
     state = snapshot.combat_state
     current_snapshot = snapshot.snapshot_schema_version == "engine-snapshot/20"
     target_walk_bonus = 0
+    target_ac_floor = None
     reviewed_world_effects = False
     if (
         current_snapshot
@@ -510,18 +512,19 @@ def _attack_dependencies(
         and not state.concentration_chain
     ):
         # Elapsed-time effects can share a display-derived identity with Shield.
-        from dnd5e_engine.evaluation_timed_spells import attack_world_spell_walk_bonus
+        from dnd5e_engine.evaluation_timed_spells import attack_world_spell_modifiers
 
         effect = snapshot.effect_states[0]
         try:
-            walk_bonus = attack_world_spell_walk_bonus(effect)
+            walk_bonus, ac_floor = attack_world_spell_modifiers(effect)
         except ValueError as error:
-            return "ordinary", 0, str(error)
+            return "ordinary", 0, None, str(error)
         reviewed_world_effects = True
         if effect.target_id == intent.target_id:
             target_walk_bonus = walk_bonus
+            target_ac_floor = ac_floor
     elif has_shield(snapshot):
-        return "shield", 0, shield_support_failure(snapshot, loader)
+        return "shield", 0, None, shield_support_failure(snapshot, loader)
     elif snapshot.effect_states or state.concentration_chain:
         from dnd5e_engine.evaluation_concentration import concentration_support_failure
 
@@ -542,10 +545,11 @@ def _attack_dependencies(
             loader,
             composed=True,
         )
-        return profile, 0, support
+        return profile, 0, None, support
     return (
         "ordinary",
         target_walk_bonus,
+        target_ac_floor,
         operation_dependencies(
             snapshot,
             loader,
@@ -566,7 +570,9 @@ def prepare_attack(
     common_weapons: bool = False,
 ) -> AttackAdmission:
     """Prepare attack qualification, target, payment and resolution inputs before RNG use."""
-    profile, target_walk_bonus, support = _attack_dependencies(snapshot, intent, loader)
+    profile, target_walk_bonus, target_ac_floor, support = _attack_dependencies(
+        snapshot, intent, loader
+    )
     if support:
         return refused("unsupported", "snapshot.capability", support)
     support = template_support_failure(snapshot, loader)
@@ -684,5 +690,7 @@ def prepare_attack(
         return refused("rejected", "out_of_range", "target is beyond the attack reach or range")
     return AttackAdmission(
         status="accepted",
-        plan=AttackPlan(current, target, weapon, activity, distance, profile, target_walk_bonus),
+        plan=AttackPlan(
+            current, target, weapon, activity, distance, profile, target_walk_bonus, target_ac_floor
+        ),
     )

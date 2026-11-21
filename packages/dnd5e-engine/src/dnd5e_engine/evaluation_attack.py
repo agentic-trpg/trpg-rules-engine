@@ -110,6 +110,9 @@ def execute_attack(
                 bands and plan.distance_ft is not None and plan.distance_ft > bands[0]
             )
         },
+        target_ac_floor={plan.target.entity_id: plan.target_ac_floor}
+        if plan.target_ac_floor is not None
+        else None,
         attacker_ranged_in_melee=ranged_in_melee,
         attacker_sapped=actor.entity_id in state.sap_marks,
         use_versatile_damage=intent.two_handed

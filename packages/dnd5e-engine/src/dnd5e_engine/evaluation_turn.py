@@ -6,7 +6,12 @@ from dnd5e_srd_data.loader import AssetLoader
 
 from dnd5e_engine.evaluation_class_dependencies import operation_dependencies
 from dnd5e_engine.evaluation_computation import CombatComputation
-from dnd5e_engine.evaluation_contracts import CombatIntentPayload, RuleError, RuleEvaluationRequest
+from dnd5e_engine.evaluation_contracts import (
+    CombatIntentPayload,
+    RuleError,
+    RuleEvaluationRequest,
+    SpellWillingnessChoice,
+)
 from dnd5e_engine.evaluation_delta import StateDelta
 from dnd5e_engine.evaluation_preflight import template_support_failure
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError, attack_delta
@@ -24,13 +29,13 @@ from dnd5e_engine.events import CombatEvent, IntentSubmitted
 
 
 class TurnEvaluation(TypedDict):
-    """Describe uncommitted turn result fields returned to the evaluation envelope."""
+    """Describe uncommitted fields shared by turn and other operation evaluators."""
 
-    status: Literal["accepted", "rejected", "unsupported"]
+    status: Literal["accepted", "rejected", "unsupported", "needs_choice"]
     state_delta: StateDelta | None
     proposed_events: tuple[CombatEvent, ...]
     rng_transition: RNGTransition | None
-    choice: None
+    choice: SpellWillingnessChoice | None
     error: RuleError | None
     stage_facts: NotRequired[EventStageFacts]
 

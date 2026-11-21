@@ -23,7 +23,11 @@ from dnd5e_engine.activities.effects import passive_effect_to_active_effect
 from dnd5e_engine.activities.passive_stats import interpret_passive_stats
 from dnd5e_engine.areas import has_line_of_effect
 from dnd5e_engine.evaluation_casting import CastingStateV20
-from dnd5e_engine.evaluation_contracts import ExplorationSpellCastPayload, RuleEvaluationRequest
+from dnd5e_engine.evaluation_contracts import (
+    ExplorationSpellCastPayload,
+    RuleEvaluationRequest,
+    SpellWillingnessChoice,
+)
 from dnd5e_engine.evaluation_delta import StateDelta, WorldEffectCreate
 from dnd5e_engine.evaluation_effects import EffectState, effect_state
 from dnd5e_engine.evaluation_exploration_healing import (
@@ -94,7 +98,7 @@ def _validate_passive_changes(passive: PassiveEffect, active: ActiveEffect) -> N
 def _passive_profile(
     spell: Spell, *, target_id: str, caster_id: str
 ) -> tuple[UtilityActivity, ActiveEffect]:
-    """Build the supported base-level utility and its elapsed-time effect from rule data."""
+    """Build an admitted base-level utility and elapsed-time effect from rule data."""
     seconds_per_unit = _SECONDS_PER_UNIT.get(spell.duration.units)
     if (
         spell.review.requires_user_decision
@@ -120,6 +124,9 @@ def _passive_profile(
     if not isinstance(activity, UtilityActivity) or not activity.id or not passive.id:
         raise ValueError("requires one identifiable utility activity and its passive effect")
     target = activity.target
+    allowed_targets: tuple[str, ...] = ("creature", "willing")
+    if spell.range.units == SpellRangeUnits.SELF:
+        allowed_targets += ("self",)
     template = target.template
     activation = activity.activation
     if (
@@ -157,10 +164,7 @@ def _passive_profile(
         or template.stationary
         or target.affects.choice
         or target.affects.special
-        or target.affects.type
-        not in (
-            ("creature", "self") if spell.range.units == SpellRangeUnits.SELF else ("creature",)
-        )
+        or target.affects.type not in allowed_targets
         or resolve_target_count(target.affects.count, cast_level=spell.level) != 1
     ):
         raise ValueError(
@@ -342,6 +346,8 @@ def evaluate_exploration_spell(
 
     A reviewed touch heal resolves immediately. The timed branch supports
     movement, senses and flat additive skill bonuses with unchanged RNG.
+    A willing-creature profile requires self-targeting or verified willingness.
+    A distinct target with unknown willingness yields a choice before payment.
     The host owns persistence, elapsed time and expiry.
     """
     snapshot, payload = request.state_snapshot, request.payload
@@ -405,6 +411,25 @@ def evaluate_exploration_spell(
         return _refuse("rejected", "spell.effect_exists", "target already has this effect")
     if snapshot.resource_state is None or actor.spell_slots.get(payload.slot_level, 0) <= 0:
         return _refuse("rejected", "spell.slot", "no owned ordinary slot remains")
+    positions = request.spell_positions
+    if (
+        healing is None
+        and activity.target.affects.type == "willing"
+        and target.entity_id != actor.entity_id
+        and (positions is None or positions.willing_target_id != target.entity_id)
+    ):
+        return dict(
+            status="needs_choice",
+            state_delta=None,
+            proposed_events=(),
+            rng_transition=None,
+            choice=SpellWillingnessChoice(
+                kind="spell.target_willingness",
+                actor_id=actor.entity_id,
+                target_id=target.entity_id,
+            ),
+            error=None,
+        )
     payment = spell_payment(snapshot.resource_state, actor.entity_id, payload.slot_level)
     if payment.expected.kind != "spell_slot":
         raise EvaluationInvariantError("world spell payment must use an ordinary slot")

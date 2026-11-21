@@ -126,7 +126,7 @@
           "key": "system.attributes.senses.darkvision",
           "mode": 4,
           "priority": null,
-          "value": "120"
+          "value": "150"
         }
       ],
       "description": "<p>For the duration, a willing creature you touch has &amp;Reference[darkvision] with a range of 150 feet.</p>",
@@ -160,7 +160,7 @@
     "value": null
   },
   "review": {
-    "known_divergence": null,
+    "known_divergence": "Foundry encodes 120 feet in the passive effect. SRD 5.2.1, Darkvision (p. 122), specifies 150 feet: https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf#page=122",
     "requires_user_decision": false
   },
   "ritual": false,

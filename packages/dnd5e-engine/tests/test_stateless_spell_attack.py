@@ -119,7 +119,7 @@ def test_spell_attack_rng_damage_and_turn(
     assert result.status == "accepted", result.error
     assert execute(request, loader) == result
     assert request == before
-    assert result.input_ruleset_binding.evaluator_version == "dnd5e-evaluation/54"
+    assert result.input_ruleset_binding.evaluator_version == "dnd5e-evaluation/56"
     events = result.proposed_events
     assert [e.type for e in events] == [
         "intent_submitted",

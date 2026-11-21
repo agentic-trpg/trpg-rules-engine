@@ -189,6 +189,16 @@ value `+2`. The spell can also carry supported movement and sense changes.
 The same check resolver folds this modifier and those from fixed region
 effects. Dice and variable expressions are outside this timed spell profile.
 
+Evaluator binding `dnd5e-evaluation/56` supports a single willing creature
+for the admitted timed utility profile. An explicit self-target satisfies the
+requirement. For a distinct creature, the host may supply verified consent as
+`spell_positions.willing_target_id`, which must equal the cast payload's
+`target_id`. When that fact is absent and the cast passes admission, the
+result is `needs_choice` with `spell.target_willingness` and the caster and
+target IDs. The result carries no mechanical changes, events or RNG
+transition. Canonical Darkvision uses one 2nd-level slot and gives 150 feet
+of Darkvision for eight hours, per [SRD 5.2.1, p. 122](https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf#page=122).
+
 Successful casts propose a guarded `ResourceUpdate` and `WorldEffectCreate`
 with a positive relative duration in seconds and terminal removal. Longstrider
 exercises this typed profile. The host computes the deadline from its current

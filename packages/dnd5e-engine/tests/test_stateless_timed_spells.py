@@ -10,6 +10,7 @@ from dnd5e_engine.evaluation_contracts import (
     SCHEMA_VERSION,
     RuleEvaluationRequest,
     RuleEvaluationResult,
+    SpellWillingnessChoice,
 )
 from dnd5e_engine.evaluation_delta import ResourceUpdate, WorldEffectCreate
 from dnd5e_engine.evaluation_effects import effect_state
@@ -65,7 +66,7 @@ def spell_wire(spell: Spell, *, target_id: str = FOE):
         "pools": [
             {
                 "owner_id": HERO,
-                "pool_id": "slots:1",
+                "pool_id": f"slots:{spell.level}",
                 "kind": "spell_slot",
                 "level": spell.level,
                 "current": 2,
@@ -160,6 +161,142 @@ def test_timed_touch_spell_proposes_one_paid_effect_and_replays(schema_version) 
     result.rng_transition.verify_input(request.rng_context)
     assert result.rng_transition.next_state == request.rng_context.state
     assert not result.rng_transition.state_changed
+
+
+def _darkvision_wire(*, target_id: str = FOE):
+    """Build a fixed exploration cast with a Wizard able to prepare a second-level spell."""
+    spell = BundledAssetLoader().get_spell("darkvision")
+    wire, loader = spell_wire(spell, target_id=target_id)
+    caster = wire["state_snapshot"]["character_states"][0]
+    caster.update(classes={"wizard": 3}, character_level=3)
+    return wire, loader
+
+
+@pytest.mark.parametrize(("target_id", "verified"), [(HERO, False), (FOE, True), (FOE, False)])
+def test_canonical_darkvision_requires_willing_target(target_id, verified, monkeypatch) -> None:
+    """Resolve self or a verified target and request missing willingness before payment."""
+    wire, loader = _darkvision_wire(target_id=target_id)
+    if verified:
+        wire["spell_positions"]["willing_target_id"] = target_id
+    request = RuleEvaluationRequest.model_validate_json(json.dumps(wire))
+    if target_id != HERO and not verified:
+        monkeypatch.setattr(
+            "dnd5e_engine.evaluation_timed_spells.spell_payment",
+            lambda *_: pytest.fail("payment evaluated before willingness was established"),
+        )
+
+    result = execute(request, loader)
+
+    if target_id != HERO and not verified:
+        assert result.status == "needs_choice"
+        assert result.choice == SpellWillingnessChoice(
+            kind="spell.target_willingness", actor_id=HERO, target_id=FOE
+        )
+        assert result.error is None
+        assert result.state_delta is None
+        assert result.rng_transition is None
+        assert result.proposed_events == ()
+        assert result.stage_facts is None
+        assert result == RuleEvaluationResult.model_validate_json(result.model_dump_json())
+        result.verify_request(request)
+        return
+
+    assert result.status == "accepted", result.error
+    payment, creation = result.state_delta.operations
+    assert isinstance(payment, ResourceUpdate)
+    assert payment.owner_id == HERO
+    assert payment.expected.level == payment.value.level == 2
+    assert payment.pool_id == "slots:2"
+    assert payment.amount == -1
+    assert (payment.expected.current, payment.value.current) == (2, 1)
+    assert isinstance(creation, WorldEffectCreate)
+    assert creation.value.identity == (target_id, "effect:darkvision", f"cast:darkvision:{HERO}")
+    assert creation.value.duration_seconds == 8 * 3600
+    assert creation.value.effect.duration.rounds is None
+    assert creation.value.expiry.action == "remove"
+    assert not creation.value.effect.disabled
+    (change,) = creation.value.effect.changes
+    assert (change.key, change.mode, change.value) == (
+        "system.attributes.senses.darkvision",
+        "upgrade",
+        "150",
+    )
+    intent, cast, applied = result.proposed_events
+    assert isinstance(intent, IntentSubmitted)
+    assert (intent.actor_id, intent.target_id) == (HERO, target_id)
+    assert isinstance(cast, SpellCast)
+    assert (cast.spell_id, cast.slot_level) == ("darkvision", 2)
+    assert isinstance(applied, EffectApplied)
+    assert effect_state(applied.effect) == creation.value.effect
+    result.rng_transition.verify_input(request.rng_context)
+    assert result.rng_transition.next_state == request.rng_context.state
+    assert not result.rng_transition.state_changed
+
+
+@pytest.mark.parametrize(
+    ("location", "willing_target_id", "reason"),
+    [
+        ("spell_positions", HERO, "must match the spell's target_id"),
+        ("spell_positions", True, "valid string"),
+        ("spell_positions", "", "at least 1 character"),
+        ("payload", FOE, "Extra inputs are not permitted"),
+    ],
+)
+def test_invalid_willingness_cannot_enter_evaluation(location, willing_target_id, reason) -> None:
+    """Require exact host evidence and keep the cast payload closed."""
+    wire, _ = _darkvision_wire()
+    wire[location]["willing_target_id"] = willing_target_id
+    with pytest.raises(ValueError, match=reason):
+        RuleEvaluationRequest.model_validate_json(json.dumps(wire))
+
+
+@pytest.mark.parametrize(("field", "bad_id"), [("target_id", HERO), ("actor_id", FOE)])
+def test_willingness_choice_must_match_the_original_cast(field: str, bad_id: str) -> None:
+    """Reject a serialized choice that identifies a different caster or responder."""
+    wire, loader = _darkvision_wire()
+    request = RuleEvaluationRequest.model_validate_json(json.dumps(wire))
+    result_wire = json.loads(execute(request, loader).model_dump_json())
+    result_wire["choice"][field] = bad_id
+    mismatched = RuleEvaluationResult.model_validate_json(json.dumps(result_wire))
+    with pytest.raises(ValueError, match="must match an unverified cast target"):
+        mismatched.verify_request(request)
+
+
+@pytest.mark.parametrize("verified", [False, True])
+def test_willingness_does_not_override_touch_admission(verified: bool) -> None:
+    """Return the ordinary reach refusal before asking for or acting on consent."""
+    wire, loader = _darkvision_wire()
+    wire["spell_positions"]["target_cell"] = "99,99"
+    if verified:
+        wire["spell_positions"]["willing_target_id"] = FOE
+    request = RuleEvaluationRequest.model_validate_json(json.dumps(wire))
+    result = execute(request, loader)
+    assert result.status == "rejected"
+    assert result.error.code == "target_invalid"
+    assert result.choice is None
+    assert result.state_delta is None
+    assert result.rng_transition is None
+    assert result.proposed_events == ()
+
+
+def test_willingness_requirement_follows_authored_target_type() -> None:
+    """Use the same preflight choice for a different, otherwise admitted utility spell."""
+    data = _longstrider().model_dump(mode="json")
+    data["activities"][0]["target"]["affects"]["type"] = "willing"
+    wire, loader = spell_wire(Spell.model_validate(data))
+    wire["schema_version"] = SCHEMA_VERSION
+    request = RuleEvaluationRequest.model_validate_json(json.dumps(wire))
+    result = execute(request, loader)
+    assert result.status == "needs_choice"
+    assert isinstance(result.choice, SpellWillingnessChoice)
+
+    wire["spell_positions"]["willing_target_id"] = FOE
+    verified_request = RuleEvaluationRequest.model_validate_json(json.dumps(wire))
+    verified_result = execute(verified_request, loader)
+    assert verified_result.status == "accepted", verified_result.error
+    payment, creation = verified_result.state_delta.operations
+    assert payment.amount == -1
+    assert creation.value.identity == (FOE, "effect:longstrider", f"cast:longstrider:{HERO}")
 
 
 def test_mechanically_equivalent_asset_with_different_id_and_values() -> None:

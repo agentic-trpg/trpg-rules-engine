@@ -82,11 +82,18 @@ class ExplorationSpellCastPayload(EvaluationModel):
 
 
 class ExplorationSpellPositions(EvaluationModel):
-    """Provide the fixed caster and target cells and any verified item facts."""
+    """Carry fixed caster and target cells and facts verified by the host.
+
+    Willingness applies to the named creature in this cast only. An omitted
+    willingness fact leaves another creature's willingness unknown.
+    """
 
     source_cell: Annotated[str, Field(min_length=1)]
     target_cell: Annotated[str, Field(min_length=1)]
     target_item: EnvironmentalItemFacts | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    willing_target_id: Annotated[str, Field(min_length=1)] | None = Field(
         default=None, exclude_if=lambda value: value is None
     )
 
@@ -261,15 +268,7 @@ class RuleEvaluationRequest(EvaluationModel):
                 )
             return self
         if self.operation_kind == "world.cast_spell":
-            if (
-                self.schema_version not in {"engine-evaluation/29", "engine-evaluation/30"}
-                or not isinstance(self.payload, ExplorationSpellCastPayload)
-                or not isinstance(self.state_snapshot, NonCombatSnapshot)
-                or self.state_snapshot.combat_setup is not None
-            ):
-                raise ValueError(
-                    "world.cast_spell requires evaluation/29 or /30 and a noncombat spell request"
-                )
+            self._validate_creature_spell()
             return self
         if self.operation_kind == "combat.intent":
             if not isinstance(self.payload, CombatIntentPayload):
@@ -287,6 +286,25 @@ class RuleEvaluationRequest(EvaluationModel):
             raise ValueError("rules.check requires a matching actor and explicit adjudication")
         return self
 
+    def _validate_creature_spell(self) -> None:
+        """Require a noncombat creature cast and bind any willingness to its target."""
+        if (
+            self.schema_version not in {"engine-evaluation/29", "engine-evaluation/30"}
+            or not isinstance(self.payload, ExplorationSpellCastPayload)
+            or not isinstance(self.state_snapshot, NonCombatSnapshot)
+            or self.state_snapshot.combat_setup is not None
+        ):
+            raise ValueError(
+                "world.cast_spell requires evaluation/29 or /30 and a noncombat spell request"
+            )
+        positions = self.spell_positions
+        if (
+            positions is not None
+            and positions.willing_target_id is not None
+            and positions.willing_target_id != self.payload.target_id
+        ):
+            raise ValueError("verified willingness must match the spell's target_id")
+
     def _validate_environmental_spell(self) -> None:
         """Bind the selected item or point identity to its fixed spatial facts."""
         positions = self.spell_positions
@@ -298,6 +316,8 @@ class RuleEvaluationRequest(EvaluationModel):
             or positions is None
         ):
             raise ValueError("evaluation/31 requires a spatial world spell without pending combat")
+        if positions.willing_target_id is not None:
+            raise ValueError("verified willingness requires a creature spell target")
         target = self.payload.target
         if isinstance(target, EnvironmentalPointTarget):
             if positions.target_item is not None or positions.target_cell != target.cell_id:
@@ -357,6 +377,14 @@ class CheckAdjudicationChoice(EvaluationModel):
     required_fields: tuple[Literal["dc"]]
 
 
+class SpellWillingnessChoice(EvaluationModel):
+    """Identify the caster and creature whose willingness the host must establish."""
+
+    kind: Literal["spell.target_willingness"]
+    actor_id: Annotated[str, Field(min_length=1)]
+    target_id: Annotated[str, Field(min_length=1)]
+
+
 class RuleEvaluationResult(EvaluationModel):
     """Return uncommitted Delta/events/RNG and verify their association with the request."""
 
@@ -371,7 +399,7 @@ class RuleEvaluationResult(EvaluationModel):
     proposed_events: ProposedEvents
     stage_facts: EventStageFacts | None
     rng_transition: RNGTransition | None
-    choice: PreflightChoice | CheckAdjudicationChoice | None
+    choice: PreflightChoice | CheckAdjudicationChoice | SpellWillingnessChoice | None
     error: RuleError | None
 
     @field_validator("proposed_events", mode="before")
@@ -446,6 +474,18 @@ class RuleEvaluationResult(EvaluationModel):
             request.ruleset_binding,
         ):
             raise ValueError("result does not match request identity/version/binding")
+        if isinstance(self.choice, SpellWillingnessChoice):
+            positions = request.spell_positions
+            if (
+                request.operation_kind != "world.cast_spell"
+                or not isinstance(request.payload, ExplorationSpellCastPayload)
+                or self.choice.actor_id != request.actor_id
+                or self.choice.target_id != request.payload.target_id
+                or self.choice.target_id == request.actor_id
+                or positions is None
+                or positions.willing_target_id is not None
+            ):
+                raise ValueError("spell willingness choice must match an unverified cast target")
         if self.state_delta is not None:
             from dnd5e_engine.evaluation_haste_delta import (
                 EffectFollowUpCreate,

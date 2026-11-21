@@ -20,6 +20,25 @@ Evaluator binding `dnd5e-evaluation/50` covers the instant healing casting-time
 payment and timed ordinary walking described below. Both use the existing
 request, event, and guarded Delta types.
 
+## Exploration illumination spells
+
+`world.cast_spell` on evaluation `/31` and Snapshot `/20` accepts one
+item identity or fixed grid cell. The host supplies the caster and target cells
+and, for an item, fixed size, carrier and cover facts. RE checks range, line of
+effect, target qualification, the selected class source and components. Light
+is a known cantrip on a Large or smaller object. Darkness supports a fixed point
+or an unworn, uncarried object and spends an ordinary level 2 or higher slot.
+[SRD 5.2.1, Darkness and Light](https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf)
+
+`world.environmental_effect_create` proposes typed illumination, the item or
+fixed point anchor, geometry, elapsed duration and recast/concentration
+requirements. It uses unchanged RNG. SM owns current item position and opaque
+cover, effect identity and expiry, concentration, and adoption. The shared
+`environmental_dispels` rule consumes actual clipped spell footprints and
+identifies whole spells to end, including overlap with a spell's dim region.
+The creature-targeted exploration spell profile remains available on `/29`
+and `/30`.
+
 ## Ordinary ranged spell attacks
 
 Evaluator binding `dnd5e-evaluation/49` classifies an ordinary instant

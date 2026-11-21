@@ -6,6 +6,9 @@ from pydantic import Field, model_validator
 
 from dnd5e_engine.evaluation_base import EvaluationModel
 from dnd5e_engine.evaluation_effects import EffectState
+from dnd5e_engine.evaluation_environmental_contracts import (
+    WorldEnvironmentalEffectCreate as WorldEnvironmentalEffectCreate,
+)
 from dnd5e_engine.evaluation_haste_delta import (
     EffectFollowUpCreate,
     HasteGraphCreate,
@@ -605,6 +608,7 @@ StateDeltaOperation = Annotated[
     | CombatCreationCandidate
     | ResourceUpdate
     | WorldEffectCreate
+    | WorldEnvironmentalEffectCreate
     | CombatEffectCreate
     | EffectLifecycleUpdate
     | ConcentrationUpdate

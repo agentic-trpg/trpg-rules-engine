@@ -34,6 +34,11 @@ RE 求值选中的普通治疗药水，返回回血、物品消耗、事件与 R
 施法者维持的效果并保留其他来源。协议和范围见
 [Stateless 合同](dev/stateless-evaluation.md#timed-spell-creation-and-voluntary-concentration-release)。
 
+探索光照法术沿用 `world.cast_spell` 和 Snapshot `/20`，空间目标使用
+evaluation `/31`。RE 校验固定的物品或点位，提议法术位支付和光照效果。
+SM 持有效果、实际锚点、期限和集中状态。见
+[探索光照法术](dev/stateless-evaluation.md#exploration-illumination-spells)。
+
 ## 2. 包和主要规则模块
 
 下表中 Engine 文件均相对 `packages/dnd5e-engine/src/dnd5e_engine/`；其他包写完整路径。

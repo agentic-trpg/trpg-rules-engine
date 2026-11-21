@@ -11,6 +11,7 @@ from dnd5e_engine.evaluation_closure import evaluate_closure
 from dnd5e_engine.evaluation_contracts import (
     CombatIntentPayload,
     EvaluationVersion,
+    ExplorationEnvironmentalSpellCastPayload,
     ReadVersion,
     RuleError,
     RuleEvaluationRequest,
@@ -113,9 +114,15 @@ async def evaluate(
         result.verify_request(request)
         return result
     if request.operation_kind == "world.cast_spell":
-        from dnd5e_engine.evaluation_timed_spells import evaluate_exploration_spell
+        if isinstance(request.payload, ExplorationEnvironmentalSpellCastPayload):
+            from dnd5e_engine.evaluation_environmental_spells import evaluate_environmental_spell
 
-        result = _turn_result(common, evaluate_exploration_spell(request, assets))
+            outcome = evaluate_environmental_spell(request, assets)
+        else:
+            from dnd5e_engine.evaluation_timed_spells import evaluate_exploration_spell
+
+            outcome = evaluate_exploration_spell(request, assets)
+        result = _turn_result(common, outcome)
         result.verify_request(request)
         return result
     if request.operation_kind == "rules.rest":

@@ -14,7 +14,7 @@ from dnd5e_engine.evaluation_contracts import (
 )
 from dnd5e_engine.evaluation_payments import spell_payment
 from dnd5e_engine.evaluation_reaction_state import reaction_state
-from dnd5e_engine.evaluation_ruleset import get_default_ruleset, verify_ruleset
+from dnd5e_engine.evaluation_ruleset import canonical_bytes, get_default_ruleset, verify_ruleset
 from dnd5e_engine.evaluation_shield import (
     has_shield,
     shield_source_id,
@@ -100,12 +100,10 @@ def shield_response_request(
 
 
 def _checkpoint(request: RuleEvaluationRequest, attack: AttackHitContext) -> str:
-    """Bind the original attack and RNG input to the observed hit."""
-    digest = sha256(request.model_dump_json().encode("utf-8"))
+    """Bind the fixed request and original hit without depending on map or set order."""
     evidence = provisional_attack_evidence(attack)
     assert evidence is not None
-    digest.update(evidence.model_dump_json().encode("utf-8"))
-    return digest.hexdigest()
+    return sha256(canonical_bytes((request, evidence))).hexdigest()
 
 
 async def evaluate_for_shield(

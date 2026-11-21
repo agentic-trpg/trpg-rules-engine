@@ -55,6 +55,11 @@ def _encode(value: Any) -> str:
     )
 
 
+def canonical_bytes(value: Any) -> bytes:
+    """Encode typed values for hashing, ordering maps and sets while preserving sequences."""
+    return _encode(_canonical(value)).encode("utf-8")
+
+
 def _compute_binding(loader: AssetLoader) -> RulesetBinding:
     """Hash every effective category/slug and its actual typed content.
 

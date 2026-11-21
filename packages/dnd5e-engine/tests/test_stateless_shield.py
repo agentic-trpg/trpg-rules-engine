@@ -4,6 +4,7 @@ import asyncio
 import json
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
+from dataclasses import replace
 from random import Random
 
 import pytest
@@ -11,11 +12,13 @@ from pydantic import ValidationError
 
 from dnd5e_engine import evaluation_shield, live_reactions
 from dnd5e_engine import orchestrator as orch
+from dnd5e_engine.activities.context import AttackHitContext
 from dnd5e_engine.evaluation_contracts import CombatIntentPayload, RuleEvaluationResult
 from dnd5e_engine.evaluation_resources import ResourceState
 from dnd5e_engine.evaluation_rng import RNGState
 from dnd5e_engine.evaluation_ruleset import RulesetBindingError
 from dnd5e_engine.evaluation_shield_delta import ShieldStateTransition
+from dnd5e_engine.evaluation_shield_window import _checkpoint
 from dnd5e_engine.evaluation_snapshot import capture_combat_snapshot, capture_evaluation_snapshot
 from dnd5e_engine.evaluation_state import CombatSnapshot
 from dnd5e_engine.intents import PlayerIntent
@@ -519,3 +522,38 @@ def test_concurrent_replay_stale_guards_graph_closure_and_previous_versions(monk
     )
     with pytest.raises(RulesetBindingError):
         execute(prior, loader)
+
+
+def test_shield_hit_checkpoint_uses_typed_request_identity():
+    """Reordered map facts preserve a checkpoint while changed hit or RNG facts invalidate it."""
+    request, _, _, _ = shield_case()
+    snapshot = request.state_snapshot
+    combat = snapshot.combat_state
+    reordered = combat.model_copy(update={"actor_zone": dict(reversed(combat.actor_zone.items()))})
+    equivalent = request.model_copy(
+        update={"state_snapshot": snapshot.model_copy(update={"combat_state": reordered})}
+    )
+    assert equivalent == request
+    assert equivalent.model_dump_json() != request.model_dump_json()
+
+    hit = AttackHitContext(
+        attacker_id=request.actor_id,
+        target_id=FOE,
+        source_activity_id=WEAPON,
+        natural=13,
+        roll_total=15,
+        effective_ac=12,
+        is_crit=False,
+        is_opportunity_attack=False,
+    )
+    token = _checkpoint(request, hit)
+    assert _checkpoint(equivalent, hit) == token
+    assert _checkpoint(request, replace(hit, roll_total=16)) != token
+    changed_rng = request.model_copy(
+        update={
+            "rng_context": request.rng_context.model_copy(
+                update={"state": RNGState.capture(Random(48))}
+            )
+        }
+    )
+    assert _checkpoint(changed_rng, hit) != token

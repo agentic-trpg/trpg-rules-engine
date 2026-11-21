@@ -1,11 +1,13 @@
 """Executable local stateless API. State Machine alone commits the returned proposal."""
 
 import copy
+from collections.abc import Callable
 from typing import TypedDict
 
 from dnd5e_srd_data.loader import AssetLoader
 
-from dnd5e_engine.evaluation_attack import execute_attack
+from dnd5e_engine.activities.context import AttackHitContext
+from dnd5e_engine.evaluation_attack import HasteAttackResult, execute_attack
 from dnd5e_engine.evaluation_checks import evaluate_check
 from dnd5e_engine.evaluation_closure import evaluate_closure
 from dnd5e_engine.evaluation_contracts import (
@@ -77,6 +79,16 @@ async def evaluate(
     data. Raw mutable loaders retain full binding verification on every request
     and must remain stable during each call.
     """
+    return await _evaluate(request, loader=loader)
+
+
+async def _evaluate(
+    request: RuleEvaluationRequest,
+    *,
+    loader: AssetLoader | None = None,
+    before_hit: Callable[[AttackHitContext], None] | None = None,
+) -> RuleEvaluationResult:
+    """Execute the bound evaluation, optionally stopping at a private attack boundary."""
     request = RuleEvaluationRequest.model_validate(copy.deepcopy(request))
     assets = loader if loader is not None else get_default_ruleset()
     verify_ruleset(request.ruleset_binding, assets)
@@ -111,6 +123,12 @@ async def evaluate(
             else evaluate_exploration_item(request, assets)
         )
         result = RuleEvaluationResult(**common, **item, stage_facts=_stage_coverage(item["status"]))
+        result.verify_request(request)
+        return result
+    if request.operation_kind == "world.cast_spell_many":
+        from dnd5e_engine.evaluation_multi_spells import evaluate_multi_spell
+
+        result = _turn_result(common, evaluate_multi_spell(request, assets))
         result.verify_request(request)
         return result
     if request.operation_kind == "world.cast_spell":
@@ -204,30 +222,42 @@ async def evaluate(
             )
         if admission.plan is None:
             raise EvaluationInvariantError("accepted preflight lacks an attack plan")
-        rng = request.rng_context.state.restore()
-        computed = execute_attack(snapshot, request.payload, admission.plan, rng, loader=assets)
-        after = computed.candidate_state
         profile = admission.plan.effect_profile
-        if profile == "held_target" and any(
+        if profile == "haste" and request.schema_version != "engine-evaluation/30":
+            return _turn_result(
+                common,
+                _refuse("unsupported", "attack.haste", "Haste Attack requires evaluation/30"),
+            )
+        rng = request.rng_context.state.restore()
+        computed = execute_attack(
+            snapshot, request.payload, admission.plan, rng, loader=assets, before_hit=before_hit
+        )
+        after = computed.candidate_state
+        if profile in {"held_target", "haste"} and any(
             actor.entity_id == admission.plan.target.entity_id and actor.hp_current == 0
             for actor in after.character_states
         ):
-            # A surviving Hold Person graph needs a living target for later turn handling.
+            # These effect profiles require living actors for later turn handling.
             return _turn_result(
                 common,
                 _refuse(
                     "unsupported",
                     "attack.effect_consequence",
-                    "zero HP on a held target exceeds the supported Hold Person lifecycle",
+                    "zero HP on a held target exceeds the supported Hold Person lifecycle"
+                    if profile == "held_target"
+                    else "zero HP exceeds the admitted Haste attack lifecycle",
                 ),
             )
         from dnd5e_engine.evaluation_concentration import concentration_delta
+        from dnd5e_engine.evaluation_haste import haste_delta
         from dnd5e_engine.evaluation_shield import shield_delta
 
         result = RuleEvaluationResult(
             **common,
             status="accepted",
-            state_delta=(
+            state_delta=haste_delta(snapshot, after, computed.follow_ups)
+            if isinstance(computed, HasteAttackResult)
+            else (
                 shield_delta
                 if profile == "shield"
                 else concentration_delta

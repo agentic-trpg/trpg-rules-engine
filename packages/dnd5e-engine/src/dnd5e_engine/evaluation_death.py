@@ -1,5 +1,6 @@
 """Shared admission of complete terminal death facts; no death rule inference."""
 
+from dnd5e_engine.evaluation_region_effect import is_fixed_combat_poisoned_condition
 from dnd5e_engine.evaluation_state import CharacterStateV2, CombatSnapshot, ConditionRecord
 
 
@@ -62,10 +63,14 @@ def reviewed_terminal_unconscious(actor: CharacterStateV2, dead_ids: set[str]) -
     )
 
 
-def turn_lifecycle_support_failure(snapshot: CombatSnapshot) -> str | None:
-    """Only permanent implied unconscious/prone and consistent bounded PC dying state."""
+def turn_lifecycle_support_failure(
+    snapshot: CombatSnapshot, *, reviewed_region_conditions: bool = False
+) -> str | None:
+    """Admit implied life conditions and optional already-verified fixed region Poisoned."""
     for actor in snapshot.character_states:
         for condition in actor.conditions:
+            if reviewed_region_conditions and is_fixed_combat_poisoned_condition(condition):
+                continue
             if condition.condition not in {
                 "unconscious",
                 "prone",

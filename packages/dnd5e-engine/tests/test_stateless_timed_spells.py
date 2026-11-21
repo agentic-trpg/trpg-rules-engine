@@ -5,6 +5,7 @@ import json
 import pytest
 from dnd5e_srd_data import BundledAssetLoader, MemoryAssetLoader
 from dnd5e_srd_data.schema.spell import Spell
+from pydantic import ValidationError
 
 from dnd5e_engine.evaluation_contracts import (
     SCHEMA_VERSION,
@@ -500,6 +501,37 @@ def test_timed_spell_proposes_a_flat_skill_check_bonus(with_movement: bool) -> N
     ] == [(change["key"], "add", change["value"]) for change in changes]
     result.rng_transition.verify_input(request.rng_context)
     assert not result.rng_transition.state_changed
+
+
+def test_elapsed_concentration_binds_the_proposal_and_effect_flag() -> None:
+    """Admit a flat authored skill bonus and reject mismatched or extra flags."""
+    data = _longstrider().model_dump(mode="json")
+    data.update(slug="keen-focus-test", name="Keen Focus", concentration=True, foundry_uuid="")
+    data["passive_effects"][0].update(
+        name="Keen Focus",
+        changes=[{"key": "check.skill.perception.bonus", "mode": 2, "value": "+2"}],
+    )
+    wire, loader = spell_wire(Spell.model_validate(data))
+    request = RuleEvaluationRequest.model_validate_json(json.dumps(wire))
+    result = execute(request, loader)
+    assert result.status == "accepted", result.error
+    result.verify_request(request)
+    payment, creation = result.state_delta.operations
+    assert isinstance(payment, ResourceUpdate)
+    assert payment.amount == -1
+    assert isinstance(creation, WorldEffectCreate)
+    assert creation.value.concentration
+    assert creation.value.effect.flags == {"concentration": True}
+    assert not result.rng_transition.state_changed
+
+    forged = creation.model_dump(mode="json")
+    forged["value"]["concentration"] = False
+    with pytest.raises(ValidationError, match="concentration differs"):
+        WorldEffectCreate.model_validate_json(json.dumps(forged))
+    forged["value"]["concentration"] = True
+    forged["value"]["effect"]["flags"]["other"] = True
+    with pytest.raises(ValidationError, match="world-time-only passive effect"):
+        WorldEffectCreate.model_validate_json(json.dumps(forged))
 
 
 @pytest.mark.parametrize(

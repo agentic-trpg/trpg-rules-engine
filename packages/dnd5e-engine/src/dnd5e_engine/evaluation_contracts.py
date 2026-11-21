@@ -6,7 +6,7 @@ from pydantic import ConfigDict, Field, ValidationInfo, field_validator, model_v
 from pydantic_core import to_json
 
 from dnd5e_engine.evaluation_base import EvaluationModel
-from dnd5e_engine.evaluation_delta import CombatEffectCreate, StateDelta
+from dnd5e_engine.evaluation_delta import CombatEffectCreate, InventorySpendCharge, StateDelta
 from dnd5e_engine.evaluation_environmental_contracts import (
     EnvironmentalItemFacts as EnvironmentalItemFacts,
 )
@@ -41,6 +41,9 @@ from dnd5e_engine.types.checks import CheckRequest, GrantedDie
 
 SCHEMA_VERSION = "engine-evaluation/30"
 ENVIRONMENTAL_SPELL_SCHEMA_VERSION = "engine-evaluation/31"
+CHARGED_ITEM_SCHEMA_VERSION = "engine-evaluation/32"
+MULTI_SPELL_SCHEMA_VERSION = "engine-evaluation/33"
+MAX_EXPLORATION_SPELL_TARGETS = 10
 EvaluationVersion = Literal[
     "engine-evaluation/24",
     "engine-evaluation/25",
@@ -50,6 +53,8 @@ EvaluationVersion = Literal[
     "engine-evaluation/29",
     "engine-evaluation/30",
     "engine-evaluation/31",
+    "engine-evaluation/32",
+    "engine-evaluation/33",
 ]
 
 
@@ -63,7 +68,7 @@ class ItemUsePayload(EvaluationModel):
 
 
 class ExplorationItemUsePayload(EvaluationModel):
-    """Select an owned inventory instance and activity for exploration self-use."""
+    """Select an owned inventory instance, activity and target for exploration item use."""
 
     kind: Literal["world.use_item"]
     instance_id: Annotated[str, Field(min_length=1)]
@@ -96,6 +101,45 @@ class ExplorationSpellPositions(EvaluationModel):
     willing_target_id: Annotated[str, Field(min_length=1)] | None = Field(
         default=None, exclude_if=lambda value: value is None
     )
+
+
+class ExplorationMultiSpellCastPayload(EvaluationModel):
+    """Select a slotted exploration spell and a bounded list of distinct creatures."""
+
+    kind: Literal["world.cast_spell_many"]
+    spell_id: Annotated[str, Field(min_length=1)]
+    spell_source_id: Annotated[str, Field(min_length=1)]
+    slot_level: Annotated[int, Field(ge=1, le=9)]
+    target_ids: Annotated[
+        tuple[Annotated[str, Field(min_length=1)], ...],
+        Field(min_length=1, max_length=MAX_EXPLORATION_SPELL_TARGETS),
+    ]
+
+    @field_validator("target_ids")
+    @classmethod
+    def unique_targets(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        """Reject duplicated creatures instead of creating repeated effects."""
+        if len(set(value)) != len(value):
+            raise ValueError("spell targets must be distinct")
+        return value
+
+
+class ExplorationMultiSpellTarget(EvaluationModel):
+    """Bind one selected creature to its position and verified willingness fact."""
+
+    target_id: Annotated[str, Field(min_length=1)]
+    cell_id: Annotated[str, Field(min_length=1)]
+    willing: bool
+
+
+class ExplorationMultiSpellPositions(EvaluationModel):
+    """Carry Host-verified source and target facts outside the public cast payload."""
+
+    source_cell: Annotated[str, Field(min_length=1)]
+    targets: Annotated[
+        tuple[ExplorationMultiSpellTarget, ...],
+        Field(min_length=1, max_length=MAX_EXPLORATION_SPELL_TARGETS),
+    ]
 
 
 class CheckPayload(CheckRequest):
@@ -178,6 +222,7 @@ class RuleEvaluationRequest(EvaluationModel):
         "rules.rest",
         "world.use_item",
         "world.cast_spell",
+        "world.cast_spell_many",
     ]
     actor_id: Annotated[str, Field(min_length=1)]
     payload: (
@@ -187,6 +232,7 @@ class RuleEvaluationRequest(EvaluationModel):
         | ItemUsePayload
         | ExplorationItemUsePayload
         | ExplorationSpellCastPayload
+        | ExplorationMultiSpellCastPayload
         | ExplorationEnvironmentalSpellCastPayload
         | SavePayload
         | RestPayload
@@ -197,11 +243,16 @@ class RuleEvaluationRequest(EvaluationModel):
     spell_positions: ExplorationSpellPositions | None = Field(
         default=None, exclude_if=lambda value: value is None
     )
+    multi_spell_positions: ExplorationMultiSpellPositions | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
     @field_validator("payload", mode="before")
     @classmethod
     def strict_check_payload(cls, value: object, info: ValidationInfo) -> object:
         """Restore and validate the operation's closed check payload."""
+        if info.mode == "json" and info.data.get("operation_kind") == "world.cast_spell_many":
+            return ExplorationMultiSpellCastPayload.model_validate_json(to_json(value))
         if info.mode == "json" and info.data.get("operation_kind") == "combat.intent":
             return CombatIntentPayload.model_validate_json(to_json(value))
         if info.data.get("operation_kind") == "rules.rest":
@@ -233,13 +284,12 @@ class RuleEvaluationRequest(EvaluationModel):
             "engine-evaluation/29": "engine-snapshot/20",
             "engine-evaluation/30": "engine-snapshot/20",
             ENVIRONMENTAL_SPELL_SCHEMA_VERSION: "engine-snapshot/20",
+            CHARGED_ITEM_SCHEMA_VERSION: "engine-snapshot/20",
+            MULTI_SPELL_SCHEMA_VERSION: "engine-snapshot/20",
         }
         if self.state_snapshot.snapshot_schema_version != version_pairs[self.schema_version]:
             raise ValueError("evaluation and snapshot versions differ")
-        if self.spell_positions is not None and self.operation_kind != "world.cast_spell":
-            raise ValueError("spell positions require world.cast_spell")
-        if self.schema_version == ENVIRONMENTAL_SPELL_SCHEMA_VERSION:
-            self._validate_environmental_spell()
+        if self._validate_versioned_operation():
             return self
         if self.spell_positions is not None and self.spell_positions.target_item is not None:
             raise ValueError("item facts require evaluation/31 and a spatial world spell")
@@ -285,6 +335,57 @@ class RuleEvaluationRequest(EvaluationModel):
         elif not isinstance(self.payload, CheckPayload) or self.payload.actor_id != self.actor_id:
             raise ValueError("rules.check requires a matching actor and explicit adjudication")
         return self
+
+    def _validate_versioned_operation(self) -> bool:
+        """Validate specialist evaluation schemas and reject misplaced spatial facts."""
+        if self.schema_version == MULTI_SPELL_SCHEMA_VERSION:
+            self._validate_multi_spell()
+            return True
+        if self.multi_spell_positions is not None or self.operation_kind == "world.cast_spell_many":
+            raise ValueError("multi-target spell facts require evaluation/33")
+        if self.schema_version == CHARGED_ITEM_SCHEMA_VERSION:
+            self._validate_charged_item()
+            return True
+        if self.spell_positions is not None and self.operation_kind != "world.cast_spell":
+            raise ValueError("spell positions require world.cast_spell")
+        if self.schema_version == ENVIRONMENTAL_SPELL_SCHEMA_VERSION:
+            self._validate_environmental_spell()
+            return True
+        return False
+
+    def _validate_multi_spell(self) -> None:
+        """Match ordered selections to independent trusted target facts."""
+        positions = self.multi_spell_positions
+        if (
+            self.operation_kind != "world.cast_spell_many"
+            or not isinstance(self.payload, ExplorationMultiSpellCastPayload)
+            or not isinstance(self.state_snapshot, NonCombatSnapshot)
+            or self.state_snapshot.combat_setup is not None
+            or self.spell_positions is not None
+            or positions is None
+            or tuple(target.target_id for target in positions.targets) != self.payload.target_ids
+            or any(
+                target.target_id == self.actor_id
+                and (target.cell_id != positions.source_cell or not target.willing)
+                for target in positions.targets
+            )
+        ):
+            raise ValueError("evaluation/33 requires matching exploration spell target facts")
+
+    def _validate_charged_item(self) -> None:
+        """Require an exploration charged cast with only creature position facts."""
+        if (
+            self.operation_kind != "world.use_item"
+            or not isinstance(self.payload, ExplorationItemUsePayload)
+            or not isinstance(self.state_snapshot, NonCombatSnapshot)
+            or self.state_snapshot.combat_setup is not None
+        ):
+            raise ValueError("evaluation/32 requires a noncombat item cast without pending combat")
+        positions = self.spell_positions
+        if positions is not None and (
+            positions.target_item is not None or positions.willing_target_id is not None
+        ):
+            raise ValueError("charged item casts accept only creature positions")
 
     def _validate_creature_spell(self) -> None:
         """Require a noncombat creature cast and bind any willingness to its target."""
@@ -385,6 +486,17 @@ class SpellWillingnessChoice(EvaluationModel):
     target_id: Annotated[str, Field(min_length=1)]
 
 
+class MultiSpellWillingnessChoice(EvaluationModel):
+    """Name every selected creature whose willingness is still unknown."""
+
+    kind: Literal["spell.targets_willingness"]
+    actor_id: Annotated[str, Field(min_length=1)]
+    target_ids: Annotated[
+        tuple[Annotated[str, Field(min_length=1)], ...],
+        Field(min_length=1, max_length=MAX_EXPLORATION_SPELL_TARGETS),
+    ]
+
+
 class RuleEvaluationResult(EvaluationModel):
     """Return uncommitted Delta/events/RNG and verify their association with the request."""
 
@@ -399,7 +511,13 @@ class RuleEvaluationResult(EvaluationModel):
     proposed_events: ProposedEvents
     stage_facts: EventStageFacts | None
     rng_transition: RNGTransition | None
-    choice: PreflightChoice | CheckAdjudicationChoice | SpellWillingnessChoice | None
+    choice: (
+        PreflightChoice
+        | CheckAdjudicationChoice
+        | SpellWillingnessChoice
+        | MultiSpellWillingnessChoice
+        | None
+    )
     error: RuleError | None
 
     @field_validator("proposed_events", mode="before")
@@ -486,6 +604,12 @@ class RuleEvaluationResult(EvaluationModel):
                 or positions.willing_target_id is not None
             ):
                 raise ValueError("spell willingness choice must match an unverified cast target")
+        if request.schema_version == MULTI_SPELL_SCHEMA_VERSION:
+            from dnd5e_engine.evaluation_multi_spells import verify_multi_spell_cast
+
+            verify_multi_spell_cast(self, request)
+        elif isinstance(self.choice, MultiSpellWillingnessChoice):
+            raise ValueError("multi-target willingness choice requires evaluation/33")
         if self.state_delta is not None:
             from dnd5e_engine.evaluation_haste_delta import (
                 EffectFollowUpCreate,
@@ -499,12 +623,20 @@ class RuleEvaluationResult(EvaluationModel):
 
                 verify_environmental_cast(self, request)
 
+            if request.schema_version == CHARGED_ITEM_SCHEMA_VERSION:
+                from dnd5e_engine.evaluation_charged_item import verify_charged_item_cast
+
+                verify_charged_item_cast(self, request)
+
             for operation in self.state_delta.operations:
                 if isinstance(operation, (HasteGraphCreate, EffectFollowUpCreate)):
                     if request.schema_version != "engine-evaluation/30":
                         raise ValueError("new combat effect operations require evaluation/30")
                     if isinstance(operation, HasteGraphCreate):
                         verify_haste_creation(operation, request, self.proposed_events)
+                elif isinstance(operation, InventorySpendCharge):
+                    if request.schema_version != CHARGED_ITEM_SCHEMA_VERSION:
+                        raise ValueError("inventory.spend_charge requires evaluation/32")
                 elif isinstance(operation, CombatEffectCreate):
                     verify_speed_effect_creation(operation, request, self.proposed_events)
         if self.rng_transition is not None:

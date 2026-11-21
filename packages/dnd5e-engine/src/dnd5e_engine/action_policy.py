@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from dnd5e_srd_data.schema.item import Weapon
     from dnd5e_srd_data.schema.spell import Spell
 
+    from dnd5e_engine.evaluation_effects import EffectState
     from dnd5e_engine.orchestrator import AttackFunding, PlayerIntent, _ActionCost, _LiveCombat
     from dnd5e_engine.types.combat import Combatant
     from dnd5e_engine.types.effects import ActiveEffect
@@ -109,9 +110,25 @@ def classify_intent(intent: "PlayerIntent") -> ActionType | None:
     return kinds.pop() if len(kinds) == 1 else None
 
 
-def grant_group(effect: "ActiveEffect") -> str | None:
+def grant_group(effect: "ActiveEffect | EffectState") -> str | None:
     """Resolve the restricted action grant group for the action."""
     return effect.lifecycle.spec.stacking_group if effect.lifecycle else None
+
+
+def available_grant(
+    actor: "Combatant", effect: "ActiveEffect | EffectState", action: ActionType | None
+) -> bool:
+    """Check the entitlement and spend marks for a selected effective grant."""
+    policy = effect.action_policy
+    grant = policy.extra_action if policy else None
+    return (
+        not effect.disabled
+        and effect.target_id == actor.entity_id
+        and grant is not None
+        and action in grant.actions
+        and (effect.id, effect.origin) not in actor.action_grants_spent
+        and grant_group(effect) not in actor.action_grant_groups_spent
+    )
 
 
 def validate_grant(live: "_LiveCombat", actor: "Combatant", intent: "PlayerIntent") -> None:
@@ -130,12 +147,9 @@ def validate_grant(live: "_LiveCombat", actor: "Combatant", intent: "PlayerInten
         ),
         None,
     )
-    grant = effect.action_policy.extra_action if effect and effect.action_policy else None
     if (
-        grant is None
-        or intent.action_grant in actor.action_grants_spent
-        or (effect is not None and grant_group(effect) in actor.action_grant_groups_spent)
-        or classify_intent(intent) not in grant.actions
+        effect is None
+        or not available_grant(actor, effect, classify_intent(intent))
         or intent.use_bonus_action
         or intent.stat_block_action_id is not None
         or intent.intent_type
@@ -161,9 +175,16 @@ def grant_payment(
 ) -> dict[str, object]:
     """Determine payment against a restricted action grant."""
     effect = next(e for e in live.active_effects[actor.entity_id] if (e.id, e.origin) == grant)
+    return grant_payment_for_effect(actor, effect)
+
+
+def grant_payment_for_effect(
+    actor: "Combatant", effect: "ActiveEffect | EffectState"
+) -> dict[str, object]:
+    """Spend an admitted grant without consuming the ordinary Attack or Action budget."""
     group = grant_group(effect)
     return {
-        "action_grants_spent": (*actor.action_grants_spent, grant),
+        "action_grants_spent": (*actor.action_grants_spent, (effect.id, effect.origin)),
         "action_grant_groups_spent": (*actor.action_grant_groups_spent, group)
         if group
         else actor.action_grant_groups_spent,

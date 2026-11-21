@@ -11,6 +11,7 @@ from dnd5e_engine.evaluation_death import death_consistency
 from dnd5e_engine.evaluation_delta import CombatClose, HistoricalCombatOutcome, StateDelta
 from dnd5e_engine.evaluation_preflight import template_support_failure
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError
+from dnd5e_engine.evaluation_region_effect import supports_fixed_combat_regions
 from dnd5e_engine.evaluation_rng import RNGTransition
 from dnd5e_engine.evaluation_state import ClosureDeath, CombatSnapshot
 from dnd5e_engine.events import CombatEnded
@@ -63,6 +64,7 @@ def evaluate_closure(request: RuleEvaluationRequest, loader: AssetLoader) -> Clo
         snapshot,
         loader,
         reviewed_closure=snapshot.snapshot_schema_version == "engine-snapshot/20",
+        reviewed_region_conditions=supports_fixed_combat_regions(snapshot, loader),
     ) or template_support_failure(snapshot, loader)
     if failure:
         return _refuse("unsupported", "closure.capability", failure)

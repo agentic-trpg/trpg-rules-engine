@@ -264,7 +264,8 @@ def test_ordinary_spell_profile_rejects_incomplete_bundled_mechanics():
     assert evaluation_spells.ordinary_spell_mechanism(loader, "cure-wounds") == "healing"
     assert evaluation_spells.ordinary_spell_mechanism(loader, "sacred-flame") == "save_damage"
     assert evaluation_spells.ordinary_spell_mechanism(loader, "inflict-wounds") == "save_damage"
-    for slug in ("dissonant-whispers", "vicious-mockery", "acid-splash", "hold-person"):
+    assert evaluation_spells.ordinary_spell_mechanism(loader, "acid-splash") == "area_save_damage"
+    for slug in ("dissonant-whispers", "vicious-mockery", "fireball", "hold-person"):
         assert evaluation_spells.ordinary_spell_mechanism(loader, slug) is None
     assert evaluation_spells.ordinary_spell_mechanism(loader, None) is None
 

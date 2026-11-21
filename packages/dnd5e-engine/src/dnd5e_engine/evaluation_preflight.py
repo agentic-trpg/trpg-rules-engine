@@ -14,6 +14,7 @@ from dnd5e_srd_data.schema.monster import MonsterActionKind
 
 from dnd5e_engine import attack_rules
 from dnd5e_engine.action_economy_rules import action_economy_gate_failure
+from dnd5e_engine.action_policy import available_grant
 from dnd5e_engine.activities.dice import validate_expression
 from dnd5e_engine.evaluation_actor import combatant
 from dnd5e_engine.evaluation_contracts import CombatIntentPayload, PreflightChoice, RuleError
@@ -22,6 +23,7 @@ from dnd5e_engine.evaluation_death import (
     reviewed_terminal_unconscious,
     turn_lifecycle_support_failure,
 )
+from dnd5e_engine.evaluation_effects import EffectState
 from dnd5e_engine.evaluation_state import CharacterStateV2, CombatSnapshot
 from dnd5e_engine.events import AttackFailed, CastFailed, DamageType
 from dnd5e_engine.intents import IntentRejectedError
@@ -29,7 +31,7 @@ from dnd5e_engine.spatial import GridTopology, parse_cell
 from dnd5e_engine.specs import GridScene
 from dnd5e_engine.types.combat import Combatant
 
-_AttackProfile = Literal["ordinary", "shield", "concentration", "held_target"]
+_AttackProfile = Literal["ordinary", "shield", "concentration", "held_target", "haste"]
 
 
 @dataclass(frozen=True)
@@ -54,6 +56,7 @@ class AttackPlan:
     effect_profile: _AttackProfile
     target_walk_bonus: int
     target_ac_floor: int | None = None
+    action_grant: EffectState | None = None
 
 
 def refused(status: Literal["rejected", "unsupported"], code: str, reason: str) -> AttackAdmission:
@@ -73,6 +76,7 @@ def snapshot_support_failure(
     reviewed_sap: bool = False,
     reviewed_conditions: bool = False,
     reviewed_world_effects: bool = False,
+    reviewed_region_conditions: bool = False,
     reviewed_closure: bool = False,
 ) -> str | None:
     """Return a reason when snapshot mechanics exceed the supported operation profile.
@@ -84,19 +88,23 @@ def snapshot_support_failure(
     state = snapshot.combat_state
     failure = death_consistency(snapshot, allow_dying=turn_lifecycle)
     if failure is None and turn_lifecycle:
-        failure = turn_lifecycle_support_failure(snapshot)
+        failure = turn_lifecycle_support_failure(
+            snapshot, reviewed_region_conditions=reviewed_region_conditions
+        )
     if failure:
         return failure
     # Full dependencies remain in the DTO, even when this slice cannot execute them.
     unsupported = (
-        snapshot.effect_states if not (reviewed_effects or reviewed_world_effects) else (),
+        snapshot.effect_states
+        if not (reviewed_effects or reviewed_world_effects or reviewed_region_conditions)
+        else (),
         state.timed_activities.pending,
         state.persistent_areas.areas,
         state.persistent_areas.next_turn_start_effects,
         state.combat_objects.objects,
         state.concentration_chain if not reviewed_effects else (),
         state.concentration_rounds_remaining if not reviewed_effects else (),
-        state.conditions_by_effect if not reviewed_effects else (),
+        state.conditions_by_effect if not (reviewed_effects or reviewed_region_conditions) else (),
         state.effect_lifecycles if not reviewed_effects else (),
         state.pending_reactions if not reviewed_reactions else (),
         state.active_reaction_responses,
@@ -151,6 +159,7 @@ def snapshot_support_failure(
                 and not turn_lifecycle
                 and not reviewed_effects
                 and not reviewed_conditions
+                and not reviewed_region_conditions
                 and not (reviewed_closure and reviewed_terminal_unconscious(actor, state.dead_ids))
             )
             or (actor.concentration_effect_id and not reviewed_effects)
@@ -498,6 +507,8 @@ def _attack_dependencies(
 ) -> tuple[_AttackProfile, int, int | None, str | None]:
     """Validate an attack profile and project its target's admitted elapsed modifiers."""
     from dnd5e_engine.evaluation_class_dependencies import operation_dependencies
+    from dnd5e_engine.evaluation_haste import has_haste_effects, haste_support_failure
+    from dnd5e_engine.evaluation_region_effect import supports_fixed_combat_regions
     from dnd5e_engine.evaluation_shield import has_shield, shield_support_failure
 
     state = snapshot.combat_state
@@ -505,27 +516,28 @@ def _attack_dependencies(
     target_walk_bonus = 0
     target_ac_floor = None
     reviewed_world_effects = False
+    if current_snapshot and has_haste_effects(snapshot):
+        return "haste", 0, None, haste_support_failure(snapshot, loader, attack=True)
+    reviewed_regions = supports_fixed_combat_regions(snapshot, loader)
     if (
-        current_snapshot
-        and len(snapshot.effect_states) == 1
-        and snapshot.effect_states[0].duration.seconds is not None
+        not reviewed_regions
+        and current_snapshot
+        and snapshot.effect_states
+        and all(effect.duration.seconds is not None for effect in snapshot.effect_states)
         and not state.concentration_chain
     ):
         # Elapsed-time effects can share a display-derived identity with Shield.
-        from dnd5e_engine.evaluation_timed_spells import attack_world_spell_modifiers
+        from dnd5e_engine.evaluation_world_spell_modifiers import world_spell_combat_modifiers
 
-        effect = snapshot.effect_states[0]
         try:
-            walk_bonus, ac_floor = attack_world_spell_modifiers(effect)
+            modifiers = world_spell_combat_modifiers(snapshot.effect_states)
         except ValueError as error:
             return "ordinary", 0, None, str(error)
         reviewed_world_effects = True
-        if effect.target_id == intent.target_id:
-            target_walk_bonus = walk_bonus
-            target_ac_floor = ac_floor
-    elif has_shield(snapshot):
+        target_walk_bonus, target_ac_floor = modifiers.get(intent.target_id or "", (0, None))
+    elif not reviewed_regions and has_shield(snapshot):
         return "shield", 0, None, shield_support_failure(snapshot, loader)
-    elif snapshot.effect_states or state.concentration_chain:
+    elif not reviewed_regions and (snapshot.effect_states or state.concentration_chain):
         from dnd5e_engine.evaluation_concentration import concentration_support_failure
 
         profile: _AttackProfile = "concentration"
@@ -557,6 +569,7 @@ def _attack_dependencies(
             reviewed_sap=True,
             allow_difficult_terrain=True,
             reviewed_world_effects=reviewed_world_effects,
+            reviewed_region_conditions=reviewed_regions,
         ),
     )
 
@@ -602,11 +615,21 @@ def prepare_attack(
     if intent.intent_type != "attack" or any(
         getattr(intent, name) != getattr(basic, name)
         for name in type(intent).model_fields
-        if name not in allowed
+        if name not in allowed and (name != "action_grant" or profile != "haste")
     ):
         return refused(
             "unsupported", "intent.capability", "only a single ordinary Attack is admitted"
         )
+    grant = None
+    if intent.action_grant is not None:
+        (effect,) = snapshot.effect_states
+        if (
+            intent.stat_block_action_id is not None
+            or intent.action_grant != (effect.id, effect.origin)
+            or not available_grant(current, effect, "attack")
+        ):
+            return refused("rejected", "action_restricted", "invalid or spent Haste Attack grant")
+        grant = effect
     if intent.stat_block_action_id is not None:
         if intent.weapon_instance_id is not None:
             return refused("rejected", "action_unavailable", "supply one attack source")
@@ -651,7 +674,11 @@ def prepare_attack(
         return refused("rejected", "target_invalid", "target must be a present opposing actor")
     try:
         failure = action_economy_gate_failure(
-            current, intent, is_bonus_action=False, is_reaction_cast=False
+            current,
+            intent,
+            is_bonus_action=False,
+            is_reaction_cast=False,
+            extra_action=grant is not None,
         )
     except IntentRejectedError as error:
         return refused("rejected", error.reason, str(error))
@@ -691,6 +718,14 @@ def prepare_attack(
     return AttackAdmission(
         status="accepted",
         plan=AttackPlan(
-            current, target, weapon, activity, distance, profile, target_walk_bonus, target_ac_floor
+            current,
+            target,
+            weapon,
+            activity,
+            distance,
+            profile,
+            target_walk_bonus,
+            target_ac_floor,
+            grant,
         ),
     )

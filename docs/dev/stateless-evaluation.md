@@ -275,6 +275,36 @@ Use that capped value for the displayed HP change. SM adopts the proposal and
 commits all affected facts in a separate step. Earlier request/snapshot pairs
 remain accepted for their existing operations.
 
+## Exploration charged item casting
+
+`world.use_item` with `engine-evaluation/32` uses the existing
+`ExplorationItemUsePayload` and `engine-snapshot/20`. The payload names an exact
+`instance_id`, its `activity_id`, and one living target. For a distinct target,
+the host supplies caster and target cells in `spell_positions`. The engine
+checks touch range and a clear path, and requires the caster to have a free
+hand and access to the owned item. The host supplies a snapshot without
+pending combat.
+
+The item definition in the bound ruleset supplies a single typed
+`CastActivity` with one fixed positive `itemUses` cost and an explicit casting
+ability for the authored item. The activity refers by UUID to a reviewed
+canonical first-level instantaneous touch heal, currently Cure Wounds. The
+shared Cast and Heal activity resolvers apply the base-level spell. The item's
+charge pool supplies payment, with no slot, preparation, or components
+required. This profile covers retained items with fixed capacity. Upcasting,
+recharge, attunement, destruction, persistent effects and combat item casting
+are outside this profile. See the [SRD 5.2.1 spell and magic item rules](https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf).
+
+An accepted cast proposes `InventorySpendCharge` for the exact original
+instance and an optional capped `HPDelta` for the named target. A zero charge
+balance retains the instance, and a full-HP target still produces a paid
+cast and healing roll. `IntentSubmitted` carries the item slug, source
+instance, activity and spell. `SpellCast` records a null slot level and
+`HealingApplied` records the uncapped roll. The result includes the RNG
+transition and remains uncommitted until the host validates and applies the
+combined proposal.
+
+
 ## Canonical spell source wire — 2026-11-16
 
 Snapshot `engine-snapshot/20`, evaluation `engine-evaluation/27`, availability

@@ -99,13 +99,12 @@ def _validate_passive_changes(passive: PassiveEffect, active: ActiveEffect) -> N
 
 
 def _passive_profile(
-    spell: Spell, *, target_id: str, caster_id: str
-) -> tuple[UtilityActivity, ActiveEffect]:
+    spell: Spell, *, target_id: str, caster_id: str, max_target_capacity: int = 1
+) -> tuple[UtilityActivity, ActiveEffect, int]:
     """Build an admitted base-level utility and elapsed-time effect from rule data."""
     seconds_per_unit = _SECONDS_PER_UNIT.get(spell.duration.units)
     if (
         spell.review.requires_user_decision
-        or spell.concentration
         or spell.ritual
         or spell.casting_time.unit not in (CastingTimeUnit.ACTION, CastingTimeUnit.BONUS)
         or spell.casting_time.value != 1
@@ -121,12 +120,13 @@ def _passive_profile(
         or len(spell.activities) != 1
         or len(spell.passive_effects) != 1
     ):
-        raise ValueError("requires one finite nonconcentration touch or self spell")
+        raise ValueError("requires one finite touch or self spell")
     activity = spell.activities[0]
     passive = spell.passive_effects[0]
     if not isinstance(activity, UtilityActivity) or not activity.id or not passive.id:
         raise ValueError("requires one identifiable utility activity and its passive effect")
     target = activity.target
+    target_capacity = resolve_target_count(target.affects.count, cast_level=spell.level)
     allowed_targets: tuple[str, ...] = ("creature", "willing")
     if spell.range.units == SpellRangeUnits.SELF:
         allowed_targets += ("self",)
@@ -168,10 +168,11 @@ def _passive_profile(
         or target.affects.choice
         or target.affects.special
         or target.affects.type not in allowed_targets
-        or resolve_target_count(target.affects.count, cast_level=spell.level) != 1
+        or target_capacity is None
+        or not 1 <= target_capacity <= max_target_capacity
     ):
         raise ValueError(
-            "utility must immediately apply exactly one passive effect to one creature"
+            "utility must immediately apply one passive effect within its supported target limit"
         )
     seconds = spell.duration.value * seconds_per_unit
     # The Foundry import can retain a one-round default even when the spell has
@@ -188,9 +189,17 @@ def _passive_profile(
         or not passive.changes
     ):
         raise ValueError("requires an enabled passive effect with matching elapsed duration")
-    active = passive_effect_to_active_effect(passive, target_id=target_id, caster_id=caster_id)
+    active = passive_effect_to_active_effect(
+        passive, target_id=target_id, caster_id=caster_id, concentration=spell.concentration
+    )
     _validate_passive_changes(passive, active)
-    return activity, active.model_copy(update={"duration": ActiveEffectDuration(seconds=seconds)})
+    if spell.concentration and not all(_flat_skill_bonus(change) for change in active.changes):
+        raise ValueError("elapsed concentration supports only flat skill bonuses")
+    return (
+        activity,
+        active.model_copy(update={"duration": ActiveEffectDuration(seconds=seconds)}),
+        target_capacity,
+    )
 
 
 def attack_world_spell_modifiers(effect: EffectState) -> tuple[int, int | None]:
@@ -352,7 +361,8 @@ def evaluate_exploration_spell(
 
     A reviewed touch heal resolves immediately. The timed branch supports
     movement, senses, Armor Class floors and flat skill bonuses with unchanged RNG.
-    A willing-creature profile requires self-targeting or verified willingness.
+    Flat skill bonuses may require concentration. A willing-creature profile
+    requires self-targeting or verified willingness.
     A distinct target with unknown willingness yields a choice before payment.
     The host owns persistence, elapsed time and expiry.
     """
@@ -373,7 +383,7 @@ def evaluate_exploration_spell(
     healing = exploration_healing_activity(loader, spell)
     if healing is None:
         try:
-            activity, active = _passive_profile(
+            activity, active, _ = _passive_profile(
                 spell, target_id=payload.target_id, caster_id=request.actor_id
             )
         except ValueError as exc:
@@ -411,7 +421,14 @@ def evaluate_exploration_spell(
         return _refuse("rejected", "spell.source", failure)
 
     if healing is None and any(
-        current.target_id == target.entity_id and current.id == active.id
+        current.target_id == target.entity_id
+        and current.id == active.id
+        and not (
+            spell.concentration
+            and actor.concentration_effect_id == current.id
+            and current.origin == active.origin
+            and current.flags.get("concentration") is True
+        )
         for current in snapshot.effect_states
     ):
         return _refuse("rejected", "spell.effect_exists", "target already has this effect")
@@ -450,6 +467,7 @@ def evaluate_exploration_spell(
             source_id=actor.entity_id,
             effect=effect_state(active),
             expiry=EffectExpiryPolicy(action="remove"),
+            concentration=spell.concentration,
             ruleset_binding=request.ruleset_binding,
         ),
     )

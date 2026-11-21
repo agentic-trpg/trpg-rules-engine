@@ -42,13 +42,18 @@ class EffectExpiryPolicy(EvaluationModel):
 
 
 class WorldEffectApplication(EvaluationModel):
-    """Associate one proposed effect and terminal policy with its original invocation."""
+    """Bind an elapsed-time effect and its terminal policy to its original invocation.
+
+    Concentration requests a replacement of the caster's current concentration at
+    cast adoption. The host owns the existing group's identity and World clock.
+    """
 
     session_id: str
     command_id: str
     source_id: str
     effect: EffectState
     expiry: EffectExpiryPolicy
+    concentration: bool = False
     ruleset_binding: RulesetBinding
 
     @property
@@ -68,6 +73,8 @@ class WorldEffectApplication(EvaluationModel):
     def finite_duration(self) -> WorldEffectApplication:
         """Require a positive typed seconds duration on the proposed effect."""
         _ = self.duration_seconds
+        if self.effect.flags.get("concentration", False) is not self.concentration:
+            raise ValueError("world effect concentration differs from its application")
         return self
 
     def verify_request(self, request: WorldEffectApplicationRequest) -> None:

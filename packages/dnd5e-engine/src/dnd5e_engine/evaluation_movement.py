@@ -17,6 +17,7 @@ from dnd5e_engine.evaluation_opportunity import (
 )
 from dnd5e_engine.evaluation_preflight import template_support_failure
 from dnd5e_engine.evaluation_projection import attack_delta
+from dnd5e_engine.evaluation_region_effect import supports_fixed_combat_regions
 from dnd5e_engine.evaluation_rng import RNGTransition
 from dnd5e_engine.evaluation_speed_effects import (
     SpeedEffectComputation,
@@ -24,10 +25,10 @@ from dnd5e_engine.evaluation_speed_effects import (
     speed_effect_support_failure,
     speed_with_effects,
     without_speed_effect,
-    world_walk_bonus,
 )
 from dnd5e_engine.evaluation_state import CharacterStateV2, CombatSnapshot, MovementLedgerState
 from dnd5e_engine.evaluation_turn import TurnEvaluation, _refuse
+from dnd5e_engine.evaluation_world_spell_modifiers import world_spell_combat_modifiers
 from dnd5e_engine.events import ActorMoved, DashTaken, IntentSubmitted
 from dnd5e_engine.movement import (
     can_enter_creature_space,
@@ -42,18 +43,18 @@ from dnd5e_engine.turn_rules import ordinary_action_payment
 from dnd5e_engine.types.combat import Combatant
 
 
-def timed_walk_bonus(snapshot: CombatSnapshot) -> tuple[str, int] | None:
-    """Project the one supported elapsed passive spell over the fixed combat roster.
+def timed_walk_bonuses(snapshot: CombatSnapshot) -> dict[str, int]:
+    """Project walking bonuses from supported elapsed spells by combatant.
 
-    A caller admitting walking must reject other effect shapes. The host owns the
-    effect's deadline and includes only live effects in its fixed input.
+    A zero entry identifies a target whose elapsed effects are reviewed and do
+    not change walking speed. Other effects and reaction graphs raise ValueError.
+    The host owns the deadlines and supplies only active effects.
     """
     if not snapshot.effect_states:
-        return None
+        return {}
     state = snapshot.combat_state
     if (
         snapshot.snapshot_schema_version != "engine-snapshot/20"
-        or len(snapshot.effect_states) != 1
         or state.concentration_chain
         or state.conditions_by_effect
         or state.effect_lifecycles
@@ -61,9 +62,11 @@ def timed_walk_bonus(snapshot: CombatSnapshot) -> tuple[str, int] | None:
         or state.active_reaction_responses
         or state.reaction_effects_pending_expiry
     ):
-        raise ValueError("timed walking requires one passive spell and no reaction or effect graph")
-    effect = snapshot.effect_states[0]
-    return effect.target_id, world_walk_bonus(effect)
+        raise ValueError("timed walking requires passive spells and no reaction or effect graph")
+    return {
+        target: walk
+        for target, (walk, _) in world_spell_combat_modifiers(snapshot.effect_states).items()
+    }
 
 
 def walk_speed(actor: CharacterStateV2 | Combatant, bonus: int = 0) -> int:
@@ -78,15 +81,15 @@ def walk_speed(actor: CharacterStateV2 | Combatant, bonus: int = 0) -> int:
 
 def _movement_effects(
     snapshot: CombatSnapshot, loader: AssetLoader, *, walking: bool
-) -> tuple[bool, tuple[str, int] | None]:
+) -> tuple[bool, dict[str, int]]:
     """Admit the relevant movement effect profile or explain its refusal."""
     if has_speed_effects(snapshot):
         if not walking:
             raise ValueError("speed effect currently admits walking only")
         if failure := speed_effect_support_failure(snapshot, loader):
             raise ValueError(failure)
-        return True, None
-    return False, timed_walk_bonus(snapshot) if walking else None
+        return True, {}
+    return False, timed_walk_bonuses(snapshot) if walking else {}
 
 
 def _walk_step_cost(
@@ -153,13 +156,16 @@ def evaluate_movement(request: RuleEvaluationRequest, loader: AssetLoader) -> Tu
         return _refuse("unsupported", "movement.template", failure)
     if state.movement_ledgers[actor_id].active_mode != "walk":
         return _refuse("unsupported", "movement.mode", "only an active walking ledger is admitted")
+    reviewed_regions = supports_fixed_combat_regions(snapshot, loader)
     try:
-        speed_effect, timed = _movement_effects(
-            snapshot, loader, walking=intent.intent_type == "move"
+        speed_effect, timed = (
+            (False, {})
+            if reviewed_regions
+            else _movement_effects(snapshot, loader, walking=intent.intent_type == "move")
         )
     except ValueError as error:
         return _refuse("unsupported", "movement.capability", str(error))
-    bonus = timed[1] if timed is not None and timed[0] == actor_id else 0
+    bonus = timed.get(actor_id, 0)
     speed = (
         speed_with_effects(actor, snapshot.effect_states)
         if speed_effect
@@ -177,7 +183,8 @@ def evaluate_movement(request: RuleEvaluationRequest, loader: AssetLoader) -> Tu
             movement=True,
             attack=bool(state.pending_reactions),
             reviewed_reactions=bool(state.pending_reactions),
-            reviewed_world_effects=timed is not None,
+            reviewed_world_effects=bool(timed),
+            reviewed_region_conditions=reviewed_regions,
             equipped=True,
         )
         or template_support_failure(snapshot, loader)

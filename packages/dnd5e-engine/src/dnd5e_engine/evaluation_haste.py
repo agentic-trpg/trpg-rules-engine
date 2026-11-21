@@ -1,4 +1,4 @@
-"""Isolated combat application and end-of-effect handling for canonical Haste."""
+"""Isolated combat application, attack support and expiry for canonical Haste."""
 
 import random
 from collections.abc import Sequence
@@ -6,12 +6,14 @@ from typing import cast
 
 from dnd5e_srd_data.loader import AssetLoader
 
+from dnd5e_engine.action_policy import grant_group
 from dnd5e_engine.activities.effects import applicable_effect_statuses
 from dnd5e_engine.effect_lifecycle import EffectIdentity, conditions_after_effect_application
 from dnd5e_engine.evaluation_actor import combatant
 from dnd5e_engine.evaluation_class_dependencies import operation_dependencies
 from dnd5e_engine.evaluation_concentration import concentration_delta
 from dnd5e_engine.evaluation_delta import StateDelta
+from dnd5e_engine.evaluation_dependencies import concentration_save_identity_failure
 from dnd5e_engine.evaluation_effect_turn import effect_turn_delta
 from dnd5e_engine.evaluation_effects import EffectState, explicit_effect_fields
 from dnd5e_engine.evaluation_haste_delta import (
@@ -26,6 +28,7 @@ from dnd5e_engine.evaluation_hold_cast import HoldCastComputation
 from dnd5e_engine.evaluation_preflight import template_support_failure
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError
 from dnd5e_engine.evaluation_ruleset import get_default_ruleset
+from dnd5e_engine.evaluation_saves import save_actor_failure
 from dnd5e_engine.evaluation_state import CharacterStateV2, CombatSnapshot, ConditionRecord
 from dnd5e_engine.events import (
     ConditionApplied,
@@ -81,7 +84,17 @@ def _without_haste(snapshot: CombatSnapshot) -> CombatSnapshot:
         update={
             "effect_states": (),
             "character_states": tuple(
-                actor.model_copy(update={"concentration_effect_id": None, "conditions": []})
+                actor.model_copy(
+                    update={
+                        "concentration_effect_id": None,
+                        "conditions": [],
+                        **(
+                            {"action_grants_spent": (), "action_grant_groups_spent": ()}
+                            if snapshot.effect_states
+                            else {}
+                        ),
+                    }
+                )
                 for actor in snapshot.character_states
             ),
             "combat_state": snapshot.combat_state.model_copy(
@@ -138,7 +151,10 @@ def _graph_failure(snapshot: CombatSnapshot) -> str | None:
     captured = [ConditionRecord.model_validate(c.model_dump()) for c in conditions]
     if link.identity != clock.identity or link.statuses != statuses:
         return "Haste effect condition lineage contradicts the target's immunities"
+    group = grant_group(parent)
+    spend_marks = (((parent.id, parent.origin),), (group,) if group is not None else ())
     for actor in actors.values():
+        actual_marks = (actor.action_grants_spent, actor.action_grant_groups_spent)
         if (
             not actor.is_alive
             or actor.hp_current <= 0
@@ -146,12 +162,18 @@ def _graph_failure(snapshot: CombatSnapshot) -> str | None:
             or actor.conditions != (captured if actor.entity_id == target else [])
             or actor.concentration_effect_id
             != (effect.id if hasted and actor.entity_id == source else None)
+            or (
+                actual_marks != ((), ())
+                and (actor.entity_id != target or actual_marks != spend_marks)
+            )
         ):
             return "Haste graph requires living actors and exact effect/condition provenance"
     return None
 
 
-def haste_support_failure(snapshot: CombatSnapshot, loader: AssetLoader) -> str | None:
+def haste_support_failure(
+    snapshot: CombatSnapshot, loader: AssetLoader, *, attack: bool = False
+) -> str | None:
     """Check the exact Haste graph and supported remaining dependencies before evaluation."""
     reviewed = get_default_ruleset()
     if loader.get_spell("haste") != reviewed.get_spell("haste") or loader.get_condition(
@@ -160,9 +182,16 @@ def haste_support_failure(snapshot: CombatSnapshot, loader: AssetLoader) -> str 
         return "Haste spell or Incapacitated differs from the reviewed declaration"
     if failure := _graph_failure(snapshot):
         return failure
+    if attack and snapshot.combat_state.concentration_chain:
+        source = next(iter(snapshot.combat_state.concentration_chain))
+        caster = next(actor for actor in snapshot.character_states if actor.entity_id == source)
+        if failure := concentration_save_identity_failure(caster, loader) or save_actor_failure(
+            caster, loader, reviewed_identity=True, reviewed_concentration=True
+        ):
+            return failure
     plain = _without_haste(snapshot)
     return operation_dependencies(
-        plain, loader, turn_lifecycle=True, movement=True, equipped=True
+        plain, loader, turn_lifecycle=True, movement=not attack, equipped=True, attack=attack
     ) or template_support_failure(plain, loader)
 
 

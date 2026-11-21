@@ -28,6 +28,7 @@ from dnd5e_engine.evaluation_actor import combatant
 from dnd5e_engine.evaluation_class_dependencies import class_dependencies
 from dnd5e_engine.evaluation_computation import CombatComputation
 from dnd5e_engine.evaluation_contracts import (
+    CHARGED_ITEM_SCHEMA_VERSION,
     CombatIntentPayload,
     ExplorationItemUsePayload,
     ItemUsePayload,
@@ -141,7 +142,7 @@ def _carried_equipment_failure(slugs: Iterable[str], loader: AssetLoader) -> Ite
 
 
 def _equipment_failure(actor_state: CharacterStateV2, item: Item) -> ItemEvaluation | None:
-    """Check the drinker's charge authority and declared free hand."""
+    """Check the item user's charge authority and declared free hand."""
     counter_key = item_use_counter_key(item.slug)
     if counter_key in actor_state.custom_counters:
         return _refuse(
@@ -155,15 +156,15 @@ def _equipment_failure(actor_state: CharacterStateV2, item: Item) -> ItemEvaluat
         or actor_state.shield_equipped
     ):
         return _refuse(
-            "rejected", "item_hand_unavailable", "drinking requires a declared free hand"
+            "rejected", "item_hand_unavailable", "item use requires a declared free hand"
         )
     return None
 
 
-def _selected_unit(
+def _owned_item_unit(
     snapshot: StateSnapshot, actor_id: str, payload: ItemUsePayload | ExplorationItemUsePayload
 ) -> InventoryEntry | ItemEvaluation:
-    """Select one exact usable, accessible inventory entry owned by its self-target."""
+    """Select the exact owned and accessible inventory entry."""
     entry = next(
         (e for e in snapshot.inventory_state.entries if e.instance_id == payload.instance_id), None
     )
@@ -171,6 +172,16 @@ def _selected_unit(
         return _refuse("rejected", "item_missing", "inventory instance is absent")
     if entry.owner_id != actor_id or not entry.accessible:
         return _refuse("rejected", "item_unauthorized", "item must be owned and accessible")
+    return entry
+
+
+def _selected_unit(
+    snapshot: StateSnapshot, actor_id: str, payload: ItemUsePayload | ExplorationItemUsePayload
+) -> InventoryEntry | ItemEvaluation:
+    """Require one usable charge and self-targeting for the reviewed consumable."""
+    entry = _owned_item_unit(snapshot, actor_id, payload)
+    if not isinstance(entry, InventoryEntry):
+        return entry
     if entry.quantity == 0 or entry.charges_remaining_per_unit == 0:
         return _refuse("rejected", "item_exhausted", "no usable inventory unit remains")
     if entry.charges_remaining_per_unit != 1:
@@ -388,7 +399,7 @@ async def evaluate_item(request: RuleEvaluationRequest, loader: AssetLoader) -> 
 def evaluate_exploration_item(
     request: RuleEvaluationRequest, loader: AssetLoader
 ) -> ItemEvaluation:
-    """Propose an exact potion use, capped HP gain and RNG transition during exploration.
+    """Propose one versioned item use and capped healing during exploration.
 
     Admission completes before RNG restore. The shared activity runs on a local actor
     copy, and no action or turn accounting enters the proposal.
@@ -400,6 +411,16 @@ def evaluate_exploration_item(
         raise EvaluationInvariantError("exploration item evaluation requires a noncombat request")
     if snapshot.combat_setup is not None:
         return _refuse("unsupported", "item.snapshot", "exploration requires no pending combat")
+    if request.schema_version == CHARGED_ITEM_SCHEMA_VERSION:
+        from dnd5e_engine.evaluation_charged_item import evaluate_exploration_charged_cast
+
+        entry = _owned_item_unit(snapshot, request.actor_id, payload)
+        if not isinstance(entry, InventoryEntry):
+            return entry
+        charged_item = loader.get_item(entry.item_slug)
+        if charged_item is None or charged_item.slug != entry.item_slug:
+            return _refuse("unsupported", "item.capability", "inventory asset is absent")
+        return evaluate_exploration_charged_cast(request, entry, charged_item, loader)
     entry = _selected_unit(snapshot, request.actor_id, payload)
     if not isinstance(entry, InventoryEntry):
         return entry

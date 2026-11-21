@@ -280,6 +280,27 @@ class InventoryConsume(EvaluationModel):
         return self
 
 
+class InventorySpendCharge(EvaluationModel):
+    """Propose spending charges on one retained, accessible inventory instance."""
+
+    kind: Literal["inventory.spend_charge"]
+    expected: InventoryEntry
+    value: InventoryEntry
+    amount: Annotated[int, Field(ge=1)]
+
+    @model_validator(mode="after")
+    def spend_charge(self) -> Self:
+        """Check the original balance and preserve every fact except charges."""
+        if not self.expected.accessible or self.expected.quantity != 1:
+            raise ValueError("charge spending requires one accessible unit")
+        balance = self.expected.charges_remaining_per_unit - self.amount
+        if balance < 0 or self.value != self.expected.model_copy(
+            update={"charges_remaining_per_unit": balance}
+        ):
+            raise ValueError("charge spending must only reduce the selected unit's balance")
+        return self
+
+
 class InitialActorState(EvaluationModel):
     """Describe actor mechanics produced by fresh combat initialization."""
 
@@ -357,12 +378,13 @@ class WorldEffectCreate(EvaluationModel):
 
     @model_validator(mode="after")
     def world_time_passive(self) -> Self:
-        """Require a passive effect with only an elapsed-seconds duration."""
+        """Require an elapsed-seconds passive effect with only its declared concentration."""
         effect = self.value.effect
+        expected_flags = {"concentration": True} if self.value.concentration else {}
         if (
             effect.disabled
             or effect.transfer
-            or effect.flags
+            or effect.flags != expected_flags
             or effect.action_policy is not None
             or effect.lifecycle is not None
             or effect.end_effects
@@ -605,6 +627,7 @@ StateDeltaOperation = Annotated[
     | DeathLedgerUpdate
     | CombatClose
     | InventoryConsume
+    | InventorySpendCharge
     | CombatCreationCandidate
     | ResourceUpdate
     | WorldEffectCreate

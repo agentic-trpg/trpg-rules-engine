@@ -6,20 +6,26 @@ that this vertical slice cannot yet execute; this is not a general combat runtim
 """
 
 import random
+from collections.abc import Callable
+from dataclasses import dataclass
 
 from dnd5e_srd_data.loader import AssetLoader
 
 from dnd5e_engine import attack_rules
+from dnd5e_engine.action_policy import grant_payment_for_effect
 from dnd5e_engine.activities.build_context import build_activity_context
+from dnd5e_engine.activities.context import AttackHitContext
 from dnd5e_engine.activities.resolver import resolve_activity
 from dnd5e_engine.evaluation_computation import CombatComputation as _AttackComputation
 from dnd5e_engine.evaluation_computation import CombatComputationResult
 from dnd5e_engine.evaluation_contracts import CombatIntentPayload
+from dnd5e_engine.evaluation_haste_delta import EffectFollowUpCreate
 from dnd5e_engine.evaluation_preflight import AttackPlan
 from dnd5e_engine.evaluation_state import CombatSnapshot
 from dnd5e_engine.events import (
     IntentSubmitted,
 )
+from dnd5e_engine.reaction_effect_rules import effective_armor_class
 from dnd5e_engine.sap_rules import apply_sap, consume_sap
 from dnd5e_engine.spatial import GridTopology
 from dnd5e_engine.specs import GridScene
@@ -30,6 +36,13 @@ from dnd5e_engine.turn_rules import (
 )
 
 
+@dataclass(frozen=True)
+class HasteAttackResult(CombatComputationResult):
+    """Retain the captured follow-up proposals alongside mechanical attack evidence."""
+
+    follow_ups: tuple[EffectFollowUpCreate, ...]
+
+
 def execute_attack(
     snapshot: CombatSnapshot,
     intent: CombatIntentPayload,
@@ -37,14 +50,18 @@ def execute_attack(
     rng: random.Random,
     *,
     loader: AssetLoader | None = None,
+    before_hit: Callable[[AttackHitContext], None] | None = None,
 ) -> CombatComputationResult:
     """Compute a private post-state for closed delta projection, never publication."""
+    from dnd5e_engine.evaluation_haste import HasteComputation
     from dnd5e_engine.evaluation_shield import ShieldComputation
 
     if plan.effect_profile == "shield":
         if loader is None:
             raise RuntimeError("Shield computation requires the explicit verified loader")
         computation: _AttackComputation = ShieldComputation(snapshot, rng, loader)
+    elif plan.effect_profile == "haste":
+        computation = HasteComputation(snapshot, rng)
     elif plan.effect_profile in {"concentration", "held_target"}:
         from dnd5e_engine.evaluation_concentration import ConcentrationComputation
 
@@ -58,12 +75,15 @@ def execute_attack(
             actor_id=before.entity_id, intent_type="attack", target_id=plan.target.entity_id
         )
     )
-    actor = spend_attack_budget(
-        before,
-        new_action=attack_rules.attack_action_is_spent(before),
-        attacks=1,
-        payment=ordinary_action_payment(before),
-    )
+    if plan.action_grant is None:
+        actor = spend_attack_budget(
+            before,
+            new_action=attack_rules.attack_action_is_spent(before),
+            attacks=1,
+            payment=ordinary_action_payment(before),
+        )
+    else:
+        actor = before.model_copy(update=grant_payment_for_effect(before, plan.action_grant))
     computation.actors[actor.entity_id] = actor
     computation.sample_stage("attack_execution", (actor.entity_id,))
     topology = GridTopology(GridScene.model_validate(snapshot.scene_state.grid.model_dump()))
@@ -84,6 +104,23 @@ def execute_attack(
     if plan.target_walk_bonus:
         dodge_speed_actor = plan.target.model_copy(
             update={"base_speed": plan.target.base_speed + plan.target_walk_bonus}
+        )
+
+    def react_to_hit(attack: AttackHitContext) -> int:
+        """Reach the private checkpoint before applying the existing reactions."""
+        if before_hit is not None:
+            before_hit(attack)
+        if isinstance(computation, ShieldComputation):
+            return computation.hit_reaction(attack)
+        return attack.effective_ac
+
+    ac_bonus = 0
+    if isinstance(computation, ShieldComputation):
+        ac_bonus = computation.ac_bonus(plan.target.entity_id)
+    elif isinstance(computation, HasteComputation):
+        ac_bonus = effective_armor_class(
+            0,
+            [effect for effect in computation.effects if effect.target_id == plan.target.entity_id],
         )
     ctx = build_activity_context(
         actor,
@@ -125,15 +162,11 @@ def execute_attack(
         turn_serial=snapshot.combat_state.turn_serial,
         damage_instance_id_provider=computation.next_damage_id,
         damage_instance_resolved=computation.damage_completed,
-        attack_hit_reaction=computation.hit_reaction
-        if isinstance(computation, ShieldComputation)
+        attack_hit_reaction=react_to_hit
+        if before_hit is not None or isinstance(computation, ShieldComputation)
         else None,
-        save_modifiers={
-            plan.target.entity_id: {
-                "passive_ac_bonus": str(computation.ac_bonus(plan.target.entity_id))
-            }
-        }
-        if isinstance(computation, ShieldComputation)
+        save_modifiers={plan.target.entity_id: {"passive_ac_bonus": str(ac_bonus)}}
+        if ac_bonus
         else {},
     )
     resolve_activity(plan.activity, ctx, weapon=plan.weapon)
@@ -143,10 +176,21 @@ def execute_attack(
             raise RuntimeError("unadmitted mastery proc")
         marks = apply_sap(marks, actor.entity_id, target)
     computation.state = computation.state.model_copy(update={"sap_marks": marks})
-    computation.finish_turn(actor.entity_id)
+    # Keep the Haste turn available for movement and restricted or ordinary Actions.
+    # The existing explicit Pass path owns the effect's TurnEnd transition.
+    if not isinstance(computation, HasteComputation):
+        computation.finish_turn(actor.entity_id)
     computation.actors[actor.entity_id] = record_budget_changes(
         before, computation.actors[actor.entity_id]
     )
     if computation.damage:
         raise RuntimeError("attack left an incomplete damage instance")
-    return computation.result()
+    result = computation.result()
+    if isinstance(computation, HasteComputation):
+        return HasteAttackResult(
+            result.candidate_state,
+            result.proposed_events,
+            result.stage_facts,
+            tuple(computation.follow_ups),
+        )
+    return result

@@ -8,6 +8,7 @@ from dnd5e_engine.evaluation_class_dependencies import operation_dependencies
 from dnd5e_engine.evaluation_computation import CombatComputation
 from dnd5e_engine.evaluation_contracts import (
     CombatIntentPayload,
+    MultiSpellWillingnessChoice,
     RuleError,
     RuleEvaluationRequest,
     SpellWillingnessChoice,
@@ -35,7 +36,7 @@ class TurnEvaluation(TypedDict):
     state_delta: StateDelta | None
     proposed_events: tuple[CombatEvent, ...]
     rng_transition: RNGTransition | None
-    choice: SpellWillingnessChoice | None
+    choice: SpellWillingnessChoice | MultiSpellWillingnessChoice | None
     error: RuleError | None
     stage_facts: NotRequired[EventStageFacts]
 
@@ -90,6 +91,7 @@ def evaluate_turn(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
     )
     from dnd5e_engine.evaluation_hold_turn import HoldTurnComputation, hold_turn_support_failure
     from dnd5e_engine.evaluation_opportunity import opportunity_dependencies
+    from dnd5e_engine.evaluation_region_effect import supports_fixed_combat_regions
     from dnd5e_engine.evaluation_shield import (
         ShieldComputation,
         has_shield,
@@ -147,7 +149,8 @@ def evaluate_turn(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
     if speed_effect and (failure := speed_effect_support_failure(snapshot, loader)):
         return _refuse("unsupported", "turn.capability", failure)
     dependencies = without_speed_effect(snapshot) if speed_effect else snapshot
-    has_effect = bool(dependencies.effect_states)
+    reviewed_regions = supports_fixed_combat_regions(snapshot, loader)
+    has_effect = bool(dependencies.effect_states) and not reviewed_regions
     has_concentration = bool(state.concentration_chain)
     failure = (
         hold_turn_support_failure(snapshot, loader)
@@ -165,6 +168,7 @@ def evaluate_turn(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
             reviewed_sap=not bool(state.pending_reactions),
             allow_stowed_healing_potions=not (state.pending_reactions or state.sap_marks),
             reviewed_class_lifecycle=not (state.pending_reactions or state.sap_marks),
+            reviewed_region_conditions=reviewed_regions,
         )
         or template_support_failure(snapshot, loader)
     )

@@ -263,6 +263,7 @@ def operation_dependencies(
     equipped: bool = False,
     reviewed_sap: bool = False,
     reviewed_world_effects: bool = False,
+    reviewed_region_conditions: bool = False,
     allow_stowed_healing_potions: bool = False,
     reviewed_class_lifecycle: bool = False,
     reviewed_closure: bool = False,
@@ -319,13 +320,17 @@ def operation_dependencies(
         if not turn_lifecycle:
             from dnd5e_engine.evaluation_death import turn_lifecycle_support_failure
 
-            if any(c.condition != "prone" for a in snapshot.character_states for c in a.conditions):
+            if not reviewed_region_conditions and any(
+                c.condition != "prone" for a in snapshot.character_states for c in a.conditions
+            ):
                 return "only reviewed permanent implied Prone can compose with Sap attacks"
-            if any(a.conditions for a in snapshot.character_states) and loader.get_condition(
-                "prone"
-            ) != canonical.get_condition("prone"):
+            if any(
+                c.condition == "prone" for a in snapshot.character_states for c in a.conditions
+            ) and loader.get_condition("prone") != canonical.get_condition("prone"):
                 return "Prone condition differs from reviewed canonical clauses"
-            if failure := turn_lifecycle_support_failure(snapshot):
+            if failure := turn_lifecycle_support_failure(
+                snapshot, reviewed_region_conditions=reviewed_region_conditions
+            ):
                 return failure
         actors = {a.entity_id: a for a in snapshot.character_states}
         for target, source in snapshot.combat_state.sap_marks.items():
@@ -346,5 +351,6 @@ def operation_dependencies(
         reviewed_sap=reviewed_sap,
         reviewed_conditions=reviewed_sap,
         reviewed_world_effects=reviewed_world_effects,
+        reviewed_region_conditions=reviewed_region_conditions,
         reviewed_closure=reviewed_closure,
     )

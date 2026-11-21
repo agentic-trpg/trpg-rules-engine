@@ -35,6 +35,22 @@ def exploration_healing_activity(loader: AssetLoader, spell: Spell) -> HealActiv
     return activity
 
 
+def exploration_healing_hp_delta(target: CharacterStateV2, amount: int) -> tuple[HPDelta, ...]:
+    """Project capped healing for a living target, omitting an unchanged HP balance."""
+    hp = healing_balance(target.hp_current, target.hp_max, amount)
+    if hp == target.hp_current:
+        return ()
+    return (
+        HPDelta(
+            kind="actor.hp_delta",
+            target_id=target.entity_id,
+            expected_hp=target.hp_current,
+            amount=hp - target.hp_current,
+            resulting_hp=hp,
+        ),
+    )
+
+
 def evaluate_exploration_healing(
     request: RuleEvaluationRequest,
     spell: Spell,
@@ -106,22 +122,11 @@ def evaluate_exploration_healing(
         raise EvaluationInvariantError("exploration heal must produce one healing event")
     if healing.amount < 0:
         return _refuse("unsupported", "healing.amount", "negative healing is outside this profile")
-    hp = healing_balance(target.hp_current, target.hp_max, healing.amount)
-    operations: list[ResourceUpdate | HPDelta] = [payment]
-    if hp != target.hp_current:
-        operations.append(
-            HPDelta(
-                kind="actor.hp_delta",
-                target_id=target.entity_id,
-                expected_hp=target.hp_current,
-                amount=hp - target.hp_current,
-                resulting_hp=hp,
-            )
-        )
     return dict(
         status="accepted",
         state_delta=StateDelta(
-            expected_world_version=snapshot.world_version, operations=tuple(operations)
+            expected_world_version=snapshot.world_version,
+            operations=(payment, *exploration_healing_hp_delta(target, healing.amount)),
         ),
         proposed_events=tuple(events),
         rng_transition=RNGTransition.between(request.rng_context, rng),

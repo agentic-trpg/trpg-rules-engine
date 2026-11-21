@@ -1,4 +1,4 @@
-"""Resolve fixed-area rules and propose effect edges for admitted exploration moves.
+"""Resolve fixed-area rules and propose effect edges for admitted spatial boundaries.
 
 The host supplies the coverage edge and current presence for an exact identity.
 It owns spatial coverage, persistence, and commit.
@@ -10,7 +10,7 @@ import hashlib
 import json
 from collections.abc import Collection
 from dataclasses import dataclass
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from dnd5e_srd_data.loader import AssetLoader
 from dnd5e_srd_data.schema.common import PassiveEffect
@@ -33,6 +33,9 @@ from dnd5e_engine.rules.conditions import (
     standalone_condition_matches_compiled,
 )
 from dnd5e_engine.types.effects import ActiveEffect, ActiveEffectChange
+
+if TYPE_CHECKING:
+    from dnd5e_engine.evaluation_state import CombatSnapshot, ConditionRecord
 
 LEGACY_REGION_CONDITION_RULE = "condition:poisoned"
 _ORIGIN_PREFIX = "region:"
@@ -262,6 +265,65 @@ def is_fixed_region_condition_effect(effect: EffectState) -> bool:
     """Check the existing condition-only profile of a fixed-area effect."""
     return region_condition_status(effect.id, effect.origin) is not None and is_fixed_region_effect(
         effect
+    )
+
+
+def is_fixed_combat_poisoned_condition(condition: ConditionRecord) -> bool:
+    """Recognize the exact condition projection after its region effect is verified."""
+    return (
+        condition.condition == "poisoned"
+        and condition.source_entity_id == "implied:effect"
+        and condition.scope == "session"
+        and condition.source_effect_id is not None
+        and condition.source_effect_id.startswith(_EFFECT_ID_PREFIX)
+        and condition.duration_rounds is None
+        and condition.save_dc is None
+        and condition.applied_round == 0
+        and condition.exhaustion_level == 1
+    )
+
+
+def supports_fixed_combat_regions(snapshot: CombatSnapshot, loader: AssetLoader) -> bool:
+    """Admit only matching current-region Poisoned effects without clocks or other effects."""
+    state = snapshot.combat_state
+    if (
+        snapshot.snapshot_schema_version != "engine-snapshot/20"
+        or not snapshot.effect_states
+        or state.effect_lifecycles
+        or state.concentration_chain
+        or state.concentration_rounds_remaining
+        or state.pending_reactions
+        or state.active_reaction_responses
+        or state.reaction_effects_pending_expiry
+        or state.sap_marks
+    ):
+        return False
+    try:
+        _resolve_condition(LEGACY_REGION_CONDITION_RULE, loader, allow_omitted_legacy=True)
+    except ValueError:
+        return False
+    for effect in snapshot.effect_states:
+        if (
+            not is_fixed_region_condition_effect(effect)
+            or region_condition_status(effect.id, effect.origin) != "poisoned"
+            or json.loads(effect.origin.split(":", 2)[2])[0] != snapshot.scene_state.scene_id
+        ):
+            return False
+    identities = {(effect.target_id, effect.id, effect.origin) for effect in snapshot.effect_states}
+    lineage = {
+        link.identity for link in state.conditions_by_effect if link.statuses == ["poisoned"]
+    }
+    if lineage != identities or len(state.conditions_by_effect) != len(identities):
+        return False
+    sources = {(effect.target_id, effect.id) for effect in snapshot.effect_states}
+    records = [
+        (actor.entity_id, condition.source_effect_id)
+        for actor in snapshot.character_states
+        for condition in actor.conditions
+        if is_fixed_combat_poisoned_condition(condition)
+    ]
+    return len(records) == sum(len(a.conditions) for a in snapshot.character_states) and (
+        len(records) == len(sources) == len(snapshot.effect_states) and set(records) == sources
     )
 
 

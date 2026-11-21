@@ -1,7 +1,7 @@
 """Complete, explicit snapshot DTOs mapped from the Batch 1 inventory.
 
-Every mechanical field is required, including empty collections and nullable
-values. These local versioned types are not a cross-repository ABI decision.
+Mechanical fields are explicit except optional additive projections. These
+local versioned types do not freeze the cross-repository ABI.
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ from dnd5e_engine.movement import MovementLedger
 from dnd5e_engine.outcome import DeathRecord
 from dnd5e_engine.persistent_areas import PersistentArea
 from dnd5e_engine.reactions import ActiveReactionResponse
-from dnd5e_engine.specs import LightLevel, Obscurement, WallSegment
+from dnd5e_engine.specs import LightLevel, Obscurement, WallSegment, validate_projected_grid_light
 from dnd5e_engine.timed_activities import PendingTimedActivity
 from dnd5e_engine.types.checks import HelpCheckGrant
 from dnd5e_engine.types.combat import Combatant, FightingStyle, MonsterActionUses, WornArmor
@@ -133,6 +133,23 @@ class MechanicalGrid(EvaluationModel):
     default_lighting: LightLevel
     obscurement_cells: dict[str, Obscurement]
     sunlight: bool
+    sunlight_overrides: dict[str, bool] = Field(
+        default_factory=dict, exclude_if=lambda value: not value
+    )
+    magical_darkness_cells: tuple[str, ...] = Field(default=(), exclude_if=lambda value: not value)
+
+    @model_validator(mode="after")
+    def _check_projected_light(self) -> Self:
+        """Require coherent fixed sunlight and magical-darkness projections."""
+        validate_projected_grid_light(
+            self.width,
+            self.height,
+            self.sunlight_overrides,
+            self.magical_darkness_cells,
+            self.lighting,
+            self.default_lighting,
+        )
+        return self
 
 
 class CharacterState(EvaluationModel):

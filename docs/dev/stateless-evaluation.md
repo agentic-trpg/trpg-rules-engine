@@ -39,6 +39,11 @@ identifies whole spells to end, including overlap with a spell's dim region.
 The creature-targeted exploration spell profile remains available on `/29`
 and `/30`.
 
+Fixed grid snapshots can also carry sparse `sunlight_overrides` relative to
+the scene's sunlight default. `magical_darkness_cells` identifies resolved
+dark cells where ordinary Darkvision does not apply. Omitted projections
+preserve the existing grid wire shape and behavior.
+
 ## Ordinary ranged spell attacks
 
 Evaluator binding `dnd5e-evaluation/49` classifies an ordinary instant

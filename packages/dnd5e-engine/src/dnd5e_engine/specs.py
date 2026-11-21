@@ -7,6 +7,7 @@ inputs without depending on the host-specific session/world types.
 
 from __future__ import annotations
 
+from itertools import chain
 from typing import Literal
 
 from dnd5e_srd_data.schema.monster import CreatureSize
@@ -350,6 +351,27 @@ LightLevel = Literal["bright", "dim", "dark"]
 Obscurement = Literal["light", "heavy"]
 
 
+def validate_projected_grid_light(
+    width: int,
+    height: int,
+    sun_overrides: dict[str, bool],
+    magical_darkness: tuple[str, ...],
+    light: dict[str, LightLevel],
+    default_light: LightLevel,
+) -> None:
+    """Check sparse projected facts against the grid and its resolved light levels."""
+    from dnd5e_engine.spatial import parse_cell
+
+    for cell in chain(sun_overrides, magical_darkness):
+        col, row = parse_cell(cell)
+        if cell != f"{col},{row}" or not (0 <= col < width and 0 <= row < height):
+            raise ValueError("projected light requires canonical cells within the grid")
+    if len(set(magical_darkness)) != len(magical_darkness):
+        raise ValueError("duplicate projected magical darkness cell")
+    if any(light.get(cell, default_light) != "dark" for cell in magical_darkness):
+        raise ValueError("projected magical darkness requires a dark light level")
+
+
 class GridScene(BaseModel):
     """Wire-level shape for a 2-D grid battlefield.
 
@@ -414,14 +436,26 @@ class GridScene(BaseModel):
     # "heavy" hides whatever stands in the cell from every sense but
     # blindsight/truesight. Consumed by ``GridTopology.can_see``.
     obscurement_cells: dict[str, Obscurement] = Field(default_factory=dict)
-    # C18 §Monster action economy — SRD 5.2 stat-block trait "Sunlight
-    # Sensitivity" (bundled ``canonical/traits/sunlight-sensitivity.json``):
-    # "While in sunlight, the monster has Disadvantage on ability checks and
-    # attack rolls." Only the attack-roll half is consumed (ability checks
-    # are a BACKLOG residual). Whole-SCENE flag for now — every cell shares
-    # one sunlight state; a per-cell field is a later additive extension.
-    # ``False`` default reproduces pre-C18 behavior (no scene is ever sunlit).
+    # The global default and sparse overrides are fixed sunlight facts.
     sunlight: bool = False
+    sunlight_overrides: dict[str, bool] = Field(
+        default_factory=dict, exclude_if=lambda value: not value
+    )
+    # The host already resolved these cells to dark in the supplied light map.
+    magical_darkness_cells: tuple[str, ...] = Field(default=(), exclude_if=lambda value: not value)
+
+    @model_validator(mode="after")
+    def _check_projected_light(self) -> GridScene:
+        """Require coherent fixed sunlight and magical-darkness projections."""
+        validate_projected_grid_light(
+            self.width,
+            self.height,
+            self.sunlight_overrides,
+            self.magical_darkness_cells,
+            self.lighting,
+            self.default_lighting,
+        )
+        return self
 
 
 __all__ = [

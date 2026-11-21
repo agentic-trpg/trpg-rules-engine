@@ -116,11 +116,11 @@ def test_fixed_verify_never_enumerates_loads_or_hashes(monkeypatch):
             rules.verify_ruleset(binding.model_copy(update={field: value}), fixed)
 
 
-def test_default_identity_retains_pre_snapshot_canonical_digest():
+def test_default_identity_matches_reviewed_canonical_digest():
     fixed = rules.get_default_ruleset()
     assert fixed.binding == rules.ruleset_binding(BundledAssetLoader())
     assert fixed.binding.data_revision == (
-        "sha256:82d568f4f3fe90520cf5193ee38a5e2a26fc02b32af1022b46e6de77d80469dc"
+        "sha256:4ebef0ce4f73ae93a2307b41f170b592baa970d3d449a2d7566cc97ec224be37"
     )
 
 

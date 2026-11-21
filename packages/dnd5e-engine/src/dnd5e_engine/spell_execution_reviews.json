@@ -2023,7 +2023,7 @@
   {
     "slug": "darkvision",
     "uuid": "Compendium.dnd5e.spells24.Item.phbsplDarkvision",
-    "canonical_sha256": "5e8027c4be2bc4ba0e2234c88d82aa26bed3cc47e4b5b2b967e5df7f20ce11ba",
+    "canonical_sha256": "a82e4b7656a9a92b6676f7832612d51363a34febba21c25b6cafdc3ee47458aa",
     "source_url": "https://github.com/foundryvtt/dnd5e/blob/965ad2d0cf5d063dac675ba078b5bd3c3c0dd449/packs/_source/spells24/2nd-level/darkvision.yml",
     "classification": "bounded",
     "required_mechanisms": [],

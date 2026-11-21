@@ -415,7 +415,7 @@ def speed_effect_delta(before: CombatSnapshot, after: CombatSnapshot) -> StateDe
 
 def verify_speed_effect_creation(
     operation: CombatEffectCreate,
-    request: RuleEvaluationRequest,
+    request: "RuleEvaluationRequest",
     proposed_events: Sequence[CombatEvent],
 ) -> None:
     """Bind a creation to its hit, damage and effect evidence and the applying turn."""

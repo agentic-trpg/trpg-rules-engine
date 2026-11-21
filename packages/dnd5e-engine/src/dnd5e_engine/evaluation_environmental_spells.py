@@ -221,7 +221,7 @@ def evaluate_environmental_spell(
 
 
 def verify_environmental_cast(result: RuleEvaluationResult, request: RuleEvaluationRequest) -> None:
-    """Bind the exact profile, target, slot payment and draw-free result to its input."""
+    """Bind profile, spatial admission, slot payment and draw-free result to the input."""
     payload, snapshot = request.payload, request.state_snapshot
     if not isinstance(payload, ExplorationEnvironmentalSpellCastPayload) or not isinstance(
         snapshot, NonCombatSnapshot
@@ -232,6 +232,7 @@ def verify_environmental_cast(result: RuleEvaluationResult, request: RuleEvaluat
         spell is None
         or not _slot_valid(payload, spell)
         or _target_failure(request, spell)
+        or not exploration_spell_reaches(request, snapshot, spell)
         or result.state_delta is None
         or result.state_delta.operations != _operations(request, snapshot, payload, spell)
         or result.proposed_events != _events(request.actor_id, payload, spell)

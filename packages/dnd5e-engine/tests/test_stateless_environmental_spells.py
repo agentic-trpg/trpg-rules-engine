@@ -179,6 +179,22 @@ def test_result_with_forged_lifecycle_geometry_is_rejected():
         forged.verify_request(request)
 
 
+@pytest.mark.parametrize("obstruction", ["outside", "total-cover"])
+def test_result_cannot_be_reused_against_unreachable_fixed_geometry(obstruction):
+    """Require the same spatial admission for evaluation and result verification."""
+    wire, loader = _wire("darkness", point=True)
+    result = execute(_request(wire), loader)
+    assert result.status == "accepted", result.error
+    if obstruction == "outside":
+        wire["spell_positions"]["source_cell"] = "400,400"
+    else:
+        wire["state_snapshot"]["scene_state"]["grid"]["cover_cells"] = {"1,0": "total"}
+    unreachable = _request(wire)
+    assert execute(unreachable, loader).status == "rejected"
+    with pytest.raises(ValueError, match="differs from its fixed spell input"):
+        result.verify_request(unreachable)
+
+
 def test_dispels_use_surviving_dim_footprints_and_spell_levels():
     """A contained overlap dispels a qualifying spell, including in dim light alone."""
     light_wire, light_loader = _wire("light")

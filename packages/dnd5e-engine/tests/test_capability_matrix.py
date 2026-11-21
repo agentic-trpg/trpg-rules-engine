@@ -844,7 +844,8 @@ _PROBES: dict[str, tuple[Any, str]] = {
     # F1c/F1d: every save path adds a real ability + proficiency modifier.
     "Saving throws, half-on-save": (
         lambda: (
-            "roll_live_save(live, concentrator," in _src("orchestrator.py")
+            'partial(live_effect_lifecycle.roll_live_save, live, concentrator, "con")'
+            in _src("orchestrator.py")
             and "roll_live_save(live, target," in _src("orchestrator.py")
             and "roll_save(save_ctx, target," in _src("activities/apply.py")
             and "passive_save_bonus" in _src("activities/save_primitive.py")
@@ -903,7 +904,10 @@ _PROBES: dict[str, tuple[Any, str]] = {
     # event; row text no longer quotes the event name, so this probe now
     # pins the row's status instead.
     "Concentration, incl. damage-triggered saves": (
-        lambda: "ConcentrationCheck(" in _src("orchestrator.py"),
+        lambda: (
+            "roll_damage_concentration(" in _src("orchestrator.py")
+            and "ConcentrationCheck(" in _src("concentration_rules.py")
+        ),
         "✅",
     ),
     # Sense/social check clauses are live; held-item/crawling rules still defer.

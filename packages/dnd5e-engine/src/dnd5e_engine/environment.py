@@ -4,6 +4,7 @@ No static scene writes. Source order never determines illumination: light uses
 the brightest surviving source; fog stays opaque independently of lighting.
 """
 
+from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
@@ -99,19 +100,18 @@ def refresh_environment(live: "_LiveCombat") -> None:
     live.topology.environment_sources = tuple(sources)
 
 
-def reconcile_environment(live: "_LiveCombat") -> None:
-    """Apply reviewed cross-spell dispels on actual clipped footprints."""
-    from dnd5e_engine import orchestrator as orch
-
-    refresh_environment(live)
-    sources = live.topology.environment_sources
+def environmental_dispels(sources: Iterable[EnvironmentalSource]) -> dict[str, str]:
+    """Return victim-to-cause IDs for qualifying spell footprints, including dim light."""
+    active = tuple(source for source in sources if not source.suppressed)
     victims: dict[str, str] = {}
-    for source in sources:
-        for other in sources:
+    for source in active:
+        light_level = source.spec.dispels_light_through_level
+        dark_level = source.spec.dispels_darkness_through_level
+        if light_level is None and dark_level is None:
+            continue
+        for other in active:
             if source.area_id == other.area_id:
                 continue
-            light_level = source.spec.dispels_light_through_level
-            dark_level = source.spec.dispels_darkness_through_level
             if (
                 light_level is not None
                 and other.spec.kind == "light"
@@ -124,6 +124,15 @@ def reconcile_environment(live: "_LiveCombat") -> None:
                 and source.cells & other.cells
             ):
                 victims.setdefault(other.area_id, source.area_id)
+    return victims
+
+
+def reconcile_environment(live: "_LiveCombat") -> None:
+    """Apply reviewed cross-spell dispels on actual clipped footprints."""
+    from dnd5e_engine import orchestrator as orch
+
+    refresh_environment(live)
+    victims = environmental_dispels(live.topology.environment_sources)
     for area in tuple(live.persistent_areas.areas):
         if area.id in victims:
             live.persistent_areas.expire(live, area, "dispelled", cause_id=victims[area.id])
@@ -185,4 +194,4 @@ def expire_environment_round(live: "_LiveCombat", actor_id: str | None) -> None:
             live.persistent_areas.expire(live, area, "duration")
 
 
-__all__ = ["EnvironmentalSource", "StrongWind", "apply_strong_wind"]
+__all__ = ["EnvironmentalSource", "StrongWind", "apply_strong_wind", "environmental_dispels"]

@@ -2,11 +2,55 @@
 
 from dnd5e_srd_data.loader import AssetLoader
 
+from dnd5e_engine.evaluation_class_dependencies import evoker_grants
 from dnd5e_engine.evaluation_ruleset import get_default_ruleset
 from dnd5e_engine.evaluation_state import CharacterStateV2
 
 # Canonical activated/rest abilities below do not fire on ordinary damage/CON saves.
 _DAMAGE_SAVE_NEUTRAL = {"spellcasting", "arcane-recovery", "second-wind"}
+_EVOKER_CONCENTRATION_SAVE_NEUTRAL = {
+    "spellcasting",
+    "arcane-recovery",
+    "ritual-adept",
+    "scholar",
+    "memorize-spell",
+    "evocation-savant",
+    "potent-cantrip",
+}
+
+
+def concentration_save_identity_failure(actor: CharacterStateV2, loader: AssetLoader) -> str | None:
+    """Check reviewed identities for one settled packet's Constitution save.
+
+    The complete canonical Evoker 5 has only save-neutral grants for this test.
+    Slots and feature-use counts play no role after the damage has been resolved.
+    """
+    if actor.subclass_slug != "evoker":
+        return damage_save_identity_failure(actor, loader)
+    levels = actor.classes or ({"wizard": 5} if actor.class_slug == "wizard" else {})
+    if (
+        actor.species_slug
+        or actor.character_level != 5
+        or actor.class_slug not in (None, "wizard")
+        or levels != {"wizard": 5}
+    ):
+        return "only the reviewed Evoker 5 profile is supported"
+    canonical = get_default_ruleset()
+    wizard = loader.get_class("wizard")
+    subclass_grants = evoker_grants(loader, canonical, 5)
+    if wizard is None or wizard != canonical.get_class("wizard") or subclass_grants is None:
+        return "Evoker class or subclass differs from its reviewed definition"
+    grants = subclass_grants | {
+        g.slug for g in wizard.granted_features if g.ref_type == "feature" and g.level <= 5
+    }
+    if (
+        grants != _EVOKER_CONCENTRATION_SAVE_NEUTRAL
+        or actor.granted_features is None
+        or set(actor.granted_features) != grants
+        or any(loader.get_feature(g) != canonical.get_feature(g) for g in grants)
+    ):
+        return "complete reviewed Evoker grants are required for the concentration save"
+    return None
 
 
 def damage_save_identity_failure(actor: CharacterStateV2, loader: AssetLoader) -> str | None:

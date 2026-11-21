@@ -235,6 +235,8 @@ class GridTopology:
         self._default_lighting: LightLevel = scene.default_lighting
         self._obscurement: dict[str, Obscurement] = dict(scene.obscurement_cells)
         self._sunlight = scene.sunlight
+        self._sunlight_overrides = dict(scene.sunlight_overrides)
+        self._magical_darkness_cells = frozenset(scene.magical_darkness_cells)
         # Derived from PersistentAreaState, never host-authored scene mutations.
         self.environment_sources: tuple[EnvironmentalSource, ...] = ()
 
@@ -443,16 +445,20 @@ class GridTopology:
         return self._obscurement.get(cell) or "none"
 
     def magical_darkness_on_cell(self, cell: str) -> bool:
-        """Return whether magical darkness applies on the selected cell."""
-        return self.light_on_cell(cell) == "dark" and any(
-            s.spec.kind == "magical_darkness" and cell in s.cells for s in self.environment_sources
+        """Distinguish fixed or live spell darkness from ordinary darkness."""
+        return self.light_on_cell(cell) == "dark" and (
+            cell in self._magical_darkness_cells
+            or any(
+                s.spec.kind == "magical_darkness" and cell in s.cells
+                for s in self.environment_sources
+            )
         )
 
     def sunlight_on_cell(self, cell: str) -> bool:
-        """Return whether the selected cell is in sunlight."""
+        """Read fixed or live sunlight while respecting surviving magical darkness."""
         if self.magical_darkness_on_cell(cell):
             return False
-        return self._sunlight or any(
+        return self._sunlight_overrides.get(cell, self._sunlight) or any(
             s.spec.sunlight
             and (cell in s.cells or (s.spec.sunlight_in_dim and cell in s.dim_cells))
             for s in self.environment_sources

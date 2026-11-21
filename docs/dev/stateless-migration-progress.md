@@ -1,5 +1,13 @@
 # Stateful → Stateless migration progress
 
+## Exploration illumination spells — 2026-11-21
+
+The evaluation `/31` exploration request proposes Light and Darkness with a
+typed spatial effect, elapsed duration and lifecycle requirements. The
+[exploration illumination contract](stateless-evaluation.md#exploration-illumination-spells)
+describes admission and the shared clipped-footprint dispel calculation. SM
+owns effect adoption, deadline and concentration tracking.
+
 ## Ray of Frost hit effect — 2026-11-20
 
 Evaluator `/52` uses the ordinary ranged cantrip path and adds an initial

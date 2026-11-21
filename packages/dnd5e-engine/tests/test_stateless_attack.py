@@ -70,6 +70,7 @@ def execute(request, loader=None):
         pytest.param({"cover_cells": {"1,0": "total"}}, id="total-cover"),
         pytest.param({"wall_segments": [{"x1": 1, "y1": 0, "x2": 1, "y2": 3}]}, id="wall"),
         pytest.param({"default_lighting": "dim"}, id="dim-light"),
+        pytest.param({"sunlight_overrides": {"0,0": True}}, id="regional-sunlight"),
     ],
 )
 def test_instance_attack_admits_difficult_terrain_with_other_grid_checks_intact(obstruction):

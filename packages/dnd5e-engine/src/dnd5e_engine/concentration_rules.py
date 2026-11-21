@@ -1,8 +1,43 @@
-"""Shared original concentration anchor and metric duration; no runtime ownership."""
+"""Shared concentration anchors, duration, and saves over completed damage."""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from dnd5e_srd_data.schema.spell import Spell, SpellDurationUnits
 
+from dnd5e_engine.damage_rules import concentration_dc
+from dnd5e_engine.events import ConcentrationCheck
 from dnd5e_engine.types.effects import ActiveEffect
+
+if TYPE_CHECKING:
+    from dnd5e_engine.activities.save_primitive import SaveRoll
+
+
+def roll_damage_concentration(
+    target_id: str, amount: int, constitution_save: Callable[[int], SaveRoll]
+) -> tuple[ConcentrationCheck, int | None]:
+    """Roll once for a positive, completed damage packet and return evidence and LR usage.
+
+    The caller supplies the admitted Constitution-save mechanics. The amount includes
+    damage absorbed by temporary HP and is measured after damage defenses.
+    """
+    dc = concentration_dc(amount)
+    roll = constitution_save(dc)
+    return (
+        ConcentrationCheck(
+            target_id=target_id,
+            dc=dc,
+            roll_total=roll.total,
+            succeeded=roll.succeeded,
+            advantage=roll.mode,
+            natural=roll.natural,
+            modifier=roll.modifier,
+            sources=list(roll.sources),
+        ),
+        roll.legendary_resistance_remaining,
+    )
 
 
 def concentration_anchor(spell: Spell, caster_id: str) -> ActiveEffect:

@@ -8,7 +8,7 @@ from dnd5e_srd_data.loader import AssetLoader
 from dnd5e_engine.activities.actor_stats import _SCORE_ATTR, save_modifier
 from dnd5e_engine.activities.context import ActivityResolutionContext
 from dnd5e_engine.activities.d20 import AdvantageSources
-from dnd5e_engine.activities.save_primitive import roll_save
+from dnd5e_engine.activities.save_primitive import SaveRoll, roll_save
 from dnd5e_engine.evaluation_actor import combatant
 from dnd5e_engine.evaluation_contracts import RuleEvaluationRequest, SavePayload
 from dnd5e_engine.evaluation_delta import StateDelta
@@ -18,6 +18,9 @@ from dnd5e_engine.evaluation_turn import TurnEvaluation, _refuse
 from dnd5e_engine.events import Ability, SaveRolled
 from dnd5e_engine.rules.conditions import (
     _DECLARATIVE_CONDITION_EFFECTS,
+    CONDITION_IMPLIES,
+    Condition,
+    condition_matches_compiled,
     project_passive_save_modifiers,
 )
 
@@ -26,6 +29,24 @@ def resolve_snapshot_save(
     state: CharacterStateV2, payload: SavePayload, rng: random.Random
 ) -> SaveRolled:
     """Shared calculation seam; caller must prove full modifier/lifecycle admission."""
+    roll = roll_snapshot_save(state, payload, rng)
+    return SaveRolled(
+        target_id=state.entity_id,
+        ability=payload.ability,
+        dc=payload.dc,
+        roll_total=roll.total,
+        succeeded=roll.succeeded,
+        advantage=roll.mode,
+        natural=roll.natural,
+        modifier=roll.modifier,
+        sources=list(roll.sources),
+    )
+
+
+def roll_snapshot_save(
+    state: CharacterStateV2, payload: SavePayload, rng: random.Random
+) -> SaveRoll:
+    """Roll with the fixed actor's admitted save profile and supplied RNG."""
     target = combatant(state)
     projected = project_passive_save_modifiers([c.condition for c in target.conditions])
     ctx = ActivityResolutionContext(
@@ -42,7 +63,7 @@ def resolve_snapshot_save(
         passive_save_auto_fail={target.entity_id: projected["passive_save_auto_fail"]},
         save_is_magical=payload.is_magical,
     )
-    roll = roll_save(
+    return roll_save(
         ctx,
         target,
         payload.ability,
@@ -52,17 +73,31 @@ def resolve_snapshot_save(
             advantage=payload.advantage, disadvantage=payload.disadvantage
         ),
     )
-    return SaveRolled(
-        target_id=target.entity_id,
-        ability=payload.ability,
-        dc=payload.dc,
-        roll_total=roll.total,
-        succeeded=roll.succeeded,
-        advantage=roll.mode,
-        natural=roll.natural,
-        modifier=roll.modifier,
-        sources=list(roll.sources),
-    )
+
+
+def save_condition_failure(
+    state: CharacterStateV2, loader: AssetLoader, *, include_implied: bool = False
+) -> str | None:
+    """Check the supplied conditions against the compiled save and lifecycle clauses."""
+    names = {condition.condition for condition in state.conditions}
+    if include_implied:
+        names.update(
+            implied.value
+            for condition, dependencies in CONDITION_IMPLIES.items()
+            if condition.value in names
+            for implied in dependencies
+        )
+    for name in sorted(names):
+        definition = loader.get_condition(name)
+        if definition is None or tuple(definition.effects) != _DECLARATIVE_CONDITION_EFFECTS.get(
+            name, ()
+        ):
+            return "condition clauses differ from the pinned compiled rule projection"
+        if include_implied and (
+            name not in Condition or not condition_matches_compiled(definition)
+        ):
+            return "condition implications differ from the pinned compiled rule projection"
+    return None
 
 
 def save_actor_failure(
@@ -72,6 +107,7 @@ def save_actor_failure(
     reviewed_identity: bool = False,
     reviewed_concentration: bool = False,
     reviewed_equipment: bool = False,
+    include_implied_conditions: bool = False,
 ) -> str | None:
     """Check actor prerequisites for the admitted saving throw."""
     if (
@@ -100,12 +136,8 @@ def save_actor_failure(
         or state.legendary_resistances_remaining
     ):
         return "feature, trait, concentration and resource-dependent saves are not migrated"
-    for condition in state.conditions:
-        definition = loader.get_condition(condition.condition)
-        if definition is None or tuple(definition.effects) != _DECLARATIVE_CONDITION_EFFECTS.get(
-            condition.condition, ()
-        ):
-            return "condition clauses differ from the pinned compiled rule projection"
+    if failure := save_condition_failure(state, loader, include_implied=include_implied_conditions):
+        return failure
     for slug in state.carried_item_slugs:
         item = loader.get_item(slug)
         if item is None or item.passive_effects or item.requires_attunement:

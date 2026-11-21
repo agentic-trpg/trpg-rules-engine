@@ -131,6 +131,8 @@ def snapshot_support_failure(
         or grid.obscurement_cells
         or grid.default_lighting != "bright"
         or grid.sunlight
+        or grid.sunlight_overrides
+        or grid.magical_darkness_cells
     ):
         return "only a plain, brightly lit grid is admitted"
     for cell in state.actor_zone.values():

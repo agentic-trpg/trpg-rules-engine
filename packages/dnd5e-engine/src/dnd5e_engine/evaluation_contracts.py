@@ -7,6 +7,21 @@ from pydantic_core import to_json
 
 from dnd5e_engine.evaluation_base import EvaluationModel
 from dnd5e_engine.evaluation_delta import CombatEffectCreate, StateDelta
+from dnd5e_engine.evaluation_environmental_contracts import (
+    EnvironmentalItemFacts as EnvironmentalItemFacts,
+)
+from dnd5e_engine.evaluation_environmental_contracts import (
+    EnvironmentalItemTarget as EnvironmentalItemTarget,
+)
+from dnd5e_engine.evaluation_environmental_contracts import (
+    EnvironmentalPointTarget as EnvironmentalPointTarget,
+)
+from dnd5e_engine.evaluation_environmental_contracts import (
+    ExplorationEnvironmentalSpellCastPayload as ExplorationEnvironmentalSpellCastPayload,
+)
+from dnd5e_engine.evaluation_environmental_contracts import (
+    WorldEnvironmentalEffectCreate,
+)
 from dnd5e_engine.evaluation_resources import HitDieSpend
 from dnd5e_engine.evaluation_rng import RNGContext, RNGTransition
 from dnd5e_engine.evaluation_ruleset import RulesetBinding
@@ -25,6 +40,7 @@ from dnd5e_engine.rules.skills import Skill
 from dnd5e_engine.types.checks import CheckRequest, GrantedDie
 
 SCHEMA_VERSION = "engine-evaluation/30"
+ENVIRONMENTAL_SPELL_SCHEMA_VERSION = "engine-evaluation/31"
 EvaluationVersion = Literal[
     "engine-evaluation/24",
     "engine-evaluation/25",
@@ -33,6 +49,7 @@ EvaluationVersion = Literal[
     "engine-evaluation/28",
     "engine-evaluation/29",
     "engine-evaluation/30",
+    "engine-evaluation/31",
 ]
 
 
@@ -65,10 +82,13 @@ class ExplorationSpellCastPayload(EvaluationModel):
 
 
 class ExplorationSpellPositions(EvaluationModel):
-    """Provide caster and target cells in the request's fixed scene grid."""
+    """Provide the fixed caster and target cells and any verified item facts."""
 
     source_cell: Annotated[str, Field(min_length=1)]
     target_cell: Annotated[str, Field(min_length=1)]
+    target_item: EnvironmentalItemFacts | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
 
 class CheckPayload(CheckRequest):
@@ -160,6 +180,7 @@ class RuleEvaluationRequest(EvaluationModel):
         | ItemUsePayload
         | ExplorationItemUsePayload
         | ExplorationSpellCastPayload
+        | ExplorationEnvironmentalSpellCastPayload
         | SavePayload
         | RestPayload
     )
@@ -204,11 +225,17 @@ class RuleEvaluationRequest(EvaluationModel):
             "engine-evaluation/28": "engine-snapshot/20",
             "engine-evaluation/29": "engine-snapshot/20",
             "engine-evaluation/30": "engine-snapshot/20",
+            ENVIRONMENTAL_SPELL_SCHEMA_VERSION: "engine-snapshot/20",
         }
         if self.state_snapshot.snapshot_schema_version != version_pairs[self.schema_version]:
             raise ValueError("evaluation and snapshot versions differ")
         if self.spell_positions is not None and self.operation_kind != "world.cast_spell":
             raise ValueError("spell positions require world.cast_spell")
+        if self.schema_version == ENVIRONMENTAL_SPELL_SCHEMA_VERSION:
+            self._validate_environmental_spell()
+            return self
+        if self.spell_positions is not None and self.spell_positions.target_item is not None:
+            raise ValueError("item facts require evaluation/31 and a spatial world spell")
         if self.operation_kind == "rules.rest":
             if not isinstance(self.payload, RestPayload) or self.payload.target_id != self.actor_id:
                 raise ValueError("rules.rest requires the actual resting actor")
@@ -259,6 +286,26 @@ class RuleEvaluationRequest(EvaluationModel):
         elif not isinstance(self.payload, CheckPayload) or self.payload.actor_id != self.actor_id:
             raise ValueError("rules.check requires a matching actor and explicit adjudication")
         return self
+
+    def _validate_environmental_spell(self) -> None:
+        """Bind the selected item or point identity to its fixed spatial facts."""
+        positions = self.spell_positions
+        if (
+            self.operation_kind != "world.cast_spell"
+            or not isinstance(self.payload, ExplorationEnvironmentalSpellCastPayload)
+            or not isinstance(self.state_snapshot, NonCombatSnapshot)
+            or self.state_snapshot.combat_setup is not None
+            or positions is None
+        ):
+            raise ValueError("evaluation/31 requires a spatial world spell without pending combat")
+        target = self.payload.target
+        if isinstance(target, EnvironmentalPointTarget):
+            if positions.target_item is not None or positions.target_cell != target.cell_id:
+                raise ValueError("fixed point must match the supplied target cell")
+        elif isinstance(target, EnvironmentalItemTarget) and (
+            positions.target_item is None or positions.target_item.item_id != target.item_id
+        ):
+            raise ValueError("item target must match the supplied fixed item facts")
 
 
 class ReadVersion(EvaluationModel):
@@ -361,6 +408,11 @@ class RuleEvaluationResult(EvaluationModel):
             )
             if creations and (self.schema_version != "engine-evaluation/30" or creations != 1):
                 raise ValueError("one combat effect creation requires evaluation/30")
+            environmental = sum(
+                isinstance(op, WorldEnvironmentalEffectCreate) for op in self.state_delta.operations
+            )
+            if environmental != int(self.schema_version == ENVIRONMENTAL_SPELL_SCHEMA_VERSION):
+                raise ValueError("evaluation/31 requires exactly one environmental effect creation")
         else:
             if (
                 self.state_delta is not None
@@ -401,6 +453,11 @@ class RuleEvaluationResult(EvaluationModel):
                 verify_haste_creation,
             )
             from dnd5e_engine.evaluation_speed_effects import verify_speed_effect_creation
+
+            if request.schema_version == ENVIRONMENTAL_SPELL_SCHEMA_VERSION:
+                from dnd5e_engine.evaluation_environmental_spells import verify_environmental_cast
+
+                verify_environmental_cast(self, request)
 
             for operation in self.state_delta.operations:
                 if isinstance(operation, (HasteGraphCreate, EffectFollowUpCreate)):

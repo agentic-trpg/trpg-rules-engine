@@ -34,6 +34,11 @@ RE 求值选中的普通治疗药水，返回回血、物品消耗、事件与 R
 施法者维持的效果并保留其他来源。协议和范围见
 [Stateless 合同](dev/stateless-evaluation.md#timed-spell-creation-and-voluntary-concentration-release)。
 
+探索光照法术沿用 `world.cast_spell` 和 Snapshot `/20`，空间目标使用
+evaluation `/31`。RE 校验固定的物品或点位，提议法术位支付和光照效果。
+SM 持有效果、实际锚点、期限和集中状态。见
+[探索光照法术](dev/stateless-evaluation.md#exploration-illumination-spells)。
+
 ## 2. 包和主要规则模块
 
 下表中 Engine 文件均相对 `packages/dnd5e-engine/src/dnd5e_engine/`；其他包写完整路径。
@@ -100,7 +105,9 @@ RE 求值选中的普通治疗药水，返回回血、物品消耗、事件与 R
 此接口没有命令回执、请求 RNG、Delta 或资源支付，且只覆盖当前支持的查询形状；
 它不替代外部认证，也不保证未来状态下仍可执行。
 
-初始化、集中伤害和 Openable 使用各自显式专项请求与入口，读取对应合同和测试；
+初始化、已结算伤害的专注判定和 Openable 使用各自显式专项入口。专注判定接收
+单个伤害包与受伤角色的固定事实，返回未提交的判定、豁免证据和 RNG 过渡；
+效果组的校验与采用由 SM 负责。
 不能因为存在统一请求类型，就声称这些都已经成为同一个通用生产 dispatch。
 
 ### 规则素材准备与复用

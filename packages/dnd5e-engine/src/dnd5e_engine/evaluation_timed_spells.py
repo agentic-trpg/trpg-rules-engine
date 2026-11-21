@@ -238,25 +238,27 @@ def attack_world_spell_walk_bonus(effect: EffectState) -> int:
     return stats.walk_speed_bonus
 
 
-def _source_failure(
+def exploration_source_failure(
     snapshot: NonCombatSnapshot,
     actor: CharacterStateV2,
-    payload: ExplorationSpellCastPayload,
+    spell_source_id: str,
     spell: Spell,
     loader: AssetLoader,
+    *,
+    allowed_classes: frozenset[str] | None = None,
 ) -> str | None:
-    """Check the selected class repertoire and its fixed physical component facts."""
+    """Check class repertoire, spell-level access and fixed physical component facts."""
     casting = snapshot.casting_state
     if not isinstance(casting, CastingStateV20):
         return "canonical casting source is missing"
     entry = next((item for item in casting.actors if item.actor_id == actor.entity_id), None)
     if entry is None:
         return "actor has no casting source"
-    source = next(
-        (item for item in entry.sources if item.source_id == payload.spell_source_id), None
-    )
+    source = next((item for item in entry.sources if item.source_id == spell_source_id), None)
     if source is None:
         return "selected spell source does not belong to the caster"
+    if allowed_classes is not None and source.class_slug not in allowed_classes:
+        return "the selected class cannot learn this spell"
     levels = actor.classes or (
         {actor.class_slug: actor.character_level} if actor.class_slug else {}
     )
@@ -272,10 +274,10 @@ def _source_failure(
         return "casting source conflicts with the actor's class and bound casting rules"
     progression = cast(ProgressionValue, str(class_asset.spellcasting.progression))
     class_slots = slots_for_caster_level(effective_caster_level(progression, level))
-    if spell.level not in class_slots:
+    if spell.level and spell.level not in class_slots:
         return "the selected class cannot yet prepare spells at this level"
     selection = next((item for item in source.spells if item.spell_id == spell.slug), None)
-    if selection is None or selection.prepared_order is None:
+    if selection is None or (spell.level and selection.prepared_order is None):
         return "spell is not known and prepared from the selected source"
     material = selection.material
     hand_available = actor.weapon_grip != "two_handed" and (
@@ -311,10 +313,10 @@ def _source_failure(
     )
 
 
-def _touch_reaches(
+def exploration_spell_reaches(
     request: RuleEvaluationRequest, snapshot: NonCombatSnapshot, spell: Spell
 ) -> bool:
-    """Check distinct-creature touch using the fixed scene and shared geometry rules."""
+    """Check distance and a clear path using the fixed scene and shared geometry rules."""
     positions = request.spell_positions
     reach = spell_range_ft(spell)
     if positions is None or reach is None:
@@ -381,7 +383,7 @@ def evaluate_exploration_spell(
     if target.entity_id != actor.entity_id:
         if spell.range.units == SpellRangeUnits.SELF:
             return _refuse("rejected", "target_invalid", "self spell must target the caster")
-        if not _touch_reaches(request, snapshot, spell):
+        if not exploration_spell_reaches(request, snapshot, spell):
             return _refuse("rejected", "target_invalid", "target must be reachable by touch")
     if any(
         effect.target_id == actor.entity_id and not effect.disabled and effect.action_policy
@@ -391,7 +393,7 @@ def evaluate_exploration_spell(
     failure = (
         source_failure(snapshot, actor.entity_id, payload.spell_source_id, spell, "healing")
         if healing is not None
-        else _source_failure(snapshot, actor, payload, spell, loader)
+        else exploration_source_failure(snapshot, actor, payload.spell_source_id, spell, loader)
     )
     if failure:
         return _refuse("rejected", "spell.source", failure)

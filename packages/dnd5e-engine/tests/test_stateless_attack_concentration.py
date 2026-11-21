@@ -275,7 +275,7 @@ def test_atomic_cleanup_on_lethal_attack_and_version_fence(pc, monkeypatch):
 def test_fault_after_real_concentration_roll_returns_no_partial_candidate(failure, monkeypatch):
     request, _, _, loader = attack_concentration_case(mixed=True)
     before = deepcopy(request)
-    original = concentration.resolve_snapshot_save
+    original = concentration.roll_snapshot_save
     seen = []
 
     def broken(*args, **kwargs):
@@ -283,7 +283,7 @@ def test_fault_after_real_concentration_roll_returns_no_partial_candidate(failur
         raise failure("after concentration roll")
 
     isolate(monkeypatch)
-    monkeypatch.setattr(concentration, "resolve_snapshot_save", broken)
+    monkeypatch.setattr(concentration, "roll_snapshot_save", broken)
     with pytest.raises(failure, match="after concentration roll"):
         execute(request, loader)
     assert len(seen) == 1

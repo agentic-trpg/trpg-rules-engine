@@ -3,6 +3,8 @@ from itertools import pairwise
 import pytest
 from pydantic import ValidationError
 
+from dnd5e_engine.activities.passive_stats import CombatantSenses
+from dnd5e_engine.evaluation_state import MechanicalGrid
 from dnd5e_engine.spatial import GridTopology, cell_id, cover_bonus, parse_cell
 from dnd5e_engine.specs import GridScene, WallSegment
 
@@ -24,6 +26,74 @@ def test_grid_scene_defaults_to_no_blocked_cells():
 def test_grid_scene_rejects_extra_fields():
     with pytest.raises(ValidationError):
         GridScene(width=10, height=10, zones=["a"])  # type: ignore[call-arg]
+
+
+@pytest.mark.parametrize(
+    ("global_sun", "overrides", "expected"),
+    [
+        (True, {"1,0": False}, (True, False, True)),
+        (False, {"0,0": True}, (True, False, False)),
+    ],
+)
+def test_fixed_snapshot_preserves_regional_sunlight(global_sun, overrides, expected):
+    """Round-trip whole-scene daylight exceptions and independent sunlight regions."""
+    scene = GridScene(width=3, height=1, sunlight=global_sun, sunlight_overrides=overrides)
+    grid = MechanicalGrid.model_validate(scene.model_dump())
+    frozen = MechanicalGrid.model_validate_json(grid.model_dump_json())
+    topology = GridTopology(GridScene.model_validate(frozen.model_dump()))
+    assert tuple(topology.sunlight_on_cell(f"{i},0") for i in range(3)) == expected
+    scene.sunlight_overrides.clear()
+    assert tuple(topology.sunlight_on_cell(f"{i},0") for i in range(3)) == expected
+
+
+def test_fixed_magical_darkness_reaches_senses_and_sunlight():
+    """Preserve the darkness subtype while retaining ordinary darkvision behavior."""
+    scene = GridScene(
+        width=3,
+        height=2,
+        lighting={"1,0": "dark", "2,1": "dark"},
+        sunlight_overrides={"1,0": True},
+        magical_darkness_cells=("1,0",),
+    )
+    grid = MechanicalGrid.model_validate(scene.model_dump())
+    topology = GridTopology(GridScene.model_validate(grid.model_dump()))
+    assert topology.light_on_cell("1,0") == topology.light_on_cell("2,1") == "dark"
+    assert topology.magical_darkness_on_cell("1,0")
+    assert not topology.magical_darkness_on_cell("2,1")
+    assert not topology.sunlight_on_cell("1,0")
+    assert topology.can_see("2,0", "2,1", CombatantSenses(darkvision=60))
+    assert not topology.can_see("0,0", "2,0", CombatantSenses(darkvision=60))
+    assert topology.can_see("0,0", "2,0", CombatantSenses(truesight=60))
+
+
+@pytest.mark.parametrize(
+    ("fields", "error"),
+    [
+        ({"sunlight_overrides": {"01,0": True}}, "canonical cells"),
+        ({"sunlight_overrides": {"3,0": True}}, "canonical cells"),
+        ({"magical_darkness_cells": ("1,0", "1,0")}, "duplicate projected"),
+        ({"magical_darkness_cells": ("1,0",)}, "requires a dark light level"),
+    ],
+)
+def test_invalid_projected_light_facts_fail_grid_admission(fields, error):
+    scene = GridScene(width=3, height=1)
+    with pytest.raises(ValidationError, match=error):
+        GridScene.model_validate(scene.model_dump() | fields)
+    with pytest.raises(ValidationError, match=error):
+        MechanicalGrid.model_validate(scene.model_dump() | fields)
+
+
+def test_legacy_mechanical_grid_serialization_omits_projected_fields():
+    old_wire = (
+        '{"width":3,"height":1,"cell_size_ft":5,"blocked_cells":[],"wall_segments":[],'
+        '"cover_cells":{},"difficult_terrain_cells":[],"lighting":{},'
+        '"default_lighting":"bright","obscurement_cells":{},"sunlight":true}'
+    )
+    grid = MechanicalGrid.model_validate_json(old_wire)
+    assert grid.model_dump_json() == old_wire
+    scene = GridScene.model_validate(grid.model_dump())
+    assert scene.model_dump_json() == old_wire
+    assert GridTopology(scene).sunlight_on_cell("1,0")
 
 
 def test_cell_id_roundtrip():

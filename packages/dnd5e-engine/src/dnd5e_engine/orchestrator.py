@@ -58,6 +58,7 @@ from collections import deque
 from collections.abc import AsyncIterator, Callable, Collection, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
+from functools import partial
 from typing import Any, Final, Literal, cast
 
 from dnd5e_srd_data.loader import AssetLoader
@@ -157,7 +158,11 @@ from dnd5e_engine.attack_rules import versatile_grip_applies as _versatile_grip_
 from dnd5e_engine.attack_rules import weapon_attack_range_ft as _weapon_attack_range_ft
 from dnd5e_engine.attack_rules import weapon_melee_reach_ft as _weapon_melee_reach_ft
 from dnd5e_engine.combat_objects import CombatObjectState
-from dnd5e_engine.concentration_rules import concentration_anchor, concentration_max_rounds
+from dnd5e_engine.concentration_rules import (
+    concentration_anchor,
+    concentration_max_rounds,
+    roll_damage_concentration,
+)
 from dnd5e_engine.death_saves import roll_death_save
 from dnd5e_engine.effect_lifecycle import (
     EffectIdentity,
@@ -177,7 +182,6 @@ from dnd5e_engine.events import (
     CombatantLeftReason,
     CombatEnded,
     CombatEvent,
-    ConcentrationCheck,
     ConcentrationDropped,
     ConditionApplied,
     ConditionRemoved,
@@ -4736,44 +4740,21 @@ def _emit_apply_damage(live: _LiveCombat, event: DamageApplied) -> None:
 
 def _resolve_damage_concentration(live: _LiveCombat, target_id: str, amount: int) -> None:
     """One completed post-defense instance, including temporary HP absorption."""
-    if amount <= 0:
+    if amount <= 0 or not live.concentration_chain.get(target_id):
         return
-    caster_chain = live.concentration_chain.get(target_id)
-    if caster_chain:
-        from dnd5e_engine.damage_rules import concentration_dc
-
-        dc = concentration_dc(amount)
-        concentrator = _find_combatant(live, target_id)
-        # The ``else 0`` cannot fire in practice: ``concentration_chain`` is
-        # only ever keyed by an entity that is in ``live.initiative``, and the
-        # damage that got us here was applied to that same combatant. It stays
-        # because ``_emit_apply_damage`` is contractually non-throwing — a
-        # missing combatant degrades to an unmodified save rather than
-        # aborting damage application mid-flight.
-        # SRD 5.2 Exhaustion — the concentration CON save is a D20 Test.
-        if concentrator is None:
-            return
-        roll = live_effect_lifecycle.roll_live_save(live, concentrator, "con", dc)
-        roll_total, succeeded = roll.total, roll.succeeded
-        lr_remaining = roll.legendary_resistance_remaining
-        _emit(
-            live,
-            ConcentrationCheck(
-                target_id=target_id,
-                dc=dc,
-                roll_total=roll_total,
-                succeeded=succeeded,
-                advantage=roll.mode,
-                natural=roll.natural,
-                modifier=roll.modifier,
-                sources=list(roll.sources),
-            ),
-        )
-        if lr_remaining is not None:
-            _emit(live, LegendaryResistanceUsed(actor_id=target_id, uses_remaining=lr_remaining))
-            _sync_legendary_resistance(live, len(live.event_log) - 1)
-        if not succeeded:
-            _drop_concentration(live, target_id)
+    concentrator = _find_combatant(live, target_id)
+    if concentrator is None:
+        return
+    check, lr_remaining = roll_damage_concentration(
+        target_id, amount, partial(live_effect_lifecycle.roll_live_save, live, concentrator, "con")
+    )
+    succeeded = check.succeeded
+    _emit(live, check)
+    if lr_remaining is not None:
+        _emit(live, LegendaryResistanceUsed(actor_id=target_id, uses_remaining=lr_remaining))
+        _sync_legendary_resistance(live, len(live.event_log) - 1)
+    if not succeeded:
+        _drop_concentration(live, target_id)
 
 
 def _complete_character_damage_instance(

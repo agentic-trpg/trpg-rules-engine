@@ -18,6 +18,7 @@ from dnd5e_engine.evaluation_delta import ResourceUpdate, WorldEffectCreate
 from dnd5e_engine.evaluation_effects import effect_state
 from dnd5e_engine.evaluation_ruleset import freeze_ruleset, ruleset_binding
 from dnd5e_engine.evaluation_speed_effects import world_walk_bonus
+from dnd5e_engine.evaluation_world_spell_modifiers import world_spell_combat_modifiers
 from dnd5e_engine.events import AttackRolled, EffectApplied, IntentSubmitted, SpellCast
 from dnd5e_engine.reaction_effect_rules import effective_armor_class
 from tests.evaluation_support import FOE, HERO, WEAPON
@@ -534,6 +535,41 @@ def test_elapsed_concentration_binds_the_proposal_and_effect_flag() -> None:
         WorldEffectCreate.model_validate_json(json.dumps(forged))
 
 
+@pytest.mark.parametrize("another_caster", [False, True])
+def test_longstrider_overlaps_remain_independent_and_grant_one_walk_bonus(
+    another_caster: bool,
+) -> None:
+    """Admit a second reviewed cast without stacking its walking contribution."""
+    wire, loader = spell_wire(_longstrider())
+    initial_request = RuleEvaluationRequest.model_validate_json(json.dumps(wire))
+    initial = execute(initial_request, loader)
+    assert initial.status == "accepted"
+    first = initial.state_delta.operations[1].value.effect
+    if another_caster:
+        first = first.model_copy(update={"origin": "cast:longstrider:another-caster"})
+    wire["state_snapshot"]["effect_states"].append(first.model_dump(mode="json"))
+    wire["command_id"] = "recast-longstrider"
+    request = RuleEvaluationRequest.model_validate_json(json.dumps(wire))
+    result = execute(request, loader)
+
+    assert result.status == "accepted"
+    payment, creation = result.state_delta.operations
+    assert isinstance(payment, ResourceUpdate)
+    assert isinstance(creation, WorldEffectCreate)
+    assert payment.expected.current - payment.value.current == 1
+    assert not result.rng_transition.state_changed
+    second = creation.value.effect
+    assert second.origin != first.origin
+    assert second == first.model_copy(update={"origin": second.origin})
+    if another_caster:
+        assert second.origin == f"cast:longstrider:{HERO}"
+    assert world_spell_combat_modifiers((first, second)) == {FOE: (10, None)}
+    assert world_spell_combat_modifiers((second,)) == {FOE: (10, None)}
+    assert world_spell_combat_modifiers((first,)) == {FOE: (10, None)}
+    with pytest.raises(ValueError, match="overlapping combat modifiers"):
+        world_spell_combat_modifiers((first, second, first))
+
+
 @pytest.mark.parametrize(
     ("invalid", "code"),
     [
@@ -597,6 +633,7 @@ def test_timed_spell_admission_fails_without_cost_or_rng(invalid: str, code: str
             prior = execute(prior_request, loader).state_delta.operations[1]
             prior_effect = prior.value.effect.model_dump(mode="json")
             prior_effect["origin"] = "cast:longstrider:another-caster"
+            prior_effect["changes"][0]["value"] = "11"
             snapshot["effect_states"].append(prior_effect)
     request = RuleEvaluationRequest.model_validate_json(json.dumps(wire))
     result = execute(request, loader)

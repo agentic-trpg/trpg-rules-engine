@@ -1,4 +1,4 @@
-"""Closed spatial target facts and uncommitted environmental spell effects."""
+"""Closed target facts and uncommitted spatial effect lifecycle proposals."""
 
 from typing import Annotated, Literal
 
@@ -22,8 +22,19 @@ class EnvironmentalPointTarget(EvaluationModel):
     cell_id: Annotated[str, Field(min_length=1)]
 
 
-EnvironmentalTarget = Annotated[
+class EnvironmentalMagicEffectTarget(EvaluationModel):
+    """Select one known active spell by its spatial effect identity."""
+
+    kind: Literal["effect"]
+    effect_id: Annotated[str, Field(min_length=1)]
+
+
+EnvironmentalPlacementTarget = Annotated[
     EnvironmentalItemTarget | EnvironmentalPointTarget, Field(discriminator="kind")
+]
+EnvironmentalTarget = Annotated[
+    EnvironmentalItemTarget | EnvironmentalPointTarget | EnvironmentalMagicEffectTarget,
+    Field(discriminator="kind"),
 ]
 
 
@@ -36,8 +47,21 @@ class EnvironmentalItemFacts(EvaluationModel):
     opaque_cover: bool
 
 
+class EnvironmentalMagicEffectFacts(EvaluationModel):
+    """Capture a fixed-point spell's authoritative provenance and expiry for termination."""
+
+    effect_id: Annotated[str, Field(min_length=1)]
+    caster_id: Annotated[str, Field(min_length=1)]
+    spell_source_id: Annotated[str, Field(min_length=1)]
+    spell_id: Annotated[str, Field(min_length=1)]
+    slot_level: Annotated[int, Field(ge=0, le=9)]
+    cell_id: Annotated[str, Field(min_length=1)]
+    expires_tick: Annotated[int, Field(ge=0)]
+    concentration_id: Annotated[str, Field(min_length=1)] | None
+
+
 class ExplorationEnvironmentalSpellCastPayload(EvaluationModel):
-    """Choose an exploration spell, ordinary slot or cantrip, and spatial target."""
+    """Choose an exploration spell and a spatial placement or existing spell target."""
 
     kind: Literal["world.cast_spell"]
     spell_id: Annotated[str, Field(min_length=1)]
@@ -56,7 +80,7 @@ class WorldEnvironmentalEffect(EvaluationModel):
     duration_seconds: Annotated[int, Field(gt=0)]
     concentration: bool
     replace_same_caster_on_recast: bool
-    anchor: EnvironmentalTarget
+    anchor: EnvironmentalPlacementTarget
     environment: EnvironmentalSpec
     radius_ft: Annotated[int, Field(gt=0)]
     shape: Literal["sphere", "emanation"]
@@ -67,3 +91,11 @@ class WorldEnvironmentalEffectCreate(EvaluationModel):
 
     kind: Literal["world.environmental_effect_create"]
     value: WorldEnvironmentalEffect
+
+
+class WorldEnvironmentalEffectEnd(EvaluationModel):
+    """End one expected spatial spell, retaining the original provenance for adoption."""
+
+    kind: Literal["world.environmental_effect_end"]
+    expected: EnvironmentalMagicEffectFacts
+    reason: Literal["dispelled"]

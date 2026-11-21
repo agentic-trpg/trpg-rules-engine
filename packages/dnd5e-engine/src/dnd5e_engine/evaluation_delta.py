@@ -5,9 +5,13 @@ from typing import Annotated, Literal, Self
 from pydantic import Field, model_validator
 
 from dnd5e_engine.evaluation_base import EvaluationModel
+from dnd5e_engine.evaluation_cast_activity import WorldCastActivityBegin
 from dnd5e_engine.evaluation_effects import EffectState
 from dnd5e_engine.evaluation_environmental_contracts import (
     WorldEnvironmentalEffectCreate as WorldEnvironmentalEffectCreate,
+)
+from dnd5e_engine.evaluation_environmental_contracts import (
+    WorldEnvironmentalEffectEnd as WorldEnvironmentalEffectEnd,
 )
 from dnd5e_engine.evaluation_haste_delta import (
     EffectFollowUpCreate,
@@ -19,6 +23,7 @@ from dnd5e_engine.evaluation_reaction_state import PredeclaredReactionState
 from dnd5e_engine.evaluation_resources import ResourcePool
 from dnd5e_engine.evaluation_ruleset import get_default_ruleset
 from dnd5e_engine.evaluation_shield_delta import ShieldStateTransition
+from dnd5e_engine.evaluation_spell_materials import SpellMaterialConsume as SpellMaterialConsume
 from dnd5e_engine.evaluation_state import (
     ClosureDeath,
     CombatSetupState,
@@ -628,10 +633,13 @@ StateDeltaOperation = Annotated[
     | CombatClose
     | InventoryConsume
     | InventorySpendCharge
+    | SpellMaterialConsume
     | CombatCreationCandidate
     | ResourceUpdate
     | WorldEffectCreate
+    | WorldCastActivityBegin
     | WorldEnvironmentalEffectCreate
+    | WorldEnvironmentalEffectEnd
     | CombatEffectCreate
     | EffectLifecycleUpdate
     | ConcentrationUpdate

@@ -125,6 +125,12 @@ async def _evaluate(
         result = RuleEvaluationResult(**common, **item, stage_facts=_stage_coverage(item["status"]))
         result.verify_request(request)
         return result
+    if request.operation_kind == "world.cast_activity":
+        from dnd5e_engine.evaluation_cast_activity import evaluate_cast_activity
+
+        result = _turn_result(common, evaluate_cast_activity(request, assets))
+        result.verify_request(request)
+        return result
     if request.operation_kind == "world.cast_spell_many":
         from dnd5e_engine.evaluation_multi_spells import evaluate_multi_spell
 

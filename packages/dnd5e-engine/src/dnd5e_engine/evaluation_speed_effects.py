@@ -129,28 +129,28 @@ def is_bound_attack_speed_effect(effect: EffectState, loader: AssetLoader) -> bo
 
 def world_walk_bonus(effect: EffectState) -> int:
     """Read an admitted elapsed passive effect's flat walking-speed change."""
-    from dnd5e_engine.evaluation_timed_spells import attack_world_spell_modifiers
+    from dnd5e_engine.evaluation_world_spell_modifiers import world_walk_bonus as project_bonus
 
-    bonus, armor_floor = attack_world_spell_modifiers(effect)
-    if armor_floor is not None:
-        raise ValueError("timed walking cannot compose an Armor Class floor")
-    if not any(change.key == "system.attributes.movement.walk" for change in effect.changes):
-        raise ValueError("timed walking requires a flat walking-speed modifier")
-    return bonus
+    return project_bonus(effect)
 
 
 def _speed_world_effect_failure(
     effects: Sequence[EffectState], target_id: str, mode: MovementMode
 ) -> str | None:
-    """Admit an optional single elapsed walk modifier on the attack rider target."""
+    """Admit one effective elapsed walking bonus on the attack rider target."""
+    from dnd5e_engine.evaluation_timed_spells import is_canonical_elapsed_longstrider
+    from dnd5e_engine.evaluation_world_spell_modifiers import world_spell_combat_modifiers
+
     if not effects:
         return None
-    if len(effects) != 1 or effects[0].target_id != target_id:
+    if any(effect.target_id != target_id for effect in effects) or (
+        len(effects) > 1 and not all(is_canonical_elapsed_longstrider(effect) for effect in effects)
+    ):
         return "speed rider admits one elapsed walk modifier on its target"
     if mode != "walk":
         return "elapsed walk modifier and speed rider require a walking ledger"
     try:
-        world_walk_bonus(effects[0])
+        world_spell_combat_modifiers(effects, walking_only=True)
     except ValueError as error:
         return str(error)
     return None
@@ -179,12 +179,19 @@ def speed_with_effects(
     effects: Sequence[EffectState],
     mode: MovementMode = "walk",
 ) -> int:
-    """Project speed with an admitted elapsed walk modifier and attack reduction."""
-    bonus = sum(
-        world_walk_bonus(effect)
-        for effect in effects
-        if mode == "walk" and effect.target_id == actor.entity_id and effect.lifecycle is None
-    )
+    """Project speed with one effective elapsed walking bonus and attack reduction."""
+    from dnd5e_engine.evaluation_world_spell_modifiers import world_spell_combat_modifiers
+
+    bonus = 0
+    if mode == "walk":
+        elapsed = (
+            effect
+            for effect in effects
+            if effect.target_id == actor.entity_id and effect.lifecycle is None
+        )
+        bonus, _ = world_spell_combat_modifiers(elapsed, walking_only=True).get(
+            actor.entity_id, (0, None)
+        )
     return _speed_with_reductions(actor, effects, mode, bonus)
 
 
@@ -311,10 +318,14 @@ class SpeedEffectComputation(CombatComputation):
         """Keep the active effect local to this evaluation."""
         super().__init__(snapshot, rng)
         self.effects = snapshot.effect_states
+        from dnd5e_engine.evaluation_world_spell_modifiers import world_spell_combat_modifiers
+
+        elapsed = (effect for effect in self.effects if effect.lifecycle is None)
         self.walk_bonuses = {
-            effect.target_id: world_walk_bonus(effect)
-            for effect in self.effects
-            if effect.lifecycle is None
+            target: walk
+            for target, (walk, _) in world_spell_combat_modifiers(
+                elapsed, walking_only=True
+            ).items()
         }
 
     def emit(self, event: CombatEvent) -> None:

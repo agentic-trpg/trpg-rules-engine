@@ -1,5 +1,7 @@
 """Admit direct exploration casts and resolve elapsed-time passive modifiers."""
 
+from functools import lru_cache
+from hashlib import sha256
 from typing import cast
 
 from dnd5e_srd_data.loader import AssetLoader, BundledAssetLoader
@@ -37,6 +39,7 @@ from dnd5e_engine.evaluation_exploration_healing import (
 from dnd5e_engine.evaluation_payments import spell_payment
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError
 from dnd5e_engine.evaluation_rng import RNGTransition
+from dnd5e_engine.evaluation_spell_materials import consumed_material_slug, spell_material_payment
 from dnd5e_engine.evaluation_spells import source_failure
 from dnd5e_engine.evaluation_state import CharacterStateV2, NonCombatSnapshot
 from dnd5e_engine.evaluation_turn import TurnEvaluation, _refuse
@@ -50,6 +53,7 @@ from dnd5e_engine.spellcasting import (
     SpellcastingProgression as ProgressionValue,
 )
 from dnd5e_engine.spellcasting import (
+    derive_pact_slots,
     effective_caster_level,
     resolve_target_count,
     slots_for_caster_level,
@@ -99,22 +103,37 @@ def _validate_passive_changes(passive: PassiveEffect, active: ActiveEffect) -> N
 
 
 def _passive_profile(
-    spell: Spell, *, target_id: str, caster_id: str, max_target_capacity: int = 1
+    spell: Spell,
+    *,
+    target_id: str,
+    caster_id: str,
+    max_target_capacity: int = 1,
+    allow_consumed_material: bool = False,
+    casting_activity: bool = False,
 ) -> tuple[UtilityActivity, ActiveEffect, int]:
     """Build an admitted base-level utility and elapsed-time effect from rule data."""
     seconds_per_unit = _SECONDS_PER_UNIT.get(spell.duration.units)
+    time = spell.casting_time
+    ready_timing = (
+        time.unit in (CastingTimeUnit.MINUTE, CastingTimeUnit.HOUR)
+        and time.value is not None
+        and time.value > 0
+        if casting_activity
+        else not spell.ritual
+        and time.unit in (CastingTimeUnit.ACTION, CastingTimeUnit.BONUS)
+        and time.value == 1
+    )
     if (
         spell.review.requires_user_decision
-        or spell.ritual
-        or spell.casting_time.unit not in (CastingTimeUnit.ACTION, CastingTimeUnit.BONUS)
-        or spell.casting_time.value != 1
-        or spell.casting_time.condition
+        or not ready_timing
+        or time.condition
         or spell.range.units not in (SpellRangeUnits.TOUCH, SpellRangeUnits.SELF)
         or spell.range.special
         or spell.range.value is not None
-        or spell.materials.cost
-        or spell.materials.consumed
-        or spell.materials.supply
+        or (
+            not allow_consumed_material
+            and (spell.materials.cost or spell.materials.consumed or spell.materials.supply)
+        )
         or seconds_per_unit is None
         or not spell.duration.value
         or len(spell.activities) != 1
@@ -125,6 +144,8 @@ def _passive_profile(
     passive = spell.passive_effects[0]
     if not isinstance(activity, UtilityActivity) or not activity.id or not passive.id:
         raise ValueError("requires one identifiable utility activity and its passive effect")
+    if allow_consumed_material:
+        consumed_material_slug(spell, activity.consumption)
     target = activity.target
     target_capacity = resolve_target_count(target.affects.count, cast_level=spell.level)
     allowed_targets: tuple[str, ...] = ("creature", "willing")
@@ -138,7 +159,7 @@ def _passive_profile(
         or activation.condition
         or activation.override
         or activation.reaction_conditions
-        or activity.consumption != ConsumptionBlock()
+        or (not allow_consumed_material and activity.consumption != ConsumptionBlock())
         or activity.duration != DurationBlock()
         or activity.range != RangeBlock()
         or activity.uses != UsesBlock()
@@ -200,6 +221,122 @@ def _passive_profile(
         active.model_copy(update={"duration": ActiveEffectDuration(seconds=seconds)}),
         target_capacity,
     )
+
+
+@lru_cache(maxsize=1)
+def _reviewed_longstrider() -> tuple[Spell, EffectState]:
+    """Cache the bundled definition and normalized elapsed passive effect."""
+    spell = BundledAssetLoader().get_spell("longstrider")
+    if spell is None:
+        raise EvaluationInvariantError("bundled Longstrider is missing")
+    _, active, _ = _passive_profile(spell, target_id="reviewed-target", caster_id="reviewed-source")
+    return spell, effect_state(active)
+
+
+def is_canonical_elapsed_longstrider(effect: EffectState) -> bool:
+    """Recognize the reviewed flat walk effect independently of its cast identity."""
+    prefix = "cast:longstrider:"
+    if (
+        effect.id != "effect:longstrider"
+        or not effect.origin.startswith(prefix)
+        or not effect.origin.removeprefix(prefix).strip()
+    ):
+        return False
+    _, template = _reviewed_longstrider()
+    return effect == template.model_copy(
+        update={"target_id": effect.target_id, "origin": effect.origin}
+    )
+
+
+def _admit_elapsed_overlap(
+    active: ActiveEffect,
+    spell: Spell,
+    actor: CharacterStateV2,
+    snapshot: NonCombatSnapshot,
+    command_id: str,
+) -> ActiveEffect | None:
+    """Keep distinct reviewed overlaps and refuse unsupported same-name effects.
+
+    Preserve the original source identity for the first active cast from that
+    source. Qualify overlapping recasts by their command. The host keeps each
+    exact instance and its own elapsed deadline.
+    """
+    overlapping = tuple(
+        effect
+        for effect in snapshot.effect_states
+        if effect.target_id == active.target_id and effect.id == active.id
+    )
+    if not overlapping or (
+        spell.concentration
+        and all(
+            actor.concentration_effect_id == effect.id
+            and effect.origin == active.origin
+            and effect.flags.get("concentration") is True
+            for effect in overlapping
+        )
+    ):
+        return active
+    if (
+        spell.slug != "longstrider"
+        or spell != _reviewed_longstrider()[0]
+        or not all(is_canonical_elapsed_longstrider(effect) for effect in overlapping)
+    ):
+        return None
+    origins = {effect.origin for effect in overlapping}
+    if active.origin not in origins:
+        return active
+    suffix = sha256(command_id.encode("utf-8")).hexdigest()
+    origin = f"{active.origin}:recast:{suffix}"
+    return None if origin in origins else active.model_copy(update={"origin": origin})
+
+
+def _timed_effect_creation(
+    request: RuleEvaluationRequest, spell: Spell, active: ActiveEffect
+) -> WorldEffectCreate:
+    """Build the effect proposal with the host association and terminal policy."""
+    return WorldEffectCreate(
+        kind="world.effect_create",
+        expected_absent=True,
+        value=WorldEffectApplication(
+            session_id=request.session_id,
+            command_id=request.command_id,
+            source_id=request.actor_id,
+            effect=effect_state(active),
+            expiry=EffectExpiryPolicy(action="remove"),
+            concentration=spell.concentration,
+            ruleset_binding=request.ruleset_binding,
+        ),
+    )
+
+
+def verify_timed_spell_effect(
+    request: RuleEvaluationRequest, spell: Spell, creation: WorldEffectCreate
+) -> None:
+    """Verify one timed effect against its bound definition and frozen overlap facts."""
+    snapshot, payload = request.state_snapshot, request.payload
+    if (
+        not isinstance(snapshot, NonCombatSnapshot)
+        or not isinstance(payload, ExplorationSpellCastPayload)
+        or spell.slug != payload.spell_id
+    ):
+        raise ValueError("timed effect requires its bound exploration spell")
+    actor = next(
+        (actor for actor in snapshot.character_states if actor.entity_id == request.actor_id),
+        None,
+    )
+    if actor is None or not any(
+        target.entity_id == payload.target_id for target in snapshot.character_states
+    ):
+        raise ValueError("timed effect requires its caster and target")
+    _, active, _ = _passive_profile(
+        spell,
+        target_id=payload.target_id,
+        caster_id=request.actor_id,
+        allow_consumed_material=payload.material_instance_id is not None,
+    )
+    admitted = _admit_elapsed_overlap(active, spell, actor, snapshot, request.command_id)
+    if admitted is None or creation != _timed_effect_creation(request, spell, admitted):
+        raise ValueError("timed effect differs from its bound consequences")
 
 
 def attack_world_spell_modifiers(effect: EffectState) -> tuple[int, int | None]:
@@ -265,6 +402,8 @@ def exploration_source_failure(
     loader: AssetLoader,
     *,
     allowed_classes: frozenset[str] | None = None,
+    allow_pact: bool = False,
+    has_selected_material: bool = False,
 ) -> str | None:
     """Check class repertoire, spell-level access and fixed physical component facts."""
     casting = snapshot.casting_state
@@ -287,12 +426,23 @@ def exploration_source_failure(
         not 1 <= level <= 20
         or class_asset is None
         or class_asset.spellcasting.ability != source.ability
-        or class_asset.spellcasting.progression
-        in (SpellcastingProgression.NONE, SpellcastingProgression.PACT)
+        or class_asset.spellcasting.progression == SpellcastingProgression.NONE
+        or (
+            class_asset.spellcasting.progression == SpellcastingProgression.PACT
+            and (
+                not allow_pact
+                or source.class_slug != "warlock"
+                or class_asset != BundledAssetLoader().get_class("warlock")
+            )
+        )
     ):
         return "casting source conflicts with the actor's class and bound casting rules"
     progression = cast(ProgressionValue, str(class_asset.spellcasting.progression))
-    class_slots = slots_for_caster_level(effective_caster_level(progression, level))
+    class_slots = (
+        derive_pact_slots(level)
+        if progression == "pact"
+        else slots_for_caster_level(effective_caster_level(progression, level))
+    )
     if spell.level and spell.level not in class_slots:
         return "the selected class cannot yet prepare spells at this level"
     selection = next((item for item in source.spells if item.spell_id == spell.slug), None)
@@ -302,8 +452,14 @@ def exploration_source_failure(
     hand_available = actor.weapon_grip != "two_handed" and (
         actor.weapon_in_hands is None or not actor.other_hand_occupied
     )
-    material_available = False
-    if hand_available and material is not None and material.available and "M" in spell.components:
+    material_available = hand_available and has_selected_material
+    if (
+        not has_selected_material
+        and hand_available
+        and material is not None
+        and material.available
+        and "M" in spell.components
+    ):
         owned = next(
             (
                 item
@@ -376,18 +532,44 @@ def evaluate_exploration_spell(
     spell = loader.get_spell(payload.spell_id)
     if spell is None or spell.slug != payload.spell_id:
         return _refuse("unsupported", "spell.asset", "selected spell is absent from the ruleset")
-    if not 1 <= spell.level == payload.slot_level <= 9:
+    upcast = (
+        payload.slot_level > spell.level
+        and spell == _reviewed_longstrider()[0]
+        and resolve_target_count(
+            spell.activities[0].target.affects.count, cast_level=payload.slot_level
+        )
+    )
+    if not 1 <= spell.level <= payload.slot_level <= 9 or (
+        spell.level != payload.slot_level and not upcast
+    ):
         return _refuse(
-            "unsupported", "spell.slot", "cast requires a single ordinary base-level slot"
+            "unsupported", "spell.slot", "cast requires an ordinary slot of a reviewed level"
         )
     healing = exploration_healing_activity(loader, spell)
-    if healing is None:
+    material_instance = payload.material_instance_id
+    material_debit = None
+    if healing is None or material_instance is not None:
         try:
             activity, active, _ = _passive_profile(
-                spell, target_id=payload.target_id, caster_id=request.actor_id
+                spell,
+                target_id=payload.target_id,
+                caster_id=request.actor_id,
+                allow_consumed_material=material_instance is not None,
             )
         except ValueError as exc:
             return _refuse("unsupported", "spell.mechanism", str(exc))
+        if material_instance is not None:
+            try:
+                material_debit = spell_material_payment(
+                    spell,
+                    activity.consumption,
+                    snapshot.inventory_state,
+                    actor_id=request.actor_id,
+                    instance_id=material_instance,
+                    loader=loader,
+                )
+            except ValueError:
+                return _refuse("rejected", "spell.material", "selected material is not available")
 
     actors = {actor.entity_id: actor for actor in snapshot.character_states}
     actor = actors.get(request.actor_id)
@@ -415,23 +597,23 @@ def evaluate_exploration_spell(
     failure = (
         source_failure(snapshot, actor.entity_id, payload.spell_source_id, spell, "healing")
         if healing is not None
-        else exploration_source_failure(snapshot, actor, payload.spell_source_id, spell, loader)
+        else exploration_source_failure(
+            snapshot,
+            actor,
+            payload.spell_source_id,
+            spell,
+            loader,
+            has_selected_material=material_debit is not None,
+        )
     )
     if failure:
         return _refuse("rejected", "spell.source", failure)
 
-    if healing is None and any(
-        current.target_id == target.entity_id
-        and current.id == active.id
-        and not (
-            spell.concentration
-            and actor.concentration_effect_id == current.id
-            and current.origin == active.origin
-            and current.flags.get("concentration") is True
-        )
-        for current in snapshot.effect_states
-    ):
-        return _refuse("rejected", "spell.effect_exists", "target already has this effect")
+    if healing is None:
+        admitted = _admit_elapsed_overlap(active, spell, actor, snapshot, request.command_id)
+        if admitted is None:
+            return _refuse("rejected", "spell.effect_exists", "target already has this effect")
+        active = admitted
     if snapshot.resource_state is None or actor.spell_slots.get(payload.slot_level, 0) <= 0:
         return _refuse("rejected", "spell.slot", "no owned ordinary slot remains")
     positions = request.spell_positions
@@ -458,24 +640,17 @@ def evaluate_exploration_spell(
         raise EvaluationInvariantError("world spell payment must use an ordinary slot")
     if healing is not None:
         return evaluate_exploration_healing(request, spell, healing, actor, target, payment, loader)
-    creation = WorldEffectCreate(
-        kind="world.effect_create",
-        expected_absent=True,
-        value=WorldEffectApplication(
-            session_id=request.session_id,
-            command_id=request.command_id,
-            source_id=actor.entity_id,
-            effect=effect_state(active),
-            expiry=EffectExpiryPolicy(action="remove"),
-            concentration=spell.concentration,
-            ruleset_binding=request.ruleset_binding,
-        ),
-    )
+    creation = _timed_effect_creation(request, spell, active)
     components, material, consumed, cost = spell_component_metadata(spell)
     return dict(
         status="accepted",
         state_delta=StateDelta(
-            expected_world_version=snapshot.world_version, operations=(payment, creation)
+            expected_world_version=snapshot.world_version,
+            operations=(
+                (payment, creation)
+                if material_debit is None
+                else (payment, material_debit, creation)
+            ),
         ),
         proposed_events=(
             IntentSubmitted(

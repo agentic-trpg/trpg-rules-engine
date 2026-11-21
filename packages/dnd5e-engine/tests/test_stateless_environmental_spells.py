@@ -11,10 +11,15 @@ from dnd5e_engine.environment import EnvironmentalSource, environmental_dispels
 from dnd5e_engine.evaluation_contracts import (
     ENVIRONMENTAL_SPELL_SCHEMA_VERSION,
     SCHEMA_VERSION,
+    SPATIAL_EFFECT_END_SCHEMA_VERSION,
     RuleEvaluationRequest,
     RuleEvaluationResult,
 )
-from dnd5e_engine.evaluation_delta import ResourceUpdate, WorldEnvironmentalEffectCreate
+from dnd5e_engine.evaluation_delta import (
+    ResourceUpdate,
+    WorldEnvironmentalEffectCreate,
+    WorldEnvironmentalEffectEnd,
+)
 from dnd5e_engine.events import IntentSubmitted, SpellCast
 from tests.evaluation_support import FOE, HERO
 from tests.test_stateless_attack import execute
@@ -233,3 +238,80 @@ def test_dispels_use_surviving_dim_footprints_and_spell_levels():
     assert not environmental_dispels((replace(light, spell_level=3), darkness))
     assert not environmental_dispels((replace(light, suppressed=True), darkness))
     assert not environmental_dispels((light, replace(darkness, cells=frozenset({"2,0"}))))
+
+
+def _dispel_wire():
+    """Build a fixed request with the host-selected Darkness application."""
+    wire, loader = _wire("dispel-magic", point=True)
+    wire["schema_version"] = SPATIAL_EFFECT_END_SCHEMA_VERSION
+    wire["payload"]["target"] = {"kind": "effect", "effect_id": "spatial:dark"}
+    wire["spell_positions"]["target_effect"] = {
+        "effect_id": "spatial:dark",
+        "caster_id": FOE,
+        "spell_source_id": "class:wizard",
+        "spell_id": "darkness",
+        "slot_level": 2,
+        "cell_id": "1,0",
+        "expires_tick": 600,
+        "concentration_id": "spatial:dark",
+    }
+    return wire, loader
+
+
+def test_dispel_binds_the_exact_effect_and_spends_one_slot_without_rng():
+    wire, loader = _dispel_wire()
+    request = _request(wire)
+    result = execute(request, loader)
+    assert result.status == "accepted", result.error
+    spend, ending = result.state_delta.operations
+    assert (spend.expected.level, spend.amount) == (3, -1)
+    assert ending == WorldEnvironmentalEffectEnd(
+        kind="world.environmental_effect_end",
+        expected=request.spell_positions.target_effect,
+        reason="dispelled",
+    )
+    assert not result.rng_transition.state_changed
+    copy = RuleEvaluationResult.model_validate_json(result.model_dump_json())
+    copy.verify_request(request)
+    forged = json.loads(result.model_dump_json())
+    forged["state_delta"]["operations"][1]["expected"]["effect_id"] = "spatial:unrelated"
+    with pytest.raises(ValueError, match="differs from its fixed spell input"):
+        RuleEvaluationResult.model_validate_json(json.dumps(forged)).verify_request(request)
+
+
+def test_dispel_rejects_mismatched_or_unsupported_spatial_selection():
+    wire, loader = _dispel_wire()
+    effect = wire["spell_positions"]["target_effect"]
+    effect["effect_id"] = "spatial:mismatch"
+    with pytest.raises(ValidationError, match="selected effect"):
+        _request(wire)
+    effect["effect_id"] = "spatial:dark"
+    wire["schema_version"] = ENVIRONMENTAL_SPELL_SCHEMA_VERSION
+    with pytest.raises(ValidationError, match="evaluation/34"):
+        _request(wire)
+    wire["schema_version"] = SPATIAL_EFFECT_END_SCHEMA_VERSION
+    effect["slot_level"] = 4
+    result = execute(_request(wire), loader)
+    assert (result.status, result.error.code, result.state_delta) == (
+        "rejected",
+        "target_invalid",
+        None,
+    )
+
+
+@pytest.mark.parametrize("obstruction", ["range", "total_cover"])
+def test_dispel_target_requires_reachable_geometry(obstruction):
+    wire, loader = _dispel_wire()
+    grid = wire["state_snapshot"]["scene_state"]["grid"]
+    if obstruction == "range":
+        grid["width"] = 30
+        wire["spell_positions"]["target_cell"] = "26,0"
+        wire["spell_positions"]["target_effect"]["cell_id"] = "26,0"
+    else:
+        grid["cover_cells"] = {"1,0": "total"}
+    result = execute(_request(wire), loader)
+    assert (result.status, result.error.code, result.state_delta) == (
+        "rejected",
+        "target_invalid",
+        None,
+    )

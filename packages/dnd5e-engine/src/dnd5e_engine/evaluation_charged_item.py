@@ -11,6 +11,7 @@ from dnd5e_srd_data.schema.common import (
     ConsumptionBlock,
     ConsumptionTargetEntry,
 )
+from dnd5e_srd_data.schema.feature import RecoveryRule
 from dnd5e_srd_data.schema.item import Item
 from dnd5e_srd_data.schema.spell import Spell
 
@@ -38,6 +39,8 @@ from dnd5e_engine.evaluation_timed_spells import exploration_spell_reaches
 from dnd5e_engine.events import CombatEvent, HealingApplied, IntentSubmitted, SpellCast
 from dnd5e_engine.rules.conditions import conditions_block_actions
 
+_DAWN_RECOVER_ALL = RecoveryRule(period="dawn", type="recoverAll")
+
 
 @dataclass(frozen=True)
 class ExplorationChargedCastProfile:
@@ -47,6 +50,7 @@ class ExplorationChargedCastProfile:
     spell: Spell
     cost: int
     capacity: int
+    recovers_at_dawn: bool
 
 
 def exploration_charged_cast_profile(
@@ -56,8 +60,9 @@ def exploration_charged_cast_profile(
 
     The activity delegates delivery to a canonical level-one touch heal and
     specifies an ability explicitly, with no slot or spellbook requirement.
-    Attunement, recharge, destruction, overrides and riders are outside this
-    authored profile. The caller must still verify instance access and payment.
+    Retained charges may refill completely at dawn. The State Machine owns
+    the world clock and instance balance. Attunement, other recovery rules,
+    destruction, overrides and riders remain outside this authored profile.
     """
     uses = item.uses
     if (
@@ -67,7 +72,7 @@ def exploration_charged_cast_profile(
         or item.passive_effects
         or uses is None
         or uses.auto_destroy
-        or uses.recovery
+        or uses.recovery not in ([], [_DAWN_RECOVER_ALL])
         or uses.spent
         or re.fullmatch(r"[1-9][0-9]{0,18}", uses.max) is None
         or len(item.activities) != 1
@@ -120,7 +125,7 @@ def exploration_charged_cast_profile(
         or exploration_healing_activity(loader, spell) is None
     ):
         return None
-    return ExplorationChargedCastProfile(activity, spell, cost, capacity)
+    return ExplorationChargedCastProfile(activity, spell, cost, capacity, bool(uses.recovery))
 
 
 def evaluate_exploration_charged_cast(

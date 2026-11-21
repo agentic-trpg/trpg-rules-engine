@@ -1,4 +1,4 @@
-"""Evaluate exploration Light and Darkness from fixed spatial and casting facts."""
+"""Evaluate creation and termination of spatial spell effects from fixed exploration facts."""
 
 from functools import lru_cache
 from typing import Literal
@@ -12,9 +12,12 @@ from dnd5e_engine.evaluation_contracts import RuleEvaluationRequest, RuleEvaluat
 from dnd5e_engine.evaluation_delta import ResourceUpdate, StateDelta, StateDeltaOperation
 from dnd5e_engine.evaluation_environmental_contracts import (
     EnvironmentalItemTarget,
+    EnvironmentalMagicEffectTarget,
+    EnvironmentalPointTarget,
     ExplorationEnvironmentalSpellCastPayload,
     WorldEnvironmentalEffect,
     WorldEnvironmentalEffectCreate,
+    WorldEnvironmentalEffectEnd,
 )
 from dnd5e_engine.evaluation_payments import spell_payment
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError
@@ -27,11 +30,14 @@ from dnd5e_engine.evaluation_timed_spells import (
 from dnd5e_engine.evaluation_turn import TurnEvaluation, _refuse
 from dnd5e_engine.events import IntentSubmitted, SpellCast
 from dnd5e_engine.rules.conditions import conditions_block_actions
-from dnd5e_engine.spellcasting import spell_component_metadata
+from dnd5e_engine.spellcasting import derive_pact_slots, spell_component_metadata
 
 _CLASSES = {
     "light": frozenset({"bard", "cleric", "sorcerer", "wizard"}),
     "darkness": frozenset({"sorcerer", "warlock", "wizard"}),
+    "dispel-magic": frozenset(
+        {"bard", "cleric", "druid", "paladin", "ranger", "sorcerer", "warlock", "wizard"}
+    ),
 }
 _LIGHT = EnvironmentalSpec(kind="light", light="bright", dim_extension_ft=20, object_anchoring=True)
 _SECONDS_PER_UNIT = {SpellDurationUnits.MINUTE: 60, SpellDurationUnits.HOUR: 3600}
@@ -47,6 +53,8 @@ def _effect(
     actor_id: str, payload: ExplorationEnvironmentalSpellCastPayload, spell: Spell
 ) -> WorldEnvironmentalEffectCreate:
     """Price the ruleset's illumination and lifecycle policy independently of World."""
+    if not isinstance(payload.target, (EnvironmentalItemTarget, EnvironmentalPointTarget)):
+        raise EvaluationInvariantError("spatial effect creation needs a placement target")
     recasts = spell.slug == "light"
     shape: Literal["sphere", "emanation"]
     if recasts:
@@ -112,14 +120,28 @@ def _events(
     )
 
 
-def _payment(snapshot: NonCombatSnapshot, actor_id: str, level: int) -> ResourceUpdate:
-    """Select an owned ordinary slot from the fixed snapshot."""
+def _payment(
+    snapshot: NonCombatSnapshot, actor_id: str, level: int, *, allow_pact: bool = False
+) -> ResourceUpdate:
+    """Select one owned slot from the fixed snapshot using the cast's payment profile."""
     resources = snapshot.resource_state
     if resources is None:
-        raise ValueError("no owned ordinary slot remains")
+        raise ValueError("no owned slot remains")
     payment = spell_payment(resources, actor_id, level)
-    if payment.expected.kind != "spell_slot":
-        raise ValueError("no owned ordinary slot remains")
+    if payment.expected.kind == "pact_slot":
+        actor = next((a for a in snapshot.character_states if a.entity_id == actor_id), None)
+        if actor is None:
+            raise ValueError("Pact payment requires the fixed caster")
+        class_levels = actor.classes or (
+            {actor.class_slug: actor.character_level} if actor.class_slug else {}
+        )
+        pact_level = class_levels.get("warlock", 0)
+        if (
+            not allow_pact
+            or not 1 <= pact_level <= 20
+            or derive_pact_slots(pact_level).get(level) != payment.expected.maximum
+        ):
+            raise ValueError("no reviewed owned Pact slot remains")
     return payment
 
 
@@ -129,18 +151,42 @@ def _operations(
     payload: ExplorationEnvironmentalSpellCastPayload,
     spell: Spell,
 ) -> tuple[StateDeltaOperation, ...]:
-    """Pair a slot spend when needed with the one proposed effect application."""
+    """Pair payment with one exact spatial effect creation or ending."""
+    if isinstance(payload.target, EnvironmentalMagicEffectTarget):
+        positions = request.spell_positions
+        if positions is None or positions.target_effect is None:
+            raise EvaluationInvariantError("spatial effect termination needs its fixed facts")
+        return (
+            _payment(snapshot, request.actor_id, payload.slot_level),
+            WorldEnvironmentalEffectEnd(
+                kind="world.environmental_effect_end",
+                expected=positions.target_effect,
+                reason="dispelled",
+            ),
+        )
     effect = _effect(request.actor_id, payload, spell)
     if not payload.slot_level:
         return (effect,)
-    return (_payment(snapshot, request.actor_id, payload.slot_level), effect)
+    return (
+        _payment(
+            snapshot, request.actor_id, payload.slot_level, allow_pact=spell.slug == "darkness"
+        ),
+        effect,
+    )
 
 
 def _target_failure(request: RuleEvaluationRequest, spell: Spell) -> str | None:
-    """Check the SRD target-specific size and possession requirements."""
+    """Check SRD placement restrictions or the reviewed draw-free dispel profile."""
     positions = request.spell_positions
     assert positions is not None
     item = positions.target_item
+    effect = positions.target_effect
+    if spell.slug == "dispel-magic":
+        if effect is None or effect.spell_id != "darkness" or not 2 <= effect.slot_level <= 3:
+            return "reviewed Dispel Magic requires one fixed-point Darkness of level 2 or 3"
+        return None
+    if effect is not None:
+        return "effect creation requires a placement target"
     if spell.slug == "light":
         if item is None or item.size not in ("tiny", "small", "medium", "large"):
             return "Light requires a Large or smaller object of known size"
@@ -159,7 +205,7 @@ def _slot_valid(payload: ExplorationEnvironmentalSpellCastPayload, spell: Spell)
 def evaluate_environmental_spell(
     request: RuleEvaluationRequest, loader: AssetLoader
 ) -> TurnEvaluation:
-    """Propose illumination and payment after draw-free mechanical admission."""
+    """Propose an exact spatial transition and payment after draw-free admission."""
     snapshot, payload = request.state_snapshot, request.payload
     if not isinstance(snapshot, NonCombatSnapshot) or not isinstance(
         payload, ExplorationEnvironmentalSpellCastPayload
@@ -171,6 +217,11 @@ def evaluate_environmental_spell(
         return _refuse(
             "unsupported", "spell.asset", "requires a reviewed canonical environmental spell"
         )
+    selects_effect = isinstance(payload.target, EnvironmentalMagicEffectTarget)
+    if selects_effect and (
+        _target_failure(request, spell) or not exploration_spell_reaches(request, snapshot, spell)
+    ):
+        return _refuse("rejected", "target_invalid", "spatial effect is unavailable")
     if not _slot_valid(payload, spell):
         return _refuse("rejected", "spell.slot", "slot level is invalid for this spell")
 
@@ -190,12 +241,19 @@ def evaluate_environmental_spell(
         for effect in snapshot.effect_states
     ):
         return _refuse("unsupported", "spell.action_policy", "caster has an active action policy")
-    if failure := _target_failure(request, spell):
-        return _refuse("rejected", "target_invalid", failure)
-    if not exploration_spell_reaches(request, snapshot, spell):
-        return _refuse("rejected", "target_invalid", "target requires range and a clear path")
+    if not selects_effect:
+        if failure := _target_failure(request, spell):
+            return _refuse("rejected", "target_invalid", failure)
+        if not exploration_spell_reaches(request, snapshot, spell):
+            return _refuse("rejected", "target_invalid", "target requires range and a clear path")
     if failure := exploration_source_failure(
-        snapshot, actor, payload.spell_source_id, spell, loader, allowed_classes=classes
+        snapshot,
+        actor,
+        payload.spell_source_id,
+        spell,
+        loader,
+        allowed_classes=classes,
+        allow_pact=spell.slug == "darkness",
     ):
         return _refuse("rejected", "spell.source", failure)
     try:
@@ -221,7 +279,7 @@ def evaluate_environmental_spell(
 
 
 def verify_environmental_cast(result: RuleEvaluationResult, request: RuleEvaluationRequest) -> None:
-    """Bind profile, spatial admission, slot payment and draw-free result to the input."""
+    """Bind profile, target identity, exact transition, payment and evidence to the input."""
     payload, snapshot = request.payload, request.state_snapshot
     if not isinstance(payload, ExplorationEnvironmentalSpellCastPayload) or not isinstance(
         snapshot, NonCombatSnapshot

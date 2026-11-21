@@ -11,6 +11,7 @@ from dnd5e_srd_data.schema.common import (
     ConsumptionBlock,
     ConsumptionTargetEntry,
 )
+from dnd5e_srd_data.schema.feature import RecoveryRule
 from dnd5e_srd_data.schema.item import ItemUses, MagicItem
 
 from dnd5e_engine.evaluation_contracts import (
@@ -30,7 +31,7 @@ ITEM = "test-healing-charm"
 ACTIVITY = "test-healing-charm-cast"
 
 
-def charged_wire(*, charges=2, cost=1, spell_slot=False):
+def charged_wire(*, charges=2, cost=1, spell_slot=False, recovery=()):
     """Bind a typed authored item to the actual SRD Cure Wounds definition."""
     wire, _ = exploration_item_wire(charges=charges)
     spell = BundledAssetLoader().get_spell("cure-wounds")
@@ -54,7 +55,7 @@ def charged_wire(*, charges=2, cost=1, spell_slot=False):
         rarity="common",
         provenance=spell.provenance,
         review=spell.review,
-        uses=ItemUses(max="3"),
+        uses=ItemUses(max="3", recovery=list(recovery)),
         activities=[activity],
     )
     loader = freeze_ruleset(MemoryAssetLoader(items=[item], spells=[spell]))
@@ -138,6 +139,40 @@ def test_charged_item_refusal_has_no_mechanical_proposal(fault, code) -> None:
     assert result.error.code == code
     assert result.state_delta is None
     assert result.proposed_events == ()
+    assert result.rng_transition is None
+
+
+def test_dawn_recovery_item_uses_the_same_charge_payment() -> None:
+    wire, loader = charged_wire(
+        charges=1, recovery=(RecoveryRule(period="dawn", type="recoverAll"),)
+    )
+    request = RuleEvaluationRequest.model_validate_json(json.dumps(wire))
+    result = execute(request, loader)
+
+    assert result.status == "accepted", result.error
+    payment = result.state_delta.operations[0]
+    assert isinstance(payment, InventorySpendCharge)
+    assert payment.expected == request.state_snapshot.inventory_state.entries[0]
+    assert payment.value.charges_remaining_per_unit == 0
+    assert isinstance(result.proposed_events[-1], HealingApplied)
+
+
+@pytest.mark.parametrize(
+    "recovery",
+    [
+        (RecoveryRule(period="dusk", type="recoverAll"),),
+        (RecoveryRule(period="dawn", type="formula", formula="1d3"),),
+        (RecoveryRule(period="dawn", type="recoverAll", formula="3"),),
+        (RecoveryRule(period="dawn"), RecoveryRule(period="lr")),
+    ],
+)
+def test_unreviewed_item_recovery_does_not_enable_charged_cast(recovery) -> None:
+    wire, loader = charged_wire(recovery=recovery)
+    result = execute(RuleEvaluationRequest.model_validate_json(json.dumps(wire)), loader)
+
+    assert result.status == "unsupported"
+    assert result.error.code == "item.capability"
+    assert result.state_delta is None
     assert result.rng_transition is None
 
 

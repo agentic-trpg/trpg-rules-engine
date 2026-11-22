@@ -57,6 +57,7 @@ from dnd5e_engine.types.checks import CheckRequest, GrantedDie
 SCHEMA_VERSION = "engine-evaluation/30"
 ENVIRONMENTAL_SPELL_SCHEMA_VERSION = "engine-evaluation/31"
 CHARGED_ITEM_SCHEMA_VERSION = "engine-evaluation/32"
+STAFF_CAST_SCHEMA_VERSION = "engine-evaluation/41"
 MULTI_SPELL_SCHEMA_VERSION = "engine-evaluation/33"
 SPATIAL_EFFECT_END_SCHEMA_VERSION = "engine-evaluation/34"
 MATERIAL_SPELL_SCHEMA_VERSION = "engine-evaluation/35"
@@ -75,6 +76,7 @@ EvaluationVersion = Literal[
     "engine-evaluation/34",
     "engine-evaluation/35",
     "engine-evaluation/36",
+    "engine-evaluation/41",
 ]
 
 
@@ -94,6 +96,9 @@ class ExplorationItemUsePayload(EvaluationModel):
     instance_id: Annotated[str, Field(min_length=1)]
     activity_id: Annotated[str, Field(min_length=1)]
     target_id: Annotated[str, Field(min_length=1)]
+    cast_level: Annotated[int, Field(ge=1, le=9)] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
 
 class ExplorationSpellCastPayload(EvaluationModel):
@@ -317,6 +322,7 @@ class RuleEvaluationRequest(EvaluationModel):
             "engine-evaluation/30": "engine-snapshot/20",
             ENVIRONMENTAL_SPELL_SCHEMA_VERSION: "engine-snapshot/20",
             CHARGED_ITEM_SCHEMA_VERSION: "engine-snapshot/20",
+            STAFF_CAST_SCHEMA_VERSION: "engine-snapshot/20",
             MULTI_SPELL_SCHEMA_VERSION: "engine-snapshot/20",
             SPATIAL_EFFECT_END_SCHEMA_VERSION: "engine-snapshot/20",
             MATERIAL_SPELL_SCHEMA_VERSION: "engine-snapshot/20",
@@ -336,6 +342,10 @@ class RuleEvaluationRequest(EvaluationModel):
             )
         ):
             raise ValueError("verified visibility must match the selected Healing Word creature")
+        if isinstance(self.payload, ExplorationItemUsePayload) and (
+            self.payload.cast_level is not None and self.schema_version != STAFF_CAST_SCHEMA_VERSION
+        ):
+            raise ValueError("explicit item cast level requires evaluation/41")
         if self._validate_versioned_operation():
             return self
         if self.spell_positions is not None and self.spell_positions.target_item is not None:
@@ -417,7 +427,7 @@ class RuleEvaluationRequest(EvaluationModel):
             return True
         if self.multi_spell_positions is not None or self.operation_kind == "world.cast_spell_many":
             raise ValueError("multi-target spell facts require evaluation/33")
-        if self.schema_version == CHARGED_ITEM_SCHEMA_VERSION:
+        if self.schema_version in (CHARGED_ITEM_SCHEMA_VERSION, STAFF_CAST_SCHEMA_VERSION):
             self._validate_charged_item()
             return True
         if self.spell_positions is not None and self.operation_kind != "world.cast_spell":
@@ -454,7 +464,9 @@ class RuleEvaluationRequest(EvaluationModel):
             or not isinstance(self.state_snapshot, NonCombatSnapshot)
             or self.state_snapshot.combat_setup is not None
         ):
-            raise ValueError("evaluation/32 requires a noncombat item cast without pending combat")
+            raise ValueError(
+                "evaluation/32 or /41 requires a noncombat item cast without pending combat"
+            )
         positions = self.spell_positions
         if positions is not None and (
             positions.target_item is not None or positions.willing_target_id is not None
@@ -746,7 +758,7 @@ class RuleEvaluationResult(EvaluationModel):
 
                 verify_environmental_cast(self, request)
 
-            if request.schema_version == CHARGED_ITEM_SCHEMA_VERSION:
+            if request.schema_version in (CHARGED_ITEM_SCHEMA_VERSION, STAFF_CAST_SCHEMA_VERSION):
                 from dnd5e_engine.evaluation_charged_item import verify_charged_item_cast
 
                 verify_charged_item_cast(self, request)
@@ -767,8 +779,16 @@ class RuleEvaluationResult(EvaluationModel):
                     ):
                         raise ValueError("material consumption differs from the fixed cast input")
                 elif isinstance(operation, InventorySpendCharge):
-                    if request.schema_version != CHARGED_ITEM_SCHEMA_VERSION:
-                        raise ValueError("inventory.spend_charge requires evaluation/32")
+                    if request.schema_version not in (
+                        CHARGED_ITEM_SCHEMA_VERSION,
+                        STAFF_CAST_SCHEMA_VERSION,
+                    ):
+                        raise ValueError("inventory.spend_charge requires evaluation/32 or /41")
+                    if (
+                        not operation.value.quantity
+                        and request.schema_version != STAFF_CAST_SCHEMA_VERSION
+                    ):
+                        raise ValueError("vanishing items require evaluation/41")
                 elif isinstance(operation, CombatEffectCreate):
                     verify_speed_effect_creation(operation, request, self.proposed_events)
         if self.rng_transition is not None:

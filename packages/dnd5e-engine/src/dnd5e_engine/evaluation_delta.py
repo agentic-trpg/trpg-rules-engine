@@ -286,7 +286,7 @@ class InventoryConsume(EvaluationModel):
 
 
 class InventorySpendCharge(EvaluationModel):
-    """Propose spending charges on one retained, accessible inventory instance."""
+    """Propose spending charges on one accessible instance, including reviewed terminal loss."""
 
     kind: Literal["inventory.spend_charge"]
     expected: InventoryEntry
@@ -299,8 +299,14 @@ class InventorySpendCharge(EvaluationModel):
         if not self.expected.accessible or self.expected.quantity != 1:
             raise ValueError("charge spending requires one accessible unit")
         balance = self.expected.charges_remaining_per_unit - self.amount
-        if balance < 0 or self.value != self.expected.model_copy(
-            update={"charges_remaining_per_unit": balance}
+        if (
+            balance < 0
+            or (balance != 0 and self.value.quantity != 1)
+            or self.value.quantity not in (0, 1)
+            or self.value
+            != self.expected.model_copy(
+                update={"charges_remaining_per_unit": balance, "quantity": self.value.quantity}
+            )
         ):
             raise ValueError("charge spending must only reduce the selected unit's balance")
         return self

@@ -29,6 +29,7 @@ from dnd5e_engine.evaluation_class_dependencies import class_dependencies
 from dnd5e_engine.evaluation_computation import CombatComputation
 from dnd5e_engine.evaluation_contracts import (
     CHARGED_ITEM_SCHEMA_VERSION,
+    STAFF_CAST_SCHEMA_VERSION,
     CombatIntentPayload,
     ExplorationItemUsePayload,
     ItemUsePayload,
@@ -411,7 +412,7 @@ def evaluate_exploration_item(
         raise EvaluationInvariantError("exploration item evaluation requires a noncombat request")
     if snapshot.combat_setup is not None:
         return _refuse("unsupported", "item.snapshot", "exploration requires no pending combat")
-    if request.schema_version == CHARGED_ITEM_SCHEMA_VERSION:
+    if request.schema_version in (CHARGED_ITEM_SCHEMA_VERSION, STAFF_CAST_SCHEMA_VERSION):
         from dnd5e_engine.evaluation_charged_item import evaluate_exploration_charged_cast
 
         entry = _owned_item_unit(snapshot, request.actor_id, payload)

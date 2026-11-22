@@ -858,6 +858,15 @@ class SomaticSpellRolled(BaseModel):
     failed: bool
 
 
+class ItemDepletionRolled(BaseModel):
+    """Record the last-charge roll for one exact magic item."""
+
+    type: Literal["item_depletion_rolled"] = "item_depletion_rolled"
+    actor_id: str
+    instance_id: str
+    roll: int = Field(ge=1, le=20)
+
+
 class SpellCast(BaseModel):
     """SRD 5.2 §Components: "A spell's components are physical requirements
     the spellcaster must meet to cast the spell." Metadata only — never
@@ -878,6 +887,7 @@ class SpellCast(BaseModel):
     material_consumed: bool
     material_cost_gp: int
     execution_class: ExecutionClass | None = Field(default=None, exclude_if=lambda v: v is None)
+    item_cast_level: int | None = Field(default=None, ge=1, le=9, exclude_if=lambda v: v is None)
 
 
 class ProvisionalAttackEvidence(BaseModel):
@@ -1075,6 +1085,7 @@ CombatEvent = Annotated[
     | CastFailed
     | SomaticSpellRolled
     | SpellCast
+    | ItemDepletionRolled
     | ReactionTriggered
     | CombatEnded
     | RechargeRolled
@@ -1130,6 +1141,7 @@ ALL_COMBAT_EVENT_TYPES: tuple[type[BaseModel], ...] = (
     CastFailed,
     SomaticSpellRolled,
     SpellCast,
+    ItemDepletionRolled,
     ReactionTriggered,
     CombatEnded,
     RechargeRolled,
@@ -1182,6 +1194,7 @@ __all__ = [
     "HealingApplied",
     "IntentSubmitted",
     "IntentType",
+    "ItemDepletionRolled",
     "LegendaryActionUsed",
     "LegendaryResistanceUsed",
     "MoveFailed",

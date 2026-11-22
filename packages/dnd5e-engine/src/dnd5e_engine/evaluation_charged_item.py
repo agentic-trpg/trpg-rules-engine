@@ -20,6 +20,7 @@ from dnd5e_engine.activities.resolver import resolve_activity
 from dnd5e_engine.evaluation_actor import combatant
 from dnd5e_engine.evaluation_class_dependencies import class_dependencies
 from dnd5e_engine.evaluation_contracts import (
+    STAFF_CAST_SCHEMA_VERSION,
     ExplorationItemUsePayload,
     RuleEvaluationRequest,
     RuleEvaluationResult,
@@ -37,9 +38,18 @@ from dnd5e_engine.evaluation_rng import RNGTransition
 from dnd5e_engine.evaluation_ruleset import FrozenRuleset, get_default_ruleset
 from dnd5e_engine.evaluation_state import InventoryEntry, NonCombatSnapshot
 from dnd5e_engine.evaluation_timed_spells import exploration_spell_reaches
-from dnd5e_engine.events import CombatEvent, HealingApplied, IntentSubmitted, SpellCast
+from dnd5e_engine.events import (
+    CombatEvent,
+    HealingApplied,
+    IntentSubmitted,
+    ItemDepletionRolled,
+    SpellCast,
+)
 from dnd5e_engine.rules.conditions import conditions_block_actions
+from dnd5e_engine.rules.dice import roll_d6, roll_d20
 
+_STAFF = "staff-of-healing"
+_STAFF_CLASSES = frozenset({"bard", "cleric", "druid"})
 _DAWN_RECOVER_ALL = RecoveryRule(period="dawn", type="recoverAll")
 
 
@@ -52,19 +62,79 @@ class ExplorationChargedCastProfile:
     cost: int
     capacity: int
     recovers_at_dawn: bool
+    cast_level: int = 1
+    requires_held_attunement: bool = False
+
+
+def is_healing_staff(item: Item) -> bool:
+    """Identify the reviewed SRD 5.2.1 Staff of Healing by its canonical asset."""
+    return item.slug == _STAFF and item == get_default_ruleset().get_item(_STAFF)
+
+
+def staff_attunement_ability(actor, loader: AssetLoader) -> str | None:
+    """Use the canonical spellcasting ability of an eligible single-class holder."""
+    levels = actor.classes or (
+        {actor.class_slug: actor.character_level} if actor.class_slug else {}
+    )
+    if len(levels) != 1 or sum(levels.values()) != actor.character_level:
+        return None
+    slug = next(iter(levels))
+    if actor.class_slug not in (None, slug):
+        return None
+    cls = loader.get_class(slug)
+    if slug not in _STAFF_CLASSES or cls is None or cls != get_default_ruleset().get_class(slug):
+        return None
+    return cls.spellcasting.ability or None
+
+
+def roll_healing_staff_dawn(item: Item, rng):
+    """Roll the canonical dawn allowance using the supplied uncommitted stream."""
+    if not is_healing_staff(item):
+        raise ValueError("random dawn recovery requires the reviewed Staff of Healing")
+    return roll_d6(modifier=4, rng=rng)
+
+
+def _healing_staff_cast(item: Item, loader: AssetLoader, activity_id, cast_level):
+    """Select Cure Wounds from the bundled staff's verified activities and scaling."""
+    cure_wounds = loader.get_spell("cure-wounds")
+    if (
+        cure_wounds is None
+        or cure_wounds != get_default_ruleset().get_spell("cure-wounds")
+        or exploration_healing_activity(loader, cure_wounds) is None
+        or (cast_level is not None and not 1 <= cast_level <= 4)
+    ):
+        return None
+    activity = next(
+        activity
+        for activity in item.activities
+        if isinstance(activity, CastActivity) and activity.spell.uuid == cure_wounds.foundry_uuid
+    )
+    if activity_id not in (None, activity.id):
+        return None
+    level = cast_level or 1
+    assert item.uses is not None
+    return ExplorationChargedCastProfile(
+        activity, cure_wounds, level, int(item.uses.max), True, level, True
+    )
 
 
 def exploration_charged_cast_profile(
-    item: Item, loader: AssetLoader
+    item: Item,
+    loader: AssetLoader,
+    *,
+    activity_id: str | None = None,
+    cast_level: int | None = None,
 ) -> ExplorationChargedCastProfile | None:
-    """Identify a fixed-price Action cast from an item in the bound ruleset.
+    """Identify a supported charged touch heal from the bound item and activity.
 
-    The activity delegates delivery to a canonical level-one touch heal and
-    specifies an ability explicitly, with no slot or spellbook requirement.
-    Retained charges may refill completely at dawn. The State Machine owns
-    the world clock and instance balance. Attunement, other recovery rules,
-    destruction, overrides and riders remain outside this authored profile.
+    A canonical Staff of Healing delegates to Cure Wounds at levels 1–4.
+    A reviewed authored charm has one fixed-cost, level-one cast and may
+    refill completely at dawn. The State Machine owns time and item balances.
     """
+    if is_healing_staff(item):
+        return _healing_staff_cast(item, loader, activity_id, cast_level)
+    if cast_level is not None:
+        return None
     uses = item.uses
     if (
         item.item_kind not in ("item", "magic_item")
@@ -142,8 +212,17 @@ def evaluate_exploration_charged_cast(
     snapshot, payload = request.state_snapshot, request.payload
     assert isinstance(snapshot, NonCombatSnapshot)
     assert isinstance(payload, ExplorationItemUsePayload)
-    profile = exploration_charged_cast_profile(item, loader)
+    staff = is_healing_staff(item)
+    if staff and request.schema_version != STAFF_CAST_SCHEMA_VERSION:
+        return _refuse("unsupported", "item.capability", "Staff of Healing requires evaluation/41")
+    profile = exploration_charged_cast_profile(
+        item, loader, activity_id=payload.activity_id, cast_level=payload.cast_level
+    )
     if profile is None:
+        if staff and payload.activity_id not in {activity.id for activity in item.activities}:
+            return _refuse("rejected", "activity_invalid", "activity is absent from this item")
+        if staff and payload.cast_level is not None and payload.cast_level > 4:
+            return _refuse("rejected", "cast_level_invalid", "Cure Wounds supports levels 1–4")
         return _refuse("unsupported", "item.capability", "item lacks a reviewed charged cast")
     if profile.activity.id != payload.activity_id:
         return _refuse("rejected", "activity_invalid", "activity is absent from this item")
@@ -172,14 +251,36 @@ def evaluate_exploration_charged_cast(
         )
     ):
         return _refuse("rejected", "target_invalid", "cast requires a living creature within touch")
-    if failure := _equipment_failure(actor, item):
-        return failure
-    if (
-        not is_stowed_inventory_entry(entry, actor)
-        or any(a.trait_mechanics or a.concentration_effect_id for a in actors.values())
-        or any(not effect.disabled for effect in snapshot.effect_states)
+    ability = None
+    ignored_items = frozenset({entry.instance_id})
+    if staff:
+        if actor.held_weapon_instance_id != entry.instance_id:
+            return _refuse("rejected", "item_not_held", "hold the selected staff before casting")
+        if entry.attuned_actor_id != actor.entity_id:
+            return _refuse(
+                "rejected", "item_not_attuned", "attune to the selected staff before casting"
+            )
+        ability = staff_attunement_ability(actor, loader)
+        if ability is None:
+            return _refuse(
+                "rejected", "item_attunement_class", "staff requires Bard, Cleric or Druid"
+            )
+        ignored_items = frozenset(
+            owned.instance_id
+            for owned in snapshot.inventory_state.entries
+            if owned.owner_id == actor.entity_id
+            and owned.item_slug == item.slug
+            and (owned.instance_id == entry.instance_id or is_stowed_inventory_entry(owned, actor))
+        )
+    else:
+        if failure := _equipment_failure(actor, item):
+            return failure
+        if not is_stowed_inventory_entry(entry, actor):
+            return _refuse("unsupported", "item.snapshot", "unreviewed equipped charged item")
+    if any(a.trait_mechanics or a.concentration_effect_id for a in actors.values()) or any(
+        not effect.disabled for effect in snapshot.effect_states
     ):
-        return _refuse("unsupported", "item.snapshot", "unreviewed equipment, trait or effect")
+        return _refuse("unsupported", "item.snapshot", "unreviewed trait or effect")
     canonical = get_default_ruleset()
     if class_failure := class_dependencies(
         actor,
@@ -187,7 +288,8 @@ def evaluate_exploration_charged_cast(
         loader,
         canonical,
         equipped=True,
-        stowed_consumable_ids=frozenset({entry.instance_id}),
+        stowed_consumable_ids=ignored_items,
+        reviewed_lore_bard=staff,
     ):
         return _refuse("unsupported", "item.snapshot", class_failure)
 
@@ -212,6 +314,7 @@ def evaluate_exploration_charged_cast(
             material=None,
             material_consumed=False,
             material_cost_gp=0,
+            item_cast_level=profile.cast_level if staff else None,
         ),
     ]
     caster = combatant(actor)
@@ -222,7 +325,8 @@ def evaluate_exploration_charged_cast(
         event_emitter=events.append,
         slot_level=None,
         base_spell_level=None,
-        spellcasting_ability=None,
+        spellcasting_ability=ability,
+        cast_level_override=profile.cast_level if staff else None,
         concentration=False,
         source_passive_effects=[],
         spell_book={activity.spell.uuid: spell},
@@ -238,11 +342,19 @@ def evaluate_exploration_charged_cast(
         raise EvaluationInvariantError("charged exploration cast must produce one healing event")
     if healing.amount < 0:
         return _refuse("unsupported", "healing.amount", "negative healing is outside this profile")
+    balance = entry.charges_remaining_per_unit - profile.cost
+    quantity = 1
+    if staff and balance == 0:
+        die = roll_d20(rng=rng).total
+        events.append(
+            ItemDepletionRolled(actor_id=actor.entity_id, instance_id=entry.instance_id, roll=die)
+        )
+        quantity = int(die != 1)
     payment = InventorySpendCharge(
         kind="inventory.spend_charge",
         expected=entry,
         value=entry.model_copy(
-            update={"charges_remaining_per_unit": entry.charges_remaining_per_unit - profile.cost}
+            update={"charges_remaining_per_unit": balance, "quantity": quantity}
         ),
         amount=profile.cost,
     )
@@ -279,13 +391,26 @@ def verify_charged_item_cast(result: RuleEvaluationResult, request: RuleEvaluati
         raise ValueError("charged item payment must match the exact owned request instance")
     if result.rng_transition is None or not result.rng_transition.state_changed:
         raise ValueError("charged healing requires a recorded RNG advance")
-    if len(result.proposed_events) != 3:
+    staff = request.schema_version == STAFF_CAST_SCHEMA_VERSION
+    last_charge = staff and spend.value.charges_remaining_per_unit == 0
+    if len(result.proposed_events) != 3 + int(last_charge):
         raise ValueError("charged cast requires the item intent, cast and healing evidence")
-    intent, cast, healing = result.proposed_events
+    intent, cast, healing = result.proposed_events[:3]
+    if last_charge:
+        depletion = result.proposed_events[3]
+        if (
+            not isinstance(depletion, ItemDepletionRolled)
+            or (depletion.actor_id, depletion.instance_id) != (request.actor_id, entry.instance_id)
+            or spend.value.quantity != int(depletion.roll != 1)
+        ):
+            raise ValueError("charge depletion evidence must match the selected staff")
+    elif spend.value.quantity != 1:
+        raise ValueError("vanishing requires the reviewed last-charge roll")
     if (
         not isinstance(cast, SpellCast)
         or cast.actor_id != request.actor_id
         or cast.slot_level is not None
+        or cast.item_cast_level != ((payload.cast_level or 1) if staff else None)
         or cast.ritual
         or cast.components
         or cast.material is not None

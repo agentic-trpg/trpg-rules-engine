@@ -525,6 +525,9 @@ class InventoryEntry(EvaluationModel):
     quantity: Annotated[int, Field(ge=0)]
     charges_remaining_per_unit: Annotated[int, Field(ge=0)]
     accessible: bool
+    attuned_actor_id: Annotated[str, Field(min_length=1)] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
 
 class InventoryState(EvaluationModel):

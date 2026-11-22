@@ -29,6 +29,7 @@ from dnd5e_engine.evaluation_equipment_dependencies import is_stowed_inventory_e
 from dnd5e_engine.evaluation_exploration_healing import (
     exploration_healing_activity,
     exploration_healing_hp_delta,
+    exploration_healing_requires_sight,
 )
 from dnd5e_engine.evaluation_items import ItemEvaluation, _equipment_failure, _refuse
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError
@@ -123,6 +124,7 @@ def exploration_charged_cast_profile(
         or (type(loader) is not FrozenRuleset and spell != loader.get_spell(spell.slug))
         or activity.spell.level not in (None, spell.level)
         or exploration_healing_activity(loader, spell) is None
+        or exploration_healing_requires_sight(spell)
     ):
         return None
     return ExplorationChargedCastProfile(activity, spell, cost, capacity, bool(uses.recovery))

@@ -23,17 +23,22 @@ from dnd5e_engine.events import CombatEvent, HealingApplied, IntentSubmitted
 
 
 def exploration_healing_activity(loader: AssetLoader, spell: Spell) -> HealActivity | None:
-    """Select a canonical single-creature, first-level Action heal with touch delivery."""
-    if (
-        spell.level != 1
-        or spell.casting_time.unit != CastingTimeUnit.ACTION
-        or spell.range.units != SpellRangeUnits.TOUCH
-        or ordinary_spell_mechanism(loader, spell.slug) != "healing"
-    ):
+    """Select a canonical first-level single-creature heal with reviewed delivery."""
+    if ordinary_spell_mechanism(loader, spell.slug) != "healing" or spell.level != 1:
+        return None
+    if not (
+        spell.casting_time.unit == CastingTimeUnit.ACTION
+        and spell.range.units == SpellRangeUnits.TOUCH
+    ) and not exploration_healing_requires_sight(spell):
         return None
     activity = spell.activities[0]
     assert isinstance(activity, HealActivity)
     return activity
+
+
+def exploration_healing_requires_sight(spell: Spell) -> bool:
+    """Identify the bound Healing Word invocation that requires caster sight."""
+    return spell.slug == "healing-word" and spell == get_default_ruleset().get_spell(spell.slug)
 
 
 def exploration_healing_hp_delta(target: CharacterStateV2, amount: int) -> tuple[HPDelta, ...]:

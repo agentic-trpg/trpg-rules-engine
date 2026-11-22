@@ -335,6 +335,7 @@ def source_failure(
     mechanism: OrdinarySpellMechanism,
     *,
     composed_speed_rider: bool = False,
+    reviewed_exploration_cleric: bool = False,
 ) -> str | None:
     """Check the explicit source and the class profile admitted for this invocation."""
     component = snapshot.casting_state
@@ -363,8 +364,14 @@ def source_failure(
     levels = actor.classes or (
         {actor.class_slug: actor.character_level} if actor.class_slug else {}
     )
-    reviewed_level = levels == {class_slug: level} or (
-        composed_speed_rider and levels == {"wizard": 5}
+    reviewed_level = (
+        levels == {class_slug: level}
+        or (composed_speed_rider and levels == {"wizard": 5})
+        or (
+            reviewed_exploration_cleric
+            and mechanism == "healing"
+            and levels in ({"cleric": 3}, {"cleric": 5})
+        )
     )
     if not reviewed_level or actor.spellcasting_ability != source.ability:
         return "casting source contradicts class/ability facts"

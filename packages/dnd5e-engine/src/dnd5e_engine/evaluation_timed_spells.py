@@ -35,6 +35,7 @@ from dnd5e_engine.evaluation_effects import EffectState, effect_state
 from dnd5e_engine.evaluation_exploration_healing import (
     evaluate_exploration_healing,
     exploration_healing_activity,
+    exploration_healing_requires_sight,
 )
 from dnd5e_engine.evaluation_payments import spell_payment
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError
@@ -490,12 +491,20 @@ def exploration_source_failure(
 
 
 def exploration_spell_reaches(
-    request: RuleEvaluationRequest, snapshot: NonCombatSnapshot, spell: Spell
+    request: RuleEvaluationRequest,
+    snapshot: NonCombatSnapshot,
+    spell: Spell,
+    *,
+    visible_target_id: str | None = None,
 ) -> bool:
-    """Check distance and a clear path using the fixed scene and shared geometry rules."""
+    """Check fixed range, clear path and any required host-confirmed sight."""
     positions = request.spell_positions
     reach = spell_range_ft(spell)
-    if positions is None or reach is None:
+    if (
+        positions is None
+        or reach is None
+        or (visible_target_id is not None and positions.visible_target_id != visible_target_id)
+    ):
         return False
     try:
         topology = GridTopology(GridScene.model_validate(snapshot.scene_state.grid.model_dump()))
@@ -516,7 +525,7 @@ def evaluate_exploration_spell(
 ) -> TurnEvaluation:
     """Admit one exploration cast and propose its slot and mechanical changes.
 
-    A reviewed touch heal resolves immediately. The timed branch supports
+    A reviewed touch or visible-target heal resolves immediately. The timed branch supports
     movement, senses, Armor Class floors and flat skill bonuses with unchanged RNG.
     Flat skill bonuses may require concentration. A willing-creature profile
     requires self-targeting or verified willingness.
@@ -533,6 +542,7 @@ def evaluate_exploration_spell(
     spell = loader.get_spell(payload.spell_id)
     if spell is None or spell.slug != payload.spell_id:
         return _refuse("unsupported", "spell.asset", "selected spell is absent from the ruleset")
+    healing = exploration_healing_activity(loader, spell)
     upcast = (
         payload.slot_level > spell.level
         and spell == _reviewed_longstrider()[0]
@@ -540,13 +550,13 @@ def evaluate_exploration_spell(
             spell.activities[0].target.affects.count, cast_level=payload.slot_level
         )
     )
+    healing_upcast = healing is not None and spell.slug == "cure-wounds" and payload.slot_level == 2
     if not 1 <= spell.level <= payload.slot_level <= 9 or (
-        spell.level != payload.slot_level and not upcast
+        spell.level != payload.slot_level and not (upcast or healing_upcast)
     ):
         return _refuse(
             "unsupported", "spell.slot", "cast requires an ordinary slot of a reviewed level"
         )
-    healing = exploration_healing_activity(loader, spell)
     material_instance = payload.material_instance_id
     material_debit = None
     if healing is None or material_instance is not None:
@@ -585,18 +595,29 @@ def evaluate_exploration_spell(
         return _refuse("rejected", "actor_incapacitated", "caster must be alive and able to act")
     if target is None or not target.is_alive:
         return _refuse("rejected", "target_invalid", "cast requires a living creature")
-    if target.entity_id != actor.entity_id:
+    needs_sight = healing is not None and exploration_healing_requires_sight(spell)
+    positions = request.spell_positions
+    if needs_sight or target.entity_id != actor.entity_id:
         if spell.range.units == SpellRangeUnits.SELF:
             return _refuse("rejected", "target_invalid", "self spell must target the caster")
-        if not exploration_spell_reaches(request, snapshot, spell):
-            return _refuse("rejected", "target_invalid", "target must be reachable by touch")
+        if not exploration_spell_reaches(
+            request, snapshot, spell, visible_target_id=target.entity_id if needs_sight else None
+        ):
+            return _refuse("rejected", "target_invalid", "required spell delivery is unproven")
     if any(
         effect.target_id == actor.entity_id and not effect.disabled and effect.action_policy
         for effect in snapshot.effect_states
     ):
         return _refuse("unsupported", "spell.action_policy", "caster has an active action policy")
     failure = (
-        source_failure(snapshot, actor.entity_id, payload.spell_source_id, spell, "healing")
+        source_failure(
+            snapshot,
+            actor.entity_id,
+            payload.spell_source_id,
+            spell,
+            "healing",
+            reviewed_exploration_cleric=True,
+        )
         if healing is not None
         else exploration_source_failure(
             snapshot,
@@ -617,7 +638,6 @@ def evaluate_exploration_spell(
         active = admitted
     if snapshot.resource_state is None or actor.spell_slots.get(payload.slot_level, 0) <= 0:
         return _refuse("rejected", "spell.slot", "no owned ordinary slot remains")
-    positions = request.spell_positions
     if (
         healing is None
         and activity.target.affects.type == "willing"

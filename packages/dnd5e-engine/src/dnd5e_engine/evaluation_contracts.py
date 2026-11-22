@@ -113,7 +113,8 @@ class ExplorationSpellPositions(EvaluationModel):
     """Carry fixed caster and target cells and facts verified by the host.
 
     Willingness applies to the named creature in this cast only. An omitted
-    willingness fact leaves another creature's willingness unknown.
+    willingness fact leaves another creature's willingness unknown. Visibility
+    records the caster's confirmed sight of the named creature in this snapshot.
     """
 
     source_cell: Annotated[str, Field(min_length=1)]
@@ -125,6 +126,9 @@ class ExplorationSpellPositions(EvaluationModel):
         default=None, exclude_if=lambda value: value is None
     )
     willing_target_id: Annotated[str, Field(min_length=1)] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    visible_target_id: Annotated[str, Field(min_length=1)] | None = Field(
         default=None, exclude_if=lambda value: value is None
     )
 
@@ -320,6 +324,18 @@ class RuleEvaluationRequest(EvaluationModel):
         }
         if self.state_snapshot.snapshot_schema_version != version_pairs[self.schema_version]:
             raise ValueError("evaluation and snapshot versions differ")
+        positions = self.spell_positions
+        if (
+            positions is not None
+            and positions.visible_target_id is not None
+            and (
+                type(self.payload) is not ExplorationSpellCastPayload
+                or self.payload.spell_id != "healing-word"
+                or self.payload.material_instance_id is not None
+                or positions.visible_target_id != self.payload.target_id
+            )
+        ):
+            raise ValueError("verified visibility must match the selected Healing Word creature")
         if self._validate_versioned_operation():
             return self
         if self.spell_positions is not None and self.spell_positions.target_item is not None:

@@ -16,7 +16,7 @@ Pure functions, zero I/O.
 from __future__ import annotations
 
 import random
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 
 from dnd5e_srd_data.schema.condition import (
     ConditionEffect,
@@ -27,6 +27,21 @@ from dnd5e_srd_data.schema.condition import (
 from dnd5e_engine.rules.character import ABILITY_NAME_BY_CODE
 from dnd5e_engine.rules.dice import MAX_DICE_TERM
 from dnd5e_engine.types.effects import ActiveEffect, ActiveEffectChange
+
+
+def strongest_latest[Effect](
+    effects: Sequence[Effect], potency: Callable[[Effect], int]
+) -> Effect | None:
+    """Select one same-family application by strength, then persisted order.
+
+    Callers supply only a single target and rule family. Every original
+    application remains available to resume when the winner ends.
+    """
+    return (
+        max(enumerate(effects), key=lambda pair: (potency(pair[1]), pair[0]))[1]
+        if effects
+        else None
+    )
 
 
 def effective_effects(effects: Sequence[ActiveEffect]) -> tuple[ActiveEffect, ...]:

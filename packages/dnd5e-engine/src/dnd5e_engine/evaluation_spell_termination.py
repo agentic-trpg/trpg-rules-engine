@@ -149,18 +149,31 @@ def plan_spell_dismissal(
     binding: RulesetBinding,
     loader: AssetLoader,
 ) -> WorldSpellEnd:
-    """Apply SRD Duration to the exact original caster's ongoing Longstrider."""
+    """Apply SRD Duration to the exact original caster's reviewed elapsed spell."""
+    from dnd5e_engine.evaluation_aid import aid_potency
     from dnd5e_engine.evaluation_timed_spells import is_canonical_elapsed_longstrider
 
     verify_ruleset(binding, loader)
-    spell_id = "longstrider"
+    spell_id = application.spell_id
+    reviewed = spell_id in ("longstrider", "aid") and loader.get_spell(
+        spell_id
+    ) == get_default_ruleset().get_spell(spell_id)
+    effect_matches = False
+    if spell_id == "longstrider":
+        effect_matches = is_canonical_elapsed_longstrider(application.effect)
+    elif spell_id == "aid":
+        try:
+            aid_potency(application.effect)
+        except ValueError:
+            pass
+        else:
+            effect_matches = True
     if (
-        application.spell_id != spell_id
-        or application.caster_id != actor_id
+        application.caster_id != actor_id
         or application.concentration_id is not None
         or conditions_block_actions(list(actor_conditions))
-        or loader.get_spell(spell_id) != get_default_ruleset().get_spell(spell_id)
-        or not is_canonical_elapsed_longstrider(application.effect)
+        or not reviewed
+        or not effect_matches
     ):
         raise ValueError("The acting caster cannot dismiss this application")
     return WorldSpellEnd(expected=application, reason="dismissed")

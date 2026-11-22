@@ -24,6 +24,7 @@ from dnd5e_engine.activities.check_pipeline import validate_check_effect_change
 from dnd5e_engine.activities.effects import passive_effect_to_active_effect
 from dnd5e_engine.activities.passive_stats import interpret_passive_stats
 from dnd5e_engine.areas import has_line_of_effect
+from dnd5e_engine.evaluation_aid import admit_aid_overlap, aid_profile, is_reviewed_aid
 from dnd5e_engine.evaluation_beacon import beacon_effect, reviewed_beacon_spell
 from dnd5e_engine.evaluation_casting import CastingStateV20
 from dnd5e_engine.evaluation_condition_choice import (
@@ -308,6 +309,11 @@ def _admit_elapsed_overlap(
         for effect in snapshot.effect_states
         if effect.target_id == active.target_id and effect.id == active.id
     )
+    if spell.slug == "aid":
+        try:
+            return admit_aid_overlap(active, snapshot.effect_states, command_id)
+        except ValueError:
+            return None
     if not overlapping or (
         spell.concentration
         and all(
@@ -370,12 +376,20 @@ def verify_timed_spell_effect(
         target.entity_id == payload.target_id for target in snapshot.character_states
     ):
         raise ValueError("timed effect requires its caster and target")
-    _, active, _ = _passive_profile(
-        spell,
-        target_id=payload.target_id,
-        caster_id=request.actor_id,
-        allow_consumed_material=payload.material_instance_id is not None,
-    )
+    if spell.slug == "aid":
+        _, active = aid_profile(
+            spell,
+            level=payload.slot_level,
+            target_id=payload.target_id,
+            caster_id=request.actor_id,
+        )
+    else:
+        _, active, _ = _passive_profile(
+            spell,
+            target_id=payload.target_id,
+            caster_id=request.actor_id,
+            allow_consumed_material=payload.material_instance_id is not None,
+        )
     admitted = _admit_elapsed_overlap(active, spell, actor, snapshot, request.command_id)
     if admitted is None or creation != _timed_effect_creation(request, spell, admitted):
         raise ValueError("timed effect differs from its bound consequences")
@@ -593,6 +607,48 @@ def exploration_spell_reaches(
     )
 
 
+def _supported_exploration_slot(spell: Spell, level: int, *, healing: bool, aid: bool) -> bool:
+    """Keep direct-cast slot admission scoped to reviewed higher-level cases."""
+    if not 1 <= spell.level <= level <= 9:
+        return False
+    if spell.level == level:
+        return True
+    longstrider_upcast = spell == _reviewed_longstrider()[0] and resolve_target_count(
+        spell.activities[0].target.affects.count, cast_level=level
+    )
+    healing_upcast = healing and spell.slug == "cure-wounds" and level == 2
+    return bool(longstrider_upcast or healing_upcast or aid)
+
+
+def _caster_can_act(actor: CharacterStateV2) -> bool:
+    """Check the existing positive-HP action gate for direct exploration casting."""
+    return (
+        actor.is_alive
+        and actor.hp_current > 0
+        and not conditions_block_actions([condition.condition for condition in actor.conditions])
+    )
+
+
+def _target_delivery_failure(
+    request: RuleEvaluationRequest,
+    snapshot: NonCombatSnapshot,
+    spell: Spell,
+    actor: CharacterStateV2,
+    target: CharacterStateV2,
+    needs_sight: bool,
+) -> str | None:
+    """Report only the fixed delivery failure for a selected living target."""
+    if not needs_sight and target.entity_id == actor.entity_id:
+        return None
+    if spell.range.units == SpellRangeUnits.SELF:
+        return "self spell must target the caster"
+    if not exploration_spell_reaches(
+        request, snapshot, spell, visible_target_id=target.entity_id if needs_sight else None
+    ):
+        return "required spell delivery is unproven"
+    return None
+
+
 def evaluate_exploration_spell(  # noqa: C901 - bounded spell profiles share one admission path
     request: RuleEvaluationRequest, loader: AssetLoader
 ) -> TurnEvaluation:
@@ -621,16 +677,9 @@ def evaluate_exploration_spell(  # noqa: C901 - bounded spell profiles share one
         return _refuse(
             "unsupported", "spell.condition_choice", "spell has no reviewed condition choice"
         )
-    upcast = (
-        payload.slot_level > spell.level
-        and spell == _reviewed_longstrider()[0]
-        and resolve_target_count(
-            spell.activities[0].target.affects.count, cast_level=payload.slot_level
-        )
-    )
-    healing_upcast = healing is not None and spell.slug == "cure-wounds" and payload.slot_level == 2
-    if not 1 <= spell.level <= payload.slot_level <= 9 or (
-        spell.level != payload.slot_level and not (upcast or healing_upcast)
+    aid = is_reviewed_aid(spell)
+    if not _supported_exploration_slot(
+        spell, payload.slot_level, healing=healing is not None, aid=aid
     ):
         return _refuse(
             "unsupported", "spell.slot", "cast requires an ordinary slot of a reviewed level"
@@ -639,12 +688,20 @@ def evaluate_exploration_spell(  # noqa: C901 - bounded spell profiles share one
     material_debit = None
     if (healing is None and removal is None) or material_instance is not None:
         try:
-            activity, active, _ = _passive_profile(
-                spell,
-                target_id=payload.target_id,
-                caster_id=request.actor_id,
-                allow_consumed_material=material_instance is not None,
-            )
+            if aid and material_instance is None:
+                activity, active = aid_profile(
+                    spell,
+                    level=payload.slot_level,
+                    target_id=payload.target_id,
+                    caster_id=request.actor_id,
+                )
+            else:
+                activity, active, _ = _passive_profile(
+                    spell,
+                    target_id=payload.target_id,
+                    caster_id=request.actor_id,
+                    allow_consumed_material=material_instance is not None,
+                )
         except ValueError as exc:
             return _refuse("unsupported", "spell.mechanism", str(exc))
         if material_instance is not None:
@@ -665,23 +722,16 @@ def evaluate_exploration_spell(  # noqa: C901 - bounded spell profiles share one
     target = actors.get(payload.target_id)
     if actor is None:
         return _refuse("rejected", "actor_missing", "caster is absent from the snapshot")
-    if (
-        not actor.is_alive
-        or actor.hp_current <= 0
-        or conditions_block_actions([condition.condition for condition in actor.conditions])
-    ):
+    if not _caster_can_act(actor):
         return _refuse("rejected", "actor_incapacitated", "caster must be alive and able to act")
     if target is None or not target.is_alive:
         return _refuse("rejected", "target_invalid", "cast requires a living creature")
     needs_sight = healing is not None and exploration_healing_requires_sight(spell)
     positions = request.spell_positions
-    if needs_sight or target.entity_id != actor.entity_id:
-        if spell.range.units == SpellRangeUnits.SELF:
-            return _refuse("rejected", "target_invalid", "self spell must target the caster")
-        if not exploration_spell_reaches(
-            request, snapshot, spell, visible_target_id=target.entity_id if needs_sight else None
-        ):
-            return _refuse("rejected", "target_invalid", "required spell delivery is unproven")
+    if delivery_failure := _target_delivery_failure(
+        request, snapshot, spell, actor, target, needs_sight
+    ):
+        return _refuse("rejected", "target_invalid", delivery_failure)
     if any(
         effect.target_id == actor.entity_id and not effect.disabled and effect.action_policy
         for effect in snapshot.effect_states

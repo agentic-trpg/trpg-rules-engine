@@ -309,16 +309,16 @@ def snapshot_equipment_kind_failure(
     return None
 
 
-def wizard_pouch_dependencies(
+def inert_component_pouch(
     actor: CharacterStateV2,
     snapshot: CombatSnapshot | NonCombatSnapshot,
     loader: AssetLoader,
     canonical: AssetLoader,
-) -> str | None:
-    """Check the reviewed wizard material-pouch dependency profile."""
+) -> bool:
+    """Check an owned canonical pouch with no effect or equipped dependency."""
     entries = [e for e in snapshot.inventory_state.entries if e.owner_id == actor.entity_id]
     item = loader.get_item("component-pouch")
-    if (
+    return not (
         actor.worn_armor
         or actor.shield_equipped
         or actor.other_hand_occupied
@@ -337,7 +337,17 @@ def wizard_pouch_dependencies(
         or item.uses
         or actor.fighting_styles
         or actor.weapon_mastery_slugs
-    ):
+    )
+
+
+def wizard_pouch_dependencies(
+    actor: CharacterStateV2,
+    snapshot: CombatSnapshot | NonCombatSnapshot,
+    loader: AssetLoader,
+    canonical: AssetLoader,
+) -> str | None:
+    """Check the reviewed wizard material-pouch dependency profile."""
+    if not inert_component_pouch(actor, snapshot, loader, canonical):
         return "only an owned accessible canonical component pouch and free hands are reviewed"
     grants = proficiency_grants([(canonical.get_class("wizard"), 5, "primary")])
     if (

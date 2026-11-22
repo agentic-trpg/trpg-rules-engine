@@ -68,6 +68,7 @@ def exploration_healing_maximizes(
 
     Unknown active mechanics raise ValueError before any RNG is used.
     """
+    from dnd5e_engine.evaluation_aid import reviewed_hp_bonus
     from dnd5e_engine.evaluation_timed_spells import is_healing_neutral_elapsed_spell
 
     maximize = False
@@ -76,6 +77,8 @@ def exploration_healing_maximizes(
             continue
         if is_reviewed_beacon_effect(effect, loader):
             maximize |= effect.target_id == target_id
+        elif reviewed_hp_bonus(effect) is not None:
+            continue
         elif not is_healing_neutral_elapsed_spell(effect):
             raise ValueError("unreviewed healing effect")
     return maximize

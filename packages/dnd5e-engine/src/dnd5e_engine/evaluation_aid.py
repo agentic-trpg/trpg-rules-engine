@@ -4,8 +4,10 @@ import re
 from collections.abc import Iterable
 from functools import lru_cache
 from hashlib import sha256
+from typing import Literal
 
 from dnd5e_srd_data.loader import BundledAssetLoader
+from dnd5e_srd_data.schema.common import Activity
 from dnd5e_srd_data.schema.spell import Spell
 from pydantic import Field
 
@@ -25,6 +27,7 @@ class PairedHPTransition(EvaluationModel):
     maximum: int = Field(ge=1)
     old_bonus: int = Field(ge=0)
     new_bonus: int = Field(ge=0)
+    zero_consequence: Literal["none", "unconscious", "death"]
 
 
 @lru_cache(maxsize=1)
@@ -50,7 +53,9 @@ def _aid_template(level: int) -> EffectState:
     return effect_state(active)
 
 
-def aid_profile(spell: Spell, *, level: int, target_id: str, caster_id: str):
+def aid_profile(
+    spell: Spell, *, level: int, target_id: str, caster_id: str
+) -> tuple[Activity, ActiveEffect]:
     """Build the exact single-target application from one selected Aid level."""
     if spell != _reviewed_aid() or not 2 <= level <= 9:
         raise ValueError("Aid requires its reviewed definition and supported slot")
@@ -144,20 +149,25 @@ def effective_hp_bonus(effects: Iterable[EffectState]) -> int:
 
 
 def paired_hp_transition(
-    current: int, maximum: int, old_bonus: int, new_bonus: int
+    current: int, maximum: int, old_bonus: int, new_bonus: int, *, entity_type: str
 ) -> PairedHPTransition:
-    """Preserve intervening damage and healing while changing Aid's effective bonus."""
+    """Preserve HP changes and identify a non-damage positive-to-zero life transition."""
     if not (0 <= current <= maximum and 0 <= old_bonus < maximum and new_bonus >= 0):
         raise ValueError("Aid HP input is outside its supported balance")
+    if entity_type not in {"Character", "NPC", "Monster"}:
+        raise ValueError("Unsupported effect target kind")
     new_maximum = maximum - old_bonus + new_bonus
     if new_maximum < 1:
         raise ValueError("Aid would leave no base maximum")
+    new_current = min(new_maximum, max(0, current + new_bonus - old_bonus))
     return PairedHPTransition(
         expected_current=current,
         expected_maximum=maximum,
-        # LF1122-E-HP0: Non-damage life consequences at zero await the RUO-38 contract.
-        current=min(new_maximum, max(0, current + new_bonus - old_bonus)),
+        current=new_current,
         maximum=new_maximum,
         old_bonus=old_bonus,
         new_bonus=new_bonus,
+        zero_consequence=("unconscious" if entity_type == "Character" else "death")
+        if current > 0 and new_current == 0
+        else "none",
     )

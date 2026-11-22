@@ -1,7 +1,7 @@
 """Evaluate a bound retained item casting a reviewed instant exploration heal."""
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from dnd5e_srd_data.loader import AssetLoader
 from dnd5e_srd_data.schema.common import (
@@ -10,12 +10,14 @@ from dnd5e_srd_data.schema.common import (
     CastSpellBlock,
     ConsumptionBlock,
     ConsumptionTargetEntry,
+    HealActivity,
 )
 from dnd5e_srd_data.schema.feature import RecoveryRule
 from dnd5e_srd_data.schema.item import Item
 from dnd5e_srd_data.schema.spell import Spell
 
 from dnd5e_engine.activities.build_context import build_activity_context
+from dnd5e_engine.activities.heal import HealingModifiers, resolve_heal
 from dnd5e_engine.activities.resolver import resolve_activity
 from dnd5e_engine.areas import area_activity, area_template, has_line_of_effect
 from dnd5e_engine.evaluation_actor import combatant
@@ -31,6 +33,7 @@ from dnd5e_engine.evaluation_equipment_dependencies import is_stowed_inventory_e
 from dnd5e_engine.evaluation_exploration_healing import (
     exploration_healing_activity,
     exploration_healing_hp_delta,
+    exploration_healing_maximizes,
     exploration_healing_requires_sight,
 )
 from dnd5e_engine.evaluation_items import ItemEvaluation, _equipment_failure, _refuse
@@ -256,6 +259,41 @@ def exploration_charged_cast_profile(
     return ExplorationChargedCastProfile(activity, spell, cost, capacity, bool(uses.recovery))
 
 
+def _charged_healing_modifiers(snapshot, actor_id, targets, loader, *, staff):
+    """Use recipient healing effects for the Staff while keeping the authored charm fixed."""
+    if any(actor.trait_mechanics for actor in snapshot.character_states):
+        raise ValueError("unreviewed healing trait")
+    if staff:
+        return {
+            target.entity_id: HealingModifiers(maximize_dice=True)
+            for target in targets
+            if exploration_healing_maximizes(snapshot, actor_id, target.entity_id, loader)
+        }
+    if any(actor.concentration_effect_id for actor in snapshot.character_states) or any(
+        not effect.disabled for effect in snapshot.effect_states
+    ):
+        raise ValueError("unreviewed healing effect")
+    return {}
+
+
+def _resolve_charged_healing(activity, context, modifiers):
+    """Delegate a reviewed Cast through its one Heal activity and shared dice handling."""
+    if modifiers:
+
+        def dispatch_healing(child, child_context):
+            """Apply the established recipient-dependent modifier without a slot feature."""
+            heal = child.activities[0]
+            assert isinstance(heal, HealActivity)
+            resolve_heal(
+                heal,
+                replace(child_context, activity_source_id=f"spell:{child.slug}:{heal.id}"),
+                modifiers=modifiers,
+            )
+
+        context = replace(context, spell_dispatch=dispatch_healing)
+    resolve_activity(activity, context)
+
+
 def evaluate_exploration_charged_cast(
     request: RuleEvaluationRequest, entry: InventoryEntry, item: Item, loader: AssetLoader
 ) -> ItemEvaluation:
@@ -350,10 +388,12 @@ def evaluate_exploration_charged_cast(
             return failure
         if not is_stowed_inventory_entry(entry, actor):
             return _refuse("unsupported", "item.snapshot", "unreviewed equipped charged item")
-    if any(a.trait_mechanics or a.concentration_effect_id for a in actors.values()) or any(
-        not effect.disabled for effect in snapshot.effect_states
-    ):
-        return _refuse("unsupported", "item.snapshot", "unreviewed trait or effect")
+    try:
+        modifiers = _charged_healing_modifiers(
+            snapshot, actor.entity_id, targets, loader, staff=staff
+        )
+    except ValueError as exc:
+        return _refuse("unsupported", "item.snapshot", str(exc))
     canonical = get_default_ruleset()
     if class_failure := class_dependencies(
         actor,
@@ -363,6 +403,7 @@ def evaluate_exploration_charged_cast(
         equipped=True,
         stowed_consumable_ids=ignored_items,
         reviewed_lore_bard=staff,
+        reviewed_life_healing=staff,
     ):
         return _refuse("unsupported", "item.snapshot", class_failure)
 
@@ -411,7 +452,7 @@ def evaluate_exploration_charged_cast(
         passive_damage_modifiers={},
         save_modifiers={},
     )
-    resolve_activity(activity, context)
+    _resolve_charged_healing(activity, context, modifiers)
     healed = events[2:]
     if len(healed) != len(targets) or any(
         not isinstance(event, HealingApplied) or event.target_id != target.entity_id
@@ -474,12 +515,22 @@ def verify_charged_item_cast(result: RuleEvaluationResult, request: RuleEvaluati
     )
     if entry is None or entry != spend.expected or entry.owner_id != request.actor_id:
         raise ValueError("charged item payment must match the exact owned request instance")
-    if result.rng_transition is None or not result.rng_transition.state_changed:
-        raise ValueError("charged healing requires a recorded RNG advance")
     staff = request.schema_version == STAFF_CAST_SCHEMA_VERSION
     area = payload.area_target
     target_ids = area.target_ids if area else (payload.target_id,)
     last_charge = staff and spend.value.charges_remaining_per_unit == 0
+    draws = (
+        not staff
+        or last_charge
+        or any(
+            not exploration_healing_maximizes(
+                snapshot, request.actor_id, target, get_default_ruleset()
+            )
+            for target in target_ids
+        )
+    )
+    if result.rng_transition is None or result.rng_transition.state_changed != draws:
+        raise ValueError("charged cast RNG transition must match healing and depletion")
     events = result.proposed_events
     if len(events) != 2 + len(target_ids) + int(last_charge):
         raise ValueError("charged cast requires the item intent, cast and healing evidence")

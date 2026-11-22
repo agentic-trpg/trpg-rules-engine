@@ -1,7 +1,9 @@
 """Evaluate a bound retained item casting a reviewed instant exploration heal."""
 
 import re
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, replace
+from random import Random
 
 from dnd5e_srd_data.loader import AssetLoader
 from dnd5e_srd_data.schema.common import (
@@ -17,6 +19,7 @@ from dnd5e_srd_data.schema.item import Item
 from dnd5e_srd_data.schema.spell import Spell
 
 from dnd5e_engine.activities.build_context import build_activity_context
+from dnd5e_engine.activities.context import ActivityResolutionContext
 from dnd5e_engine.activities.heal import HealingModifiers, resolve_heal
 from dnd5e_engine.activities.resolver import resolve_activity
 from dnd5e_engine.areas import area_activity, area_template, has_line_of_effect
@@ -28,7 +31,7 @@ from dnd5e_engine.evaluation_contracts import (
     RuleEvaluationRequest,
     RuleEvaluationResult,
 )
-from dnd5e_engine.evaluation_delta import InventorySpendCharge, StateDelta
+from dnd5e_engine.evaluation_delta import HPDelta, InventorySpendCharge, StateDelta
 from dnd5e_engine.evaluation_equipment_dependencies import is_stowed_inventory_entry
 from dnd5e_engine.evaluation_exploration_healing import (
     exploration_healing_activity,
@@ -40,7 +43,7 @@ from dnd5e_engine.evaluation_items import ItemEvaluation, _equipment_failure, _r
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError
 from dnd5e_engine.evaluation_rng import RNGTransition
 from dnd5e_engine.evaluation_ruleset import FrozenRuleset, get_default_ruleset
-from dnd5e_engine.evaluation_state import InventoryEntry, NonCombatSnapshot
+from dnd5e_engine.evaluation_state import CharacterStateV2, InventoryEntry, NonCombatSnapshot
 from dnd5e_engine.evaluation_timed_spells import exploration_spell_reaches
 from dnd5e_engine.events import (
     CombatEvent,
@@ -50,7 +53,7 @@ from dnd5e_engine.events import (
     SpellCast,
 )
 from dnd5e_engine.rules.conditions import conditions_block_actions
-from dnd5e_engine.rules.dice import roll_d6, roll_d20
+from dnd5e_engine.rules.dice import RollResult, roll_d6, roll_d20
 from dnd5e_engine.spatial import GridTopology, canonical_cell_id
 from dnd5e_engine.specs import GridScene
 from dnd5e_engine.spellcasting import spell_range_ft
@@ -78,7 +81,7 @@ def is_healing_staff(item: Item) -> bool:
     return item.slug == _STAFF and item == get_default_ruleset().get_item(_STAFF)
 
 
-def staff_attunement_ability(actor, loader: AssetLoader) -> str | None:
+def staff_attunement_ability(actor: CharacterStateV2, loader: AssetLoader) -> str | None:
     """Use the canonical spellcasting ability of an eligible single-class holder."""
     levels = actor.classes or (
         {actor.class_slug: actor.character_level} if actor.class_slug else {}
@@ -94,14 +97,16 @@ def staff_attunement_ability(actor, loader: AssetLoader) -> str | None:
     return cls.spellcasting.ability or None
 
 
-def roll_healing_staff_dawn(item: Item, rng):
+def roll_healing_staff_dawn(item: Item, rng: Random) -> RollResult:
     """Roll the canonical dawn allowance using the supplied uncommitted stream."""
     if not is_healing_staff(item):
         raise ValueError("random dawn recovery requires the reviewed Staff of Healing")
     return roll_d6(modifier=4, rng=rng)
 
 
-def _healing_staff_cast(item: Item, loader: AssetLoader, activity_id, cast_level):
+def _healing_staff_cast(
+    item: Item, loader: AssetLoader, activity_id: str | None, cast_level: int | None
+) -> ExplorationChargedCastProfile | None:
     """Select a canonical spell and its price from the staff's bound Cast activities."""
     assert item.uses is not None
     canonical = get_default_ruleset()
@@ -149,7 +154,9 @@ def _area_healing_targets(request: RuleEvaluationRequest, spell: Spell) -> tuple
     )
 
 
-def healing_staff_area_reaches(topology, spell: Spell, source: str, center: str, targets) -> bool:
+def healing_staff_area_reaches(
+    topology: GridTopology, spell: Spell, source: str, center: str, targets: Iterable[str]
+) -> bool:
     """Bound the healing sphere and its rays using the selected canonical spell."""
     child = area_activity(spell.activities)
     shape = area_template(child) if child else None
@@ -259,7 +266,14 @@ def exploration_charged_cast_profile(
     return ExplorationChargedCastProfile(activity, spell, cost, capacity, bool(uses.recovery))
 
 
-def _charged_healing_modifiers(snapshot, actor_id, targets, loader, *, staff):
+def _charged_healing_modifiers(
+    snapshot: NonCombatSnapshot,
+    actor_id: str,
+    targets: tuple[CharacterStateV2, ...],
+    loader: AssetLoader,
+    *,
+    staff: bool,
+) -> dict[str, HealingModifiers]:
     """Use recipient healing effects for the Staff while keeping the authored charm fixed."""
     if any(actor.trait_mechanics for actor in snapshot.character_states):
         raise ValueError("unreviewed healing trait")
@@ -276,11 +290,15 @@ def _charged_healing_modifiers(snapshot, actor_id, targets, loader, *, staff):
     return {}
 
 
-def _resolve_charged_healing(activity, context, modifiers):
+def _resolve_charged_healing(
+    activity: CastActivity,
+    context: ActivityResolutionContext,
+    modifiers: Mapping[str, HealingModifiers],
+) -> None:
     """Delegate a reviewed Cast through its one Heal activity and shared dice handling."""
     if modifiers:
 
-        def dispatch_healing(child, child_context):
+        def dispatch_healing(child: Spell, child_context: ActivityResolutionContext) -> None:
             """Apply the established recipient-dependent modifier without a slot feature."""
             heal = child.activities[0]
             assert isinstance(heal, HealActivity)
@@ -349,6 +367,7 @@ def evaluate_exploration_charged_cast(
         payload.target_id == actor.entity_id
         or exploration_spell_reaches(request, snapshot, profile.spell)
     ):
+        assert payload.target_id is not None
         target_ids = (payload.target_id,)
     else:
         target_ids = ()
@@ -453,10 +472,14 @@ def evaluate_exploration_charged_cast(
         save_modifiers={},
     )
     _resolve_charged_healing(activity, context, modifiers)
-    healed = events[2:]
-    if len(healed) != len(targets) or any(
-        not isinstance(event, HealingApplied) or event.target_id != target.entity_id
-        for target, event in zip(targets, healed, strict=True)
+    healed = [event for event in events[2:] if isinstance(event, HealingApplied)]
+    if (
+        len(events) != 2 + len(targets)
+        or len(healed) != len(targets)
+        or any(
+            event.target_id != target.entity_id
+            for target, event in zip(targets, healed, strict=True)
+        )
     ):
         raise EvaluationInvariantError("charged exploration cast must heal each selected target")
     if any(event.amount < 0 for event in healed):
@@ -517,7 +540,12 @@ def verify_charged_item_cast(result: RuleEvaluationResult, request: RuleEvaluati
         raise ValueError("charged item payment must match the exact owned request instance")
     staff = request.schema_version == STAFF_CAST_SCHEMA_VERSION
     area = payload.area_target
-    target_ids = area.target_ids if area else (payload.target_id,)
+    target_ids: tuple[str, ...]
+    if area is None:
+        assert payload.target_id is not None
+        target_ids = (payload.target_id,)
+    else:
+        target_ids = area.target_ids
     last_charge = staff and spend.value.charges_remaining_per_unit == 0
     draws = (
         not staff
@@ -572,7 +600,7 @@ def verify_charged_item_cast(result: RuleEvaluationResult, request: RuleEvaluati
     ):
         raise ValueError("charged item cast events must match the request")
     actors = {actor.entity_id: actor for actor in snapshot.character_states}
-    edits = []
+    edits: list[HPDelta] = []
     for target_id, healing in zip(target_ids, healed, strict=True):
         target = actors.get(target_id)
         if target is None or not target.is_alive or target.hp_current <= 0:

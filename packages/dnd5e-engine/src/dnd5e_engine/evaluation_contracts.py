@@ -112,7 +112,7 @@ class ExplorationItemAreaTarget(EvaluationModel):
 
     @field_validator("target_ids")
     @classmethod
-    def distinct_targets(cls, values):
+    def distinct_targets(cls, values: tuple[str, ...]) -> tuple[str, ...]:
         """Prevent paying once to heal the same creature repeatedly."""
         if len(set(values)) != len(values):
             raise ValueError("area item targets must be distinct")

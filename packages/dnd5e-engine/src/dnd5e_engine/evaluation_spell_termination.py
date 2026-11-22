@@ -123,9 +123,9 @@ def verify_cast_applications(actor_id: str, facts: SpellEndFacts, loader: AssetL
             or application.identity in seen
         ):
             raise ValueError("Spell end input differs from its reviewed target application")
-        _, active, _ = _passive_profile(
-            loader.get_spell(need.spell_id), target_id=actor_id, caster_id=application.caster_id
-        )
+        spell = loader.get_spell(need.spell_id)
+        assert spell is not None  # The declared trigger requires a bound spell.
+        _, active, _ = _passive_profile(spell, target_id=actor_id, caster_id=application.caster_id)
         if application.effect != effect_state(active):
             raise ValueError("Spell end input differs from its bound effect")
         seen.add(application.identity)

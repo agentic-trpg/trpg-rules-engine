@@ -100,6 +100,7 @@ async def _evaluate(
     if request.schema_version == SPELL_TERMINATION_SCHEMA_VERSION:
         base = request.without_spell_ends()
         facts = request.spell_end_facts
+        assert facts is not None  # Validated by without_spell_ends().
         verify_cast_applications(request.actor_id, facts, assets)
         result = await _evaluate(base, loader=assets)
         delta = result.state_delta

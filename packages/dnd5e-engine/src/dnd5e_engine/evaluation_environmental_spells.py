@@ -8,7 +8,13 @@ from dnd5e_srd_data.schema.environment import EnvironmentalSpec
 from dnd5e_srd_data.schema.spell import Spell, SpellDurationUnits
 
 from dnd5e_engine.areas import area_activity, area_template
-from dnd5e_engine.evaluation_contracts import RuleEvaluationRequest, RuleEvaluationResult
+from dnd5e_engine.evaluation_contracts import (
+    ENVIRONMENTAL_SPELL_SCHEMA_VERSION,
+    FOG_CLOUD_SCHEMA_VERSION,
+    SPATIAL_EFFECT_END_SCHEMA_VERSION,
+    RuleEvaluationRequest,
+    RuleEvaluationResult,
+)
 from dnd5e_engine.evaluation_delta import ResourceUpdate, StateDelta, StateDeltaOperation
 from dnd5e_engine.evaluation_environmental_contracts import (
     EnvironmentalItemTarget,
@@ -35,12 +41,35 @@ from dnd5e_engine.spellcasting import derive_pact_slots, spell_component_metadat
 _CLASSES = {
     "light": frozenset({"bard", "cleric", "sorcerer", "wizard"}),
     "darkness": frozenset({"sorcerer", "warlock", "wizard"}),
+    # The reviewed area records strong_wind_dispersal; exploration has no typed
+    # strong-wind fact or boundary event to propose its early termination yet.
+    "fog-cloud": frozenset({"druid", "ranger", "sorcerer", "wizard"}),
     "dispel-magic": frozenset(
         {"bard", "cleric", "druid", "paladin", "ranger", "sorcerer", "warlock", "wizard"}
     ),
 }
 _LIGHT = EnvironmentalSpec(kind="light", light="bright", dim_extension_ft=20, object_anchoring=True)
 _SECONDS_PER_UNIT = {SpellDurationUnits.MINUTE: 60, SpellDurationUnits.HOUR: 3600}
+
+
+def environmental_spell_schema_version(
+    spell_id: str, loader: AssetLoader, *, ending: bool = False
+) -> str:
+    """Select the spatial wire from typed spell mechanics, leaving admission to RE."""
+    if ending:
+        return SPATIAL_EFFECT_END_SCHEMA_VERSION
+    spell = loader.get_spell(spell_id)
+    activity = area_activity(spell.activities) if spell is not None else None
+    environment = (
+        activity.persistent_area.environment
+        if activity is not None and activity.persistent_area is not None
+        else None
+    )
+    return (
+        FOG_CLOUD_SCHEMA_VERSION
+        if environment is not None and environment.obscurement != "none"
+        else ENVIRONMENTAL_SPELL_SCHEMA_VERSION
+    )
 
 
 @lru_cache(maxsize=len(_CLASSES))
@@ -64,11 +93,11 @@ def _effect(
     else:
         activity = area_activity(spell.activities)
         if activity is None:
-            raise EvaluationInvariantError("canonical Darkness lacks an area activity")
+            raise EvaluationInvariantError("canonical spatial spell lacks an area activity")
         template = area_template(activity, cast_level=payload.slot_level, base_level=spell.level)
         environment = activity.persistent_area.environment
         if template is None or environment is None:
-            raise EvaluationInvariantError("canonical Darkness lacks an environmental area")
+            raise EvaluationInvariantError("canonical spatial spell lacks an environmental area")
         shape = "emanation" if isinstance(payload.target, EnvironmentalItemTarget) else "sphere"
         radius = template.size_ft
     duration = spell.duration.value
@@ -192,6 +221,8 @@ def _target_failure(request: RuleEvaluationRequest, spell: Spell) -> str | None:
             return "Light requires a Large or smaller object of known size"
         if item.worn_or_carried_by not in (None, request.actor_id):
             return "Light cannot target an object worn or carried by someone else"
+    elif spell.slug == "fog-cloud" and item is not None:
+        return "Fog Cloud requires a fixed point"
     elif item is not None and item.worn_or_carried_by is not None:
         return "Darkness cannot target a worn or carried object"
     return None
@@ -211,6 +242,8 @@ def evaluate_environmental_spell(
         payload, ExplorationEnvironmentalSpellCastPayload
     ):
         raise EvaluationInvariantError("environmental spell requires a spatial noncombat request")
+    if (payload.spell_id == "fog-cloud") != (request.schema_version == FOG_CLOUD_SCHEMA_VERSION):
+        return _refuse("unsupported", "spell.asset", "spell requires its reviewed spatial schema")
     classes = _CLASSES.get(payload.spell_id)
     spell = loader.get_spell(payload.spell_id) if classes is not None else None
     if spell is None or classes is None or spell != _reviewed_spell(payload.spell_id):
@@ -288,6 +321,7 @@ def verify_environmental_cast(result: RuleEvaluationResult, request: RuleEvaluat
     spell = _reviewed_spell(payload.spell_id)
     if (
         spell is None
+        or (payload.spell_id == "fog-cloud") != (request.schema_version == FOG_CLOUD_SCHEMA_VERSION)
         or not _slot_valid(payload, spell)
         or _target_failure(request, spell)
         or not exploration_spell_reaches(request, snapshot, spell)

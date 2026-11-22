@@ -12,6 +12,7 @@ from dnd5e_srd_data.schema.environment import EnvironmentalSpec
 from pydantic import BaseModel, ConfigDict, Field
 
 from dnd5e_engine.areas import area_cells
+from dnd5e_engine.spatial import GridTopology, canonical_cell_id
 
 if TYPE_CHECKING:
     from dnd5e_engine.orchestrator import CombatHandle, _LiveCombat
@@ -151,33 +152,45 @@ class StrongWind(BaseModel):
     source_id: str = Field(min_length=1)
     cells: tuple[str, ...] = Field(min_length=1)
 
+    def cells_on(self, topology: GridTopology) -> frozenset[str]:
+        """Validate distinct canonical cells against the supplied fixed scene geometry."""
+        cells = frozenset(self.cells)
+        if len(cells) != len(self.cells) or any(
+            canonical_cell_id(cell) != cell or not topology.is_valid_cell(cell) for cell in cells
+        ):
+            raise ValueError("wind requires distinct legal canonical cells")
+        return cells
+
+
+def strong_wind_dispels(
+    spec: EnvironmentalSpec, effect_cells: frozenset[str], wind_cells: frozenset[str]
+) -> bool:
+    """Decide if attested strong wind touches a susceptible effect's actual footprint."""
+    return spec.strong_wind_dispersal and not effect_cells.isdisjoint(wind_cells)
+
 
 async def apply_strong_wind(handle: "CombatHandle", wind: StrongWind) -> None:
     """Atomically disperse susceptible sources; no actor action or RNG cost."""
     from dnd5e_engine import orchestrator as orch
-    from dnd5e_engine.spatial import canonical_cell_id
 
     live = orch._get_live(handle)
     if live.ended:
         raise orch.IntentRejectedError("combat_ended", "combat has ended")
     try:
-        valid = len(wind.cells) == len(set(wind.cells)) and all(
-            canonical_cell_id(cell) == cell and live.topology.is_valid_cell(cell)
-            for cell in wind.cells
-        )
-    except ValueError:
-        valid = False
-    if not valid:
+        wind_cells = wind.cells_on(live.topology)
+    except ValueError as exc:
         raise orch.IntentRejectedError(
             "target_invalid", "wind requires distinct legal canonical cells"
-        )
+        ) from exc
     with orch._execution_transaction(live):
         for area in tuple(live.persistent_areas.areas):
             spec = area.spec.environment
             if (
                 spec
                 and spec.strong_wind_dispersal
-                and area.cells(live.topology, live.actor_zone) & set(wind.cells)
+                and strong_wind_dispels(
+                    spec, area.cells(live.topology, live.actor_zone), wind_cells
+                )
             ):
                 live.persistent_areas.expire(live, area, "strong_wind", cause_id=wind.source_id)
                 if area.concentration_identity:
@@ -194,4 +207,10 @@ def expire_environment_round(live: "_LiveCombat", actor_id: str | None) -> None:
             live.persistent_areas.expire(live, area, "duration")
 
 
-__all__ = ["EnvironmentalSource", "StrongWind", "apply_strong_wind", "environmental_dispels"]
+__all__ = [
+    "EnvironmentalSource",
+    "StrongWind",
+    "apply_strong_wind",
+    "environmental_dispels",
+    "strong_wind_dispels",
+]

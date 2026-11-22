@@ -9,6 +9,7 @@ from dnd5e_engine.evaluation_actor import combatant
 from dnd5e_engine.evaluation_equipment_dependencies import (
     HEALING_POTION_SLUG,
     equipped_dependencies,
+    inert_component_pouch,
     is_stowed_healing_potion,
     reviewed_healing_potion_owners,
 )
@@ -32,6 +33,7 @@ def _class_equipment_profile(
     equipped: bool,
     allow_stowed_healing_potions: bool,
     stowed_consumable_ids: frozenset[str],
+    allow_life_pouch: bool = False,
 ) -> tuple[bool, str | None]:
     """Check equipment dependencies while retaining the complete inventory identity."""
     if (allow_stowed_healing_potions or stowed_consumable_ids) and set(
@@ -60,6 +62,8 @@ def _class_equipment_profile(
         )
     )
     if not has_equipment:
+        return False, None
+    if allow_life_pouch and inert_component_pouch(actor, snapshot, loader, canonical):
         return False, None
     if not equipped:
         return True, (
@@ -121,6 +125,11 @@ def class_dependencies(
         equipped=equipped or (reviewed_wizard_pouch and levels == {"wizard": 5}),
         allow_stowed_healing_potions=allow_stowed_healing_potions,
         stowed_consumable_ids=stowed_consumable_ids,
+        allow_life_pouch=(
+            reviewed_life_healing
+            and levels in ({"cleric": 3}, {"cleric": 5})
+            and actor.subclass_slug == "life"
+        ),
     )
     if failure:
         return failure

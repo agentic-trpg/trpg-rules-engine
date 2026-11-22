@@ -3,8 +3,13 @@
 from dnd5e_srd_data.schema.common import UtilityActivity
 from dnd5e_srd_data.schema.spell import CastingTimeUnit, Spell, SpellDurationUnits, SpellRangeUnits
 
-from dnd5e_engine.evaluation_contracts import CONDITION_CHOICE_SCHEMA_VERSION, RuleEvaluationRequest
-from dnd5e_engine.evaluation_delta import ConditionsUpdate, StateDelta
+from dnd5e_engine.evaluation_contracts import (
+    CONDITION_CHOICE_SCHEMA_VERSION,
+    ExplorationSpellCastPayload,
+    RuleEvaluationRequest,
+)
+from dnd5e_engine.evaluation_delta import ConditionsUpdate, ResourceUpdate, StateDelta
+from dnd5e_engine.evaluation_projection import EvaluationInvariantError
 from dnd5e_engine.evaluation_rng import RNGTransition
 from dnd5e_engine.evaluation_ruleset import get_default_ruleset
 from dnd5e_engine.evaluation_spells import spell_event
@@ -48,14 +53,20 @@ def evaluate_condition_choice(
     spell: Spell,
     actor: CharacterStateV2,
     target: CharacterStateV2,
-    payment,
+    payment: ResourceUpdate,
     profile: tuple[UtilityActivity, frozenset[str]],
 ) -> TurnEvaluation:
     """Remove one independent source after legal selection, without drawing RNG."""
     payload = request.payload
+    if not isinstance(payload, ExplorationSpellCastPayload):
+        raise EvaluationInvariantError("condition choice requires a creature spell payload")
     choice = payload.selected_condition
     activity, eligible = profile
-    if request.schema_version != CONDITION_CHOICE_SCHEMA_VERSION or choice not in eligible:
+    if (
+        request.schema_version != CONDITION_CHOICE_SCHEMA_VERSION
+        or choice is None
+        or choice not in eligible
+    ):
         return _refuse("rejected", "spell.condition_choice", "selected condition is ineligible")
     matches = [
         i

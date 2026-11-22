@@ -61,16 +61,16 @@ class WorldCastActivityBegin(EvaluationModel):
 
 
 def casting_activity_seconds(spell: Spell, *, as_ritual: bool) -> int:
-    """Calculate a reviewed minutes-or-hours cast after checking its prepared source."""
+    """Calculate a timed cast, adding ten minutes for a bound Ritual selection."""
     time = spell.casting_time
     if time.condition or time.value is None or time.value <= 0:
         raise ValueError("casting requires a fixed positive duration")
+    if as_ritual:
+        return resolve_ritual_cast(spell, prepared=True).casting_time_minutes * 60
     seconds_per_unit = {CastingTimeUnit.MINUTE: 60, CastingTimeUnit.HOUR: 3600}
     scale = seconds_per_unit.get(time.unit)
     if scale is None:
         raise ValueError("casting activity requires a spell of at least one minute")
-    if as_ritual:
-        return resolve_ritual_cast(spell, prepared=True).casting_time_minutes * 60
     return scale * time.value
 
 
@@ -107,10 +107,6 @@ def evaluate_cast_activity(request: RuleEvaluationRequest, loader: AssetLoader) 
         return _refuse("unsupported", "spell.asset", "selected spell is absent from the ruleset")
     if not payload.as_ritual and payload.slot_level != spell.level:
         return _refuse("unsupported", "spell.slot", "timed cast requires an ordinary base slot")
-    if spell.concentration:
-        return _refuse(
-            "unsupported", "spell.mechanism", "ongoing concentration after casting is not admitted"
-        )
     actor = next(
         (actor for actor in snapshot.character_states if actor.entity_id == request.actor_id), None
     )
@@ -211,6 +207,7 @@ def evaluate_cast_activity(request: RuleEvaluationRequest, loader: AssetLoader) 
                     source_id=actor.entity_id,
                     effect=effect_state(active),
                     expiry=EffectExpiryPolicy(action="remove"),
+                    concentration=spell.concentration,
                     ruleset_binding=request.ruleset_binding,
                 ),
             ),
@@ -302,7 +299,7 @@ def verify_cast_activity(result: RuleEvaluationResult, request: RuleEvaluationRe
             request.actor_id,
             request.actor_id,
             "remove",
-            False,
+            bool(operation.value.effect.flags.get("concentration", False)),
             True,
         ):
             raise ValueError("timed casting effect differs from its closed self application")

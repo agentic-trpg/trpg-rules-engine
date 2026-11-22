@@ -390,7 +390,7 @@ class WorldEffectCreate(EvaluationModel):
 
     @model_validator(mode="after")
     def world_time_passive(self) -> Self:
-        """Require an elapsed-seconds passive effect with only its declared concentration."""
+        """Require elapsed passive state or a concentration marker with no modifiers."""
         effect = self.value.effect
         expected_flags = {"concentration": True} if self.value.concentration else {}
         invisible = (
@@ -399,6 +399,9 @@ class WorldEffectCreate(EvaluationModel):
             and not effect.changes
             and self.value.concentration
         )
+        concentration_anchor = (
+            not effect.statuses and not effect.changes and self.value.concentration
+        )
         if (
             effect.disabled
             or effect.transfer
@@ -406,7 +409,11 @@ class WorldEffectCreate(EvaluationModel):
             or effect.action_policy is not None
             or effect.lifecycle is not None
             or effect.end_effects
-            or (not invisible and (effect.statuses or not effect.changes))
+            or (
+                not invisible
+                and not concentration_anchor
+                and (effect.statuses or not effect.changes)
+            )
             or effect.duration.rounds is not None
             or effect.duration.turns is not None
             or effect.duration.start_round is not None

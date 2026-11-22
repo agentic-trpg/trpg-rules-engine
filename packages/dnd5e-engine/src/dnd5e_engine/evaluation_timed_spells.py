@@ -114,15 +114,25 @@ def _passive_profile(
     allow_consumed_material: bool = False,
     casting_activity: bool = False,
 ) -> tuple[UtilityActivity, ActiveEffect, int]:
-    """Build an admitted base-level utility and elapsed-time effect from rule data."""
+    """Build an admitted utility effect, including an inert Ritual concentration anchor."""
     if reviewed_beacon_spell(spell) and not casting_activity and not allow_consumed_material:
         activity = spell.activities[0]
         assert isinstance(activity, UtilityActivity)
         return activity, beacon_effect(spell, target_id, caster_id), 1
     seconds_per_unit = _SECONDS_PER_UNIT.get(spell.duration.units)
     time = spell.casting_time
+    ritual_anchor = (
+        casting_activity
+        and spell.ritual
+        and spell.concentration
+        and len(spell.passive_effects) == 1
+        and not spell.passive_effects[0].changes
+    )
     ready_timing = (
-        time.unit in (CastingTimeUnit.MINUTE, CastingTimeUnit.HOUR)
+        (
+            time.unit in (CastingTimeUnit.MINUTE, CastingTimeUnit.HOUR)
+            or (ritual_anchor and time.unit == CastingTimeUnit.ACTION)
+        )
         and time.value is not None
         and time.value > 0
         if casting_activity
@@ -155,6 +165,8 @@ def _passive_profile(
         consumed_material_slug(spell, activity.consumption)
     target = activity.target
     target_capacity = resolve_target_count(target.affects.count, cast_level=spell.level)
+    if ritual_anchor and target.affects.type == "self" and not target.affects.count:
+        target_capacity = 1
     allowed_targets: tuple[str, ...] = ("creature", "willing")
     if spell.range.units == SpellRangeUnits.SELF:
         allowed_targets += ("self",)
@@ -166,7 +178,15 @@ def _passive_profile(
         or activation.condition
         or activation.override
         or activation.reaction_conditions
-        or (not allow_consumed_material and activity.consumption != ConsumptionBlock())
+        or (
+            not allow_consumed_material
+            and activity.consumption
+            not in (
+                (ConsumptionBlock(), ConsumptionBlock(spell_slot=True))
+                if ritual_anchor
+                else (ConsumptionBlock(),)
+            )
+        )
         or activity.duration != DurationBlock()
         or activity.range != RangeBlock()
         or activity.uses != UsesBlock()
@@ -186,9 +206,11 @@ def _passive_profile(
         or target.requires_sight
         or target.area_semantics is not None
         or target.creature_filter is not None
-        or template.type
+        or (template.type and not ritual_anchor)
+        or (ritual_anchor and template.type != "radius")
         or template.count
-        or template.size
+        or (template.size and not ritual_anchor)
+        or (ritual_anchor and (not template.size.isdecimal() or int(template.size) <= 0))
         or template.width
         or template.height
         or template.contiguous
@@ -215,7 +237,7 @@ def _passive_profile(
         or passive.action_policy is not None
         or duration not in ({"seconds": seconds}, {"seconds": seconds, "rounds": 1})
         or any(type(value) is not int for value in duration.values())
-        or (not invisible and not passive.changes)
+        or (not invisible and not passive.changes and not ritual_anchor)
     ):
         raise ValueError("requires an enabled passive effect with matching elapsed duration")
     active = passive_effect_to_active_effect(
@@ -226,7 +248,11 @@ def _passive_profile(
             update={"id": "effect:invisibility", "origin": f"cast:invisibility:{caster_id}"}
         )
     _validate_passive_changes(passive, active)
-    if spell.concentration and not all(_flat_skill_bonus(change) for change in active.changes):
+    if (
+        spell.concentration
+        and not ritual_anchor
+        and not all(_flat_skill_bonus(change) for change in active.changes)
+    ):
         raise ValueError("elapsed concentration supports only flat skill bonuses")
     return (
         activity,

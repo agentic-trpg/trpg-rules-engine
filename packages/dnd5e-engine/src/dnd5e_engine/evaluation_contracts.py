@@ -1,8 +1,8 @@
 """Versioned local request/result contracts with explicit failure boundaries."""
 
-from typing import Annotated, Literal, Self
+from typing import Annotated, Literal, Self, cast
 
-from pydantic import ConfigDict, Field, ValidationInfo, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 from pydantic_core import to_json
 
 from dnd5e_engine.evaluation_base import EvaluationModel
@@ -758,9 +758,10 @@ class RuleEvaluationResult(EvaluationModel):
     def closed_event_fields(cls, value: object) -> object:
         """Reject event payload fields outside the declared event model."""
         if isinstance(value, (list, tuple)):
+            event_models: tuple[type[BaseModel], ...] = (*ALL_COMBAT_EVENT_TYPES, ObjectIdentified)
             kinds = {
                 model.model_fields["type"].default: set(model.model_fields)
-                for model in (*ALL_COMBAT_EVENT_TYPES, ObjectIdentified)
+                for model in event_models
             }
             for event in value:
                 if isinstance(event, dict) and set(event) - kinds.get(event.get("type"), set()):
@@ -842,11 +843,11 @@ class RuleEvaluationResult(EvaluationModel):
     def without_spell_ends(self, request: RuleEvaluationRequest) -> Self:
         """Validate and remove the extension's exact terminal operations."""
         base = request.without_spell_ends()
+        facts = request.spell_end_facts
+        assert facts is not None
         state_delta = self.state_delta
         if state_delta is not None:
-            ends = spell_cast_ends(
-                request.actor_id, self.proposed_events, request.spell_end_facts.applications
-            )
+            ends = spell_cast_ends(request.actor_id, self.proposed_events, facts.applications)
             operations = state_delta.operations
             if ends and operations[-len(ends) :] != ends:
                 raise ValueError("spell end operations differ from fixed facts and cast evidence")
@@ -932,7 +933,7 @@ class RuleEvaluationResult(EvaluationModel):
                     if request.schema_version != "engine-evaluation/30":
                         raise ValueError("new combat effect operations require evaluation/30")
                     if isinstance(operation, HasteGraphCreate):
-                        verify_haste_creation(operation, request, self.proposed_events)
+                        verify_haste_creation(operation, request, self._combat_events())
                 elif isinstance(operation, SpellMaterialConsume):
                     if (
                         request.schema_version != MATERIAL_SPELL_SCHEMA_VERSION
@@ -954,10 +955,16 @@ class RuleEvaluationResult(EvaluationModel):
                     ):
                         raise ValueError("vanishing items require evaluation/41")
                 elif isinstance(operation, CombatEffectCreate):
-                    verify_speed_effect_creation(operation, request, self.proposed_events)
+                    verify_speed_effect_creation(operation, request, self._combat_events())
         if self.rng_transition is not None:
             self.rng_transition.verify_input(request.rng_context)
-        if self.stage_facts is not None:
+        if self.stage_facts is not None and self.stage_facts.coverage == "complete":
             from dnd5e_engine.evaluation_stage_validation import verify_stage_result
 
-            verify_stage_result(self.stage_facts, request, self.proposed_events, self.state_delta)
+            verify_stage_result(self.stage_facts, request, self._combat_events(), self.state_delta)
+
+    def _combat_events(self) -> tuple[CombatEvent, ...]:
+        """Return only an audited combat event stream for stage and effect verifiers."""
+        if any(isinstance(event, ObjectIdentified) for event in self.proposed_events):
+            raise ValueError("private casting activity events are outside combat evidence")
+        return cast(tuple[CombatEvent, ...], self.proposed_events)

@@ -102,16 +102,53 @@ class ItemUsePayload(EvaluationModel):
     target_id: Annotated[str, Field(min_length=1)]
 
 
+class ExplorationItemAreaTarget(EvaluationModel):
+    """Select a visible center and up to six creatures for a supported area cast."""
+
+    center_cell: Annotated[str, Field(min_length=1)]
+    target_ids: Annotated[
+        tuple[Annotated[str, Field(min_length=1)], ...], Field(min_length=1, max_length=6)
+    ]
+
+    @field_validator("target_ids")
+    @classmethod
+    def distinct_targets(cls, values):
+        """Prevent paying once to heal the same creature repeatedly."""
+        if len(set(values)) != len(values):
+            raise ValueError("area item targets must be distinct")
+        return values
+
+
+class ExplorationItemAreaFacts(EvaluationModel):
+    """Carry the authenticated caster cell, visible center and exact target cells."""
+
+    source_cell: Annotated[str, Field(min_length=1)]
+    visible_center_cell: Annotated[str, Field(min_length=1)]
+    target_cells: Annotated[dict[str, str], Field(min_length=1, max_length=6)]
+
+
 class ExplorationItemUsePayload(EvaluationModel):
-    """Select an owned inventory instance, activity and target for exploration item use."""
+    """Select an owned instance, its activity and either a creature or a bounded area."""
 
     kind: Literal["world.use_item"]
     instance_id: Annotated[str, Field(min_length=1)]
     activity_id: Annotated[str, Field(min_length=1)]
-    target_id: Annotated[str, Field(min_length=1)]
+    target_id: Annotated[str, Field(min_length=1)] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    area_target: ExplorationItemAreaTarget | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     cast_level: Annotated[int, Field(ge=1, le=9)] | None = Field(
         default=None, exclude_if=lambda value: value is None
     )
+
+    @model_validator(mode="after")
+    def choose_target(self) -> Self:
+        """Require exactly one declared target form."""
+        if (self.target_id is None) == (self.area_target is None):
+            raise ValueError("item cast requires a creature or an area selection")
+        return self
 
 
 class ExplorationSpellCastPayload(EvaluationModel):
@@ -300,6 +337,9 @@ class RuleEvaluationRequest(EvaluationModel):
     spell_end_facts: SpellEndFacts | None = Field(
         default=None, exclude_if=lambda value: value is None
     )
+    item_area_facts: ExplorationItemAreaFacts | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
     def without_spell_ends(self) -> Self:
         """Return the native cast request after checking the extension's scope."""
@@ -396,6 +436,14 @@ class RuleEvaluationRequest(EvaluationModel):
             self.payload.cast_level is not None and self.schema_version != STAFF_CAST_SCHEMA_VERSION
         ):
             raise ValueError("explicit item cast level requires evaluation/41")
+        if self.schema_version != STAFF_CAST_SCHEMA_VERSION and (
+            self.item_area_facts is not None
+            or (
+                isinstance(self.payload, ExplorationItemUsePayload)
+                and self.payload.area_target is not None
+            )
+        ):
+            raise ValueError("area item casts require evaluation/41")
         if self._validate_versioned_operation():
             return self
         if self.spell_positions is not None and self.spell_positions.target_item is not None:
@@ -523,11 +571,26 @@ class RuleEvaluationRequest(EvaluationModel):
             raise ValueError(
                 "evaluation/32 or /41 requires a noncombat item cast without pending combat"
             )
-        positions = self.spell_positions
+        positions, area, facts = (
+            self.spell_positions,
+            self.payload.area_target,
+            self.item_area_facts,
+        )
         if positions is not None and (
             positions.target_item is not None or positions.willing_target_id is not None
         ):
             raise ValueError("charged item casts accept only creature positions")
+        if area is None:
+            if facts is not None:
+                raise ValueError("a creature item target cannot supply area facts")
+        elif (
+            positions is not None
+            or facts is None
+            or facts.visible_center_cell != area.center_cell
+            or facts.target_cells.keys() != set(area.target_ids)
+            or facts.target_cells.get(self.actor_id, facts.source_cell) != facts.source_cell
+        ):
+            raise ValueError("item area must match the trusted center and creature positions")
 
     def _validate_creature_spell(self) -> None:
         """Require a noncombat creature cast and bind any willingness to its target."""

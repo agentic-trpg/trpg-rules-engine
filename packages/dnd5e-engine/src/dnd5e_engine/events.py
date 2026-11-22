@@ -265,6 +265,10 @@ class IntentSubmitted(BaseModel):
     item_id: str | None = None
     source_id: str | None = Field(default=None, exclude_if=lambda value: value is None)
     activity_id: str | None = Field(default=None, exclude_if=lambda value: value is None)
+    area_center_cell: str | None = Field(default=None, exclude_if=lambda value: value is None)
+    area_target_ids: tuple[str, ...] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
 
 # ── roll resolution ─────────────────────────────────────────────────────────

@@ -17,6 +17,7 @@ from dnd5e_srd_data.schema.spell import Spell
 
 from dnd5e_engine.activities.build_context import build_activity_context
 from dnd5e_engine.activities.resolver import resolve_activity
+from dnd5e_engine.areas import area_activity, area_template, has_line_of_effect
 from dnd5e_engine.evaluation_actor import combatant
 from dnd5e_engine.evaluation_class_dependencies import class_dependencies
 from dnd5e_engine.evaluation_contracts import (
@@ -47,6 +48,9 @@ from dnd5e_engine.events import (
 )
 from dnd5e_engine.rules.conditions import conditions_block_actions
 from dnd5e_engine.rules.dice import roll_d6, roll_d20
+from dnd5e_engine.spatial import GridTopology, canonical_cell_id
+from dnd5e_engine.specs import GridScene
+from dnd5e_engine.spellcasting import spell_range_ft
 
 _STAFF = "staff-of-healing"
 _STAFF_CLASSES = frozenset({"bard", "cleric", "druid"})
@@ -95,26 +99,77 @@ def roll_healing_staff_dawn(item: Item, rng):
 
 
 def _healing_staff_cast(item: Item, loader: AssetLoader, activity_id, cast_level):
-    """Select Cure Wounds from the bundled staff's verified activities and scaling."""
-    cure_wounds = loader.get_spell("cure-wounds")
-    if (
-        cure_wounds is None
-        or cure_wounds != get_default_ruleset().get_spell("cure-wounds")
-        or exploration_healing_activity(loader, cure_wounds) is None
-        or (cast_level is not None and not 1 <= cast_level <= 4)
-    ):
-        return None
-    activity = next(
-        activity
-        for activity in item.activities
-        if isinstance(activity, CastActivity) and activity.spell.uuid == cure_wounds.foundry_uuid
-    )
-    if activity_id not in (None, activity.id):
-        return None
-    level = cast_level or 1
+    """Select a canonical spell and its price from the staff's bound Cast activities."""
     assert item.uses is not None
-    return ExplorationChargedCastProfile(
-        activity, cure_wounds, level, int(item.uses.max), True, level, True
+    canonical = get_default_ruleset()
+    for slug in ("cure-wounds", "mass-cure-wounds"):
+        spell = loader.get_spell(slug)
+        if spell is None or spell != canonical.get_spell(slug):
+            continue
+        activity = next(
+            activity
+            for activity in item.activities
+            if isinstance(activity, CastActivity) and activity.spell.uuid == spell.foundry_uuid
+        )
+        if activity_id not in (None, activity.id):
+            continue
+        level = cast_level or spell.level
+        price = int(activity.consumption.targets[0].value)
+        if slug == "cure-wounds":
+            if not 1 <= level <= int(activity.consumption.scaling.max):
+                return None
+            price *= level
+        elif level != spell.level:
+            return None
+        return ExplorationChargedCastProfile(
+            activity, spell, price, int(item.uses.max), True, level, True
+        )
+    return None
+
+
+def _area_healing_targets(request: RuleEvaluationRequest, spell: Spell) -> tuple[str, ...]:
+    """Verify the center's range and reach and each selected creature's area membership."""
+    snapshot, payload, facts = request.state_snapshot, request.payload, request.item_area_facts
+    assert isinstance(snapshot, NonCombatSnapshot)
+    assert isinstance(payload, ExplorationItemUsePayload)
+    selection = payload.area_target
+    if facts is None or selection is None:
+        return ()
+    topology = GridTopology(GridScene.model_validate(snapshot.scene_state.grid.model_dump()))
+    targets = tuple(facts.target_cells[target_id] for target_id in selection.target_ids)
+    return (
+        selection.target_ids
+        if healing_staff_area_reaches(
+            topology, spell, facts.source_cell, facts.visible_center_cell, targets
+        )
+        else ()
+    )
+
+
+def healing_staff_area_reaches(topology, spell: Spell, source: str, center: str, targets) -> bool:
+    """Bound the healing sphere and its rays using the selected canonical spell."""
+    child = area_activity(spell.activities)
+    shape = area_template(child) if child else None
+    reach = spell_range_ft(spell)
+    if shape is None or reach is None:
+        return False
+    try:
+        center = canonical_cell_id(center)
+        source = canonical_cell_id(source)
+        targets = tuple(map(canonical_cell_id, targets))
+    except ValueError:
+        return False
+    return (
+        topology.is_valid_cell(source)
+        and topology.is_valid_cell(center)
+        and topology.within_range(source, center, reach)
+        and has_line_of_effect(topology, source, center)
+        and all(
+            topology.is_valid_cell(target)
+            and topology.within_range(center, target, shape.size_ft)
+            and has_line_of_effect(topology, center, target)
+            for target in targets
+        )
     )
 
 
@@ -127,7 +182,8 @@ def exploration_charged_cast_profile(
 ) -> ExplorationChargedCastProfile | None:
     """Identify a supported charged touch heal from the bound item and activity.
 
-    A canonical Staff of Healing delegates to Cure Wounds at levels 1–4.
+    The Staff of Healing delegates to Cure Wounds at levels 1–4 or Mass Cure
+    Wounds at level 5.
     A reviewed authored charm has one fixed-cost, level-one cast and may
     refill completely at dawn. The State Machine owns time and item balances.
     """
@@ -213,16 +269,25 @@ def evaluate_exploration_charged_cast(
     assert isinstance(snapshot, NonCombatSnapshot)
     assert isinstance(payload, ExplorationItemUsePayload)
     staff = is_healing_staff(item)
-    if staff and request.schema_version != STAFF_CAST_SCHEMA_VERSION:
-        return _refuse("unsupported", "item.capability", "Staff of Healing requires evaluation/41")
+    if staff != (request.schema_version == STAFF_CAST_SCHEMA_VERSION):
+        return _refuse(
+            "unsupported",
+            "item.capability",
+            "evaluation/41 requires the canonical Staff of Healing",
+        )
     profile = exploration_charged_cast_profile(
         item, loader, activity_id=payload.activity_id, cast_level=payload.cast_level
     )
     if profile is None:
         if staff and payload.activity_id not in {activity.id for activity in item.activities}:
             return _refuse("rejected", "activity_invalid", "activity is absent from this item")
-        if staff and payload.cast_level is not None and payload.cast_level > 4:
-            return _refuse("rejected", "cast_level_invalid", "Cure Wounds supports levels 1–4")
+        if (
+            staff
+            and payload.cast_level is not None
+            and exploration_charged_cast_profile(item, loader, activity_id=payload.activity_id)
+            is not None
+        ):
+            return _refuse("rejected", "cast_level_invalid", "level differs from the activity")
         return _refuse("unsupported", "item.capability", "item lacks a reviewed charged cast")
     if profile.activity.id != payload.activity_id:
         return _refuse("rejected", "activity_invalid", "activity is absent from this item")
@@ -240,17 +305,25 @@ def evaluate_exploration_charged_cast(
         or conditions_block_actions([condition.condition for condition in actor.conditions])
     ):
         return _refuse("rejected", "actor_incapacitated", "caster must be alive and able to act")
-    target = actors.get(payload.target_id)
-    if (
-        target is None
-        or not target.is_alive
-        or target.hp_current <= 0
-        or (
-            target.entity_id != actor.entity_id
-            and not exploration_spell_reaches(request, snapshot, profile.spell)
-        )
+    if profile.spell.slug == "mass-cure-wounds":
+        target_ids = _area_healing_targets(request, profile.spell)
+    elif payload.area_target is None and (
+        payload.target_id == actor.entity_id
+        or exploration_spell_reaches(request, snapshot, profile.spell)
     ):
-        return _refuse("rejected", "target_invalid", "cast requires a living creature within touch")
+        target_ids = (payload.target_id,)
+    else:
+        target_ids = ()
+    if not target_ids or any(
+        target_id not in actors
+        or not actors[target_id].is_alive
+        or actors[target_id].hp_current <= 0
+        for target_id in target_ids
+    ):
+        return _refuse(
+            "rejected", "target_invalid", "cast requires living creatures at valid positions"
+        )
+    targets = tuple(actors[target_id] for target_id in target_ids)
     ability = None
     ignored_items = frozenset({entry.instance_id})
     if staff:
@@ -303,7 +376,9 @@ def evaluate_exploration_charged_cast(
             source_id=entry.instance_id,
             activity_id=activity.id,
             spell_id=spell.slug,
-            target_id=target.entity_id,
+            target_id=payload.target_id,
+            area_center_cell=payload.area_target.center_cell if payload.area_target else None,
+            area_target_ids=payload.area_target.target_ids if payload.area_target else None,
         ),
         SpellCast(
             actor_id=actor.entity_id,
@@ -320,7 +395,10 @@ def evaluate_exploration_charged_cast(
     caster = combatant(actor)
     context = build_activity_context(
         caster,
-        [caster if actor.entity_id == target.entity_id else combatant(target)],
+        [
+            caster if actor.entity_id == target.entity_id else combatant(target)
+            for target in targets
+        ],
         rng=rng,
         event_emitter=events.append,
         slot_level=None,
@@ -334,13 +412,13 @@ def evaluate_exploration_charged_cast(
         save_modifiers={},
     )
     resolve_activity(activity, context)
-    if (
-        len(events) != 3
-        or not isinstance(healing := events[2], HealingApplied)
-        or healing.target_id != target.entity_id
+    healed = events[2:]
+    if len(healed) != len(targets) or any(
+        not isinstance(event, HealingApplied) or event.target_id != target.entity_id
+        for target, event in zip(targets, healed, strict=True)
     ):
-        raise EvaluationInvariantError("charged exploration cast must produce one healing event")
-    if healing.amount < 0:
+        raise EvaluationInvariantError("charged exploration cast must heal each selected target")
+    if any(event.amount < 0 for event in healed):
         return _refuse("unsupported", "healing.amount", "negative healing is outside this profile")
     balance = entry.charges_remaining_per_unit - profile.cost
     quantity = 1
@@ -362,7 +440,14 @@ def evaluate_exploration_charged_cast(
         status="accepted",
         state_delta=StateDelta(
             expected_world_version=snapshot.world_version,
-            operations=(payment, *exploration_healing_hp_delta(target, healing.amount)),
+            operations=(
+                payment,
+                *(
+                    edit
+                    for target, event in zip(targets, healed, strict=True)
+                    for edit in exploration_healing_hp_delta(target, event.amount)
+                ),
+            ),
         ),
         proposed_events=tuple(events),
         rng_transition=RNGTransition.between(request.rng_context, rng),
@@ -392,12 +477,16 @@ def verify_charged_item_cast(result: RuleEvaluationResult, request: RuleEvaluati
     if result.rng_transition is None or not result.rng_transition.state_changed:
         raise ValueError("charged healing requires a recorded RNG advance")
     staff = request.schema_version == STAFF_CAST_SCHEMA_VERSION
+    area = payload.area_target
+    target_ids = area.target_ids if area else (payload.target_id,)
     last_charge = staff and spend.value.charges_remaining_per_unit == 0
-    if len(result.proposed_events) != 3 + int(last_charge):
+    events = result.proposed_events
+    if len(events) != 2 + len(target_ids) + int(last_charge):
         raise ValueError("charged cast requires the item intent, cast and healing evidence")
-    intent, cast, healing = result.proposed_events[:3]
+    intent, cast = events[:2]
+    healed = events[2 : 2 + len(target_ids)]
     if last_charge:
-        depletion = result.proposed_events[3]
+        depletion = events[-1]
         if (
             not isinstance(depletion, ItemDepletionRolled)
             or (depletion.actor_id, depletion.instance_id) != (request.actor_id, entry.instance_id)
@@ -410,7 +499,7 @@ def verify_charged_item_cast(result: RuleEvaluationResult, request: RuleEvaluati
         not isinstance(cast, SpellCast)
         or cast.actor_id != request.actor_id
         or cast.slot_level is not None
-        or cast.item_cast_level != ((payload.cast_level or 1) if staff else None)
+        or cast.item_cast_level != ((payload.cast_level or (5 if area else 1)) if staff else None)
         or cast.ritual
         or cast.components
         or cast.material is not None
@@ -426,17 +515,23 @@ def verify_charged_item_cast(result: RuleEvaluationResult, request: RuleEvaluati
             activity_id=payload.activity_id,
             spell_id=cast.spell_id,
             target_id=payload.target_id,
+            area_center_cell=area.center_cell if area else None,
+            area_target_ids=area.target_ids if area else None,
         )
-        or not isinstance(healing, HealingApplied)
-        or healing.target_id != payload.target_id
-        or healing.amount < 0
     ):
         raise ValueError("charged item cast events must match the request")
-    target = next(
-        (actor for actor in snapshot.character_states if actor.entity_id == payload.target_id),
-        None,
-    )
-    if target is None or not target.is_alive or target.hp_current <= 0:
-        raise ValueError("charged item cast requires a living target")
-    if delta.operations[1:] != exploration_healing_hp_delta(target, healing.amount):
+    actors = {actor.entity_id: actor for actor in snapshot.character_states}
+    edits = []
+    for target_id, healing in zip(target_ids, healed, strict=True):
+        target = actors.get(target_id)
+        if target is None or not target.is_alive or target.hp_current <= 0:
+            raise ValueError("charged item cast requires living targets")
+        if (
+            not isinstance(healing, HealingApplied)
+            or healing.target_id != target_id
+            or healing.amount < 0
+        ):
+            raise ValueError("charged healing must match each selected target")
+        edits.extend(exploration_healing_hp_delta(target, healing.amount))
+    if delta.operations[1:] != tuple(edits):
         raise ValueError("charged item cast HP delta must match the healing evidence")

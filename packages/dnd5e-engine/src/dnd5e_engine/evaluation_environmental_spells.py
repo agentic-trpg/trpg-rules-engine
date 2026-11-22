@@ -1,6 +1,7 @@
 """Evaluate creation and termination of spatial spell effects from fixed exploration facts."""
 
 from functools import lru_cache
+from random import Random
 from typing import Literal
 
 from dnd5e_srd_data.loader import AssetLoader, BundledAssetLoader
@@ -12,11 +13,13 @@ from dnd5e_engine.activities.check_pipeline import resolve_check_request
 from dnd5e_engine.activities.context import ActivityResolutionContext
 from dnd5e_engine.areas import area_activity, area_template
 from dnd5e_engine.evaluation_actor import combatant
+from dnd5e_engine.evaluation_casting import CastingStateV20
 from dnd5e_engine.evaluation_checks import _check_actor_effects
 from dnd5e_engine.evaluation_contracts import (
     DISPEL_MAGIC_SCHEMA_VERSION,
     ENVIRONMENTAL_SPELL_SCHEMA_VERSION,
     FOG_CLOUD_SCHEMA_VERSION,
+    CheckPayload,
     RuleEvaluationRequest,
     RuleEvaluationResult,
 )
@@ -36,13 +39,13 @@ from dnd5e_engine.evaluation_projection import EvaluationInvariantError
 from dnd5e_engine.evaluation_rng import RNGTransition
 from dnd5e_engine.evaluation_ruleset import get_default_ruleset
 from dnd5e_engine.evaluation_spell_termination import WorldSpellEnd
-from dnd5e_engine.evaluation_state import NonCombatSnapshot
+from dnd5e_engine.evaluation_state import CharacterStateV2, NonCombatSnapshot
 from dnd5e_engine.evaluation_timed_spells import (
     exploration_source_failure,
     exploration_spell_reaches,
 )
 from dnd5e_engine.evaluation_turn import TurnEvaluation, _refuse
-from dnd5e_engine.events import IntentSubmitted, SpellCast
+from dnd5e_engine.events import Ability, CheckRolled, CombatEvent, IntentSubmitted, SpellCast
 from dnd5e_engine.rules.conditions import conditions_block_actions
 from dnd5e_engine.spellcasting import derive_pact_slots, spell_component_metadata
 from dnd5e_engine.types.checks import CheckRequest
@@ -221,7 +224,10 @@ def _target_failure(request: RuleEvaluationRequest, spell: Spell) -> str | None:
     effect = positions.target_effect
     if spell.slug == "dispel-magic":
         if request.schema_version == DISPEL_MAGIC_SCHEMA_VERSION:
-            if isinstance(request.payload.target, EnvironmentalCreatureTarget):
+            payload = request.payload
+            if not isinstance(payload, ExplorationEnvironmentalSpellCastPayload):
+                raise EvaluationInvariantError("Dispel requires an environmental spell payload")
+            if isinstance(payload.target, EnvironmentalCreatureTarget):
                 applications = positions.target_applications
                 if any(
                     fact.cast_slot_level is None
@@ -256,12 +262,19 @@ def _slot_valid(payload: ExplorationEnvironmentalSpellCastPayload, spell: Spell)
     return payload.slot_level == 0 if spell.level == 0 else payload.slot_level >= spell.level
 
 
-def _dispel_plan(request: RuleEvaluationRequest, snapshot: NonCombatSnapshot, loader: AssetLoader):
+def _dispel_plan(
+    request: RuleEvaluationRequest,
+    snapshot: NonCombatSnapshot,
+    payload: ExplorationEnvironmentalSpellCastPayload,
+    loader: AssetLoader,
+) -> tuple[tuple[StateDeltaOperation, ...], tuple[CombatEvent, ...], RNGTransition]:
     """Price Dispel Magic and test each eligible target spell in stable identity order."""
-    payload = request.payload
     payment = _payment(snapshot, request.actor_id, payload.slot_level)
     actor = next(a for a in snapshot.character_states if a.entity_id == request.actor_id)
     casting = snapshot.casting_state
+    positions = request.spell_positions
+    if not isinstance(casting, CastingStateV20) or positions is None:
+        raise EvaluationInvariantError("Dispel requires fixed casting and target facts")
     source = next(
         s
         for c in casting.actors
@@ -271,14 +284,14 @@ def _dispel_plan(request: RuleEvaluationRequest, snapshot: NonCombatSnapshot, lo
     )
     ability = source.ability
     rng = request.rng_context.state.restore()
-    events = []
-    endings = []
-    check_context = None
+    events: list[CheckRolled] = []
+    endings: list[StateDeltaOperation] = []
+    check_context: ActivityResolutionContext | None = None
     if isinstance(payload.target, EnvironmentalCreatureTarget):
-        targets = sorted(request.spell_positions.target_applications, key=lambda f: f.identity)
+        targets = sorted(positions.target_applications, key=lambda f: f.identity)
         for fact in targets:
             spell = loader.get_spell(fact.spell_id)
-            if spell is None or fact.cast_slot_level < spell.level:
+            if spell is None or fact.cast_slot_level is None or fact.cast_slot_level < spell.level:
                 raise ValueError("target spell lacks a bound cast level")
             level = fact.cast_slot_level
             eligible = level <= payload.slot_level
@@ -289,7 +302,9 @@ def _dispel_plan(request: RuleEvaluationRequest, snapshot: NonCombatSnapshot, lo
             if eligible:
                 endings.append(WorldSpellEnd(expected=fact, reason="dispelled"))
     else:
-        effect = request.spell_positions.target_effect
+        effect = positions.target_effect
+        if effect is None:
+            raise EvaluationInvariantError("Dispel requires the selected spatial effect")
         target_spell = loader.get_spell(effect.spell_id)
         if target_spell is None or effect.slot_level < target_spell.level:
             raise ValueError("spatial spell lacks a bound actual cast level")
@@ -306,14 +321,41 @@ def _dispel_plan(request: RuleEvaluationRequest, snapshot: NonCombatSnapshot, lo
             )
     return (
         (payment, *endings),
-        (*_events(actor.entity_id, payload, loader.get_spell("dispel-magic")), *events),
+        (*_events(actor.entity_id, payload, _dispel_spell(loader)), *events),
         RNGTransition.between(request.rng_context, rng),
     )
 
 
-def _dispel_check_context(snapshot, actor, ability, loader, rng):
+def _dispel_spell(loader: AssetLoader) -> Spell:
+    """Require the reviewed Dispel definition already admitted by the evaluator."""
+    spell = loader.get_spell("dispel-magic")
+    if spell is None:
+        raise EvaluationInvariantError("Dispel definition is missing")
+    return spell
+
+
+def _dispel_check_context(
+    snapshot: NonCombatSnapshot,
+    actor: CharacterStateV2,
+    ability: Ability,
+    loader: AssetLoader,
+    rng: Random,
+) -> ActivityResolutionContext:
     """Project the caster's check dependencies once before high-level target rolls."""
-    check = CheckRequest(actor_id=actor.entity_id, ability=ability, dc=10)
+    check = CheckPayload(
+        actor_id=actor.entity_id,
+        ability=ability,
+        skill=None,
+        tool=None,
+        dc=10,
+        target_id=None,
+        context="generic",
+        required_sense="none",
+        social_interaction=False,
+        advantage=(),
+        disadvantage=(),
+        redeem_granted_die=None,
+    )
     caster = combatant(actor)
     effects = [effect for effect in snapshot.effect_states if effect.target_id == actor.entity_id]
     state = _check_actor_effects(actor, effects, check, loader)
@@ -327,7 +369,13 @@ def _dispel_check_context(snapshot, actor, ability, loader, rng):
     )
 
 
-def _dispel_check(context, actor_id, ability, level, events):
+def _dispel_check(
+    context: ActivityResolutionContext,
+    actor_id: str,
+    ability: Ability,
+    level: int,
+    events: list[CheckRolled],
+) -> bool:
     """Resolve one DC 10 + target-level check on the shared mutable RNG context."""
     check = CheckRequest(actor_id=actor_id, ability=ability, dc=10 + level)
     event = resolve_check_request(check, context)
@@ -395,7 +443,7 @@ def evaluate_environmental_spell(
         return _refuse("rejected", "spell.source", failure)
     try:
         if request.schema_version == DISPEL_MAGIC_SCHEMA_VERSION:
-            operations, events, transition = _dispel_plan(request, snapshot, loader)
+            operations, events, transition = _dispel_plan(request, snapshot, payload, loader)
         else:
             operations = _operations(request, snapshot, payload, spell)
             events = _events(request.actor_id, payload, spell)
@@ -432,7 +480,7 @@ def verify_environmental_cast(
     spell = _reviewed_spell(payload.spell_id)
     if request.schema_version == DISPEL_MAGIC_SCHEMA_VERSION:
         operations, events, transition = _dispel_plan(
-            request, snapshot, loader if loader is not None else get_default_ruleset()
+            request, snapshot, payload, loader if loader is not None else get_default_ruleset()
         )
         if (
             result.state_delta is None

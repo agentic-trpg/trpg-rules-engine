@@ -396,6 +396,56 @@ def test_generic_dispel_refuses_spatial_level_below_bound_spell():
     )
 
 
+@pytest.mark.parametrize("recorded_level, accepted", [(1, True), (0, False)])
+def test_generic_dispel_verifies_bound_overlay_victim(recorded_level, accepted):
+    """Replay an admitted overlay victim without resolving it from bundled assets."""
+    wire, _ = _dispel_wire()
+    canonical = BundledAssetLoader()
+    victim = canonical.get_spell("longstrider").model_copy(
+        update={"slug": "fixture-keen-perception"}
+    )
+    victim_wire, victim_loader = spell_wire(canonical.get_spell("longstrider"))
+    victim_result = execute(_request(victim_wire), victim_loader)
+    effect = victim_result.state_delta.operations[-1].value.effect.model_dump(mode="json")
+    wire["schema_version"] = DISPEL_MAGIC_SCHEMA_VERSION
+    wire["payload"]["target"] = {"kind": "creature", "target_id": FOE}
+    positions = wire["spell_positions"]
+    positions.pop("target_effect")
+    positions["visible_target_id"] = FOE
+    positions["target_applications"] = [
+        dict(
+            effect=effect,
+            caster_id=HERO,
+            spell_id=victim.slug,
+            cast_command_id="cast:overlay",
+            expires_tick=600,
+            concentration_id=None,
+            cast_slot_level=recorded_level,
+        )
+    ]
+    wire["state_snapshot"]["effect_states"] = [effect]
+    loader = freeze_ruleset(
+        MemoryAssetLoader(
+            spells=[canonical.get_spell("dispel-magic"), victim],
+            classes=[canonical.get_class("wizard")],
+            items=[canonical.get_item("component-pouch")],
+        )
+    )
+    wire["ruleset_binding"] = ruleset_binding(loader).model_dump(mode="json")
+    request = _request(wire)
+    result = execute(request, loader)
+    if accepted:
+        assert result.status == "accepted", result.error
+        assert result.state_delta.operations[1].expected.spell_id == victim.slug
+        RuleEvaluationResult.model_validate_json(result.model_dump_json()).verify_request(request)
+    else:
+        assert (result.status, result.error.code, result.state_delta) == (
+            "rejected",
+            "spell.slot",
+            None,
+        )
+
+
 def test_generic_dispel_checks_each_high_creature_spell_and_pays_once():
     """One payment resolves independent cast identities in stable order."""
     wire, loader = _dispel_wire()

@@ -185,9 +185,9 @@ def _check_actor_effects(
     actor: CharacterStateV2,
     effects: list[EffectState],
     payload: CheckPayload,
-    loader: AssetLoader,
+    loader: AssetLoader | None,
 ) -> CheckActorState:
-    """Validate one relevant actor's effect facts and project the shared check inputs."""
+    """Project fixed effects; native callers also bind condition assets when supplied."""
     pending_links: dict[tuple[str, str], EffectState] = {}
     active: list[ActiveEffect] = []
     for effect in effects:
@@ -212,7 +212,7 @@ def _check_actor_effects(
             raise _InvalidCheckFactsError("active condition identity is unknown")
         # Compiled rules are covered by the evaluator binding when reduced
         # loaders omit the corresponding assets.
-        definition = loader.get_condition(status)
+        definition = loader.get_condition(status) if loader is not None else None
         if definition is not None and (
             definition.slug != status or not condition_matches_compiled(definition)
         ):

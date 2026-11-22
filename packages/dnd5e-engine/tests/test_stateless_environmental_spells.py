@@ -411,6 +411,15 @@ def test_generic_dispel_uses_actual_spatial_level_and_only_draws_for_higher_spel
     effect = wire["spell_positions"]["target_effect"]
     effect.update(slot_level=level, anchor_item_id="stone")
     effect["spell_id"] = "light" if level == 0 else "darkness"
+    canonical = BundledAssetLoader()
+    loader = freeze_ruleset(
+        MemoryAssetLoader(
+            spells=[canonical.get_spell("dispel-magic"), canonical.get_spell(effect["spell_id"])],
+            classes=[canonical.get_class("wizard")],
+            items=[canonical.get_item("component-pouch")],
+        )
+    )
+    wire["ruleset_binding"] = ruleset_binding(loader).model_dump(mode="json")
     request = _request(wire)
     result = execute(request, loader)
     assert result.status == "accepted", result.error
@@ -421,6 +430,19 @@ def test_generic_dispel_uses_actual_spatial_level_and_only_draws_for_higher_spel
     else:
         assert len(result.state_delta.operations) == 1
     RuleEvaluationResult.model_validate_json(result.model_dump_json()).verify_request(request)
+
+
+def test_generic_dispel_refuses_spatial_level_below_bound_spell():
+    """Level zero is valid for Light but cannot describe a Darkness cast."""
+    wire, loader = _dispel_wire()
+    wire["schema_version"] = DISPEL_MAGIC_SCHEMA_VERSION
+    wire["spell_positions"]["target_effect"]["slot_level"] = 0
+    result = execute(_request(wire), loader)
+    assert (result.status, result.error.code, result.state_delta) == (
+        "rejected",
+        "spell.slot",
+        None,
+    )
 
 
 def test_generic_dispel_checks_each_high_creature_spell_and_pays_once():

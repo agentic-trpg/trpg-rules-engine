@@ -17,7 +17,7 @@ class DetectionBarrier:
     material: BarrierMaterial
     thickness_mils: int
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Reject unsupported material or missing/nonpositive thickness."""
         if self.material not in ("stone", "dirt", "wood", "metal", "lead") or (
             type(self.thickness_mils) is not int or self.thickness_mils <= 0

@@ -72,6 +72,7 @@ STAFF_CAST_SCHEMA_VERSION = "engine-evaluation/41"
 MULTI_SPELL_SCHEMA_VERSION = "engine-evaluation/33"
 SPATIAL_EFFECT_END_SCHEMA_VERSION = "engine-evaluation/34"
 MATERIAL_SPELL_SCHEMA_VERSION = "engine-evaluation/35"
+CONDITION_CHOICE_SCHEMA_VERSION = "engine-evaluation/45"
 MAX_EXPLORATION_SPELL_TARGETS = 10
 EvaluationVersion = Literal[
     "engine-evaluation/24",
@@ -90,6 +91,7 @@ EvaluationVersion = Literal[
     "engine-evaluation/37",
     "engine-evaluation/40",
     "engine-evaluation/41",
+    "engine-evaluation/45",
 ]
 
 
@@ -160,6 +162,9 @@ class ExplorationSpellCastPayload(EvaluationModel):
     slot_level: Annotated[int, Field(ge=1, le=9)]
     target_id: Annotated[str, Field(min_length=1)]
     material_instance_id: Annotated[str, Field(min_length=1)] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    selected_condition: Annotated[str, Field(min_length=1)] | None = Field(
         default=None, exclude_if=lambda value: value is None
     )
 
@@ -417,6 +422,7 @@ class RuleEvaluationRequest(EvaluationModel):
             MULTI_SPELL_SCHEMA_VERSION: "engine-snapshot/20",
             SPATIAL_EFFECT_END_SCHEMA_VERSION: "engine-snapshot/20",
             MATERIAL_SPELL_SCHEMA_VERSION: "engine-snapshot/20",
+            CONDITION_CHOICE_SCHEMA_VERSION: "engine-snapshot/20",
             CAST_ACTIVITY_SCHEMA_VERSION: "engine-snapshot/20",
             IDENTIFY_ACTIVITY_SCHEMA_VERSION: "engine-snapshot/20",
         }
@@ -603,6 +609,7 @@ class RuleEvaluationRequest(EvaluationModel):
                 "engine-evaluation/29",
                 "engine-evaluation/30",
                 MATERIAL_SPELL_SCHEMA_VERSION,
+                CONDITION_CHOICE_SCHEMA_VERSION,
             }
             or not isinstance(self.payload, ExplorationSpellCastPayload)
             or not isinstance(self.state_snapshot, NonCombatSnapshot)
@@ -615,6 +622,10 @@ class RuleEvaluationRequest(EvaluationModel):
             self.schema_version == MATERIAL_SPELL_SCHEMA_VERSION
         ):
             raise ValueError("an explicit spell material requires evaluation/35")
+        if (self.payload.selected_condition is not None) != (
+            self.schema_version == CONDITION_CHOICE_SCHEMA_VERSION
+        ):
+            raise ValueError("a selected condition requires evaluation/45")
         positions = self.spell_positions
         if (
             positions is not None

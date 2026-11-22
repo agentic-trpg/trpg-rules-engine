@@ -26,6 +26,10 @@ from dnd5e_engine.activities.passive_stats import interpret_passive_stats
 from dnd5e_engine.areas import has_line_of_effect
 from dnd5e_engine.evaluation_beacon import beacon_effect, reviewed_beacon_spell
 from dnd5e_engine.evaluation_casting import CastingStateV20
+from dnd5e_engine.evaluation_condition_choice import (
+    condition_choice_profile,
+    evaluate_condition_choice,
+)
 from dnd5e_engine.evaluation_contracts import (
     ExplorationSpellCastPayload,
     RuleEvaluationRequest,
@@ -589,7 +593,7 @@ def exploration_spell_reaches(
     )
 
 
-def evaluate_exploration_spell(
+def evaluate_exploration_spell(  # noqa: C901 - bounded spell profiles share one admission path
     request: RuleEvaluationRequest, loader: AssetLoader
 ) -> TurnEvaluation:
     """Admit one exploration cast and propose its slot and mechanical changes.
@@ -612,6 +616,11 @@ def evaluate_exploration_spell(
     if spell is None or spell.slug != payload.spell_id:
         return _refuse("unsupported", "spell.asset", "selected spell is absent from the ruleset")
     healing = exploration_healing_activity(loader, spell)
+    removal = condition_choice_profile(spell) if payload.selected_condition is not None else None
+    if payload.selected_condition is not None and removal is None:
+        return _refuse(
+            "unsupported", "spell.condition_choice", "spell has no reviewed condition choice"
+        )
     upcast = (
         payload.slot_level > spell.level
         and spell == _reviewed_longstrider()[0]
@@ -628,7 +637,7 @@ def evaluate_exploration_spell(
         )
     material_instance = payload.material_instance_id
     material_debit = None
-    if healing is None or material_instance is not None:
+    if (healing is None and removal is None) or material_instance is not None:
         try:
             activity, active, _ = _passive_profile(
                 spell,
@@ -700,7 +709,7 @@ def evaluate_exploration_spell(
     if failure:
         return _refuse("rejected", "spell.source", failure)
 
-    if healing is None:
+    if healing is None and removal is None:
         admitted = _admit_elapsed_overlap(active, spell, actor, snapshot, request.command_id)
         if admitted is None:
             return _refuse("rejected", "spell.effect_exists", "target already has this effect")
@@ -709,6 +718,7 @@ def evaluate_exploration_spell(
         return _refuse("rejected", "spell.slot", "no owned ordinary slot remains")
     if (
         healing is None
+        and removal is None
         and activity.target.affects.type == "willing"
         and target.entity_id != actor.entity_id
         and (positions is None or positions.willing_target_id != target.entity_id)
@@ -730,6 +740,8 @@ def evaluate_exploration_spell(
         raise EvaluationInvariantError("world spell payment must use an ordinary slot")
     if healing is not None:
         return evaluate_exploration_healing(request, spell, healing, actor, target, payment, loader)
+    if removal is not None:
+        return evaluate_condition_choice(request, spell, actor, target, payment, removal)
     creation = _timed_effect_creation(request, spell, active)
     components, material, consumed, cost = spell_component_metadata(spell)
     return dict(

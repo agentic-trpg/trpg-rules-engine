@@ -52,6 +52,10 @@ evaluation `/31`。RE 校验固定的物品或点位，提议法术位支付和�
 SM 持有效果、实际锚点、期限和集中状态。见
 [探索光照法术](dev/stateless-evaluation.md#exploration-illumination-spells)。
 
+`passive_detection.py` 提供侦测魔法的被动存在判定。RE 根据候选类型、距离和
+障碍的已知材质厚度判断能否感应。SM 从当前 Effects、World 位置及容器关系取得这些
+事实，并在获授权的观察者视图投影线索。此判定沿用已有施法与期限，不创建 Delta。
+
 ## 2. 包和主要规则模块
 
 下表中 Engine 文件均相对 `packages/dnd5e-engine/src/dnd5e_engine/`；其他包写完整路径。

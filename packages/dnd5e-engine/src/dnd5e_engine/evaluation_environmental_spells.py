@@ -263,6 +263,9 @@ def _dispel_plan(request: RuleEvaluationRequest, snapshot: NonCombatSnapshot, lo
                 endings.append(WorldSpellEnd(expected=fact, reason="dispelled"))
     else:
         effect = request.spell_positions.target_effect
+        target_spell = loader.get_spell(effect.spell_id)
+        if target_spell is None or effect.slot_level < target_spell.level:
+            raise ValueError("spatial spell lacks a bound actual cast level")
         level = effect.slot_level
         eligible = level <= payload.slot_level
         if not eligible:

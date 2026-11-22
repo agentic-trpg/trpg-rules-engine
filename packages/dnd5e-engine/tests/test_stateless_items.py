@@ -429,8 +429,13 @@ def test_actor_turn_charge_authority_schema_and_projection_faults(monkeypatch):
         }
     )
     assert execute(wrong_turn, loader).status == "rejected"
-    for field in InventoryEntry.model_fields:
-        value = request.model_dump(mode="python")
+    wire = request.model_dump(mode="python")
+    assert "attuned_actor_id" not in wire["state_snapshot"]["inventory_state"]["entries"][0]
+    assert RuleEvaluationRequest.model_validate(wire) == request
+    for field, definition in InventoryEntry.model_fields.items():
+        if not definition.is_required():
+            continue
+        value = deepcopy(wire)
         del value["state_snapshot"]["inventory_state"]["entries"][0][field]
         with pytest.raises(ValidationError):
             RuleEvaluationRequest.model_validate(value)

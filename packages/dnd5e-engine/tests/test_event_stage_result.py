@@ -291,6 +291,9 @@ def test_exported_schema_requires_stages_and_advertises_versioned_protocols(mode
         "engine-evaluation/37",
         "engine-evaluation/40",
         "engine-evaluation/41",
+        "engine-evaluation/42",
+        "engine-evaluation/45",
+        "engine-evaluation/46",
     ]
     assert (
         schema["$defs"]["EventStageFacts"]["properties"]["schema_version"]["const"]

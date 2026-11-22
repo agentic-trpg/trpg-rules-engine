@@ -8,6 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from dnd5e_engine.evaluation_contracts import (
+    CONDITION_CHOICE_SCHEMA_VERSION,
     CombatIntentPayload,
     RuleEvaluationRequest,
     RuleEvaluationResult,
@@ -31,6 +32,17 @@ from tests.c20_support import act, combatant, events, pc, start
 from tests.evaluation_support import FOE, HERO
 from tests.test_stateless_attack import apply_delta, execute
 from tests.test_stateless_spell_attack import spell_attack_wire
+
+
+def test_selected_condition_wire_rejects_combat_pass():
+    wire = cast_request().model_dump(mode="json")
+    wire["payload"] = {"intent_type": "pass"}
+    ordinary = RuleEvaluationRequest.model_validate_json(dumps(wire))
+    assert execute(ordinary, get_default_ruleset()).status == "accepted"
+
+    wire["schema_version"] = CONDITION_CHOICE_SCHEMA_VERSION
+    with pytest.raises(ValidationError, match="requires a creature spell and selected condition"):
+        RuleEvaluationRequest.model_validate_json(dumps(wire))
 
 
 def cast_request(*, seed=0, hit_points=40, immune=False):

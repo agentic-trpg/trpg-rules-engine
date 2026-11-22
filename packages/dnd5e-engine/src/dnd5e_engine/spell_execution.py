@@ -162,6 +162,7 @@ def admission_failure(
     *,
     direct_carrier: bool = False,
     ongoing_carrier: bool = False,
+    condition_removal: bool = False,
 ) -> ExecutionFailure | None:
     """Inspect the selected payload only; no actor, event sink, state or RNG.
 
@@ -170,15 +171,25 @@ def admission_failure(
     Alternative activities are not required merely because they exist.
     Existing C21 direct inputs retain their separate pre-payment legality gate;
     delegated/monster paths cannot claim that unavailable carrier.
+    Condition removal is available only to the scoped selected-condition evaluator;
+    ordinary combat, monster and item callers retain the missing-mechanism refusal.
     """
     review = spell_review(spell)
     if review is None:
         return ExecutionFailure(code="unreviewed_spell", spell_id=spell.slug)
-    if review.required_mechanisms or review.classification == "deferred":
+    supported_mechanisms = (
+        {"condition_removal"} if condition_removal and spell.slug == "lesser-restoration" else set()
+    )
+    missing_mechanisms = tuple(
+        mechanism
+        for mechanism in review.required_mechanisms
+        if mechanism not in supported_mechanisms
+    )
+    if missing_mechanisms or (review.classification == "deferred" and not supported_mechanisms):
         return ExecutionFailure(
             code="missing_mechanism",
             spell_id=spell.slug,
-            mechanisms=review.required_mechanisms or ("reviewed_execution_contract",),
+            mechanisms=missing_mechanisms or ("reviewed_execution_contract",),
         )
     if review.requires_direct_carrier and not direct_carrier:
         return ExecutionFailure(
@@ -236,6 +247,7 @@ def admission_failure(
             and not refs
             and activity.persistent_area is None
             and not by_id[activity.id].host_operation
+            and not (condition_removal and spell.slug == "lesser-restoration")
         ):
             return ExecutionFailure(code="empty_payload", **identity)
         if (

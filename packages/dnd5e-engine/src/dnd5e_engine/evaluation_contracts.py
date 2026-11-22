@@ -67,6 +67,7 @@ from dnd5e_engine.types.checks import CheckRequest, GrantedDie
 
 SCHEMA_VERSION = "engine-evaluation/30"
 ENVIRONMENTAL_SPELL_SCHEMA_VERSION = "engine-evaluation/31"
+FOG_CLOUD_SCHEMA_VERSION = "engine-evaluation/46"
 CHARGED_ITEM_SCHEMA_VERSION = "engine-evaluation/32"
 STAFF_CAST_SCHEMA_VERSION = "engine-evaluation/41"
 MULTI_SPELL_SCHEMA_VERSION = "engine-evaluation/33"
@@ -90,6 +91,7 @@ EvaluationVersion = Literal[
     "engine-evaluation/37",
     "engine-evaluation/40",
     "engine-evaluation/41",
+    "engine-evaluation/46",
 ]
 
 
@@ -412,6 +414,7 @@ class RuleEvaluationRequest(EvaluationModel):
             "engine-evaluation/29": "engine-snapshot/20",
             "engine-evaluation/30": "engine-snapshot/20",
             ENVIRONMENTAL_SPELL_SCHEMA_VERSION: "engine-snapshot/20",
+            FOG_CLOUD_SCHEMA_VERSION: "engine-snapshot/20",
             CHARGED_ITEM_SCHEMA_VERSION: "engine-snapshot/20",
             STAFF_CAST_SCHEMA_VERSION: "engine-snapshot/20",
             MULTI_SPELL_SCHEMA_VERSION: "engine-snapshot/20",
@@ -539,7 +542,7 @@ class RuleEvaluationRequest(EvaluationModel):
             return True
         if self.spell_positions is not None and self.operation_kind != "world.cast_spell":
             raise ValueError("spell positions require world.cast_spell")
-        if self.schema_version == ENVIRONMENTAL_SPELL_SCHEMA_VERSION:
+        if self.schema_version in (ENVIRONMENTAL_SPELL_SCHEMA_VERSION, FOG_CLOUD_SCHEMA_VERSION):
             self._validate_environmental_spell()
             return True
         return False
@@ -797,8 +800,13 @@ class RuleEvaluationResult(EvaluationModel):
             environmental = sum(
                 isinstance(op, WorldEnvironmentalEffectCreate) for op in self.state_delta.operations
             )
-            if environmental != int(self.schema_version == ENVIRONMENTAL_SPELL_SCHEMA_VERSION):
-                raise ValueError("evaluation/31 requires exactly one environmental effect creation")
+            if environmental != int(
+                self.schema_version
+                in (ENVIRONMENTAL_SPELL_SCHEMA_VERSION, FOG_CLOUD_SCHEMA_VERSION)
+            ):
+                raise ValueError(
+                    "spatial creation schema requires exactly one environmental effect creation"
+                )
             spatial_ends = sum(
                 isinstance(op, WorldEnvironmentalEffectEnd) for op in self.state_delta.operations
             )
@@ -917,6 +925,7 @@ class RuleEvaluationResult(EvaluationModel):
 
             if request.schema_version in (
                 ENVIRONMENTAL_SPELL_SCHEMA_VERSION,
+                FOG_CLOUD_SCHEMA_VERSION,
                 SPATIAL_EFFECT_END_SCHEMA_VERSION,
             ):
                 from dnd5e_engine.evaluation_environmental_spells import verify_environmental_cast

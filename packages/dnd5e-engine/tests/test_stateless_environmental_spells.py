@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from dnd5e_engine.environment import EnvironmentalSource, environmental_dispels
 from dnd5e_engine.evaluation_contracts import (
     ENVIRONMENTAL_SPELL_SCHEMA_VERSION,
+    FOG_CLOUD_SCHEMA_VERSION,
     SCHEMA_VERSION,
     SPATIAL_EFFECT_END_SCHEMA_VERSION,
     RuleEvaluationRequest,
@@ -20,6 +21,7 @@ from dnd5e_engine.evaluation_delta import (
     WorldEnvironmentalEffectCreate,
     WorldEnvironmentalEffectEnd,
 )
+from dnd5e_engine.evaluation_environmental_spells import environmental_spell_schema_version
 from dnd5e_engine.events import IntentSubmitted, SpellCast
 from tests.evaluation_support import FOE, HERO
 from tests.test_stateless_attack import execute
@@ -89,6 +91,53 @@ def test_light_casts_from_known_cantrip_without_payment():
     copy = RuleEvaluationResult.model_validate_json(result.model_dump_json())
     copy.verify_request(request)
     assert copy == execute(request, loader)
+
+
+@pytest.mark.parametrize("slot,radius", [(1, 20), (3, 60)])
+def test_fog_cloud_uses_canonical_fixed_point_area(slot, radius):
+    """Fog Cloud pays the chosen slot and proposes one typed obscuring area."""
+    wire, loader = _wire("fog-cloud", point=True, slot=slot, caster_class="wizard")
+    wire["schema_version"] = FOG_CLOUD_SCHEMA_VERSION
+    request = _request(wire)
+    result = execute(request, loader)
+    assert result.status == "accepted", result.error
+    spend, creation = result.state_delta.operations
+    assert spend.expected.level == slot
+    assert creation.value.anchor == request.payload.target
+    assert creation.value.radius_ft == radius
+    assert creation.value.environment.kind == "fog"
+    assert creation.value.environment.obscurement == "heavy"
+    assert creation.value.environment.strong_wind_dispersal
+    assert creation.value.concentration
+    assert creation.value.duration_seconds == 3600
+    assert RuleEvaluationResult.model_validate_json(result.model_dump_json()) == result
+
+
+def test_fog_cloud_requires_its_schema_and_fixed_point():
+    """Legacy Light/Darkness input cannot quietly acquire Fog Cloud behavior."""
+    wire, loader = _wire("fog-cloud", point=True)
+    assert execute(_request(wire), loader).status == "unsupported"
+    wire["schema_version"] = FOG_CLOUD_SCHEMA_VERSION
+    wire["payload"]["target"] = {"kind": "item", "item_id": "stone"}
+    wire["spell_positions"]["target_item"] = dict(
+        item_id="stone", size="small", worn_or_carried_by=None, opaque_cover=False
+    )
+    result = execute(_request(wire), loader)
+    assert (result.status, result.error.code) == ("rejected", "target_invalid")
+
+
+def test_environmental_wire_selection_uses_typed_obscuration():
+    """The host selects the fog wire from rules mechanics instead of spell identity."""
+    loader = BundledAssetLoader()
+    assert environmental_spell_schema_version("fog-cloud", loader) == FOG_CLOUD_SCHEMA_VERSION
+    assert (
+        environmental_spell_schema_version("darkness", loader) == ENVIRONMENTAL_SPELL_SCHEMA_VERSION
+    )
+    assert environmental_spell_schema_version("light", loader) == ENVIRONMENTAL_SPELL_SCHEMA_VERSION
+    assert (
+        environmental_spell_schema_version("fog-cloud", loader, ending=True)
+        == SPATIAL_EFFECT_END_SCHEMA_VERSION
+    )
 
 
 @pytest.mark.parametrize("point", [False, True])

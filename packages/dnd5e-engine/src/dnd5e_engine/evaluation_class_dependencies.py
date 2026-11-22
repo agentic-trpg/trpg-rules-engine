@@ -88,12 +88,14 @@ def class_dependencies(
     stowed_consumable_ids: frozenset[str] = frozenset(),
     reviewed_lore_bard: bool = False,
     reviewed_wizard_pouch: bool = False,
+    reviewed_life_healing: bool = False,
 ) -> str | None:
     """Check class dependencies within the caller's reviewed operation profile.
 
     The reviewed Lore Bard profile requires empty equipment and the complete
     Bard/Lore grants. This profile does not admit Bard feature invocations.
     A caller can admit only the reviewed Wizard pouch without enabling other equipment.
+    Exploration healing can use Life Cleric 3 or 5 with the complete Life grants.
     """
     if actor.species_slug:
         return "subclass/species operation dependencies are not migrated"
@@ -133,8 +135,13 @@ def class_dependencies(
         or actor.proficiency_bonus_override is not None
     ):
         return "Lore Bard requires the ordinary unencumbered level-5 profile"
+    life_cleric = (
+        reviewed_life_healing
+        and levels in ({"cleric": 3}, {"cleric": 5})
+        and actor.subclass_slug == "life"
+    )
     if actor.subclass_slug and not (
-        lore_bard or (levels == {"wizard": 5} and actor.subclass_slug == "evoker")
+        lore_bard or life_cleric or (levels == {"wizard": 5} and actor.subclass_slug == "evoker")
     ):
         return "unreviewed subclass dependencies"
     if levels == {"wizard": 5} and actor.subclass_slug != "evoker":
@@ -142,7 +149,9 @@ def class_dependencies(
     if len(levels) != 1 or sum(levels.values()) != actor.character_level:
         return "only an explicit single-class profile is reviewed"
     slug, level = next(iter(levels.items()))
-    if (not lore_bard and (slug, level) not in _REVIEWED) or actor.class_slug not in (None, slug):
+    if not (lore_bard or life_cleric or (slug, level) in _REVIEWED) or (
+        actor.class_slug not in (None, slug)
+    ):
         return "class/level has unreviewed operation dependencies"
     cls = loader.get_class(slug)
     if cls is None or cls != canonical.get_class(slug):
@@ -150,11 +159,13 @@ def class_dependencies(
     grants = {g.slug for g in cls.granted_features if g.ref_type == "feature" and g.level <= level}
     if equipped and has_equipment and slug == "cleric":
         grants.add("divine-order-protector")
-    if levels == {"wizard": 5} or lore_bard:
+    if levels == {"wizard": 5} or lore_bard or life_cleric:
         # Cutting Words reacts to attack rolls, ability checks, or damage rolls.
         # Font of Inspiration changes rest, recovery, and Inspiration payments.
-        # Neither applies during this heal.
-        subclass_slug = "lore" if lore_bard else "evoker"
+        # Neither applies to healing. Life's active Preserve Life and other
+        # class actions are separate invocations from its Disciple of Life rider.
+        assert actor.subclass_slug is not None
+        subclass_slug = actor.subclass_slug
         additional = _reviewed_subclass_grants(loader, canonical, subclass_slug, slug, level)
         if additional is None:
             return "subclass definition differs from reviewed binding"

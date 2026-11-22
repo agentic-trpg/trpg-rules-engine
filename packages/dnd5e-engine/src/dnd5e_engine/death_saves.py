@@ -21,7 +21,7 @@ this module is the event-producing wrapper above it.
 from __future__ import annotations
 
 import random
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -34,8 +34,10 @@ from dnd5e_engine.events import (
     Stabilized,
 )
 from dnd5e_engine.rules.conditions import d20_test_penalty
+from dnd5e_engine.rules.effects import effective_effects
 from dnd5e_engine.types.combat import Combatant
 from dnd5e_engine.types.conditions import ActiveCondition
+from dnd5e_engine.types.effects import ActiveEffect
 
 
 @dataclass
@@ -157,7 +159,11 @@ class DeathSaveResult:
 
 
 def _roll_d20(
-    rng: random.Random, modifier: int = 0, *, next_save_disadvantage: bool = False
+    rng: random.Random,
+    modifier: int = 0,
+    *,
+    effect_advantage: bool = False,
+    next_save_disadvantage: bool = False,
 ) -> D20Result:
     """The death save's D20 Test through the shared primitive (F2c).
 
@@ -170,7 +176,10 @@ def _roll_d20(
     return roll_d20_test(
         rng,
         modifier,
-        AdvantageSources(disadvantage=("effect",) if next_save_disadvantage else ()),
+        AdvantageSources(
+            advantage=("effect",) if effect_advantage else (),
+            disadvantage=("effect",) if next_save_disadvantage else (),
+        ),
     )
 
 
@@ -179,10 +188,12 @@ def roll_death_save(
     rng: random.Random,
     *,
     consume_next_save_modifier: Callable[[str], bool] | None = None,
+    active_effects: Sequence[ActiveEffect] = (),
 ) -> DeathSaveResult:
     """Roll a single death save for ``combatant`` and return the resulting
     events + updated combatant state.
 
+    The caller supplies any active effects using the shared death-save flag.
     Caller-owned preconditions:
     - ``combatant`` is a Character at 0 HP and not yet stable / not yet dead.
       This helper does not re-check; producing a roll for a non-dying PC is a
@@ -204,9 +215,18 @@ def roll_death_save(
         if consume_next_save_modifier is not None
         else False
     )
+    effect_advantage = any(
+        change.key == "flags.advantage.save.death"
+        and change.mode == "override"
+        and change.value is True
+        for effect in effective_effects(active_effects)
+        if not effect.disabled and effect.target_id == combatant.entity_id
+        for change in effect.changes
+    )
     roll = _roll_d20(
         rng,
         d20_test_penalty(combatant.conditions),
+        effect_advantage=effect_advantage,
         next_save_disadvantage=next_save_disadvantage,
     )
     natural = roll.kept

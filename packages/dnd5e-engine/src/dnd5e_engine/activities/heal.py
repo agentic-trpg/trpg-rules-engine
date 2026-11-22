@@ -17,6 +17,8 @@ emits the rolled magnitude for damage.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
 from dnd5e_srd_data.schema.monster import MonsterTraitMechanic
@@ -38,8 +40,21 @@ _LOGGER = logging.getLogger(__name__)
 _TEMP_HP_TYPE: Final[str] = "temphp"
 
 
-def resolve_heal(activity: HealActivity, ctx: ActivityResolutionContext) -> None:
-    """Roll ``activity.healing`` once per target and emit a healing event.
+@dataclass(frozen=True)
+class HealingModifiers:
+    """Validated changes to one recipient's immediate HP restoration."""
+
+    bonus: int = 0
+    maximize_dice: bool = False
+
+
+def resolve_heal(
+    activity: HealActivity,
+    ctx: ActivityResolutionContext,
+    *,
+    modifiers: Mapping[str, HealingModifiers] | None = None,
+) -> None:
+    """Resolve one heal per target, with caller-supplied modifiers only for HP restoration.
 
     No-op only when the healing block carries nothing to restore: no dice
     (``number``/``denomination``), no ``bonus``, AND no active ``custom.formula``.
@@ -60,6 +75,7 @@ def resolve_heal(activity: HealActivity, ctx: ActivityResolutionContext) -> None
 
     is_temp_hp = _TEMP_HP_TYPE in healing.types
     cast_level = ctx.slot_level or ctx.base_spell_level or 0
+    unmodified = HealingModifiers()
     for target in ctx.targets:
         # C18 §Monster action economy — SRD 5.2 stat-block trait "Swarm":
         # "The swarm can't regain Hit Points or gain Temporary Hit Points"
@@ -70,11 +86,20 @@ def resolve_heal(activity: HealActivity, ctx: ActivityResolutionContext) -> None
         if MonsterTraitMechanic.SWARM in target.trait_mechanics:
             _LOGGER.info("swarm_no_hp_gain target_id=%s", target.entity_id)
             continue
-        amount = roll_damage_part(
-            healing,
-            ctx.rng,
-            slot_level=ctx.slot_level,
-            base_level=ctx.base_spell_level,
+        contribution = (
+            modifiers.get(target.entity_id, unmodified)
+            if modifiers and not is_temp_hp
+            else unmodified
+        )
+        amount = (
+            roll_damage_part(
+                healing,
+                ctx.rng,
+                slot_level=ctx.slot_level,
+                base_level=ctx.base_spell_level,
+                maximize_dice=contribution.maximize_dice,
+            )
+            + contribution.bonus
         )
         if is_temp_hp:
             ctx.event_emitter(TempHpApplied(target_id=target.entity_id, amount=amount))

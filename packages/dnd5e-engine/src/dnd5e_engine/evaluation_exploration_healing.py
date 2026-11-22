@@ -5,17 +5,18 @@ from dnd5e_srd_data.schema.common import HealActivity
 from dnd5e_srd_data.schema.spell import CastingTimeUnit, Spell, SpellRangeUnits
 
 from dnd5e_engine.activities.build_context import build_activity_context
-from dnd5e_engine.activities.resolver import resolve_activity
+from dnd5e_engine.activities.heal import HealingModifiers, resolve_heal
 from dnd5e_engine.damage_rules import healing_balance
 from dnd5e_engine.evaluation_actor import combatant
+from dnd5e_engine.evaluation_beacon import is_reviewed_beacon_effect
 from dnd5e_engine.evaluation_class_dependencies import class_dependencies
 from dnd5e_engine.evaluation_contracts import ExplorationSpellCastPayload, RuleEvaluationRequest
 from dnd5e_engine.evaluation_delta import HPDelta, ResourceUpdate, StateDelta
 from dnd5e_engine.evaluation_equipment_dependencies import reviewed_healing_potion_owners
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError
+from dnd5e_engine.evaluation_resources import SlotResource
 from dnd5e_engine.evaluation_rng import RNGTransition
 from dnd5e_engine.evaluation_ruleset import get_default_ruleset
-from dnd5e_engine.evaluation_speed_effects import world_walk_bonus
 from dnd5e_engine.evaluation_spells import ordinary_spell_mechanism, spell_event
 from dnd5e_engine.evaluation_state import CharacterStateV2, NonCombatSnapshot
 from dnd5e_engine.evaluation_turn import TurnEvaluation, _refuse
@@ -57,19 +58,63 @@ def exploration_healing_hp_delta(target: CharacterStateV2, amount: int) -> tuple
     )
 
 
-def _has_unreviewed_healing_dependencies(snapshot: NonCombatSnapshot) -> bool:
-    """Check the fixed heal actors for effects outside the reviewed passive walk profile."""
-    if any(actor.trait_mechanics for actor in snapshot.character_states):
-        return True
+def exploration_healing_maximizes(
+    snapshot: NonCombatSnapshot,
+    actor_id: str,
+    target_id: str,
+    loader: AssetLoader,
+) -> bool:
+    """Check scoped passive effects and detect maximum healing on the recipient.
+
+    Unknown active mechanics raise ValueError before any RNG is used.
+    """
+    from dnd5e_engine.evaluation_timed_spells import is_healing_neutral_elapsed_spell
+
+    maximize = False
     for effect in snapshot.effect_states:
-        if effect.disabled:
+        if effect.disabled or effect.target_id not in (actor_id, target_id):
             continue
-        try:
-            # The same complete shape checked for walking has no healing or action hook.
-            world_walk_bonus(effect)
-        except ValueError:
-            return True
-    return False
+        if is_reviewed_beacon_effect(effect, loader):
+            maximize |= effect.target_id == target_id
+        elif not is_healing_neutral_elapsed_spell(effect):
+            raise ValueError("unreviewed healing effect")
+    return maximize
+
+
+def _exploration_healing_modifiers(
+    snapshot: NonCombatSnapshot,
+    actor: CharacterStateV2,
+    target: CharacterStateV2,
+    payment: ResourceUpdate,
+    loader: AssetLoader,
+) -> HealingModifiers:
+    """Combine the verified caster's slotted spell rider with target healing effects."""
+    if actor.trait_mechanics or target.trait_mechanics:
+        raise ValueError("unreviewed healing trait")
+    canonical = get_default_ruleset()
+    potion_owners = reviewed_healing_potion_owners(snapshot, loader, canonical)
+    if failure := class_dependencies(
+        actor,
+        snapshot,
+        loader,
+        canonical,
+        equipped=True,
+        allow_stowed_healing_potions=actor.entity_id in potion_owners,
+        reviewed_life_healing=True,
+    ):
+        raise ValueError(failure)
+    maximize = exploration_healing_maximizes(snapshot, actor.entity_id, target.entity_id, loader)
+    bonus = 0
+    if (
+        isinstance(payment.expected, SlotResource)
+        and payment.expected.kind == "spell_slot"
+        and actor.subclass_slug == "life"
+        and "disciple-of-life" in (actor.granted_features or ())
+    ):
+        # This is the same-turn spell restoration, with a verified ordinary slot spend.
+        # The reviewed SRD grant is keyed to the level of the actual spent slot.
+        bonus = 2 + payment.expected.level
+    return HealingModifiers(bonus=bonus, maximize_dice=maximize)
 
 
 def evaluate_exploration_healing(
@@ -91,19 +136,10 @@ def evaluate_exploration_healing(
     assert isinstance(payload, ExplorationSpellCastPayload)
     if target.hp_current <= 0:
         return _refuse("rejected", "target_invalid", "healing requires a living positive-HP target")
-    if _has_unreviewed_healing_dependencies(snapshot):
-        return _refuse("unsupported", "healing.dependencies", "unreviewed healing trait or effect")
-    canonical = get_default_ruleset()
-    potion_owners = reviewed_healing_potion_owners(snapshot, loader, canonical)
-    if failure := class_dependencies(
-        actor,
-        snapshot,
-        loader,
-        canonical,
-        equipped=True,
-        allow_stowed_healing_potions=actor.entity_id in potion_owners,
-    ):
-        return _refuse("unsupported", "healing.dependencies", failure)
+    try:
+        modifiers = _exploration_healing_modifiers(snapshot, actor, target, payment, loader)
+    except ValueError as exc:
+        return _refuse("unsupported", "healing.dependencies", str(exc))
 
     rng = request.rng_context.state.restore()
     events: list[CombatEvent] = [
@@ -132,7 +168,7 @@ def evaluate_exploration_healing(
         passive_damage_modifiers={},
         save_modifiers={},
     )
-    resolve_activity(activity, context)
+    resolve_heal(activity, context, modifiers={target.entity_id: modifiers})
     if (
         len(events) != 3
         or not isinstance(healing := events[2], HealingApplied)

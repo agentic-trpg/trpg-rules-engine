@@ -97,8 +97,11 @@ def roll_damage_part(
     character_level: int | None = None,
     slot_level: int | None = None,
     base_level: int | None = None,
+    maximize_dice: bool = False,
 ) -> int:
     """Roll a damage part against ``rng``, applying scaling then crit doubling.
+
+    With maximize_dice each die contributes its top face without drawing from RNG.
 
     Order mirrors ``effects/damage.py:_roll_damage``: cantrip / upcast scaling is
     folded into the dice count FIRST, then crit doubling doubles the (already
@@ -138,10 +141,17 @@ def roll_damage_part(
 
     node = parse_expression(expr)
     scaling = getattr(part, "scaling", None)
-    if scaling is not None and steps and scaling.formula:
-        validate_expression(scaling.formula)
-    total = evaluate(node, rng, crit=crit, die_floor=die_floor)
-    return total + _scaling_formula_bonus(part, steps, rng)
+    scaling_formula = (
+        parse_expression(scaling.formula)
+        if scaling is not None and steps and scaling.formula
+        else None
+    )
+    total = evaluate(node, rng, crit=crit, die_floor=die_floor, maximize_dice=maximize_dice)
+    if scaling_formula is not None:
+        total += sum(
+            evaluate(scaling_formula, rng, maximize_dice=maximize_dice) for _ in range(steps)
+        )
+    return total
 
 
 def _scaling_steps(
@@ -225,23 +235,6 @@ def _scaling_die_increase(part: DamagePart | DamagePartBlock, steps: int) -> int
     if scaling.number is None:
         return steps
     return int(scaling.number) * steps
-
-
-def _scaling_formula_bonus(
-    part: DamagePart | DamagePartBlock, steps: int, rng: random.Random
-) -> int:
-    """Foundry ``scaledFormula`` formula branch: add ``scaling.formula`` per step.
-
-    The formula's @-tokens are resolved upstream (``formula.resolve_damage_block``)
-    before this point; a literal ("5") folds to its value and a dice formula draws
-    from the seeded ``rng`` so determinism holds. Added ``steps`` times.
-    """
-    scaling = getattr(part, "scaling", None)
-    if scaling is None or not steps or not scaling.formula:
-        return 0
-    # Roll the formula once per step (independent draws when it carries dice;
-    # identical to multiply for the flat literals in the SRD corpus).
-    return sum(roll_expr(scaling.formula, rng) for _ in range(steps))
 
 
 def _cantrip_dice_count(character_level: int) -> int:

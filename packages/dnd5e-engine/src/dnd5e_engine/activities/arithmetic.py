@@ -144,17 +144,27 @@ def scalar(node: Expression) -> int:
 
 
 def evaluate(
-    node: Expression, rng: random.Random | None, *, crit: bool = False, die_floor: int | None = None
+    node: Expression,
+    rng: random.Random | None,
+    *,
+    crit: bool = False,
+    die_floor: int | None = None,
+    maximize_dice: bool = False,
 ) -> int:
-    """Evaluate the parsed arithmetic expression with the supplied token and dice context."""
+    """Evaluate the expression, optionally using each die’s maximum without drawing."""
     if node.op == "int":
         return node.value
     if node.op == "dice":
+        count = node.args[0].value * (2 if crit else 1)
+        if maximize_dice:
+            return count * node.value
         if rng is None:
             raise ValueError("dice require a resolution RNG")
-        count = node.args[0].value * (2 if crit else 1)
         return sum(max(rng.randint(1, node.value), die_floor or 1) for _ in range(count))
-    values = [evaluate(arg, rng, crit=crit, die_floor=die_floor) for arg in node.args]
+    values = [
+        evaluate(arg, rng, crit=crit, die_floor=die_floor, maximize_dice=maximize_dice)
+        for arg in node.args
+    ]
     match node.op:
         case "+":
             return values[0] + values[1]

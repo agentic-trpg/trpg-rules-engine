@@ -10,6 +10,7 @@ from dnd5e_engine.activities.context import ActivityResolutionContext
 from dnd5e_engine.activities.d20 import AdvantageSources
 from dnd5e_engine.activities.save_primitive import SaveRoll, roll_save
 from dnd5e_engine.evaluation_actor import combatant
+from dnd5e_engine.evaluation_beacon import is_reviewed_beacon_effect
 from dnd5e_engine.evaluation_contracts import RuleEvaluationRequest, SavePayload
 from dnd5e_engine.evaluation_delta import StateDelta
 from dnd5e_engine.evaluation_rng import RNGTransition
@@ -160,7 +161,12 @@ def evaluate_save(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
         return _refuse(
             "unsupported", "save.cover", "cover needs a complete source geometry contract"
         )
-    if snapshot.effect_states:
+    active_effects = tuple(
+        effect
+        for effect in snapshot.effect_states
+        if effect.target_id == target.entity_id and not effect.disabled
+    )
+    if any(not is_reviewed_beacon_effect(effect, loader) for effect in active_effects):
         return _refuse(
             "unsupported", "save.effects", "active effect modifiers require closed deltas"
         )
@@ -192,6 +198,8 @@ def evaluate_save(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
     if failure:
         return _refuse("unsupported", "save.actor", failure)
     rng = request.rng_context.state.restore()
+    if payload.ability == "wis" and active_effects:
+        payload = payload.model_copy(update={"advantage": (*payload.advantage, "effect")})
     event = resolve_snapshot_save(target, payload, rng)
     return dict(
         status="accepted",

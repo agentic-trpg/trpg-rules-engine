@@ -24,6 +24,7 @@ from dnd5e_engine.activities.check_pipeline import validate_check_effect_change
 from dnd5e_engine.activities.effects import passive_effect_to_active_effect
 from dnd5e_engine.activities.passive_stats import interpret_passive_stats
 from dnd5e_engine.areas import has_line_of_effect
+from dnd5e_engine.evaluation_beacon import beacon_effect, reviewed_beacon_spell
 from dnd5e_engine.evaluation_casting import CastingStateV20
 from dnd5e_engine.evaluation_contracts import (
     ExplorationSpellCastPayload,
@@ -114,6 +115,10 @@ def _passive_profile(
     casting_activity: bool = False,
 ) -> tuple[UtilityActivity, ActiveEffect, int]:
     """Build an admitted base-level utility and elapsed-time effect from rule data."""
+    if reviewed_beacon_spell(spell) and not casting_activity and not allow_consumed_material:
+        activity = spell.activities[0]
+        assert isinstance(activity, UtilityActivity)
+        return activity, beacon_effect(spell, target_id, caster_id), 1
     seconds_per_unit = _SECONDS_PER_UNIT.get(spell.duration.units)
     time = spell.casting_time
     ready_timing = (
@@ -346,13 +351,8 @@ def verify_timed_spell_effect(
         raise ValueError("timed effect differs from its bound consequences")
 
 
-def attack_world_spell_modifiers(effect: EffectState) -> tuple[int, int | None]:
-    """Verify the elapsed spell shape and return its walking bonus and Armor Class floor.
-
-    The fixed effect carries the resolved cast data. Its origin names the application,
-    while its host owns the world deadline. Unreviewed modifiers or lifecycle fields
-    raise ValueError before payment or RNG use.
-    """
+def validate_elapsed_spell_shape(effect: EffectState, *, allow_concentration: bool = False) -> None:
+    """Require an enabled elapsed passive or an explicitly supported concentration marker."""
     label = effect.id.removeprefix("effect:")
     prefix = f"cast:{label}:"
     duration = effect.duration
@@ -366,7 +366,14 @@ def attack_world_spell_modifiers(effect: EffectState) -> tuple[int, int | None]:
         or not effect.changes
         or effect.action_policy is not None
         or effect.statuses
-        or effect.flags
+        or (
+            effect.flags
+            and not (
+                allow_concentration
+                and len(effect.flags) == 1
+                and effect.flags.get("concentration") is True
+            )
+        )
         or effect.lifecycle is not None
         or effect.end_effects
         or duration.seconds is None
@@ -381,7 +388,37 @@ def attack_world_spell_modifiers(effect: EffectState) -> tuple[int, int | None]:
             )
         )
     ):
-        raise ValueError("attack requires an enabled elapsed-time passive spell effect")
+        raise ValueError("requires an enabled elapsed-time passive spell effect")
+
+
+def is_healing_neutral_elapsed_spell(effect: EffectState) -> bool:
+    """Check the elapsed movement, senses, Armor Class and skill-only vocabulary."""
+    validate_elapsed_spell_shape(effect, allow_concentration=True)
+    stat_changes = []
+    for change in effect.changes:
+        if change.key.startswith(("system.attributes.movement.", "system.attributes.senses.")):
+            if not isinstance(change.value, str) or change.mode not in ("add", "upgrade"):
+                return False
+            stat_changes.append(
+                PassiveEffectChange(
+                    key=change.key, mode=2 if change.mode == "add" else 4, value=change.value
+                )
+            )
+        elif change.key in ARMOR_CLASS_FLOOR_KEYS:
+            armor_class_floor_value(change)
+        elif not _flat_skill_bonus(change):
+            return False
+    return (
+        not stat_changes
+        or not interpret_passive_stats(
+            changes=stat_changes, trait_grants=(), species_senses=None
+        ).skipped_keys
+    )
+
+
+def attack_world_spell_modifiers(effect: EffectState) -> tuple[int, int | None]:
+    """Verify elapsed passive changes used by attacks and return walk and Armor Class."""
+    validate_elapsed_spell_shape(effect)
     walk = []
     floors = []
     for change in effect.changes:

@@ -374,6 +374,8 @@ class RuleEvaluationRequest(EvaluationModel):
         """Restore and validate the operation's closed check payload."""
         if info.mode == "json" and info.data.get("operation_kind") == "world.cast_spell_many":
             return ExplorationMultiSpellCastPayload.model_validate_json(to_json(value))
+        if info.mode == "json" and info.data.get("operation_kind") == "world.use_item":
+            return ExplorationItemUsePayload.model_validate_json(to_json(value))
         if info.mode == "json" and info.data.get("operation_kind") == "combat.intent":
             return CombatIntentPayload.model_validate_json(to_json(value))
         if info.data.get("operation_kind") == "rules.rest":
@@ -420,30 +422,7 @@ class RuleEvaluationRequest(EvaluationModel):
         }
         if self.state_snapshot.snapshot_schema_version != version_pairs[self.schema_version]:
             raise ValueError("evaluation and snapshot versions differ")
-        positions = self.spell_positions
-        if (
-            positions is not None
-            and positions.visible_target_id is not None
-            and (
-                type(self.payload) is not ExplorationSpellCastPayload
-                or self.payload.spell_id != "healing-word"
-                or self.payload.material_instance_id is not None
-                or positions.visible_target_id != self.payload.target_id
-            )
-        ):
-            raise ValueError("verified visibility must match the selected Healing Word creature")
-        if isinstance(self.payload, ExplorationItemUsePayload) and (
-            self.payload.cast_level is not None and self.schema_version != STAFF_CAST_SCHEMA_VERSION
-        ):
-            raise ValueError("explicit item cast level requires evaluation/41")
-        if self.schema_version != STAFF_CAST_SCHEMA_VERSION and (
-            self.item_area_facts is not None
-            or (
-                isinstance(self.payload, ExplorationItemUsePayload)
-                and self.payload.area_target is not None
-            )
-        ):
-            raise ValueError("area item casts require evaluation/41")
+        self._validate_cast_facts()
         if self._validate_versioned_operation():
             return self
         if self.spell_positions is not None and self.spell_positions.target_item is not None:
@@ -490,6 +469,30 @@ class RuleEvaluationRequest(EvaluationModel):
         elif not isinstance(self.payload, CheckPayload) or self.payload.actor_id != self.actor_id:
             raise ValueError("rules.check requires a matching actor and explicit adjudication")
         return self
+
+    def _validate_cast_facts(self) -> None:
+        """Bind the extra cast facts to their supported operation and selection."""
+        positions = self.spell_positions
+        if (
+            positions is not None
+            and positions.visible_target_id is not None
+            and (
+                type(self.payload) is not ExplorationSpellCastPayload
+                or self.payload.spell_id != "healing-word"
+                or self.payload.material_instance_id is not None
+                or positions.visible_target_id != self.payload.target_id
+            )
+        ):
+            raise ValueError("verified visibility must match the selected Healing Word creature")
+        if self.schema_version == STAFF_CAST_SCHEMA_VERSION:
+            return
+        if isinstance(self.payload, ExplorationItemUsePayload):
+            if self.payload.cast_level is not None:
+                raise ValueError("explicit item cast level requires evaluation/41")
+            if self.payload.area_target is not None:
+                raise ValueError("area item casts require evaluation/41")
+        if self.item_area_facts is not None:
+            raise ValueError("area item casts require evaluation/41")
 
     def _validate_versioned_operation(self) -> bool:
         """Validate specialist evaluation schemas and reject misplaced spatial facts."""

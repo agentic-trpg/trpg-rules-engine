@@ -672,8 +672,8 @@ def evaluate_exploration_spell(  # noqa: C901 - bounded spell profiles share one
     if spell is None or spell.slug != payload.spell_id:
         return _refuse("unsupported", "spell.asset", "selected spell is absent from the ruleset")
     healing = exploration_healing_activity(loader, spell)
-    removal = condition_choice_profile(spell) if payload.selected_condition is not None else None
-    if payload.selected_condition is not None and removal is None:
+    removal = condition_choice_profile(spell) if payload.has_condition_choice else None
+    if payload.has_condition_choice and removal is None:
         return _refuse(
             "unsupported", "spell.condition_choice", "spell has no reviewed condition choice"
         )

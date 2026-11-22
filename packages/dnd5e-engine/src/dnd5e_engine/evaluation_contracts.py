@@ -173,6 +173,31 @@ class ExplorationSpellCastPayload(EvaluationModel):
     selected_condition: Annotated[str, Field(min_length=1)] | None = Field(
         default=None, exclude_if=lambda value: value is None
     )
+    selected_condition_id: Annotated[str, Field(pattern=r"^[0-9a-f]{32}$")] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+
+    @model_validator(mode="after")
+    def _validate_condition_selection(self) -> Self:
+        """Accept one explicit condition selector, independently of the spell asset."""
+        if self.selected_condition is not None and self.selected_condition_id is not None:
+            raise ValueError("select an independent condition by name or identity")
+        if self.selected_condition_id is not None and self.material_instance_id is not None:
+            raise ValueError("exact condition selection does not use a selected material")
+        return self
+
+    @property
+    def has_condition_choice(self) -> bool:
+        """Report whether the cast supplied either condition selector."""
+        return self.selected_condition is not None or self.selected_condition_id is not None
+
+
+class IndependentConditionSelection(EvaluationModel):
+    """Bind a host-authorized condition ID to its position in the fixed target input."""
+
+    target_id: Annotated[str, Field(min_length=1)]
+    condition_id: Annotated[str, Field(pattern=r"^[0-9a-f]{32}$")]
+    index: Annotated[int, Field(ge=0)]
 
 
 class ExplorationSpellPositions(EvaluationModel):
@@ -354,6 +379,9 @@ class RuleEvaluationRequest(EvaluationModel):
     item_area_facts: ExplorationItemAreaFacts | None = Field(
         default=None, exclude_if=lambda value: value is None
     )
+    independent_condition: IndependentConditionSelection | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
     def without_spell_ends(self) -> Self:
         """Return the native cast request after checking the extension's scope."""
@@ -489,6 +517,11 @@ class RuleEvaluationRequest(EvaluationModel):
 
     def _validate_cast_facts(self) -> None:
         """Bind the extra cast facts to their supported operation and selection."""
+        if self.independent_condition is not None and (
+            self.schema_version != CONDITION_CHOICE_SCHEMA_VERSION
+            or self.operation_kind != "world.cast_spell"
+        ):
+            raise ValueError("independent condition selection requires evaluation/45")
         positions = self.spell_positions
         if (
             positions is not None
@@ -647,10 +680,30 @@ class RuleEvaluationRequest(EvaluationModel):
             self.schema_version == MATERIAL_SPELL_SCHEMA_VERSION
         ):
             raise ValueError("an explicit spell material requires evaluation/35")
-        if (self.payload.selected_condition is not None) != (
+        if self.payload.has_condition_choice != (
             self.schema_version == CONDITION_CHOICE_SCHEMA_VERSION
         ):
             raise ValueError("a selected condition requires evaluation/45")
+        selection = self.independent_condition
+        if (selection is None) != (self.payload.selected_condition_id is None):
+            raise ValueError("exact condition selection requires authorized target facts")
+        if selection is not None:
+            target = next(
+                (
+                    actor
+                    for actor in self.state_snapshot.character_states
+                    if actor.entity_id == self.payload.target_id
+                ),
+                None,
+            )
+            if (
+                selection.condition_id != self.payload.selected_condition_id
+                or selection.target_id != self.payload.target_id
+                or target is None
+                or selection.index >= len(target.conditions)
+                or target.conditions[selection.index].source_effect_id is not None
+            ):
+                raise ValueError("independent condition selection differs from the fixed target")
         positions = self.spell_positions
         if (
             positions is not None

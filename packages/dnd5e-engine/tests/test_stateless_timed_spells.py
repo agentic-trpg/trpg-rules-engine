@@ -8,16 +8,18 @@ from dnd5e_srd_data.schema.spell import Spell
 from pydantic import ValidationError
 
 from dnd5e_engine.evaluation_contracts import (
+    CONDITION_CHOICE_SCHEMA_VERSION,
     SCHEMA_VERSION,
     CombatIntentPayload,
     RuleEvaluationRequest,
     RuleEvaluationResult,
     SpellWillingnessChoice,
 )
-from dnd5e_engine.evaluation_delta import ResourceUpdate, WorldEffectCreate
+from dnd5e_engine.evaluation_delta import ConditionsUpdate, ResourceUpdate, WorldEffectCreate
 from dnd5e_engine.evaluation_effects import effect_state
 from dnd5e_engine.evaluation_ruleset import freeze_ruleset, ruleset_binding
 from dnd5e_engine.evaluation_speed_effects import world_walk_bonus
+from dnd5e_engine.evaluation_state import ConditionRecord
 from dnd5e_engine.evaluation_world_spell_modifiers import world_spell_combat_modifiers
 from dnd5e_engine.events import AttackRolled, EffectApplied, IntentSubmitted, SpellCast
 from dnd5e_engine.reaction_effect_rules import effective_armor_class
@@ -151,6 +153,57 @@ def test_aid_requires_a_reviewed_class_and_positive_hp_target() -> None:
         "target_invalid",
         None,
     )
+
+
+def test_exact_condition_choice_wire_requires_target_bound_independent_record() -> None:
+    """The exact selector resolves just its fixed independent row and leaves RNG intact."""
+    spell = BundledAssetLoader().get_spell("lesser-restoration")
+    wire, loader = spell_wire(spell, caster_class="cleric", caster_level=3)
+    identity = "a" * 32
+    wire["schema_version"] = CONDITION_CHOICE_SCHEMA_VERSION
+    wire["payload"]["selected_condition_id"] = identity
+    independent = ConditionRecord(
+        condition="poisoned",
+        source_entity_id="implied:toxic-injury",
+        scope="session",
+        duration_rounds=None,
+        save_dc=None,
+        applied_round=0,
+        exhaustion_level=1,
+        source_effect_id=None,
+    )
+    other = independent.model_copy(update={"source_entity_id": "implied:poisoned-food"})
+    linked = independent.model_copy(update={"source_effect_id": "effect:linked-poison"})
+    target = wire["state_snapshot"]["character_states"][1]
+    target["conditions"] = [
+        condition.model_dump(mode="json") for condition in (independent, other, linked)
+    ]
+    fixed = {"target_id": FOE, "condition_id": identity, "index": 0}
+    for selection in (
+        None,
+        {**fixed, "target_id": HERO},
+        {**fixed, "condition_id": "b" * 32},
+        {**fixed, "index": 2},
+        {**fixed, "index": 3},
+    ):
+        wire["independent_condition"] = selection
+        with pytest.raises(ValidationError, match="condition selection"):
+            RuleEvaluationRequest.model_validate_json(json.dumps(wire))
+    wire["independent_condition"] = fixed
+    # Linked condition ownership remains the host's responsibility. The resolved
+    # Delta preserves its unchanged projection alongside the unselected row.
+    request = RuleEvaluationRequest.model_validate_json(json.dumps(wire))
+    result = execute(request, loader)
+    assert result.status == "accepted", result.error
+    payment, removal = result.state_delta.operations
+    assert isinstance(payment, ResourceUpdate)
+    assert removal == ConditionsUpdate(
+        kind="actor.conditions_update",
+        target_id=FOE,
+        expected=(independent, other, linked),
+        value=(other, linked),
+    )
+    assert not result.rng_transition.state_changed
 
 
 def _longstrider() -> Spell:

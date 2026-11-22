@@ -13,7 +13,7 @@ from dnd5e_engine.evaluation_projection import EvaluationInvariantError
 from dnd5e_engine.evaluation_rng import RNGTransition
 from dnd5e_engine.evaluation_ruleset import get_default_ruleset
 from dnd5e_engine.evaluation_spells import spell_event
-from dnd5e_engine.evaluation_state import CharacterStateV2
+from dnd5e_engine.evaluation_state import CharacterStateV2, ConditionRecord
 from dnd5e_engine.evaluation_turn import TurnEvaluation, _refuse
 from dnd5e_engine.events import ConditionRemoved, IntentSubmitted
 from dnd5e_engine.spell_execution import admission_failure
@@ -48,6 +48,37 @@ def condition_choice_profile(spell: Spell) -> tuple[UtilityActivity, frozenset[s
     return activity, frozenset({"blinded", "deafened", "paralyzed", "poisoned"})
 
 
+def independent_condition_matches(
+    request: RuleEvaluationRequest, target: CharacterStateV2, eligible: frozenset[str]
+) -> tuple[int, ...]:
+    """Resolve the fixed authorized row or all independent records matching a name."""
+    payload = request.payload
+    if type(payload) is not ExplorationSpellCastPayload or payload.target_id != target.entity_id:
+        return ()
+    exact = request.independent_condition
+    if exact is not None:
+        if (
+            exact.condition_id != payload.selected_condition_id
+            or exact.target_id != target.entity_id
+            or not 0 <= exact.index < len(target.conditions)
+        ):
+            return ()
+        record: ConditionRecord = target.conditions[exact.index]
+        return (
+            (exact.index,)
+            if record.source_effect_id is None and record.condition in eligible
+            else ()
+        )
+    choice = payload.selected_condition
+    if choice not in eligible:
+        return ()
+    return tuple(
+        i
+        for i, record in enumerate(target.conditions)
+        if record.condition == choice and record.source_effect_id is None
+    )
+
+
 def evaluate_condition_choice(
     request: RuleEvaluationRequest,
     spell: Spell,
@@ -60,24 +91,14 @@ def evaluate_condition_choice(
     payload = request.payload
     if not isinstance(payload, ExplorationSpellCastPayload):
         raise EvaluationInvariantError("condition choice requires a creature spell payload")
-    choice = payload.selected_condition
     activity, eligible = profile
-    if (
-        request.schema_version != CONDITION_CHOICE_SCHEMA_VERSION
-        or choice is None
-        or choice not in eligible
-    ):
+    if request.schema_version != CONDITION_CHOICE_SCHEMA_VERSION:
         return _refuse("rejected", "spell.condition_choice", "selected condition is ineligible")
-    matches = [
-        i
-        for i, record in enumerate(target.conditions)
-        if record.condition == choice and record.source_effect_id is None
-    ]
+    matches = independent_condition_matches(request, target, eligible)
     if not matches:
         return _refuse(
-            "rejected", "spell.condition_choice", "selected independent condition is absent"
+            "rejected", "spell.condition_choice", "selected independent condition is ineligible"
         )
-    # LF1122-F40-01: the public name cannot identify one of multiple independent sources.
     if len(matches) != 1:
         return _refuse(
             "rejected",
@@ -85,6 +106,7 @@ def evaluate_condition_choice(
             "multiple independent sources require a source-bound selection",
         )
     index = matches[0]
+    choice = target.conditions[index].condition
     proposed = (*target.conditions[:index], *target.conditions[index + 1 :])
     return dict(
         status="accepted",

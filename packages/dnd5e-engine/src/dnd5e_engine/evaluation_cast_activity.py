@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 
     from dnd5e_engine.evaluation_contracts import RuleEvaluationRequest, RuleEvaluationResult
     from dnd5e_engine.evaluation_turn import TurnEvaluation
+    from dnd5e_engine.types.effects import ActiveEffect
 
 
 CAST_ACTIVITY_SCHEMA_VERSION = "engine-evaluation/36"
@@ -73,7 +74,9 @@ def casting_activity_seconds(spell: Spell, *, as_ritual: bool) -> int:
     return scale * time.value
 
 
-def cast_activity_components(spell: Spell):
+def cast_activity_components(
+    spell: Spell,
+) -> tuple[list[Literal["V", "S", "M"]], str | None, bool, int]:
     """Return the activity's reviewed component metadata for its cast evidence."""
     components, material, consumed, cost = spell_component_metadata(spell)
     if spell.slug == IDENTIFY_SPELL_ID:
@@ -83,7 +86,7 @@ def cast_activity_components(spell: Spell):
 
 def evaluate_cast_activity(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEvaluation:
     """Admit a prepared cast and resolve its payment and consequence on completion."""
-    from dnd5e_engine.evaluation_delta import StateDelta, WorldEffectCreate
+    from dnd5e_engine.evaluation_delta import ResourceUpdate, StateDelta, WorldEffectCreate
     from dnd5e_engine.evaluation_effects import effect_state
     from dnd5e_engine.evaluation_payments import spell_payment
     from dnd5e_engine.evaluation_rng import RNGTransition
@@ -138,16 +141,19 @@ def evaluate_cast_activity(request: RuleEvaluationRequest, loader: AssetLoader) 
         and payload.identify.material not in snapshot.inventory_state.entries
     ):
         return _refuse("rejected", "spell.material", "the selected pearl differs from inventory")
+    active: ActiveEffect | None
     try:
         seconds = casting_activity_seconds(spell, as_ritual=payload.as_ritual)
         if payload.identify is None:
             activity, active, _ = _passive_profile(
                 spell, target_id=actor.entity_id, caster_id=actor.entity_id, casting_activity=True
             )
+            activity_id = activity.id
             identification = None
         else:
             identification = identify_object(spell, payload.identify, actor.entity_id, loader)
-            activity, active = spell.activities[0], None
+            activity_id = spell.activities[0].id
+            active = None
     except ValueError as exc:
         return _refuse("unsupported", "spell.mechanism", str(exc))
     if active is not None and any(
@@ -189,7 +195,10 @@ def evaluate_cast_activity(request: RuleEvaluationRequest, loader: AssetLoader) 
         )
     if payload.elapsed_seconds != seconds:
         return _refuse("rejected", "activity.duration", "casting did not reach its bound deadline")
-    operations = () if payment is None else (payment,)
+    operations: tuple[ResourceUpdate | WorldEffectCreate, ...] = (
+        () if payment is None else (payment,)
+    )
+    consequence: EffectApplied | ObjectIdentified
     if identification is None:
         assert active is not None
         operations += (
@@ -225,7 +234,7 @@ def evaluate_cast_activity(request: RuleEvaluationRequest, loader: AssetLoader) 
                 spell_id=spell.slug,
                 target_id=target_id,
                 source_id=payload.spell_source_id,
-                activity_id=activity.id,
+                activity_id=activity_id,
             ),
             SpellCast(
                 actor_id=actor.entity_id,
@@ -274,20 +283,19 @@ def verify_cast_activity(result: RuleEvaluationResult, request: RuleEvaluationRe
     identify = payload.identify
     if len(operations) != int(not payload.as_ritual) + int(identify is None):
         raise ValueError("timed casting completion has an invalid operation count")
-    creation = operations[-1] if identify is None else None
-    if identify is None and (
-        not isinstance(creation, WorldEffectCreate)
-        or (
-            creation.value.session_id,
-            creation.value.command_id,
-            creation.value.ruleset_binding,
-            creation.value.source_id,
-            creation.value.effect.target_id,
-            creation.value.expiry.action,
-            creation.value.concentration,
-            creation.expected_absent,
-        )
-        != (
+    creation: WorldEffectCreate | None = None
+    if identify is None:
+        operation = operations[-1]
+        if not isinstance(operation, WorldEffectCreate) or (
+            operation.value.session_id,
+            operation.value.command_id,
+            operation.value.ruleset_binding,
+            operation.value.source_id,
+            operation.value.effect.target_id,
+            operation.value.expiry.action,
+            operation.value.concentration,
+            operation.expected_absent,
+        ) != (
             request.session_id,
             request.command_id,
             request.ruleset_binding,
@@ -296,9 +304,9 @@ def verify_cast_activity(result: RuleEvaluationResult, request: RuleEvaluationRe
             "remove",
             False,
             True,
-        )
-    ):
-        raise ValueError("timed casting effect differs from its closed self application")
+        ):
+            raise ValueError("timed casting effect differs from its closed self application")
+        creation = operation
     if not payload.as_ritual:
         payment = operations[0]
         resources = request.state_snapshot.resource_state
@@ -337,8 +345,10 @@ def verify_cast_activity(result: RuleEvaluationResult, request: RuleEvaluationRe
             consequence.identification.charges_remaining,
         ) != (request.actor_id, identify.target_id, identify.item_slug, identify.charges_remaining):
             raise ValueError("Identify result differs from the selected object")
-    elif (
-        not isinstance(consequence, EffectApplied)
-        or effect_state(consequence.effect) != creation.value.effect
-    ):
-        raise ValueError("timed casting effect evidence differs from its application")
+    else:
+        assert creation is not None
+        if (
+            not isinstance(consequence, EffectApplied)
+            or effect_state(consequence.effect) != creation.value.effect
+        ):
+            raise ValueError("timed casting effect evidence differs from its application")

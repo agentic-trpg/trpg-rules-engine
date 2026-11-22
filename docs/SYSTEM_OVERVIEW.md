@@ -34,6 +34,12 @@ RE 求值选中的普通治疗药水，返回回血、物品消耗、事件与 R
 施法者维持的效果并保留其他来源。协议和范围见
 [Stateless 合同](dev/stateless-evaluation.md#timed-spell-creation-and-voluntary-concentration-release)。
 
+探索单目标隐形术通过现有定时施法入口建立条件关联及专注。已绑定的终止规则
+向 SM 声明所需的目标效果。若施法者带有该应用，evaluation `/37` 在一次
+成功施法求值中同时提出新法术后果和旧应用的精确解除。SM 采用提案并统一提交。
+主动解除使用固定来源和完整效果身份，首批支持探索中的非专注大步奔行。
+详见[提前结束探索法术](dev/stateless-evaluation.md#early-ending-of-exploration-spells)。
+
 探索持续法术需要目标自愿时，RE 可以在扣法术位前返回 `needs_choice`。
 Host 核实意愿后随新的固定快照传入目标身份，RE 重新准入并提议机械变化。
 

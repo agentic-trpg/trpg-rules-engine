@@ -41,6 +41,7 @@ from dnd5e_engine.evaluation_payments import spell_payment
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError
 from dnd5e_engine.evaluation_rng import RNGTransition
 from dnd5e_engine.evaluation_spell_materials import consumed_material_slug, spell_material_payment
+from dnd5e_engine.evaluation_spell_termination import reviewed_invisibility
 from dnd5e_engine.evaluation_spells import source_failure
 from dnd5e_engine.evaluation_state import CharacterStateV2, NonCombatSnapshot
 from dnd5e_engine.evaluation_turn import TurnEvaluation, _refuse
@@ -200,20 +201,25 @@ def _passive_profile(
     # The Foundry import can retain a one-round default even when the spell has
     # an explicit elapsed duration. The world-time result carries seconds only.
     duration = passive.duration or {}
+    invisible = reviewed_invisibility(spell)
     if (
         not passive.name.strip()
         or passive.disabled
         or passive.transfer
-        or passive.statuses
+        or passive.statuses != (["invisible"] if invisible else [])
         or passive.action_policy is not None
         or duration not in ({"seconds": seconds}, {"seconds": seconds, "rounds": 1})
         or any(type(value) is not int for value in duration.values())
-        or not passive.changes
+        or (not invisible and not passive.changes)
     ):
         raise ValueError("requires an enabled passive effect with matching elapsed duration")
     active = passive_effect_to_active_effect(
         passive, target_id=target_id, caster_id=caster_id, concentration=spell.concentration
     )
+    if invisible:
+        active = active.model_copy(
+            update={"id": "effect:invisibility", "origin": f"cast:invisibility:{caster_id}"}
+        )
     _validate_passive_changes(passive, active)
     if spell.concentration and not all(_flat_skill_bonus(change) for change in active.changes):
         raise ValueError("elapsed concentration supports only flat skill bonuses")
@@ -527,8 +533,8 @@ def evaluate_exploration_spell(
 
     A reviewed touch or visible-target heal resolves immediately. The timed branch supports
     movement, senses, Armor Class floors and flat skill bonuses with unchanged RNG.
-    Flat skill bonuses may require concentration. A willing-creature profile
-    requires self-targeting or verified willingness.
+    Flat skill bonuses and reviewed single-target Invisibility may require
+    concentration. A willing-creature profile requires self-targeting or verified willingness.
     A distinct target with unknown willingness yields a choice before payment.
     The host owns persistence, elapsed time and expiry.
     """

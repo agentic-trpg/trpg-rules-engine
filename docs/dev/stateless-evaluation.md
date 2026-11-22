@@ -1325,6 +1325,31 @@ final Snapshot/Delta cannot stand in for every intermediate event stage. Formal
 trusted SM/RE stage integration and atomic Evidence/Outbox acceptance remain pending.
 
 
+## Early ending of exploration spells
+
+The reviewed base-level Invisibility produces one elapsed concentration effect with
+the Invisible condition. `cast_termination_needs` declares the exact definition and
+subject of the successful-cast trigger from the bound ruleset. The host supplies
+only the caster's matching timed application, including its full effect identity,
+original cast and current deadline. An Invisible caster still has their own sight
+for targeting. Seeing an Invisible creature requires separate observer rules.
+
+Evaluation `/37` wraps the native exploration cast contract when a relevant
+application is active. It accepts the existing single-target, multi-target,
+environmental, charged-item and timed-activity cast profiles. It emits a guarded
+`world.spell_end` operation for each supplied application only when an accepted
+cast produces actual `SpellCast` evidence for its affected actor. Starting a
+timed cast and waiting for a choice produce no ending. The host uses the original
+cast payment, effect and RNG proposals and validates the precise terminal
+operations before one commit. This slice tests public Light as the trigger.
+Attack rolls and dealing damage require their own trigger integrations.
+
+For the voluntary Duration rule the host supplies one exact ongoing application
+and the original caster's current condition facts to `plan_spell_dismissal`.
+The first supported profile is the bound nonconcentration Longstrider. The plan
+carries no resource payment; the host guards the original cast and removes only
+that application.
+
 ## Cross-repository contract alignment (2026-10-20)
 
 Current source baseline: RE `66384b00363c00fc92622dbbf77ccfea012b1b5d`, SM `d5d8c494e2fa102ca924199b31a6d00c2b4910e2`, architecture `1ccf7192059bfe13a1bef4bb0b6e4a3adcf5116e`, each fetched from origin/main before creating its own `docs/architecture-runtime-contract-alignment` branch. RE `docs/agents-architecture-guidance` already equals this main; its mandatory architecture, Full Audit, frozen-data and validation workflow rules are preserved. No old feature code, tests or CI were imported. These are source/test/Progress findings, not business/performance tests run in this docs-only batch.

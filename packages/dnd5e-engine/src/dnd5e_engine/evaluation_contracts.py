@@ -40,6 +40,12 @@ from dnd5e_engine.evaluation_environmental_contracts import (
 from dnd5e_engine.evaluation_resources import HitDieSpend
 from dnd5e_engine.evaluation_rng import RNGContext, RNGTransition
 from dnd5e_engine.evaluation_ruleset import RulesetBinding
+from dnd5e_engine.evaluation_spell_termination import (
+    SPELL_TERMINATION_SCHEMA_VERSION,
+    SpellEndFacts,
+    WorldSpellEnd,
+    spell_cast_ends,
+)
 from dnd5e_engine.evaluation_stages import EventStageFacts
 from dnd5e_engine.evaluation_state import CombatSnapshot, NonCombatSnapshot, StateSnapshot
 from dnd5e_engine.events import (
@@ -76,6 +82,7 @@ EvaluationVersion = Literal[
     "engine-evaluation/34",
     "engine-evaluation/35",
     "engine-evaluation/36",
+    "engine-evaluation/37",
     "engine-evaluation/41",
 ]
 
@@ -284,6 +291,37 @@ class RuleEvaluationRequest(EvaluationModel):
         default=None, exclude_if=lambda value: value is None
     )
 
+    spell_end_facts: SpellEndFacts | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+
+    def without_spell_ends(self) -> Self:
+        """Return the native cast request after checking the extension's scope."""
+        facts = self.spell_end_facts
+        if self.schema_version != SPELL_TERMINATION_SCHEMA_VERSION or facts is None:
+            raise ValueError("evaluation/37 requires exact spell end facts")
+        if (
+            self.operation_kind
+            not in {
+                "world.cast_spell",
+                "world.cast_spell_many",
+                "world.use_item",
+                "world.cast_activity",
+            }
+            or self.state_snapshot.snapshot_schema_version != "engine-snapshot/20"
+            or any(
+                fact.effect.target_id != self.actor_id
+                or fact.effect not in self.state_snapshot.effect_states
+                for fact in facts.applications
+            )
+        ):
+            raise ValueError("evaluation/37 requires cast-actor facts from the fixed snapshot")
+        return type(self).model_validate(
+            self.model_copy(
+                update={"schema_version": facts.cast_schema_version, "spell_end_facts": None}
+            )
+        )
+
     @field_validator("payload", mode="before")
     @classmethod
     def strict_check_payload(cls, value: object, info: ValidationInfo) -> object:
@@ -312,6 +350,11 @@ class RuleEvaluationRequest(EvaluationModel):
         """Require the payload type and shape matching the operation tag."""
         if self.session_id != self.state_snapshot.session_id:
             raise ValueError("request and snapshot session identities differ")
+        if self.schema_version == SPELL_TERMINATION_SCHEMA_VERSION:
+            self.without_spell_ends()
+            return self
+        if self.spell_end_facts is not None:
+            raise ValueError("spell end facts require evaluation/37")
         version_pairs = {
             "engine-evaluation/24": "engine-snapshot/17",
             "engine-evaluation/25": "engine-snapshot/18",
@@ -649,6 +692,8 @@ class RuleEvaluationResult(EvaluationModel):
     @model_validator(mode="after")
     def status_fields(self) -> Self:
         """Require result fields to agree with accepted, choice or refusal status."""
+        if len({(read.kind, read.ref) for read in self.read_set}) != len(self.read_set):
+            raise ValueError("duplicate read-set entry")
         if self.status == "accepted":
             if self.state_delta is None or self.rng_transition is None or self.stage_facts is None:
                 raise ValueError("accepted requires delta, RNG transition and stage coverage")
@@ -660,6 +705,10 @@ class RuleEvaluationResult(EvaluationModel):
                 raise ValueError("accepted forbids choice/error")
             if self.state_delta.expected_world_version != self.input_world_version:
                 raise ValueError("delta and result world versions differ")
+            if self.schema_version == SPELL_TERMINATION_SCHEMA_VERSION:
+                return self
+            if any(isinstance(op, WorldSpellEnd) for op in self.state_delta.operations):
+                raise ValueError("spell end operations require evaluation/37")
             creations = sum(
                 isinstance(op, CombatEffectCreate) for op in self.state_delta.operations
             )
@@ -700,9 +749,30 @@ class RuleEvaluationResult(EvaluationModel):
                     raise ValueError("needs_choice requires choice and forbids error")
             elif self.error is None or self.choice is not None:
                 raise ValueError("rejected/unsupported require error and forbid choice")
-        if len({(read.kind, read.ref) for read in self.read_set}) != len(self.read_set):
-            raise ValueError("duplicate read-set entry")
         return self
+
+    def without_spell_ends(self, request: RuleEvaluationRequest) -> Self:
+        """Validate and remove the extension's exact terminal operations."""
+        base = request.without_spell_ends()
+        state_delta = self.state_delta
+        if state_delta is not None:
+            ends = spell_cast_ends(
+                request.actor_id, self.proposed_events, request.spell_end_facts.applications
+            )
+            operations = state_delta.operations
+            if ends and operations[-len(ends) :] != ends:
+                raise ValueError("spell end operations differ from fixed facts and cast evidence")
+            if ends:
+                state_delta = state_delta.model_copy(
+                    update={"operations": operations[: -len(ends)]}
+                )
+        result = type(self).model_validate(
+            self.model_copy(
+                update={"schema_version": base.schema_version, "state_delta": state_delta}
+            )
+        )
+        result.verify_request(base)
+        return result
 
     def verify_request(self, request: RuleEvaluationRequest) -> None:
         """Validate result association and invariants against its original fixed request."""
@@ -720,6 +790,9 @@ class RuleEvaluationResult(EvaluationModel):
             request.ruleset_binding,
         ):
             raise ValueError("result does not match request identity/version/binding")
+        if request.schema_version == SPELL_TERMINATION_SCHEMA_VERSION:
+            self.without_spell_ends(request)
+            return
         if isinstance(self.choice, SpellWillingnessChoice):
             positions = request.spell_positions
             if (

@@ -28,6 +28,11 @@ from dnd5e_engine.evaluation_rest import evaluate_rest
 from dnd5e_engine.evaluation_rng import RNGTransition
 from dnd5e_engine.evaluation_ruleset import RulesetBinding, get_default_ruleset, verify_ruleset
 from dnd5e_engine.evaluation_saves import evaluate_save
+from dnd5e_engine.evaluation_spell_termination import (
+    SPELL_TERMINATION_SCHEMA_VERSION,
+    spell_cast_ends,
+    verify_cast_applications,
+)
 from dnd5e_engine.evaluation_spells import evaluate_invocation
 from dnd5e_engine.evaluation_stages import EventStageFacts
 from dnd5e_engine.evaluation_state import CombatSnapshot
@@ -92,6 +97,20 @@ async def _evaluate(
     request = RuleEvaluationRequest.model_validate(copy.deepcopy(request))
     assets = loader if loader is not None else get_default_ruleset()
     verify_ruleset(request.ruleset_binding, assets)
+    if request.schema_version == SPELL_TERMINATION_SCHEMA_VERSION:
+        base = request.without_spell_ends()
+        facts = request.spell_end_facts
+        verify_cast_applications(request.actor_id, facts, assets)
+        result = await _evaluate(base, loader=assets)
+        delta = result.state_delta
+        if delta is not None:
+            ends = spell_cast_ends(request.actor_id, result.proposed_events, facts.applications)
+            delta = delta.model_copy(update={"operations": (*delta.operations, *ends)})
+        result = result.model_copy(
+            update={"schema_version": request.schema_version, "state_delta": delta}
+        )
+        result.verify_request(request)
+        return result
     common: _ResultIdentity = dict(
         schema_version=request.schema_version,
         session_id=request.session_id,

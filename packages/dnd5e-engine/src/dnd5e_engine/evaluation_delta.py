@@ -24,6 +24,7 @@ from dnd5e_engine.evaluation_resources import ResourcePool
 from dnd5e_engine.evaluation_ruleset import get_default_ruleset
 from dnd5e_engine.evaluation_shield_delta import ShieldStateTransition
 from dnd5e_engine.evaluation_spell_materials import SpellMaterialConsume as SpellMaterialConsume
+from dnd5e_engine.evaluation_spell_termination import WorldSpellEnd
 from dnd5e_engine.evaluation_state import (
     ClosureDeath,
     CombatSetupState,
@@ -392,6 +393,12 @@ class WorldEffectCreate(EvaluationModel):
         """Require an elapsed-seconds passive effect with only its declared concentration."""
         effect = self.value.effect
         expected_flags = {"concentration": True} if self.value.concentration else {}
+        invisible = (
+            effect.id == "effect:invisibility"
+            and effect.statuses == {"invisible"}
+            and not effect.changes
+            and self.value.concentration
+        )
         if (
             effect.disabled
             or effect.transfer
@@ -399,8 +406,7 @@ class WorldEffectCreate(EvaluationModel):
             or effect.action_policy is not None
             or effect.lifecycle is not None
             or effect.end_effects
-            or effect.statuses
-            or not effect.changes
+            or (not invisible and (effect.statuses or not effect.changes))
             or effect.duration.rounds is not None
             or effect.duration.turns is not None
             or effect.duration.start_round is not None
@@ -643,6 +649,7 @@ StateDeltaOperation = Annotated[
     | CombatCreationCandidate
     | ResourceUpdate
     | WorldEffectCreate
+    | WorldSpellEnd
     | WorldCastActivityBegin
     | WorldEnvironmentalEffectCreate
     | WorldEnvironmentalEffectEnd

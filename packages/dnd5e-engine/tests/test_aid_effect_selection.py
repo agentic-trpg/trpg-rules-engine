@@ -26,16 +26,28 @@ def test_equal_strength_latest_identity_and_stronger_winner():
 
 
 def test_paired_hp_transition_keeps_intervening_damage():
-    assert paired_hp_transition(8, 20, 10, 5).model_dump() == {
+    assert paired_hp_transition(8, 20, 10, 5, entity_type="Character").model_dump() == {
         "expected_current": 8,
         "expected_maximum": 20,
         "current": 3,
         "maximum": 15,
         "old_bonus": 10,
         "new_bonus": 5,
+        "zero_consequence": "none",
     }
     # Base 12/20 becomes 22/30, then independently loses 9 and heals 4.
-    weaker = paired_hp_transition(17, 30, 10, 5)
+    weaker = paired_hp_transition(17, 30, 10, 5, entity_type="Character")
     assert (weaker.current, weaker.maximum) == (12, 25)
-    base = paired_hp_transition(weaker.current, weaker.maximum, 5, 0)
+    base = paired_hp_transition(weaker.current, weaker.maximum, 5, 0, entity_type="Character")
     assert (base.current, base.maximum) == (7, 20)
+
+
+def test_non_damage_positive_to_zero_lifecycle_by_entity_kind():
+    for kind, consequence in (("Character", "unconscious"), ("NPC", "death"), ("Monster", "death")):
+        transition = paired_hp_transition(3, 15, 5, 0, entity_type=kind)
+        assert (transition.current, transition.maximum, transition.zero_consequence) == (
+            0,
+            10,
+            consequence,
+        )
+    assert paired_hp_transition(0, 15, 5, 0, entity_type="Character").zero_consequence == "none"

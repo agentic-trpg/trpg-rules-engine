@@ -726,6 +726,8 @@ def evaluate_exploration_spell(  # noqa: C901 - bounded spell profiles share one
         return _refuse("rejected", "actor_incapacitated", "caster must be alive and able to act")
     if target is None or not target.is_alive:
         return _refuse("rejected", "target_invalid", "cast requires a living creature")
+    if aid and target.hp_current == 0:
+        return _refuse("rejected", "target_invalid", "Aid does not restore a creature from zero HP")
     needs_sight = healing is not None and exploration_healing_requires_sight(spell)
     positions = request.spell_positions
     if delivery_failure := _target_delivery_failure(
@@ -753,6 +755,9 @@ def evaluate_exploration_spell(  # noqa: C901 - bounded spell profiles share one
             payload.spell_source_id,
             spell,
             loader,
+            allowed_classes=frozenset({"bard", "cleric", "druid", "paladin", "ranger"})
+            if aid
+            else None,
             has_selected_material=material_debit is not None,
         )
     )

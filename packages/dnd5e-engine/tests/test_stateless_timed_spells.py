@@ -130,6 +130,29 @@ def spell_wire(
     return wire, loader
 
 
+def test_aid_requires_a_reviewed_class_and_positive_hp_target() -> None:
+    """Prepared lists cannot grant Wizard Aid or heal a zero-HP target."""
+    aid = BundledAssetLoader().get_spell("aid")
+    wizard, wizard_loader = spell_wire(aid, caster_class="wizard", caster_level=3)
+    refused = execute(RuleEvaluationRequest.model_validate_json(json.dumps(wizard)), wizard_loader)
+    assert (refused.status, refused.error.code, refused.state_delta) == (
+        "rejected",
+        "spell.source",
+        None,
+    )
+
+    cleric, cleric_loader = spell_wire(aid, caster_class="cleric", caster_level=3)
+    accepted = execute(RuleEvaluationRequest.model_validate_json(json.dumps(cleric)), cleric_loader)
+    assert accepted.status == "accepted", accepted.error
+    cleric["state_snapshot"]["character_states"][1]["hp_current"] = 0
+    zero = execute(RuleEvaluationRequest.model_validate_json(json.dumps(cleric)), cleric_loader)
+    assert (zero.status, zero.error.code, zero.state_delta) == (
+        "rejected",
+        "target_invalid",
+        None,
+    )
+
+
 def _longstrider() -> Spell:
     """Read the example spell from the bundled rules."""
     return BundledAssetLoader().get_spell("longstrider")

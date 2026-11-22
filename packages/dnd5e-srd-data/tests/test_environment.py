@@ -55,6 +55,8 @@ def test_environment_source_drift_requires_review(slug, mutation):
     activity.pop("persistent_area")
     activity["target"]["template"]["size"] = _REVIEWED[slug][5]
     activity["target"]["template"]["stationary"] = False
+    if slug == "silence":
+        activity["target"]["template"]["units"] = ""
     if mutation == "radius":
         activity["target"]["template"]["size"] = "999"
     elif mutation == "shape":
@@ -94,6 +96,8 @@ def test_environment_source_drift_requires_review(slug, mutation):
         {"kind": "light", "light": "bright", "dim_extension_ft": -1},
         {"kind": "light", "light": "bright", "strong_wind_dispersal": True},
         {"kind": "magical_darkness", "light": "dark", "dispels_light_through_level": 10},
+        {"kind": "magical_silence", "light": "dim"},
+        {"kind": "magical_silence", "strong_wind_dispersal": True},
     ],
 )
 def test_environment_vocabulary_and_combinations_fail_closed(data):
@@ -105,6 +109,19 @@ def test_unrelated_canonical_activity_serialization_is_unchanged():
     assert "persistent_area" not in UtilityActivity().model_dump(mode="json")
     spell = BundledAssetLoader().get_spell("fireball")
     assert apply_environment(spell) is spell
+
+
+def test_silence_regeneration_keeps_fixed_region_and_inert_source_effect():
+    canonical = BundledAssetLoader().get_spell("silence")
+    raw = canonical.model_dump(mode="json")
+    activity = raw["activities"][0]
+    activity.pop("persistent_area")
+    activity["target"]["template"].update(stationary=False, units="")
+    regenerated = apply_environment(Spell.model_validate(raw))
+    assert regenerated == canonical
+    area = regenerated.activities[0].persistent_area
+    assert area.environment == EnvironmentalSpec(kind="magical_silence")
+    assert area.triggers == ()
 
 
 @pytest.mark.parametrize("slug,radius", [("darkness", 15), ("daylight", 60)])

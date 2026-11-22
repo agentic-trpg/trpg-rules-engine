@@ -7208,7 +7208,7 @@
   {
     "slug": "silence",
     "uuid": "Compendium.dnd5e.spells24.Item.phbsplSilence000",
-    "canonical_sha256": "4bf04b560ee458d22f3fd224283f41aff64bf0e8a04217489d3d7de3a8b2a6d7",
+    "canonical_sha256": "a751c5a6ba06b20fb7869e2e392df07c914927fcdfcc358e7dbf630f889cd41f",
     "source_url": "https://github.com/foundryvtt/dnd5e/blob/965ad2d0cf5d063dac675ba078b5bd3c3c0dd449/packs/_source/spells24/2nd-level/silence.yml",
     "classification": "deferred",
     "required_mechanisms": [

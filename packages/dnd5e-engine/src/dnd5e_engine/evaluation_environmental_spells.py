@@ -52,9 +52,8 @@ from dnd5e_engine.types.checks import CheckRequest
 _CLASSES = {
     "light": frozenset({"bard", "cleric", "sorcerer", "wizard"}),
     "darkness": frozenset({"sorcerer", "warlock", "wizard"}),
-    # The reviewed area records strong_wind_dispersal; exploration has no typed
-    # strong-wind fact or boundary event to propose its early termination yet.
     "fog-cloud": frozenset({"druid", "ranger", "sorcerer", "wizard"}),
+    "silence": frozenset({"bard", "cleric", "ranger"}),
     "dispel-magic": frozenset(
         {"bard", "cleric", "druid", "paladin", "ranger", "sorcerer", "warlock", "wizard"}
     ),
@@ -92,7 +91,7 @@ def _reviewed_spell(spell_id: str) -> Spell | None:
 def _effect(
     actor_id: str, payload: ExplorationEnvironmentalSpellCastPayload, spell: Spell
 ) -> WorldEnvironmentalEffectCreate:
-    """Price the ruleset's illumination and lifecycle policy independently of World."""
+    """Price the fixed region and lifecycle policy independently of World."""
     if not isinstance(payload.target, (EnvironmentalItemTarget, EnvironmentalPointTarget)):
         raise EvaluationInvariantError("spatial effect creation needs a placement target")
     recasts = spell.slug == "light"
@@ -113,7 +112,7 @@ def _effect(
         radius = template.size_ft
     duration = spell.duration.value
     if not duration:
-        raise EvaluationInvariantError("canonical illumination spell requires elapsed duration")
+        raise EvaluationInvariantError("canonical spatial spell requires elapsed duration")
     return WorldEnvironmentalEffectCreate(
         kind="world.environmental_effect_create",
         value=WorldEnvironmentalEffect(
@@ -249,8 +248,8 @@ def _target_failure(request: RuleEvaluationRequest, spell: Spell) -> str | None:
             return "Light requires a Large or smaller object of known size"
         if item.worn_or_carried_by not in (None, request.actor_id):
             return "Light cannot target an object worn or carried by someone else"
-    elif spell.slug == "fog-cloud" and item is not None:
-        return "Fog Cloud requires a fixed point"
+    elif spell.slug in ("fog-cloud", "silence") and item is not None:
+        return f"{spell.name} requires a fixed point"
     elif item is not None and item.worn_or_carried_by is not None:
         return "Darkness cannot target a worn or carried object"
     return None

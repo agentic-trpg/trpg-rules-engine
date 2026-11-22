@@ -11,7 +11,7 @@ class EnvironmentalSpec(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     object_anchoring: bool = Field(default=False, strict=True, exclude_if=lambda v: not v)
-    kind: Literal["fog", "magical_darkness", "light"]
+    kind: Literal["fog", "magical_darkness", "light", "magical_silence"]
     light: Literal["bright", "dim", "dark"] | None = None
     obscurement: Literal["none", "light", "heavy"] = "none"
     sunlight: bool = False
@@ -41,6 +41,18 @@ class EnvironmentalSpec(BaseModel):
                 and not self.sunlight
                 and not self.dim_extension_ft
                 and not self.strong_wind_dispersal
+                and self.dispels_darkness_through_level is None
+            )
+        elif self.kind == "magical_silence":
+            valid = (
+                self.light is None
+                and self.obscurement == "none"
+                and not self.sunlight
+                and not self.dim_extension_ft
+                and not self.radius_increase_per_slot_ft
+                and not self.object_anchoring
+                and not self.strong_wind_dispersal
+                and self.dispels_light_through_level is None
                 and self.dispels_darkness_through_level is None
             )
         else:

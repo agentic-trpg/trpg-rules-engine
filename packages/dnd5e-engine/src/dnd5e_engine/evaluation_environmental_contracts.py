@@ -84,7 +84,7 @@ class ExplorationEnvironmentalSpellCastPayload(EvaluationModel):
 
 
 class WorldEnvironmentalEffect(EvaluationModel):
-    """Describe illumination, its relative expiry and the host-owned spatial anchor."""
+    """Describe the fixed spatial mechanics, relative expiry and host-owned anchor."""
 
     source_id: Annotated[str, Field(min_length=1)]
     spell_source_id: Annotated[str, Field(min_length=1)]

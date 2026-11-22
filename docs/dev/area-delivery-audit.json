@@ -5,10 +5,10 @@
     "effect_geometry_only": 1,
     "executable_target_area": 217,
     "manual_activity": 2,
-    "non_resolving_template": 72,
+    "non_resolving_template": 71,
     "ongoing_source_with_immediate_payload": 1,
     "persistent_area": 4,
-    "persistent_environment": 3,
+    "persistent_environment": 4,
     "relocatable_persistent_area": 1,
     "unsupported_formula_size": 11,
     "unsupported_wall": 17
@@ -1804,7 +1804,7 @@
       "counted_target": null,
       "creature_filter": null,
       "forced_movement": null,
-      "runtime_status": "non_resolving_template",
+      "runtime_status": "persistent_environment",
       "deferred_reason": null
     },
     {

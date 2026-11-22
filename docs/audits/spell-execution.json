@@ -16054,7 +16054,7 @@
       "slug": "silence",
       "uuid": "Compendium.dnd5e.spells24.Item.phbsplSilence000",
       "classification": "deferred",
-      "canonical_sha256": "4bf04b560ee458d22f3fd224283f41aff64bf0e8a04217489d3d7de3a8b2a6d7",
+      "canonical_sha256": "a751c5a6ba06b20fb7869e2e392df07c914927fcdfcc358e7dbf630f889cd41f",
       "source_url": "https://github.com/foundryvtt/dnd5e/blob/965ad2d0cf5d063dac675ba078b5bd3c3c0dd449/packs/_source/spells24/2nd-level/silence.yml",
       "missing_mechanisms": [
         "area_lifecycle"
@@ -16098,7 +16098,7 @@
           "host_operation": false,
           "selected_by_default": true,
           "timing": "immediate",
-          "persistent": false,
+          "persistent": true,
           "admission_failure": {
             "code": "missing_mechanism",
             "spell_id": "silence",
@@ -16106,6 +16106,17 @@
             "mechanisms": [
               "area_lifecycle"
             ]
+          },
+          "environment": {
+            "kind": "magical_silence",
+            "light": null,
+            "obscurement": "none",
+            "sunlight": false,
+            "dim_extension_ft": 0,
+            "radius_increase_per_slot_ft": 0,
+            "dispels_light_through_level": null,
+            "dispels_darkness_through_level": null,
+            "strong_wind_dispersal": false
           }
         }
       ]

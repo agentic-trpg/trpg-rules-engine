@@ -35,6 +35,16 @@ _REVIEWED: dict[str, tuple[int, int, bool, str, int, str, str, EnvironmentalSpec
             object_anchoring=True,
         ),
     ),
+    "silence": (
+        2,
+        120,
+        True,
+        "minute",
+        10,
+        "20",
+        "20",
+        EnvironmentalSpec(kind="magical_silence"),
+    ),
     "daylight": (
         3,
         60,
@@ -66,6 +76,10 @@ _CLAUSES = {
         "object that isn't being worn or carried",
         "15-foot Emanation originating from that object",
         "Covering that object with something opaque",
+    ),
+    "silence": (
+        "20-foot-radius Sphere",
+        "Casting a spell that includes a Verbal component is impossible there",
     ),
     "daylight": (
         "sunlight spreads from a point",
@@ -101,10 +115,18 @@ def apply_environment(spell: Spell) -> Spell:
         != (level, "ft", range_ft, concentration, units, duration, "action", 1)
         or activity.kind != "utility"
         or activity.id != "dnd5eactivity000"
-        or activity.effects
-        or spell.passive_effects
+        or (
+            (activity.effects or spell.passive_effects)
+            if spell.slug != "silence"
+            else (
+                tuple(effect.id for effect in activity.effects) != ("kjbKMAk1y5VUyEoT",)
+                or tuple(effect.id for effect in spell.passive_effects) != ("kjbKMAk1y5VUyEoT",)
+                or set(spell.components) != {"V", "S"}
+            )
+        )
         or activity.roll.formula
-        or (template.type, template.size, template.units) != ("sphere", raw_size, "ft")
+        or (template.type, template.size, template.units)
+        != ("sphere", raw_size, "" if spell.slug == "silence" else "ft")
         or activity.target.affects.type
         or activity.target.affects.choice
         or activity.target.affects.count
@@ -115,7 +137,9 @@ def apply_environment(spell: Spell) -> Spell:
         raise ValueError(f"environment source drift: {spell.slug}")
     target = activity.target.model_copy(
         update={
-            "template": template.model_copy(update={"size": size, "stationary": True}),
+            "template": template.model_copy(
+                update={"size": size, "stationary": True, "units": "ft"}
+            ),
         }
     )
     return spell.model_copy(

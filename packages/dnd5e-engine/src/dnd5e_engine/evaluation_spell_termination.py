@@ -11,7 +11,7 @@ from dnd5e_engine.evaluation_base import EvaluationModel
 from dnd5e_engine.evaluation_effects import EffectState, effect_state
 from dnd5e_engine.evaluation_ruleset import RulesetBinding, get_default_ruleset, verify_ruleset
 from dnd5e_engine.evaluation_world_effect import EffectIdentity
-from dnd5e_engine.events import CombatEvent, SpellCast
+from dnd5e_engine.events import CombatEvent, ObjectIdentified, SpellCast
 from dnd5e_engine.rules.conditions import conditions_block_actions
 
 SPELL_TERMINATION_SCHEMA_VERSION = "engine-evaluation/37"
@@ -23,6 +23,8 @@ SpellCastEvaluationVersion = Literal[
     "engine-evaluation/34",
     "engine-evaluation/35",
     "engine-evaluation/36",
+    "engine-evaluation/40",
+    "engine-evaluation/41",
 ]
 EndReason = Literal["spell_cast", "dismissed"]
 Nonempty = Annotated[str, Field(min_length=1)]
@@ -85,7 +87,7 @@ def cast_termination_needs(loader: AssetLoader) -> tuple[TargetEffectNeed, ...]:
 
 def spell_cast_ends(
     actor_id: str,
-    events: tuple[CombatEvent, ...],
+    events: tuple[CombatEvent | ObjectIdentified, ...],
     applications: tuple[SpellApplicationFacts, ...],
 ) -> tuple[WorldSpellEnd, ...]:
     """Select endings only after the affected actor actually casts a spell."""

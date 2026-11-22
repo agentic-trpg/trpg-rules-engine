@@ -37,6 +37,10 @@ from dnd5e_engine.evaluation_environmental_contracts import (
 from dnd5e_engine.evaluation_environmental_contracts import (
     ExplorationEnvironmentalSpellCastPayload as ExplorationEnvironmentalSpellCastPayload,
 )
+from dnd5e_engine.evaluation_identify import (
+    IDENTIFY_ACTIVITY_SCHEMA_VERSION as IDENTIFY_ACTIVITY_SCHEMA_VERSION,
+)
+from dnd5e_engine.evaluation_identify import IDENTIFY_SPELL_ID
 from dnd5e_engine.evaluation_resources import HitDieSpend
 from dnd5e_engine.evaluation_rng import RNGContext, RNGTransition
 from dnd5e_engine.evaluation_ruleset import RulesetBinding
@@ -54,6 +58,7 @@ from dnd5e_engine.events import (
     AdvantageSource,
     CheckContext,
     CombatEvent,
+    ObjectIdentified,
     RequiredSense,
 )
 from dnd5e_engine.intents import PlayerIntent
@@ -83,6 +88,7 @@ EvaluationVersion = Literal[
     "engine-evaluation/35",
     "engine-evaluation/36",
     "engine-evaluation/37",
+    "engine-evaluation/40",
     "engine-evaluation/41",
 ]
 
@@ -370,6 +376,7 @@ class RuleEvaluationRequest(EvaluationModel):
             SPATIAL_EFFECT_END_SCHEMA_VERSION: "engine-snapshot/20",
             MATERIAL_SPELL_SCHEMA_VERSION: "engine-snapshot/20",
             CAST_ACTIVITY_SCHEMA_VERSION: "engine-snapshot/20",
+            IDENTIFY_ACTIVITY_SCHEMA_VERSION: "engine-snapshot/20",
         }
         if self.state_snapshot.snapshot_schema_version != version_pairs[self.schema_version]:
             raise ValueError("evaluation and snapshot versions differ")
@@ -439,11 +446,12 @@ class RuleEvaluationRequest(EvaluationModel):
     def _validate_versioned_operation(self) -> bool:
         """Validate specialist evaluation schemas and reject misplaced spatial facts."""
         if (
-            self.schema_version == CAST_ACTIVITY_SCHEMA_VERSION
+            self.schema_version in (CAST_ACTIVITY_SCHEMA_VERSION, IDENTIFY_ACTIVITY_SCHEMA_VERSION)
             or self.operation_kind == "world.cast_activity"
         ):
             if (
-                self.schema_version != CAST_ACTIVITY_SCHEMA_VERSION
+                self.schema_version
+                not in (CAST_ACTIVITY_SCHEMA_VERSION, IDENTIFY_ACTIVITY_SCHEMA_VERSION)
                 or self.operation_kind != "world.cast_activity"
                 or not isinstance(self.payload, ExplorationCastActivityPayload)
                 or not isinstance(self.state_snapshot, NonCombatSnapshot)
@@ -451,7 +459,12 @@ class RuleEvaluationRequest(EvaluationModel):
                 or self.spell_positions is not None
                 or self.multi_spell_positions is not None
             ):
-                raise ValueError("evaluation/36 requires a scoped noncombat casting activity")
+                raise ValueError("casting activity evaluation requires a scoped noncombat snapshot")
+            identifying = self.schema_version == IDENTIFY_ACTIVITY_SCHEMA_VERSION
+            if identifying != (self.payload.identify is not None) or identifying != (
+                self.payload.spell_id == IDENTIFY_SPELL_ID
+            ):
+                raise ValueError("evaluation/40 requires the selected Identify object and material")
             return True
         if self.schema_version == SPATIAL_EFFECT_END_SCHEMA_VERSION:
             self._validate_environmental_spell()
@@ -621,7 +634,7 @@ class PreflightChoice(EvaluationModel):
         return self
 
 
-ProposedEvents = tuple[CombatEvent, ...]
+ProposedEvents = tuple[Annotated[CombatEvent | ObjectIdentified, Field(discriminator="type")], ...]
 
 
 class CheckAdjudicationChoice(EvaluationModel):
@@ -681,7 +694,7 @@ class RuleEvaluationResult(EvaluationModel):
         if isinstance(value, (list, tuple)):
             kinds = {
                 model.model_fields["type"].default: set(model.model_fields)
-                for model in ALL_COMBAT_EVENT_TYPES
+                for model in (*ALL_COMBAT_EVENT_TYPES, ObjectIdentified)
             }
             for event in value:
                 if isinstance(event, dict) and set(event) - kinds.get(event.get("type"), set()):
@@ -728,9 +741,18 @@ class RuleEvaluationResult(EvaluationModel):
                 isinstance(op, WorldCastActivityBegin) for op in self.state_delta.operations
             )
             if casting_begins and (
-                self.schema_version != CAST_ACTIVITY_SCHEMA_VERSION or casting_begins != 1
+                self.schema_version
+                not in (CAST_ACTIVITY_SCHEMA_VERSION, IDENTIFY_ACTIVITY_SCHEMA_VERSION)
+                or casting_begins != 1
             ):
-                raise ValueError("one casting start proposal requires evaluation/36")
+                raise ValueError(
+                    "one casting start proposal requires a casting activity evaluation"
+                )
+            if (
+                any(event.type == "object_identified" for event in self.proposed_events)
+                and self.schema_version != IDENTIFY_ACTIVITY_SCHEMA_VERSION
+            ):
+                raise ValueError("object identification requires evaluation/40")
             material_uses = sum(
                 isinstance(op, SpellMaterialConsume) for op in self.state_delta.operations
             )
@@ -805,7 +827,10 @@ class RuleEvaluationResult(EvaluationModel):
                 or positions.willing_target_id is not None
             ):
                 raise ValueError("spell willingness choice must match an unverified cast target")
-        if request.schema_version == CAST_ACTIVITY_SCHEMA_VERSION:
+        if request.schema_version in (
+            CAST_ACTIVITY_SCHEMA_VERSION,
+            IDENTIFY_ACTIVITY_SCHEMA_VERSION,
+        ):
             from dnd5e_engine.evaluation_cast_activity import verify_cast_activity
 
             verify_cast_activity(self, request)

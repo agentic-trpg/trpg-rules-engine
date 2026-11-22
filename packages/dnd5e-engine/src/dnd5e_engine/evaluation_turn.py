@@ -9,6 +9,7 @@ from dnd5e_engine.evaluation_computation import CombatComputation
 from dnd5e_engine.evaluation_contracts import (
     CombatIntentPayload,
     MultiSpellWillingnessChoice,
+    ProposedEvents,
     RuleError,
     RuleEvaluationRequest,
     SpellWillingnessChoice,
@@ -26,7 +27,7 @@ from dnd5e_engine.evaluation_speed_effects import (
 )
 from dnd5e_engine.evaluation_stages import EventStageFacts
 from dnd5e_engine.evaluation_state import CombatSnapshot
-from dnd5e_engine.events import CombatEvent, IntentSubmitted
+from dnd5e_engine.events import IntentSubmitted
 
 
 class TurnEvaluation(TypedDict):
@@ -34,7 +35,7 @@ class TurnEvaluation(TypedDict):
 
     status: Literal["accepted", "rejected", "unsupported", "needs_choice"]
     state_delta: StateDelta | None
-    proposed_events: tuple[CombatEvent, ...]
+    proposed_events: ProposedEvents
     rng_transition: RNGTransition | None
     choice: SpellWillingnessChoice | MultiSpellWillingnessChoice | None
     error: RuleError | None

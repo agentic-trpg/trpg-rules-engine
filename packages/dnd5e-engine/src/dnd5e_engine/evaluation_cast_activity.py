@@ -1,4 +1,4 @@
-"""Evaluate a bounded self-cast at its start and exact world-time completion."""
+"""Evaluate bounded exploration casting at start and exact world-time completion."""
 
 from __future__ import annotations
 
@@ -8,7 +8,13 @@ from dnd5e_srd_data.schema.spell import CastingTimeUnit, Spell
 from pydantic import Field, model_validator
 
 from dnd5e_engine.evaluation_base import EvaluationModel
-from dnd5e_engine.spellcasting import resolve_ritual_cast
+from dnd5e_engine.evaluation_identify import (
+    IDENTIFY_SPELL_ID,
+    PEARL_MIN_GP,
+    IdentifyObjectFacts,
+    identify_object,
+)
+from dnd5e_engine.spellcasting import resolve_ritual_cast, spell_component_metadata
 
 if TYPE_CHECKING:
     from dnd5e_srd_data.loader import AssetLoader
@@ -21,7 +27,7 @@ CAST_ACTIVITY_SCHEMA_VERSION = "engine-evaluation/36"
 
 
 class ExplorationCastActivityPayload(EvaluationModel):
-    """Fix one source, casting mode and selection for a self-targeted timed spell."""
+    """Fix one source, casting mode and target for a reviewed long cast."""
 
     kind: Literal["world.cast_activity"]
     phase: Literal["start", "finish"]
@@ -31,6 +37,9 @@ class ExplorationCastActivityPayload(EvaluationModel):
     as_ritual: bool
     slot_level: Annotated[int, Field(ge=1, le=9)] | None
     elapsed_seconds: Annotated[int, Field(gt=0)] | None
+    identify: IdentifyObjectFacts | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
     @model_validator(mode="after")
     def timing_selection(self) -> Self:
@@ -64,8 +73,16 @@ def casting_activity_seconds(spell: Spell, *, as_ritual: bool) -> int:
     return scale * time.value
 
 
+def cast_activity_components(spell: Spell):
+    """Return the activity's reviewed component metadata for its cast evidence."""
+    components, material, consumed, cost = spell_component_metadata(spell)
+    if spell.slug == IDENTIFY_SPELL_ID:
+        cost = max(PEARL_MIN_GP, cost)
+    return list(components), material, consumed, cost
+
+
 def evaluate_cast_activity(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEvaluation:
-    """Admit a prepared self-cast and price/effect only the completed phase."""
+    """Admit a prepared cast and resolve its payment and consequence on completion."""
     from dnd5e_engine.evaluation_delta import StateDelta, WorldEffectCreate
     from dnd5e_engine.evaluation_effects import effect_state
     from dnd5e_engine.evaluation_payments import spell_payment
@@ -74,9 +91,8 @@ def evaluate_cast_activity(request: RuleEvaluationRequest, loader: AssetLoader) 
     from dnd5e_engine.evaluation_timed_spells import _passive_profile, exploration_source_failure
     from dnd5e_engine.evaluation_turn import _refuse
     from dnd5e_engine.evaluation_world_effect import EffectExpiryPolicy, WorldEffectApplication
-    from dnd5e_engine.events import EffectApplied, IntentSubmitted, SpellCast
+    from dnd5e_engine.events import EffectApplied, IntentSubmitted, ObjectIdentified, SpellCast
     from dnd5e_engine.rules.conditions import conditions_block_actions
-    from dnd5e_engine.spellcasting import spell_component_metadata
 
     snapshot, payload = request.state_snapshot, request.payload
     assert isinstance(snapshot, NonCombatSnapshot)
@@ -108,17 +124,33 @@ def evaluate_cast_activity(request: RuleEvaluationRequest, loader: AssetLoader) 
     ):
         return _refuse("unsupported", "spell.action_policy", "caster has an active action policy")
     if failure := exploration_source_failure(
-        snapshot, actor, payload.spell_source_id, spell, loader
+        snapshot,
+        actor,
+        payload.spell_source_id,
+        spell,
+        loader,
+        allowed_classes=frozenset({"bard", "wizard"}) if payload.identify is not None else None,
+        has_selected_material=payload.identify is not None,
     ):
         return _refuse("rejected", "spell.source", failure)
+    if (
+        payload.identify is not None
+        and payload.identify.material not in snapshot.inventory_state.entries
+    ):
+        return _refuse("rejected", "spell.material", "the selected pearl differs from inventory")
     try:
         seconds = casting_activity_seconds(spell, as_ritual=payload.as_ritual)
-        activity, active, _ = _passive_profile(
-            spell, target_id=actor.entity_id, caster_id=actor.entity_id, casting_activity=True
-        )
+        if payload.identify is None:
+            activity, active, _ = _passive_profile(
+                spell, target_id=actor.entity_id, caster_id=actor.entity_id, casting_activity=True
+            )
+            identification = None
+        else:
+            identification = identify_object(spell, payload.identify, actor.entity_id, loader)
+            activity, active = spell.activities[0], None
     except ValueError as exc:
         return _refuse("unsupported", "spell.mechanism", str(exc))
-    if any(
+    if active is not None and any(
         current.target_id == actor.entity_id and current.id == active.id
         for current in snapshot.effect_states
     ):
@@ -157,31 +189,41 @@ def evaluate_cast_activity(request: RuleEvaluationRequest, loader: AssetLoader) 
         )
     if payload.elapsed_seconds != seconds:
         return _refuse("rejected", "activity.duration", "casting did not reach its bound deadline")
-    creation = WorldEffectCreate(
-        kind="world.effect_create",
-        expected_absent=True,
-        value=WorldEffectApplication(
-            session_id=request.session_id,
-            command_id=request.command_id,
-            source_id=actor.entity_id,
-            effect=effect_state(active),
-            expiry=EffectExpiryPolicy(action="remove"),
-            ruleset_binding=request.ruleset_binding,
-        ),
-    )
-    components, material, consumed, cost = spell_component_metadata(spell)
+    operations = () if payment is None else (payment,)
+    if identification is None:
+        assert active is not None
+        operations += (
+            WorldEffectCreate(
+                kind="world.effect_create",
+                expected_absent=True,
+                value=WorldEffectApplication(
+                    session_id=request.session_id,
+                    command_id=request.command_id,
+                    source_id=actor.entity_id,
+                    effect=effect_state(active),
+                    expiry=EffectExpiryPolicy(action="remove"),
+                    ruleset_binding=request.ruleset_binding,
+                ),
+            ),
+        )
+        consequence = EffectApplied(effect=active)
+        target_id = actor.entity_id
+    else:
+        consequence = ObjectIdentified(actor_id=actor.entity_id, identification=identification)
+        target_id = identification.target_id
+    components, material, consumed, cost = cast_activity_components(spell)
     return dict(
         status="accepted",
         state_delta=StateDelta(
             expected_world_version=snapshot.world_version,
-            operations=(creation,) if payment is None else (payment, creation),
+            operations=operations,
         ),
         proposed_events=(
             IntentSubmitted(
                 actor_id=actor.entity_id,
                 intent_type="cast_spell",
                 spell_id=spell.slug,
-                target_id=actor.entity_id,
+                target_id=target_id,
                 source_id=payload.spell_source_id,
                 activity_id=activity.id,
             ),
@@ -190,12 +232,12 @@ def evaluate_cast_activity(request: RuleEvaluationRequest, loader: AssetLoader) 
                 spell_id=spell.slug,
                 slot_level=payload.slot_level,
                 ritual=payload.as_ritual,
-                components=list(components),
+                components=components,
                 material=material,
                 material_consumed=consumed,
                 material_cost_gp=cost,
             ),
-            EffectApplied(effect=active),
+            consequence,
         ),
         rng_transition=transition,
         choice=None,
@@ -207,19 +249,19 @@ def verify_cast_activity(result: RuleEvaluationResult, request: RuleEvaluationRe
     """Tie the closed phase proposal, evidence and payment to the fixed cast selection."""
     from dnd5e_engine.evaluation_delta import ResourceUpdate, WorldEffectCreate
     from dnd5e_engine.evaluation_effects import effect_state
-    from dnd5e_engine.events import EffectApplied, IntentSubmitted, SpellCast
+    from dnd5e_engine.events import EffectApplied, IntentSubmitted, ObjectIdentified, SpellCast
 
     payload = request.payload
     assert isinstance(payload, ExplorationCastActivityPayload)
     if result.status == "needs_choice":
-        raise ValueError("timed self-cast cannot open a separate target choice")
+        raise ValueError("casting activity cannot open a separate target choice")
     if result.status != "accepted":
         return
     assert result.state_delta is not None
     assert result.rng_transition is not None
     operations = result.state_delta.operations
     if result.rng_transition.state_changed:
-        raise ValueError("timed passive casting carries no random draws")
+        raise ValueError("these casting activities carry no random draws")
     if payload.phase == "start":
         if (
             len(operations) != 1
@@ -229,27 +271,32 @@ def verify_cast_activity(result: RuleEvaluationResult, request: RuleEvaluationRe
         ):
             raise ValueError("timed casting start proposal does not match its activity")
         return
-    if len(operations) != (1 if payload.as_ritual else 2):
+    identify = payload.identify
+    if len(operations) != int(not payload.as_ritual) + int(identify is None):
         raise ValueError("timed casting completion has an invalid operation count")
-    creation = operations[-1]
-    if not isinstance(creation, WorldEffectCreate) or (
-        creation.value.session_id,
-        creation.value.command_id,
-        creation.value.ruleset_binding,
-        creation.value.source_id,
-        creation.value.effect.target_id,
-        creation.value.expiry.action,
-        creation.value.concentration,
-        creation.expected_absent,
-    ) != (
-        request.session_id,
-        request.command_id,
-        request.ruleset_binding,
-        request.actor_id,
-        request.actor_id,
-        "remove",
-        False,
-        True,
+    creation = operations[-1] if identify is None else None
+    if identify is None and (
+        not isinstance(creation, WorldEffectCreate)
+        or (
+            creation.value.session_id,
+            creation.value.command_id,
+            creation.value.ruleset_binding,
+            creation.value.source_id,
+            creation.value.effect.target_id,
+            creation.value.expiry.action,
+            creation.value.concentration,
+            creation.expected_absent,
+        )
+        != (
+            request.session_id,
+            request.command_id,
+            request.ruleset_binding,
+            request.actor_id,
+            request.actor_id,
+            "remove",
+            False,
+            True,
+        )
     ):
         raise ValueError("timed casting effect differs from its closed self application")
     if not payload.as_ritual:
@@ -267,12 +314,12 @@ def verify_cast_activity(result: RuleEvaluationResult, request: RuleEvaluationRe
             raise ValueError("timed spell payment differs from its selection")
     if len(result.proposed_events) != 3:
         raise ValueError("timed casting completion lacks its exact cast evidence")
-    intent, cast, applied = result.proposed_events
+    intent, cast, consequence = result.proposed_events
     if (
         not isinstance(intent, IntentSubmitted)
         or intent.intent_type != "cast_spell"
         or intent.actor_id != request.actor_id
-        or intent.target_id != request.actor_id
+        or intent.target_id != (request.actor_id if identify is None else identify.target_id)
         or intent.spell_id != payload.spell_id
         or intent.source_id != payload.spell_source_id
         or not isinstance(cast, SpellCast)
@@ -280,7 +327,18 @@ def verify_cast_activity(result: RuleEvaluationResult, request: RuleEvaluationRe
         or cast.spell_id != payload.spell_id
         or cast.slot_level != payload.slot_level
         or cast.ritual != payload.as_ritual
-        or not isinstance(applied, EffectApplied)
-        or effect_state(applied.effect) != creation.value.effect
     ):
         raise ValueError("timed casting evidence differs from the adopted application")
+    if identify is not None:
+        if not isinstance(consequence, ObjectIdentified) or (
+            consequence.actor_id,
+            consequence.identification.target_id,
+            consequence.identification.item_slug,
+            consequence.identification.charges_remaining,
+        ) != (request.actor_id, identify.target_id, identify.item_slug, identify.charges_remaining):
+            raise ValueError("Identify result differs from the selected object")
+    elif (
+        not isinstance(consequence, EffectApplied)
+        or effect_state(consequence.effect) != creation.value.effect
+    ):
+        raise ValueError("timed casting effect evidence differs from its application")

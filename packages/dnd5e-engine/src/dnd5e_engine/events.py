@@ -17,6 +17,7 @@ from dnd5e_srd_data.schema.common import ReactionTriggerKind
 from dnd5e_srd_data.schema.environment import EnvironmentalSpec
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from dnd5e_engine.evaluation_base import EvaluationModel
 from dnd5e_engine.movement import MovementMode
 from dnd5e_engine.spell_execution import ExecutionClass, ExecutionFailure
 from dnd5e_engine.types.effects import ActiveEffect
@@ -888,6 +889,27 @@ class SpellCast(BaseModel):
     material_cost_gp: int
     execution_class: ExecutionClass | None = Field(default=None, exclude_if=lambda v: v is None)
     item_cast_level: int | None = Field(default=None, ge=1, le=9, exclude_if=lambda v: v is None)
+
+
+class ObjectIdentification(EvaluationModel):
+    """Describe the selected object's known properties and instance-level facts."""
+
+    target_id: Annotated[str, Field(min_length=1, max_length=256)]
+    item_slug: Annotated[str, Field(min_length=1, max_length=256)]
+    item_name: str
+    properties_and_use: str
+    requires_attunement: bool
+    charges_remaining: Annotated[int, Field(ge=0)]
+    ongoing_spells: tuple[str, ...]
+    created_by_spell: None = None
+
+
+class ObjectIdentified(EvaluationModel):
+    """Carry the caster's private rules result to the Activity owner."""
+
+    type: Literal["object_identified"] = "object_identified"
+    actor_id: Annotated[str, Field(min_length=1, max_length=256)]
+    identification: ObjectIdentification
 
 
 class ProvisionalAttackEvidence(BaseModel):

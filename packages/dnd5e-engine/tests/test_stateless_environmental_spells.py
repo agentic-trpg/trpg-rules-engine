@@ -4,11 +4,12 @@ import json
 from dataclasses import replace
 
 import pytest
-from dnd5e_srd_data import BundledAssetLoader
+from dnd5e_srd_data import BundledAssetLoader, MemoryAssetLoader
 from pydantic import ValidationError
 
 from dnd5e_engine.environment import EnvironmentalSource, environmental_dispels
 from dnd5e_engine.evaluation_contracts import (
+    DISPEL_MAGIC_SCHEMA_VERSION,
     ENVIRONMENTAL_SPELL_SCHEMA_VERSION,
     SCHEMA_VERSION,
     SPATIAL_EFFECT_END_SCHEMA_VERSION,
@@ -20,6 +21,7 @@ from dnd5e_engine.evaluation_delta import (
     WorldEnvironmentalEffectCreate,
     WorldEnvironmentalEffectEnd,
 )
+from dnd5e_engine.evaluation_ruleset import freeze_ruleset, ruleset_binding
 from dnd5e_engine.events import IntentSubmitted, SpellCast
 from tests.evaluation_support import FOE, HERO
 from tests.test_stateless_attack import execute
@@ -350,3 +352,132 @@ def test_dispel_target_requires_reachable_geometry(obstruction):
         "target_invalid",
         None,
     )
+
+
+@pytest.mark.parametrize("level", [0, 3, 4])
+def test_generic_dispel_uses_actual_spatial_level_and_only_draws_for_higher_spell(level):
+    """Accept a moving object anchor and preserve one check for a higher spell."""
+    wire, loader = _dispel_wire()
+    wire["schema_version"] = DISPEL_MAGIC_SCHEMA_VERSION
+    effect = wire["spell_positions"]["target_effect"]
+    effect.update(slot_level=level, anchor_item_id="stone")
+    effect["spell_id"] = "light" if level == 0 else "darkness"
+    request = _request(wire)
+    result = execute(request, loader)
+    assert result.status == "accepted", result.error
+    assert result.rng_transition.state_changed is (level > 3)
+    assert len(result.proposed_events) == 2 + int(level > 3)
+    if level <= 3 or result.proposed_events[-1].succeeded:
+        assert len(result.state_delta.operations) == 2
+    else:
+        assert len(result.state_delta.operations) == 1
+    RuleEvaluationResult.model_validate_json(result.model_dump_json()).verify_request(request)
+
+
+def test_generic_dispel_checks_each_high_creature_spell_and_pays_once():
+    """One payment resolves independent cast identities in stable order."""
+    wire, loader = _dispel_wire()
+    long_wire, long_loader = spell_wire(BundledAssetLoader().get_spell("longstrider"))
+    long_result = execute(_request(long_wire), long_loader)
+    effect = long_result.state_delta.operations[-1].value.effect.model_dump(mode="json")
+    second = dict(effect, origin=effect["origin"] + ":recast:second")
+    third = dict(effect, origin=effect["origin"] + ":recast:third")
+    wire["schema_version"] = DISPEL_MAGIC_SCHEMA_VERSION
+    wire["payload"]["target"] = {"kind": "creature", "target_id": FOE}
+    positions = wire["spell_positions"]
+    positions.pop("target_effect")
+    positions["visible_target_id"] = FOE
+    positions["target_applications"] = [
+        dict(
+            effect=effect,
+            caster_id=HERO,
+            spell_id="longstrider",
+            cast_command_id="cast:first",
+            expires_tick=600,
+            concentration_id=None,
+            cast_slot_level=1,
+        ),
+        dict(
+            effect=second,
+            caster_id=HERO,
+            spell_id="longstrider",
+            cast_command_id="cast:second",
+            expires_tick=600,
+            concentration_id=None,
+            cast_slot_level=4,
+        ),
+        dict(
+            effect=third,
+            caster_id=HERO,
+            spell_id="longstrider",
+            cast_command_id="cast:third",
+            expires_tick=600,
+            concentration_id=None,
+            cast_slot_level=5,
+        ),
+    ]
+    wire["state_snapshot"]["effect_states"] = [effect, second, third]
+    canonical = BundledAssetLoader()
+    loader = freeze_ruleset(
+        MemoryAssetLoader(
+            spells=[canonical.get_spell("dispel-magic"), canonical.get_spell("longstrider")],
+            classes=[canonical.get_class("wizard")],
+            items=[canonical.get_item("component-pouch")],
+        )
+    )
+    wire["ruleset_binding"] = ruleset_binding(loader).model_dump(mode="json")
+    request = _request(wire)
+    result = execute(request, loader)
+    assert result.status == "accepted", result.error
+    assert result.state_delta.operations[0].amount == -1
+    assert len(result.proposed_events) == 4
+    assert result.rng_transition.state_changed
+    ends = result.state_delta.operations[1:]
+    assert ends[0].expected.identity == (FOE, effect["id"], effect["origin"])
+    assert all(end.reason == "dispelled" for end in ends)
+    assert len(ends) == 1 + sum(event.succeeded for event in result.proposed_events[2:])
+    RuleEvaluationResult.model_validate_json(result.model_dump_json()).verify_request(request)
+
+
+def test_dispel_and_cast_trigger_end_same_invisibility_only_once():
+    """The /37 cast trigger yields to the selected /42 spell ending identity."""
+    wire, _ = _dispel_wire()
+    invisible_spell = BundledAssetLoader().get_spell("invisibility")
+    invisible_wire, invisible_loader = spell_wire(invisible_spell, target_id=HERO, caster_level=5)
+    invisible_result = execute(_request(invisible_wire), invisible_loader)
+    effect = invisible_result.state_delta.operations[-1].value.effect.model_dump(mode="json")
+    application = dict(
+        effect=effect,
+        caster_id=HERO,
+        spell_id="invisibility",
+        cast_command_id="cast:invisible",
+        expires_tick=600,
+        concentration_id="actor:cast:invisible",
+        cast_slot_level=2,
+    )
+    wire["schema_version"] = "engine-evaluation/37"
+    wire["spell_end_facts"] = {
+        "cast_schema_version": DISPEL_MAGIC_SCHEMA_VERSION,
+        "applications": [application],
+    }
+    wire["payload"]["target"] = {"kind": "creature", "target_id": HERO}
+    wire["spell_positions"]["target_cell"] = "0,0"
+    wire["spell_positions"].pop("target_effect")
+    wire["spell_positions"]["visible_target_id"] = HERO
+    wire["spell_positions"]["target_applications"] = [application]
+    wire["state_snapshot"]["effect_states"] = [effect]
+    canonical = BundledAssetLoader()
+    loader = freeze_ruleset(
+        MemoryAssetLoader(
+            spells=[canonical.get_spell("dispel-magic"), invisible_spell],
+            classes=[canonical.get_class("wizard")],
+            items=[canonical.get_item("component-pouch")],
+        )
+    )
+    wire["ruleset_binding"] = ruleset_binding(loader).model_dump(mode="json")
+    request = _request(wire)
+    result = execute(request, loader)
+    assert result.status == "accepted", result.error
+    assert len(result.state_delta.operations) == 2
+    assert result.state_delta.operations[1].reason == "dispelled"
+    RuleEvaluationResult.model_validate_json(result.model_dump_json()).verify_request(request)

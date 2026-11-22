@@ -29,11 +29,21 @@ class EnvironmentalMagicEffectTarget(EvaluationModel):
     effect_id: Annotated[str, Field(min_length=1)]
 
 
+class EnvironmentalCreatureTarget(EvaluationModel):
+    """Select a visible creature and all eligible ongoing spells on it."""
+
+    kind: Literal["creature"]
+    target_id: Annotated[str, Field(min_length=1)]
+
+
 EnvironmentalPlacementTarget = Annotated[
     EnvironmentalItemTarget | EnvironmentalPointTarget, Field(discriminator="kind")
 ]
 EnvironmentalTarget = Annotated[
-    EnvironmentalItemTarget | EnvironmentalPointTarget | EnvironmentalMagicEffectTarget,
+    EnvironmentalItemTarget
+    | EnvironmentalPointTarget
+    | EnvironmentalMagicEffectTarget
+    | EnvironmentalCreatureTarget,
     Field(discriminator="kind"),
 ]
 
@@ -48,7 +58,7 @@ class EnvironmentalItemFacts(EvaluationModel):
 
 
 class EnvironmentalMagicEffectFacts(EvaluationModel):
-    """Capture a fixed-point spell's authoritative provenance and expiry for termination."""
+    """Capture a spatial spell's authoritative provenance, anchor and current cell."""
 
     effect_id: Annotated[str, Field(min_length=1)]
     caster_id: Annotated[str, Field(min_length=1)]
@@ -58,6 +68,9 @@ class EnvironmentalMagicEffectFacts(EvaluationModel):
     cell_id: Annotated[str, Field(min_length=1)]
     expires_tick: Annotated[int, Field(ge=0)]
     concentration_id: Annotated[str, Field(min_length=1)] | None
+    anchor_item_id: Annotated[str, Field(min_length=1)] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
 
 class ExplorationEnvironmentalSpellCastPayload(EvaluationModel):

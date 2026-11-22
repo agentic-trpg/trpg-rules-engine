@@ -20,16 +20,17 @@ from dnd5e_engine.evaluation_delta import (
     StateDelta,
 )
 from dnd5e_engine.evaluation_environmental_contracts import (
-    EnvironmentalItemFacts as EnvironmentalItemFacts,
-)
-from dnd5e_engine.evaluation_environmental_contracts import (
-    EnvironmentalItemTarget as EnvironmentalItemTarget,
-)
-from dnd5e_engine.evaluation_environmental_contracts import (
+    EnvironmentalCreatureTarget,
     EnvironmentalMagicEffectFacts,
     EnvironmentalMagicEffectTarget,
     WorldEnvironmentalEffectCreate,
     WorldEnvironmentalEffectEnd,
+)
+from dnd5e_engine.evaluation_environmental_contracts import (
+    EnvironmentalItemFacts as EnvironmentalItemFacts,
+)
+from dnd5e_engine.evaluation_environmental_contracts import (
+    EnvironmentalItemTarget as EnvironmentalItemTarget,
 )
 from dnd5e_engine.evaluation_environmental_contracts import (
     EnvironmentalPointTarget as EnvironmentalPointTarget,
@@ -46,6 +47,7 @@ from dnd5e_engine.evaluation_rng import RNGContext, RNGTransition
 from dnd5e_engine.evaluation_ruleset import RulesetBinding
 from dnd5e_engine.evaluation_spell_termination import (
     SPELL_TERMINATION_SCHEMA_VERSION,
+    SpellApplicationFacts,
     SpellEndFacts,
     WorldSpellEnd,
     spell_cast_ends,
@@ -71,6 +73,7 @@ CHARGED_ITEM_SCHEMA_VERSION = "engine-evaluation/32"
 STAFF_CAST_SCHEMA_VERSION = "engine-evaluation/41"
 MULTI_SPELL_SCHEMA_VERSION = "engine-evaluation/33"
 SPATIAL_EFFECT_END_SCHEMA_VERSION = "engine-evaluation/34"
+DISPEL_MAGIC_SCHEMA_VERSION = "engine-evaluation/42"
 MATERIAL_SPELL_SCHEMA_VERSION = "engine-evaluation/35"
 MAX_EXPLORATION_SPELL_TARGETS = 10
 EvaluationVersion = Literal[
@@ -90,6 +93,7 @@ EvaluationVersion = Literal[
     "engine-evaluation/37",
     "engine-evaluation/40",
     "engine-evaluation/41",
+    "engine-evaluation/42",
 ]
 
 
@@ -179,6 +183,9 @@ class ExplorationSpellPositions(EvaluationModel):
     )
     target_effect: EnvironmentalMagicEffectFacts | None = Field(
         default=None, exclude_if=lambda value: value is None
+    )
+    target_applications: tuple[SpellApplicationFacts, ...] = Field(
+        default=(), exclude_if=lambda value: not value
     )
     willing_target_id: Annotated[str, Field(min_length=1)] | None = Field(
         default=None, exclude_if=lambda value: value is None
@@ -416,6 +423,7 @@ class RuleEvaluationRequest(EvaluationModel):
             STAFF_CAST_SCHEMA_VERSION: "engine-snapshot/20",
             MULTI_SPELL_SCHEMA_VERSION: "engine-snapshot/20",
             SPATIAL_EFFECT_END_SCHEMA_VERSION: "engine-snapshot/20",
+            DISPEL_MAGIC_SCHEMA_VERSION: "engine-snapshot/20",
             MATERIAL_SPELL_SCHEMA_VERSION: "engine-snapshot/20",
             CAST_ACTIVITY_SCHEMA_VERSION: "engine-snapshot/20",
             IDENTIFY_ACTIVITY_SCHEMA_VERSION: "engine-snapshot/20",
@@ -476,6 +484,12 @@ class RuleEvaluationRequest(EvaluationModel):
         if (
             positions is not None
             and positions.visible_target_id is not None
+            and not (
+                self.schema_version == DISPEL_MAGIC_SCHEMA_VERSION
+                and isinstance(self.payload, ExplorationEnvironmentalSpellCastPayload)
+                and isinstance(self.payload.target, EnvironmentalCreatureTarget)
+                and positions.visible_target_id == self.payload.target.target_id
+            )
             and (
                 type(self.payload) is not ExplorationSpellCastPayload
                 or self.payload.spell_id != "healing-word"
@@ -517,10 +531,13 @@ class RuleEvaluationRequest(EvaluationModel):
             ):
                 raise ValueError("evaluation/40 requires the selected Identify object and material")
             return True
-        if self.schema_version == SPATIAL_EFFECT_END_SCHEMA_VERSION:
+        if self.schema_version in (SPATIAL_EFFECT_END_SCHEMA_VERSION, DISPEL_MAGIC_SCHEMA_VERSION):
             self._validate_environmental_spell()
             return True
-        if self.spell_positions is not None and self.spell_positions.target_effect is not None:
+        if self.spell_positions is not None and (
+            self.spell_positions.target_effect is not None
+            or self.spell_positions.target_applications
+        ):
             raise ValueError("spatial effect target facts require evaluation/34")
         if self.schema_version == MATERIAL_SPELL_SCHEMA_VERSION:
             if self.operation_kind != "world.cast_spell" or (
@@ -639,19 +656,50 @@ class RuleEvaluationRequest(EvaluationModel):
         if positions.willing_target_id is not None:
             raise ValueError("verified willingness requires a creature spell target")
         target = self.payload.target
-        if self.schema_version == SPATIAL_EFFECT_END_SCHEMA_VERSION:
+        if self.schema_version == DISPEL_MAGIC_SCHEMA_VERSION:
+            if self.payload.spell_id != "dispel-magic" or positions.target_item is not None:
+                raise ValueError("evaluation/42 requires Dispel Magic and exact target facts")
+            if isinstance(target, EnvironmentalCreatureTarget):
+                if (
+                    positions.target_effect is not None
+                    or positions.visible_target_id != target.target_id
+                    or not any(
+                        a.entity_id == target.target_id
+                        for a in self.state_snapshot.character_states
+                    )
+                    or any(
+                        a.effect.target_id != target.target_id
+                        for a in positions.target_applications
+                    )
+                    or len({a.identity for a in positions.target_applications})
+                    != len(positions.target_applications)
+                ):
+                    raise ValueError("evaluation/42 creature facts differ from selected target")
+            elif isinstance(target, EnvironmentalMagicEffectTarget):
+                if (
+                    positions.target_applications
+                    or positions.target_effect is None
+                    or positions.target_effect.effect_id != target.effect_id
+                    or positions.target_effect.cell_id != positions.target_cell
+                ):
+                    raise ValueError("evaluation/42 spatial facts differ from selected effect")
+            else:
+                raise ValueError("evaluation/42 requires a creature or spatial effect")
+        elif self.schema_version == SPATIAL_EFFECT_END_SCHEMA_VERSION:
             effect = positions.target_effect
             if (
                 not isinstance(target, EnvironmentalMagicEffectTarget)
                 or positions.target_item is not None
+                or positions.target_applications
                 or effect is None
                 or effect.effect_id != target.effect_id
                 or effect.cell_id != positions.target_cell
+                or effect.anchor_item_id is not None
             ):
                 raise ValueError(
                     "evaluation/34 requires the selected effect's fixed identity and cell"
                 )
-        elif isinstance(target, EnvironmentalMagicEffectTarget):
+        elif isinstance(target, (EnvironmentalMagicEffectTarget, EnvironmentalCreatureTarget)):
             raise ValueError("a spatial effect target requires evaluation/34")
         elif isinstance(target, EnvironmentalPointTarget):
             if positions.target_item is not None or positions.target_cell != target.cell_id:
@@ -787,7 +835,9 @@ class RuleEvaluationResult(EvaluationModel):
                 raise ValueError("delta and result world versions differ")
             if self.schema_version == SPELL_TERMINATION_SCHEMA_VERSION:
                 return self
-            if any(isinstance(op, WorldSpellEnd) for op in self.state_delta.operations):
+            if self.schema_version != DISPEL_MAGIC_SCHEMA_VERSION and any(
+                isinstance(op, WorldSpellEnd) for op in self.state_delta.operations
+            ):
                 raise ValueError("spell end operations require evaluation/37")
             creations = sum(
                 isinstance(op, CombatEffectCreate) for op in self.state_delta.operations
@@ -802,7 +852,13 @@ class RuleEvaluationResult(EvaluationModel):
             spatial_ends = sum(
                 isinstance(op, WorldEnvironmentalEffectEnd) for op in self.state_delta.operations
             )
-            if spatial_ends != int(self.schema_version == SPATIAL_EFFECT_END_SCHEMA_VERSION):
+            if self.schema_version == DISPEL_MAGIC_SCHEMA_VERSION:
+                if spatial_ends > 1 or (
+                    spatial_ends
+                    and any(isinstance(op, WorldSpellEnd) for op in self.state_delta.operations)
+                ):
+                    raise ValueError("evaluation/42 mixes target types")
+            elif spatial_ends != int(self.schema_version == SPATIAL_EFFECT_END_SCHEMA_VERSION):
                 raise ValueError("evaluation/34 requires exactly one spatial effect end")
             casting_begins = sum(
                 isinstance(op, WorldCastActivityBegin) for op in self.state_delta.operations
@@ -849,6 +905,12 @@ class RuleEvaluationResult(EvaluationModel):
         if state_delta is not None:
             ends = spell_cast_ends(request.actor_id, self.proposed_events, facts.applications)
             operations = state_delta.operations
+            dispelled = {
+                op.expected.identity
+                for op in operations
+                if isinstance(op, WorldSpellEnd) and op.reason == "dispelled"
+            }
+            ends = tuple(end for end in ends if end.expected.identity not in dispelled)
             if ends and operations[-len(ends) :] != ends:
                 raise ValueError("spell end operations differ from fixed facts and cast evidence")
             if ends:
@@ -918,6 +980,7 @@ class RuleEvaluationResult(EvaluationModel):
             if request.schema_version in (
                 ENVIRONMENTAL_SPELL_SCHEMA_VERSION,
                 SPATIAL_EFFECT_END_SCHEMA_VERSION,
+                DISPEL_MAGIC_SCHEMA_VERSION,
             ):
                 from dnd5e_engine.evaluation_environmental_spells import verify_environmental_cast
 

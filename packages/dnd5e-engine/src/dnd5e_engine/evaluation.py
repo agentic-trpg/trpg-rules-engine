@@ -30,6 +30,7 @@ from dnd5e_engine.evaluation_ruleset import RulesetBinding, get_default_ruleset,
 from dnd5e_engine.evaluation_saves import evaluate_save
 from dnd5e_engine.evaluation_spell_termination import (
     SPELL_TERMINATION_SCHEMA_VERSION,
+    WorldSpellEnd,
     spell_cast_ends,
     verify_cast_applications,
 )
@@ -106,6 +107,12 @@ async def _evaluate(
         delta = result.state_delta
         if delta is not None:
             ends = spell_cast_ends(request.actor_id, result.proposed_events, facts.applications)
+            dispelled = {
+                op.expected.identity
+                for op in delta.operations
+                if isinstance(op, WorldSpellEnd) and op.reason == "dispelled"
+            }
+            ends = tuple(end for end in ends if end.expected.identity not in dispelled)
             delta = delta.model_copy(update={"operations": (*delta.operations, *ends)})
         result = result.model_copy(
             update={"schema_version": request.schema_version, "state_delta": delta}

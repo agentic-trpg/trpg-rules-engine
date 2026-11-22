@@ -25,8 +25,9 @@ SpellCastEvaluationVersion = Literal[
     "engine-evaluation/36",
     "engine-evaluation/40",
     "engine-evaluation/41",
+    "engine-evaluation/42",
 ]
-EndReason = Literal["spell_cast", "dismissed"]
+EndReason = Literal["spell_cast", "dismissed", "dispelled"]
 Nonempty = Annotated[str, Field(min_length=1)]
 
 
@@ -43,7 +44,11 @@ _INVISIBILITY = TargetEffectNeed("spell_cast", "effect:invisibility", "invisibil
 
 
 class SpellApplicationFacts(EvaluationModel):
-    """Supply one persisted application and its guarded owner and deadline."""
+    """Supply one persisted application, owner, deadline and known actual cast level.
+
+    Older /37 cast-trigger inputs may omit the level; /42 Dispel requires it, including
+    level zero for cantrips and the bound base level for slotless Ritual casts.
+    """
 
     effect: EffectState
     caster_id: Nonempty
@@ -51,6 +56,9 @@ class SpellApplicationFacts(EvaluationModel):
     cast_command_id: Nonempty
     expires_tick: Annotated[int, Field(ge=1)]
     concentration_id: Nonempty | None
+    cast_slot_level: Annotated[int, Field(ge=0, le=9)] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
     @property
     def identity(self) -> EffectIdentity:

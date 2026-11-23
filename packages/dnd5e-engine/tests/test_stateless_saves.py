@@ -195,7 +195,19 @@ def test_six_abilities_pc_npc_shared_resolver_parity(monkeypatch, ability, npc, 
     assert event.roll_total == natural + modifier
     assert event.succeeded == (natural + modifier >= 15)
     assert event.sources == (["flag"] * (int(adv) + int(dis)))
-    assert event.model_dump(exclude={"sources"}) == old.model_dump(exclude={"sources"})
+    assert event.model_dump(exclude={"sources", "roll_detail"}) == old.model_dump(
+        exclude={"sources", "roll_detail"}
+    )
+    assert event.roll_detail.status == "rolled"
+    assert event.roll_detail.d20.faces == (
+        [13, 14] if mode in {"advantage", "disadvantage"} else [13]
+    )
+    assert event.roll_detail.d20.kept_index == (1 if mode == "advantage" else 0)
+    assert [(m.source, m.value) for m in event.roll_detail.modifiers] == [
+        ("ability", 4),
+        ("save_proficiency", 3 if proficiency else 0),
+    ]
+    assert event.roll_total == event.natural + sum(m.value for m in event.roll_detail.modifiers)
     assert result.rng_transition.next_state == old_rng
     independent_rng = random.Random(0)
     for _ in range(2 if mode in {"advantage", "disadvantage"} else 1):
@@ -218,7 +230,7 @@ def test_save_failure_is_accepted_and_no_attack_natural_override(seed, dc, natur
     (event,) = result.proposed_events
     assert event.natural == natural
     assert event.succeeded is success
-    assert event == old
+    assert event.model_dump(exclude={"roll_detail"}) == old.model_dump(exclude={"roll_detail"})
     assert result.rng_transition.next_state == state
 
 
@@ -242,7 +254,12 @@ def test_auto_fail_consumes_no_rng_and_matches_existing_resolver(name, ability):
     result = execute(request, save_loader())
     old, state = legacy_save(request, live)
     assert result.status == "accepted", result.error
-    assert result.proposed_events == (old,)
+    assert result.proposed_events[0].model_dump(exclude={"roll_detail"}) == old.model_dump(
+        exclude={"roll_detail"}
+    )
+    assert result.proposed_events[0].roll_detail.status == "automatic_failure"
+    assert result.proposed_events[0].roll_detail.d20 is None
+    assert result.proposed_events[0].roll_detail.modifiers == []
     assert old.natural is None
     assert old.succeeded is False
     assert result.rng_transition.next_state == state

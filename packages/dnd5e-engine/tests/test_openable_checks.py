@@ -65,6 +65,12 @@ def test_actual_tool_skill_combination(tool_prof, skill_prof, expertise, bonus, 
     actor = spec.request.state_snapshot.character_states[0]
     assert event.modifier == (actor.dexterity - 10) // 2 + bonus
     assert event.advantage == mode
+    assert event.roll_detail.status == "rolled"
+    assert event.roll_detail.d20.origin == "rng"
+    assert len(event.roll_detail.d20.faces) == (2 if mode == "advantage" else 1)
+    assert event.roll_total == event.roll_detail.d20.faces[event.roll_detail.d20.kept_index] + sum(
+        modifier.value for modifier in event.roll_detail.modifiers
+    )
     assert result.rng_transition.state_changed
     assert spec.request.state_snapshot.character_states[0] == actor
     assert asyncio.run(evaluate_openable(spec, loader=synthetic_loader())) == result

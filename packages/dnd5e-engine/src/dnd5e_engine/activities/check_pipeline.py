@@ -14,7 +14,15 @@ from dnd5e_srd_data.schema.monster import MonsterTraitMechanic
 from dnd5e_engine.activities.actor_stats import _SCORE_ATTR, check_modifier, proficiency_bonus_of
 from dnd5e_engine.activities.d20 import AdvantageSources, resolve_mode, roll_d20_test
 from dnd5e_engine.activities.dice import roll_expr
-from dnd5e_engine.events import AdvantageSource, CheckCostOwner, CheckRolled
+from dnd5e_engine.events import (
+    AdvantageSource,
+    CheckCostOwner,
+    CheckRolled,
+    RollD20Detail,
+    RollDetail,
+    RollDieModifier,
+    RollFixedModifier,
+)
 from dnd5e_engine.rules.conditions import (
     conditions_auto_fail_check,
     conditions_charmer_social_advantage,
@@ -204,11 +212,18 @@ def _sources(
 
 
 def _effect_bonus(
-    request: CheckRequest, state: CheckActorState, ctx: ActivityResolutionContext
+    request: CheckRequest,
+    state: CheckActorState,
+    ctx: ActivityResolutionContext,
+    contributions: list[RollFixedModifier | RollDieModifier] | None = None,
 ) -> int:
     # Normalize audited Foundry aliases once, then use the existing effect
     # arithmetic. Projection remains draw-free; bonus dice roll AFTER the d20.
-    """Evaluate an applicable effect bonus through the check's resolution context."""
+    """Evaluate applicable effect buckets and append ordered signed evidence.
+
+    Dice are recorded by the same fold that resolves them. No second roll or
+    expression evaluation occurs.
+    """
     effects: list[ActiveEffect] = [
         effect.model_copy(
             update={
@@ -222,7 +237,18 @@ def _effect_bonus(
     ]
     total = 0
     for bucket in _bonus_buckets(request):
-        total, _ = apply_changes_to_check(total, bucket, effects, ctx.rng)
+        dice_trace: list[tuple[str, str, int, int, int]] | None = (
+            [] if contributions is not None else None
+        )
+        total, _ = apply_changes_to_check(total, bucket, effects, ctx.rng, trace=dice_trace)
+        if contributions is not None and dice_trace is not None:
+            for kind, source, sides, face, value in dice_trace:
+                if kind == "die":
+                    contributions.append(
+                        RollDieModifier(source=source, sides=sides, face=face, value=value)
+                    )
+                else:
+                    contributions.append(RollFixedModifier(source=source, value=value))
     return total
 
 
@@ -236,7 +262,12 @@ def resolve_check_request(
     tool_slug: str | None = None,
     tool_advantage: bool = False,
 ) -> CheckRolled:
-    """Resolve a typed check with the supplied actors, modifiers and explicit RNG."""
+    """Resolve a typed check with supplied actors, modifiers and explicit RNG.
+
+    The returned event includes a roll detail when every contribution is
+    represented. Legacy granted-die redemption leaves that optional detail
+    absent because its arbitrary expression has no signed die trace here.
+    """
     actor = next((c for c in [ctx.caster, *ctx.targets] if c.entity_id == request.actor_id), None)
     if actor is None:
         raise ValueError("rolling actor is absent from the check context")
@@ -252,16 +283,37 @@ def resolve_check_request(
         modifier = activity_check_modifier(
             ctx, actor, skill=skill_label or request.skill, ability=request.ability
         )
+        base_contributions = [RollFixedModifier(source="resolved_check_modifier", value=modifier)]
     else:
-        modifier = check_modifier(
-            actor, request.ability, request.skill
-        ).total + ctx.d20_test_penalty.get(actor.entity_id, d20_test_penalty(actor.conditions))
+        profile = check_modifier(actor, request.ability, request.skill)
+        penalty = ctx.d20_test_penalty.get(actor.entity_id, d20_test_penalty(actor.conditions))
+        modifier = profile.total + penalty
+        base_contributions = [
+            RollFixedModifier(source="ability", value=profile.ability_mod),
+            RollFixedModifier(source="skill_proficiency", value=profile.proficiency),
+        ]
+        skill_bonus = profile.total - profile.ability_mod - profile.proficiency
+        if skill_bonus:
+            base_contributions.append(
+                RollFixedModifier(source="skill_check_bonus", value=skill_bonus)
+            )
+        if penalty:
+            base_contributions.append(RollFixedModifier(source="exhaustion", value=penalty))
         if request.tool in actor.tool_proficiencies:
-            modifier += proficiency_bonus_of(actor)
+            tool_bonus = proficiency_bonus_of(actor)
+            modifier += tool_bonus
+            base_contributions.append(
+                RollFixedModifier(source="tool_proficiency", value=tool_bonus)
+            )
     if tool_slug is not None and tool_slug in actor.tool_proficiencies:
         # Tool and skill proficiency never add the same proficiency bonus twice.
         existing = check_modifier(actor, request.ability, request.skill)
-        modifier += max(0, proficiency_bonus_of(actor) - existing.proficiency)
+        extra_tool_bonus = max(0, proficiency_bonus_of(actor) - existing.proficiency)
+        modifier += extra_tool_bonus
+        if extra_tool_bonus:
+            base_contributions.append(
+                RollFixedModifier(source="tool_proficiency", value=extra_tool_bonus)
+            )
     if tool_advantage or (
         tool_slug in actor.tool_proficiencies and request.skill in actor.skill_proficiencies
     ):
@@ -299,6 +351,7 @@ def resolve_check_request(
         disadvantage_sources=list(sources.disadvantage),
     )
     if failure is None:
+        contributions: list[RollFixedModifier | RollDieModifier] = list(base_contributions)
         forced = ctx.variables.get("force_check_d20")
         roll = roll_d20_test(
             ctx.rng, modifier, sources, forced_natural=int(forced) if forced is not None else None
@@ -308,10 +361,15 @@ def resolve_check_request(
             and (request.tool or tool_slug) in actor.tool_proficiencies
         )
         natural = max(10, roll.kept) if actor.reliable_talent and eligible else roll.kept
+        if natural != roll.kept:
+            contributions.append(
+                RollFixedModifier(source="reliable_talent_floor", value=natural - roll.kept)
+            )
         if actor.entity_id in ctx.check_states or actor.entity_id not in ctx.check_modifiers:
-            modifier += _effect_bonus(request, state, ctx)
+            modifier += _effect_bonus(request, state, ctx, contributions)
         total = natural + modifier
         inspiration = 0
+        inspiration_used = False
         if (
             request.redeem_granted_die
             and ctx.granted_die
@@ -319,6 +377,7 @@ def resolve_check_request(
             and total < request.dc
         ):
             inspiration = roll_expr(ctx.granted_die, ctx.rng)
+            inspiration_used = True
             ctx.granted_die_rolls.append(inspiration)
             total += inspiration
         event = event.model_copy(
@@ -331,7 +390,24 @@ def resolve_check_request(
                 "reliable_talent_applied": natural != roll.kept,
                 "inspiration_bonus": inspiration,
                 "succeeded": total >= request.dc if request.dc is not None else None,
+                "roll_detail": (
+                    RollDetail(
+                        status="rolled",
+                        d20=RollD20Detail(
+                            faces=list(roll.faces),
+                            kept_index=roll.kept_index,
+                            origin="forced" if roll.forced else "rng",
+                        ),
+                        modifiers=contributions,
+                    )
+                    if not inspiration_used
+                    else None
+                ),
             }
+        )
+    else:
+        event = event.model_copy(
+            update={"roll_detail": RollDetail(status="automatic_failure", d20=None)}
         )
     ctx.event_emitter(event)
     # A canonical invocation can resolve several checks using one context.

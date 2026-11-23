@@ -364,6 +364,43 @@ class EffectModifiersConsumed(BaseModel):
     ]
 
 
+class RollD20Detail(BaseModel):
+    """Record d20 faces in order and identify a supplied test value when forced."""
+
+    faces: list[int]
+    kept_index: int
+    origin: Literal["rng", "forced"] = "rng"
+
+
+class RollFixedModifier(BaseModel):
+    """Record one signed fixed contribution from an admitted mechanical input."""
+
+    kind: Literal["fixed"] = "fixed"
+    source: str
+    value: int
+
+
+class RollDieModifier(BaseModel):
+    """Record a bonus die's positive face and signed contribution separately."""
+
+    kind: Literal["die"] = "die"
+    source: str
+    sides: int
+    face: int
+    value: int
+
+
+class RollDetail(BaseModel):
+    """Describe the dice and ordered contributions of a resolved check or save.
+
+    Automatic outcomes contain no d20 or modifiers because no total was rolled.
+    """
+
+    status: Literal["rolled", "automatic_failure", "automatic_success"]
+    d20: RollD20Detail | None
+    modifiers: list[RollFixedModifier | RollDieModifier] = Field(default_factory=list)
+
+
 class SaveRolled(BaseModel):
     """Carry saving throw evidence and its outcome."""
 
@@ -380,6 +417,7 @@ class SaveRolled(BaseModel):
     natural: int | None = None
     modifier: int | None = None
     sources: list[AdvantageSource] = Field(default_factory=list)
+    roll_detail: RollDetail | None = Field(default=None, exclude_if=lambda v: v is None)
 
 
 class CheckRolled(BaseModel):
@@ -399,6 +437,7 @@ class CheckRolled(BaseModel):
     natural: int | None = None
     modifier: int | None = None
     sources: list[AdvantageSource] = Field(default_factory=list)
+    roll_detail: RollDetail | None = Field(default=None, exclude_if=lambda v: v is None)
     target_id: str | None = None
     context: CheckContext = "activity"
     required_sense: RequiredSense = "none"

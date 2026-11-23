@@ -158,6 +158,65 @@ def test_legal_failure_and_explicit_variant_ability_and_flat_bonus():
     assert canonical.proposed_events[0].modifier == 10
 
 
+@pytest.mark.parametrize(
+    ("advantage", "disadvantage", "faces", "kept_index"),
+    [
+        ((), (), [5], 0),
+        (("flag",), (), [5, 19], 1),
+        ((), ("flag",), [5, 19], 0),
+        (("flag",), ("flag",), [5], 0),
+    ],
+)
+def test_check_roll_detail_records_draws_and_signed_fixed_modifier(
+    advantage, disadvantage, faces, kept_index
+):
+    request = check_case(seed=1, advantage=advantage, disadvantage=disadvantage)
+    result = execute(request)
+    (event,) = result.proposed_events
+    assert event.roll_detail.status == "rolled"
+    assert event.roll_detail.d20.faces == faces
+    assert event.roll_detail.d20.kept_index == kept_index
+    assert event.natural == faces[kept_index]
+    assert event.roll_total == event.natural + sum(m.value for m in event.roll_detail.modifiers)
+    assert RuleEvaluationResult.model_validate_json(result.model_dump_json()) == result
+
+
+def test_check_roll_detail_preserves_opposite_effect_sources_and_signed_dice():
+    effect = effect_state(
+        passive_effect_to_active_effect(
+            PassiveEffect(
+                name="Signed check bonuses",
+                transfer=False,
+                changes=[
+                    PassiveEffectChange(key="check.bonus", mode=2, value="+2"),
+                    PassiveEffectChange(key="check.bonus", mode=2, value="-2"),
+                    PassiveEffectChange(key="check.bonus", mode=2, value="1d4"),
+                    PassiveEffectChange(key="check.bonus", mode=2, value="-1d4"),
+                ],
+            ),
+            target_id=HERO,
+            caster_id=HERO,
+        )
+    )
+    request = check_case(seed=1)
+    request = request.model_copy(
+        update={
+            "state_snapshot": request.state_snapshot.model_copy(update={"effect_states": (effect,)})
+        }
+    )
+    result = execute(request)
+    assert result.status == "accepted", result.error
+    (event,) = result.proposed_events
+    detail = event.roll_detail
+    effect_mods = [m for m in detail.modifiers if m.source.startswith("effect:")]
+    assert [m.kind for m in effect_mods] == ["fixed", "fixed", "die", "die"]
+    assert [m.value for m in effect_mods[:2]] == [2, -2]
+    assert all(effect.id in m.source and effect.origin in m.source for m in effect_mods)
+    assert [m.face for m in effect_mods[2:]] == [1, 3]
+    assert [m.value for m in effect_mods[2:]] == [1, -3]
+    assert event.roll_total == event.natural + sum(m.value for m in detail.modifiers)
+
+
 @pytest.mark.parametrize("ability", ["str", "dex", "con", "int", "wis", "cha"])
 def test_all_abilities_without_global_random_or_registry(ability, monkeypatch):
     import random

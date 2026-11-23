@@ -40,7 +40,14 @@ import d20
 from dnd5e_srd_data.schema.monster import MonsterTraitMechanic
 
 from dnd5e_engine.activities.d20 import AdvantageSources, D20Result, roll_d20_test
-from dnd5e_engine.events import AdvantageMode, AdvantageSource
+from dnd5e_engine.events import (
+    AdvantageMode,
+    AdvantageSource,
+    RollD20Detail,
+    RollDetail,
+    RollDieModifier,
+    RollFixedModifier,
+)
 from dnd5e_engine.spatial import cover_bonus
 
 if TYPE_CHECKING:
@@ -73,6 +80,8 @@ class SaveRoll:
       disadvantage cancel to ``"normal"``); an automatic save reports
       ``"normal"`` since no die was rolled.
     * ``sources`` is the advantage/disadvantage provenance actually applied.
+    * ``roll_detail`` records the d20 faces and signed contributions for
+      callers that emit structured evidence; automatic results have no d20.
     """
 
     total: int
@@ -81,6 +90,7 @@ class SaveRoll:
     modifier: int
     mode: AdvantageMode
     sources: tuple[AdvantageSource, ...]
+    roll_detail: RollDetail | None = None
     # C18 §Monster action economy — SRD 5.2 Legendary Resistance. Set to the
     # saving entity's REMAINING pool (post-decrement) iff this save FAILED but
     # was converted to a success by a pre-armed Legendary Resistance use;
@@ -101,6 +111,7 @@ def roll_save(
     target_index: int = 0,
     ignore_cover: bool = False,
     additional_sources: AdvantageSources | None = None,
+    fixed_contributions: tuple[RollFixedModifier, ...] | None = None,
 ) -> SaveRoll:
     """Roll ``target``'s ``ability`` save vs ``dc``; return the ``SaveRoll`` envelope.
 
@@ -138,6 +149,8 @@ def roll_save(
     the C18 Legendary Resistance conversion below. The caller emits
     ``SaveRolled`` (the event field set differs per call site). Empty
     sidecars reproduce the prior single-d20 + per-ability-mod behavior exactly.
+    ``fixed_contributions`` lets an admitted caller expose the components of
+    its resolved base modifier; other callers retain its aggregate provenance.
     """
     # An automatic outcome is still a saving throw. Consume the one-use clause
     # once, even though no d20 is drawn and no advantage mode applies.
@@ -148,19 +161,44 @@ def roll_save(
     )
     if target.entity_id in ctx.target_auto_success_ids:
         return SaveRoll(
-            total=dc, succeeded=True, natural=None, modifier=0, mode="normal", sources=()
+            total=dc,
+            succeeded=True,
+            natural=None,
+            modifier=0,
+            mode="normal",
+            sources=(),
+            roll_detail=RollDetail(status="automatic_success", d20=None),
         )
     if _is_auto_fail(ctx, target, ability):
         return _convert_if_legendary_resistance_armed(
             ctx,
             target,
-            SaveRoll(total=0, succeeded=False, natural=None, modifier=0, mode="normal", sources=()),
+            SaveRoll(
+                total=0,
+                succeeded=False,
+                natural=None,
+                modifier=0,
+                mode="normal",
+                sources=(),
+                roll_detail=RollDetail(status="automatic_failure", d20=None),
+            ),
         )
     modifier = _target_save_modifier(ctx, target, ability)
+    contributions: list[RollFixedModifier | RollDieModifier] = list(
+        fixed_contributions
+        if fixed_contributions is not None
+        else (RollFixedModifier(source="resolved_save_modifier", value=modifier),)
+    )
     # SRD 5.2 Exhaustion — flat ``-2 x level`` on every D20 Test.
-    modifier += ctx.d20_test_penalty.get(target.entity_id, 0)
+    penalty = ctx.d20_test_penalty.get(target.entity_id, 0)
+    modifier += penalty
+    if penalty:
+        contributions.append(RollFixedModifier(source="exhaustion", value=penalty))
     if ability == "dex" and not ignore_cover:
-        modifier += cover_bonus(ctx.target_cover.get(target.entity_id, "none"))
+        cover = cover_bonus(ctx.target_cover.get(target.entity_id, "none"))
+        modifier += cover
+        if cover:
+            contributions.append(RollFixedModifier(source="cover", value=cover))
     # Draw ORDER matters for determinism: the d20 first, the Bless/Bane bonus
     # dice after (folding those dice into the primitive's flat modifier would
     # mean rolling them BEFORE the d20 and would shift the seeded stream).
@@ -173,7 +211,8 @@ def roll_save(
         next_disadvantage=next_disadvantage,
         additional_sources=additional_sources,
     )
-    total = roll.total + _passive_save_bonus(ctx, target)
+    bonus = _passive_save_bonus(ctx, target, contributions)
+    total = roll.total + bonus
     return _convert_if_legendary_resistance_armed(
         ctx,
         target,
@@ -184,6 +223,15 @@ def roll_save(
             modifier=roll.modifier,
             mode=roll.mode,
             sources=roll.sources,
+            roll_detail=RollDetail(
+                status="rolled",
+                d20=RollD20Detail(
+                    faces=list(roll.faces),
+                    kept_index=roll.kept_index,
+                    origin="forced" if roll.forced else "rng",
+                ),
+                modifiers=contributions,
+            ),
         ),
     )
 
@@ -222,6 +270,7 @@ def _convert_if_legendary_resistance_armed(
         modifier=roll.modifier,
         mode=roll.mode,
         sources=roll.sources,
+        roll_detail=roll.roll_detail,
         legendary_resistance_remaining=new_remaining,
     )
 
@@ -302,13 +351,18 @@ def _roll_save_d20(
     return roll_d20_test(ctx.rng, modifier, sources, forced_natural=forced_natural)
 
 
-def _passive_save_bonus(ctx: ActivityResolutionContext, target: Combatant) -> int:
+def _passive_save_bonus(
+    ctx: ActivityResolutionContext,
+    target: Combatant,
+    contributions: list[RollFixedModifier | RollDieModifier] | None = None,
+) -> int:
     """Roll ``target``'s ``passive_save_bonus`` dice expression (Bless/Bane).
 
     Mirrors ``effects/save.py:_roll_passive_save_bonus``: the sidecar carries a
     signed dice-expression string (``"+1d4"`` Bless, ``"-1d4"`` Bane; stacked
     sources pre-joined as ``"a + b"``). Evaluated through ``ctx.rng`` so the
     bonus dice land in the same seed stream as the save d20. Absent / empty → +0.
+    Optional contributions receive signed faces from the original AST walk.
     """
     expr = ctx.passive_save_bonus.get(target.entity_id)
     if not expr:
@@ -321,38 +375,57 @@ def _passive_save_bonus(ctx: ActivityResolutionContext, target: Combatant) -> in
             "orchestrator hydration must emit a d20-parseable signed expression "
             "(e.g. '-1d4' for Bane, '+1d4' for Bless)."
         ) from exc
-    return _eval_node(ast.roll, ctx)
+    return _eval_node(ast.roll, ctx, contributions, source="passive_save_bonus")
 
 
-def _eval_node(node: d20.ast.Node, ctx: ActivityResolutionContext) -> int:
+def _eval_node(
+    node: d20.ast.Node,
+    ctx: ActivityResolutionContext,
+    contributions: list[RollFixedModifier | RollDieModifier] | None = None,
+    *,
+    source: str = "passive_save_bonus",
+    sign: int = 1,
+) -> int:
     """Evaluate a parsed ``d20`` AST against ``ctx.rng`` (deterministic seed).
 
     Mirrors ``effects/save.py:_eval_node`` — ``d20.roll`` uses the global RNG;
     walking the AST and drawing each die face via ``ctx.rng`` keeps the bonus in
     the seeded stream. Supports the literal / dice / unary / binary / parenthetical
-    node set the signed bonus expressions exercise.
+    node set the signed bonus expressions exercise. The optional contribution
+    list records the same walk with the current unary/binary sign.
     """
     if isinstance(node, d20.ast.Literal):
-        return int(node.value)
+        value = sign * int(node.value)
+        if contributions is not None and value:
+            contributions.append(RollFixedModifier(source=source, value=value))
+        return value
     if isinstance(node, d20.ast.Dice):
-        return sum(ctx.rng.randint(1, int(node.size)) for _ in range(int(node.num)))
+        total = 0
+        for _ in range(int(node.num)):
+            face = ctx.rng.randint(1, int(node.size))
+            total += sign * face
+            if contributions is not None:
+                contributions.append(
+                    RollDieModifier(
+                        source=source, sides=int(node.size), face=face, value=sign * face
+                    )
+                )
+        return total
     if isinstance(node, d20.ast.UnOp):
-        inner = _eval_node(node.value, ctx)
         if node.op == "+":
-            return inner
+            return _eval_node(node.value, ctx, contributions, source=source, sign=sign)
         if node.op == "-":
-            return -inner
+            return _eval_node(node.value, ctx, contributions, source=source, sign=-sign)
         raise ValueError(f"Unsupported unary op in passive_save_bonus: {node.op!r}")
     if isinstance(node, d20.ast.BinOp):
-        left = _eval_node(node.left, ctx)
-        right = _eval_node(node.right, ctx)
+        left = _eval_node(node.left, ctx, contributions, source=source, sign=sign)
         if node.op == "+":
-            return left + right
+            return left + _eval_node(node.right, ctx, contributions, source=source, sign=sign)
         if node.op == "-":
-            return left - right
+            return left + _eval_node(node.right, ctx, contributions, source=source, sign=-sign)
         raise ValueError(f"Unsupported binary op in passive_save_bonus: {node.op!r}")
     if isinstance(node, d20.ast.Parenthetical):
-        return _eval_node(node.value, ctx)
+        return _eval_node(node.value, ctx, contributions, source=source, sign=sign)
     raise ValueError(f"Unsupported node in passive_save_bonus: {type(node).__name__}")
 
 

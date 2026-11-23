@@ -16,7 +16,7 @@ from dnd5e_engine.evaluation_delta import StateDelta
 from dnd5e_engine.evaluation_rng import RNGTransition
 from dnd5e_engine.evaluation_state import CharacterStateV2, NonCombatSnapshot
 from dnd5e_engine.evaluation_turn import TurnEvaluation, _refuse
-from dnd5e_engine.events import Ability, SaveRolled
+from dnd5e_engine.events import Ability, RollFixedModifier, SaveRolled
 from dnd5e_engine.rules.conditions import (
     _DECLARATIVE_CONDITION_EFFECTS,
     CONDITION_IMPLIES,
@@ -41,6 +41,7 @@ def resolve_snapshot_save(
         natural=roll.natural,
         modifier=roll.modifier,
         sources=list(roll.sources),
+        roll_detail=roll.roll_detail,
     )
 
 
@@ -64,6 +65,7 @@ def roll_snapshot_save(
         passive_save_auto_fail={target.entity_id: projected["passive_save_auto_fail"]},
         save_is_magical=payload.is_magical,
     )
+    profile = save_modifier(target, payload.ability)
     return roll_save(
         ctx,
         target,
@@ -72,6 +74,10 @@ def roll_snapshot_save(
         ignore_cover=True,
         additional_sources=AdvantageSources(
             advantage=payload.advantage, disadvantage=payload.disadvantage
+        ),
+        fixed_contributions=(
+            RollFixedModifier(source="ability", value=profile.ability_mod),
+            RollFixedModifier(source="save_proficiency", value=profile.proficiency),
         ),
     )
 

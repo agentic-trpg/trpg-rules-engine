@@ -47,8 +47,9 @@ class D20Result:
     The field is deliberately NOT called ``natural``: ``AttackRolled.natural``
     is the KEPT die (the die the natural-20 crit / natural-1 fumble test
     reads), and two same-named fields meaning different things is a footgun.
-    A full ``draws`` tuple, if a host ever needs to render the discarded die,
-    is a later additive change.
+    ``faces`` records both draws in order for advantage/disadvantage; ties
+    retain the first face. A forced natural records its supplied face although
+    it consumes no RNG.
     """
 
     first: int
@@ -57,6 +58,9 @@ class D20Result:
     total: int
     mode: AdvantageMode
     sources: tuple[AdvantageSource, ...]
+    faces: tuple[int, ...] = ()
+    kept_index: int = 0
+    forced: bool = False
 
 
 def resolve_mode(s: AdvantageSources) -> AdvantageMode:
@@ -89,9 +93,23 @@ def roll_d20_test(
     applied = sources.advantage + sources.disadvantage
     if forced_natural is not None:
         kept = first = int(forced_natural)
+        faces = (first,)
     elif mode == "normal":
         kept = first = rng.randint(1, 20)
+        faces = (first,)
     else:
         first, second = rng.randint(1, 20), rng.randint(1, 20)
         kept = max(first, second) if mode == "advantage" else min(first, second)
-    return D20Result(first, kept, modifier, kept + modifier, mode, applied)
+        faces = (first, second)
+    kept_index = faces.index(kept)
+    return D20Result(
+        first,
+        kept,
+        modifier,
+        kept + modifier,
+        mode,
+        applied,
+        faces,
+        kept_index,
+        forced_natural is not None,
+    )

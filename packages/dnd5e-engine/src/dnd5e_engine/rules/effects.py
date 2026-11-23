@@ -270,7 +270,12 @@ def save_flag_abilities(
     )
 
 
-def roll_dice_str(expr: str, rng: random.Random | None = None) -> int:
+def roll_dice_str(
+    expr: str,
+    rng: random.Random | None = None,
+    *,
+    trace: list[tuple[int, int, int]] | None = None,
+) -> int:
     """Roll a plain ``"NdM"`` / ``"NdM+K"`` / ``"NdM-K"`` expression.
 
     Pass a seeded ``random.Random`` as ``rng`` for a reproducible result. With
@@ -278,12 +283,20 @@ def roll_dice_str(expr: str, rng: random.Random | None = None) -> int:
     which is only reproducible if the caller seeds it. In-combat rolls never
     come through here — they use the seeded generator threaded from
     ``start_combat(rng_seed=...)``.
+
+    When supplied, ``trace`` receives each die's sides, positive face and
+    signed contribution in the same draw order. The total is unchanged.
     """
     if not expr.strip():
         return 0
     sign, count, sides, flat = _dice_str_parts(expr)
     draw = (rng or random).randint
-    total = sum(draw(1, sides) for _ in range(count))
+    total = 0
+    for _ in range(count):
+        face = draw(1, sides)
+        total += face
+        if trace is not None:
+            trace.append((sides, face, sign * face))
     return sign * (total + flat)
 
 
@@ -360,6 +373,8 @@ def apply_changes_to_check(
     bucket: str,
     effects: Iterable[ActiveEffect],
     rng: random.Random | None = None,
+    *,
+    trace: list[tuple[str, str, int, int, int]] | None = None,
 ) -> tuple[int, list[str]]:
     """Fold `bucket`-matching `ActiveEffectChange`s into `base_total`.
 
@@ -389,12 +404,22 @@ def apply_changes_to_check(
     priority `add` changes on the same bucket deterministically, independent
     of the effects' declaration order.
 
-    Returns `(new_total, narrator breakdown lines)`.
+    Returns `(new_total, narrator breakdown lines)`. An optional ``trace``
+    records each effective change's signed arithmetic contribution under its
+    effect identity, origin and key, without altering the fold or draw order.
     """
     contribution = 0
     breakdown: list[str] = []
+    effects = list(effects)
+    source_by_change = (
+        {id(ch): f"effect:{eff.id}:{eff.origin}:{ch.key}" for eff in effects for ch in eff.changes}
+        if trace is not None
+        else {}
+    )
     changes = sorted(filter_changes_by_bucket(effects, bucket), key=lambda ch: ch.priority)
     for ch in changes:
+        before_change = contribution
+        dice_total = 0
         if ch.mode == "add":
             if isinstance(ch.value, str):
                 # some SRD asset templates
@@ -404,7 +429,20 @@ def apply_changes_to_check(
                 # only when the value contains a 'd'.
                 stripped = ch.value.strip()
                 if "d" in stripped:
-                    rolled = roll_dice_str(ch.value, rng)
+                    dice_trace: list[tuple[int, int, int]] | None = (
+                        [] if trace is not None else None
+                    )
+                    rolled = (
+                        roll_dice_str(ch.value, rng)
+                        if dice_trace is None
+                        else roll_dice_str(ch.value, rng, trace=dice_trace)
+                    )
+                    if trace is not None and dice_trace is not None:
+                        trace.extend(
+                            ("die", source_by_change[id(ch)], sides, face, value)
+                            for sides, face, value in dice_trace
+                        )
+                        dice_total = sum(value for _, _, value in dice_trace)
                     contribution += rolled
                     breakdown.append(f"effect({ch.value}:{rolled})")
                 else:
@@ -451,6 +489,16 @@ def apply_changes_to_check(
             breakdown.append(f"effect(downgrade:{target})")
         # custom mode reserved per BACKLOG.md "## Blocked" — no Foundry-core
         # semantics to port (host-callback driven); documented no-op.
+        if trace is not None and contribution - before_change - dice_total:
+            trace.append(
+                (
+                    "fixed",
+                    f"{source_by_change[id(ch)]}:{ch.mode}",
+                    0,
+                    0,
+                    contribution - before_change - dice_total,
+                )
+            )
     return base_total + contribution, breakdown
 
 

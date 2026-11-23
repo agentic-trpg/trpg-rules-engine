@@ -13,6 +13,7 @@ from dnd5e_engine.evaluation_cast_activity import (
     ExplorationCastActivityPayload as ExplorationCastActivityPayload,
 )
 from dnd5e_engine.evaluation_cast_activity import WorldCastActivityBegin
+from dnd5e_engine.evaluation_check_facts import CreatureSightFact
 from dnd5e_engine.evaluation_delta import (
     CombatEffectCreate,
     InventorySpendCharge,
@@ -389,6 +390,9 @@ class RuleEvaluationRequest(EvaluationModel):
     independent_condition: IndependentConditionSelection | None = Field(
         default=None, exclude_if=lambda value: value is None
     )
+    creature_sight_facts: tuple[CreatureSightFact, ...] = Field(
+        default=(), exclude_if=lambda value: not value
+    )
 
     def without_spell_ends(self) -> Self:
         """Return the native cast request after checking the extension's scope."""
@@ -447,6 +451,7 @@ class RuleEvaluationRequest(EvaluationModel):
         """Require the payload type and shape matching the operation tag."""
         if self.session_id != self.state_snapshot.session_id:
             raise ValueError("request and snapshot session identities differ")
+        self._validate_creature_sight_facts()
         if self.schema_version == SPELL_TERMINATION_SCHEMA_VERSION:
             self.without_spell_ends()
             return self
@@ -522,6 +527,25 @@ class RuleEvaluationRequest(EvaluationModel):
         elif not isinstance(self.payload, CheckPayload) or self.payload.actor_id != self.actor_id:
             raise ValueError("rules.check requires a matching actor and explicit adjudication")
         return self
+
+    def _validate_creature_sight_facts(self) -> None:
+        """Bound supplied relationships to the exact roller and its condition count."""
+        if not self.creature_sight_facts:
+            return
+        if self.operation_kind != "rules.check" or not isinstance(
+            self.state_snapshot, NonCombatSnapshot
+        ):
+            raise ValueError("creature sight facts require a noncombat check")
+        roller = next(
+            (a for a in self.state_snapshot.character_states if a.entity_id == self.actor_id), None
+        )
+        if roller is None or len(self.creature_sight_facts) > len(roller.conditions):
+            raise ValueError("creature sight facts exceed this check's condition dependencies")
+        needs = {fact.need for fact in self.creature_sight_facts}
+        if len(needs) != len(self.creature_sight_facts) or any(
+            need.observer_id != self.actor_id for need in needs
+        ):
+            raise ValueError("creature sight facts must name unique sources for the exact roller")
 
     def _validate_cast_facts(self) -> None:
         """Bind the extra cast facts to their supported operation and selection."""

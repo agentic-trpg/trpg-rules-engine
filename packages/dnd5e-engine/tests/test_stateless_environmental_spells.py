@@ -7,6 +7,7 @@ import pytest
 from dnd5e_srd_data import BundledAssetLoader, MemoryAssetLoader
 from pydantic import ValidationError
 
+from dnd5e_engine.activities.effects import passive_effect_to_active_effect
 from dnd5e_engine.environment import EnvironmentalSource, environmental_dispels
 from dnd5e_engine.evaluation_contracts import (
     DISPEL_MAGIC_SCHEMA_VERSION,
@@ -25,6 +26,7 @@ from dnd5e_engine.evaluation_delta import (
     WorldEnvironmentalEffectEnd,
     WorldVisualEffectCreate,
 )
+from dnd5e_engine.evaluation_effects import effect_state
 from dnd5e_engine.evaluation_environmental_contracts import (
     ExplorationEnvironmentalSpellCastPayload,
 )
@@ -32,11 +34,12 @@ from dnd5e_engine.evaluation_environmental_spells import (
     environmental_spell_schema_version,
     prepare_environmental_spell,
 )
-from dnd5e_engine.evaluation_rng import RNGTransition
+from dnd5e_engine.evaluation_rng import RNGState, RNGTransition
 from dnd5e_engine.evaluation_ruleset import freeze_ruleset, ruleset_binding
-from dnd5e_engine.events import IntentSubmitted, SaveRolled, SpellCast
+from dnd5e_engine.events import IntentSubmitted, RollDieModifier, SaveRolled, SpellCast
 from tests.evaluation_support import FOE, HERO
 from tests.test_stateless_attack import execute
+from tests.test_stateless_saves import condition
 from tests.test_stateless_timed_spells import spell_wire
 
 
@@ -257,6 +260,138 @@ def test_faerie_fire_uses_its_bound_activity_and_exact_rng():
         ["scenery"] if save.succeeded else [FOE, "scenery"]
     )
     RuleEvaluationResult.model_validate_json(result.model_dump_json()).verify_request(request)
+
+
+def _attached_save_effect(slug, caster_id):
+    """Construct the same typed target application as the canonical spell effect."""
+    spell = BundledAssetLoader().get_spell(slug)
+    return effect_state(
+        passive_effect_to_active_effect(
+            spell.passive_effects[0], target_id=FOE, caster_id=caster_id, concentration=True
+        )
+    ).model_dump(mode="json")
+
+
+def _faerie_save_loader(wire, *, include_bless=True):
+    """Bind the fixed cast and every reviewed asset for the supplied save sources."""
+    canonical = BundledAssetLoader()
+    spells = ["faerie-fire", "bane", "bless"] if include_bless else ["faerie-fire", "bane"]
+    loader = freeze_ruleset(
+        MemoryAssetLoader(
+            items=[canonical.get_item("component-pouch")],
+            spells=[canonical.get_spell(slug) for slug in spells],
+            classes=[canonical.get_class("druid")],
+            traits=[canonical.get_trait("magic-resistance")],
+        )
+    )
+    wire["ruleset_binding"] = ruleset_binding(loader).model_dump(mode="json")
+    return loader
+
+
+@pytest.mark.parametrize("latest_ended", [False, True])
+def test_faerie_fire_tracks_distinct_spells_and_latest_same_name_effect(latest_ended):
+    """Roll both families in effect order with one contributor per family."""
+    wire, _ = _faerie_wire()
+    snapshot = wire["state_snapshot"]
+    older = _attached_save_effect("bless", "old-caster")
+    bane = _attached_save_effect("bane", "bane-caster")
+    newer = _attached_save_effect("bless", "new-caster")
+    disabled_bane = {
+        **_attached_save_effect("bane", "disabled-caster"),
+        "disabled": True,
+    }
+    snapshot["effect_states"] = [older, bane, disabled_bane]
+    if not latest_ended:
+        snapshot["effect_states"].append(newer)
+    snapshot["character_states"][1].update(
+        dexterity=10,
+        save_proficiencies=[],
+        conditions=[condition("restrained").model_dump(mode="json")],
+    )
+    loader = _faerie_save_loader(wire)
+    request = _request(wire)
+    result = execute(request, loader)
+    assert result.status == "accepted", result.error
+    save = result.proposed_events[-1]
+    expected_rng = request.rng_context.state.restore()
+    d20_faces = [expected_rng.randint(1, 20) for _ in range(2)]
+    assert save.roll_detail.d20.faces == d20_faces
+    assert save.natural == min(d20_faces)
+    sources = ((older, 1), (bane, -1)) if latest_ended else ((bane, -1), (newer, 1))
+    expected_dice = []
+    for effect, sign in sources:
+        face = expected_rng.randint(1, 4)
+        expected_dice.append(
+            RollDieModifier(
+                source=f"{effect['id']}@{effect['origin']}", sides=4, face=face, value=sign * face
+            )
+        )
+    assert save.roll_detail.modifiers[2:] == expected_dice
+    assert save.roll_total == save.natural + sum(die.value for die in expected_dice)
+    assert result.rng_transition == RNGTransition.between(request.rng_context, expected_rng)
+    copy = RuleEvaluationResult.model_validate_json(result.model_dump_json())
+    copy.verify_request(request)
+    altered = copy.proposed_events[-1].roll_detail.modifiers[-1]
+    copy.proposed_events[-1].roll_detail.modifiers[-1] = altered.model_copy(
+        update={"source": "effect:unrelated"}
+    )
+    with pytest.raises(ValueError, match="differs from fixed occupants and RNG"):
+        copy.verify_request(request)
+
+
+@pytest.mark.parametrize("name", ["restrained", "paralyzed"])
+def test_faerie_fire_magic_resistance_cancels_restraining_but_not_automatic_failure(name):
+    """Magic Resistance participates in the d20 test, if the condition permits rolling."""
+    wire, _ = _faerie_wire()
+    snapshot = wire["state_snapshot"]
+    snapshot["effect_states"] = [_attached_save_effect("bless", "save-caster")]
+    snapshot["character_states"][1].update(
+        entity_type="NPC",
+        trait_mechanics=["magic_resistance"],
+        conditions=[condition(name).model_dump(mode="json")],
+    )
+    loader = _faerie_save_loader(wire)
+    request = _request(wire)
+    result = execute(request, loader)
+    assert result.status == "accepted", result.error
+    save = result.proposed_events[-1]
+    expected_rng = request.rng_context.state.restore()
+    assert save.advantage == "normal"
+    if name == "restrained":
+        assert set(save.sources) == {"trait", "condition:target"}
+        assert save.roll_detail.d20.faces == [expected_rng.randint(1, 20)]
+        assert save.roll_detail.modifiers[-1].face == expected_rng.randint(1, 4)
+    else:
+        assert save.roll_detail.status == "automatic_failure"
+        assert not save.succeeded
+        assert save.roll_detail.d20 is None
+        assert save.roll_detail.modifiers == []
+    assert result.rng_transition == RNGTransition.between(request.rng_context, expected_rng)
+
+
+@pytest.mark.parametrize("problem", ["wrong_die", "missing_asset", "unknown_trait"])
+def test_faerie_fire_rejects_unreviewed_save_source_before_any_target_roll(monkeypatch, problem):
+    """Refuse even an unsupported modifier on a target ordered after another creature."""
+    wire, _ = _faerie_wire()
+    wire["spell_positions"]["visual_occupants"].append(
+        {"target_kind": "creature", "target_id": HERO, "cell_id": "1,0"}
+    )
+    effect = _attached_save_effect("bless", "save-caster")
+    if problem == "wrong_die":
+        effect["changes"][0]["value"] = "1d6"
+    if problem == "unknown_trait":
+        wire["state_snapshot"]["character_states"][1]["trait_mechanics"] = ["pack_tactics"]
+    wire["state_snapshot"]["effect_states"] = [effect]
+    loader = _faerie_save_loader(wire, include_bless=problem != "missing_asset")
+    request = _request(wire)
+    monkeypatch.setattr(RNGState, "restore", lambda *a: pytest.fail("preflight accessed RNG"))
+    result = execute(request, loader)
+    assert result.status == "unsupported", result.error
+    assert result.error.code == "spell.visual_targets"
+    assert "RUO-54-F1" in result.error.reason
+    assert result.proposed_events == ()
+    assert result.rng_transition is None
+    assert result.state_delta is None
 
 
 @pytest.mark.parametrize("change", ["ability", "dc"])

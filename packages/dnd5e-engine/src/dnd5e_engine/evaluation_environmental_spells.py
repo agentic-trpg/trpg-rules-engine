@@ -34,6 +34,7 @@ from dnd5e_engine.evaluation_contracts import (
     SavePayload,
 )
 from dnd5e_engine.evaluation_delta import ResourceUpdate, StateDelta, StateDeltaOperation
+from dnd5e_engine.evaluation_effects import EffectState, effect_state
 from dnd5e_engine.evaluation_environmental_contracts import (
     EnvironmentalCreatureTarget,
     EnvironmentalItemTarget,
@@ -49,10 +50,15 @@ from dnd5e_engine.evaluation_environmental_contracts import (
 from dnd5e_engine.evaluation_payments import spell_payment
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError
 from dnd5e_engine.evaluation_rng import RNGTransition
-from dnd5e_engine.evaluation_saves import resolve_snapshot_save, save_actor_failure
-from dnd5e_engine.evaluation_spell_termination import WorldSpellEnd
+from dnd5e_engine.evaluation_saves import (
+    project_save_bonus_dice,
+    resolve_snapshot_save,
+    save_actor_failure,
+)
+from dnd5e_engine.evaluation_spell_termination import WorldSpellEnd, reviewed_invisibility
 from dnd5e_engine.evaluation_state import CharacterStateV2, NonCombatSnapshot
 from dnd5e_engine.evaluation_timed_spells import (
+    _passive_profile,
     exploration_source_failure,
     exploration_spell_reaches,
 )
@@ -471,8 +477,25 @@ def _dispel_check(
     return event.succeeded is True
 
 
+def _is_faerie_save_inert(effect: EffectState, loader: AssetLoader) -> bool:
+    """Keep the reviewed Invisibility overlap whose status adds no save modifier."""
+    prefix = "cast:invisibility:"
+    if (
+        effect.disabled
+        or effect.id != "effect:invisibility"
+        or not effect.origin.startswith(prefix)
+    ):
+        return False
+    caster_id = effect.origin.removeprefix(prefix)
+    spell = loader.get_spell("invisibility")
+    if not caster_id.strip() or spell is None or not reviewed_invisibility(spell):
+        return False
+    _, expected, _ = _passive_profile(spell, target_id=effect.target_id, caster_id=caster_id)
+    return effect.flags.get("concentration") is True and effect == effect_state(expected)
+
+
 def _faerie_plan(
-    request: RuleEvaluationRequest, spell: Spell
+    request: RuleEvaluationRequest, spell: Spell, loader: AssetLoader
 ) -> tuple[tuple[StateDeltaOperation, ...], tuple[CombatEvent, ...], RNGTransition]:
     """Select fixed cube occupants and resolve their saves using the reviewed activity.
 
@@ -525,37 +548,45 @@ def _faerie_plan(
         proficiency_bonus_of(avatar), ability_modifier_of(avatar, source.ability)
     )
     actors = {actor.entity_id: actor for actor in snapshot.character_states}
+    occupants = sorted(
+        positions.visual_occupants, key=lambda value: (value.target_kind, value.target_id)
+    )
+    creature_ids = {
+        occupant.target_id for occupant in occupants if occupant.target_kind == "creature"
+    }
+    for target_id in sorted(creature_ids):
+        target = actors.get(target_id)
+        if target is None or not target.is_alive:
+            raise ValueError("Faerie Fire creature lacks fixed living facts")
+        if failure := save_actor_failure(
+            target,
+            reviewed,
+            reviewed_identity=True,
+            reviewed_concentration=True,
+            reviewed_equipment=True,
+            magic_resistance_loader=loader,
+            include_implied_conditions=True,
+        ):
+            raise ValueError(f"RUO-54-F1: {failure}")
+    try:
+        bonus_dice = project_save_bonus_dice(
+            (
+                effect
+                for effect in snapshot.effect_states
+                if effect.target_id in creature_ids and not _is_faerie_save_inert(effect, loader)
+            ),
+            loader,
+            allow_lifecycle_marker=True,
+        )
+    except ValueError as exc:
+        raise ValueError(f"RUO-54-F1: {exc}") from exc
+
     rng = request.rng_context.state.restore()
     saves: list[SaveRolled] = []
     selected: list[VisualTargetEffect] = []
-    for occupant in sorted(
-        positions.visual_occupants, key=lambda value: (value.target_kind, value.target_id)
-    ):
+    for occupant in occupants:
         if occupant.target_kind == "creature":
-            target = actors.get(occupant.target_id)
-            if target is None or not target.is_alive:
-                raise ValueError("Faerie Fire creature lacks fixed living facts")
-            if any(
-                effect.target_id == target.entity_id
-                and not effect.disabled
-                and (effect.changes or (effect.flags and effect.flags != {"concentration": True}))
-                for effect in snapshot.effect_states
-            ):
-                # RUO-54-F1: the standalone save primitive projects conditions,
-                # not arbitrary active effect modifiers. The reviewed
-                # concentration flag records lifecycle only; it changes no save.
-                raise ValueError("RUO-54-F1: target has unsupported save effect modifiers")
-            if failure := save_actor_failure(
-                target,
-                reviewed,
-                reviewed_identity=True,
-                reviewed_concentration=True,
-                reviewed_equipment=True,
-                include_implied_conditions=True,
-            ):
-                # RUO-54-F1: special trait/resource save modifiers need a reviewed
-                # shared resolver input before this area save can admit them.
-                raise ValueError(f"RUO-54-F1: {failure}")
+            target = actors[occupant.target_id]
             save = resolve_snapshot_save(
                 target,
                 SavePayload(
@@ -568,6 +599,7 @@ def _faerie_plan(
                     is_magical=True,
                 ),
                 rng,
+                bonus_dice=bonus_dice.get(target.entity_id, ()),
             )
             saves.append(save)
             if save.succeeded:
@@ -662,7 +694,7 @@ def evaluate_environmental_spell(
         return _refuse("rejected", "spell.source", failure)
     if request.schema_version == FAERIE_FIRE_SCHEMA_VERSION:
         try:
-            operations, events, transition = _faerie_plan(request, spell)
+            operations, events, transition = _faerie_plan(request, spell, loader)
         except ValueError as exc:
             return _refuse("unsupported", "spell.visual_targets", str(exc))
         return dict(
@@ -716,7 +748,9 @@ def verify_environmental_cast(
     if request.schema_version == FAERIE_FIRE_SCHEMA_VERSION:
         if spell is None or result.state_delta is None:
             raise ValueError("Faerie Fire result lacks its reviewed spell or delta")
-        operations, events, transition = _faerie_plan(request, spell)
+        operations, events, transition = _faerie_plan(
+            request, spell, loader if loader is not None else BundledAssetLoader()
+        )
         if (
             result.state_delta.operations != operations
             or result.proposed_events != events

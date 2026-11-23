@@ -13,6 +13,7 @@ from dnd5e_engine.activities.check_pipeline import (
 from dnd5e_engine.activities.context import ActivityResolutionContext
 from dnd5e_engine.effect_lifecycle import conditions_after_effect_application
 from dnd5e_engine.evaluation_actor import combatant
+from dnd5e_engine.evaluation_check_facts import CreatureSightFact, CreatureSightNeed
 from dnd5e_engine.evaluation_contracts import (
     CheckAdjudicationChoice,
     CheckPayload,
@@ -27,6 +28,7 @@ from dnd5e_engine.evaluation_region_effect import (
     is_fixed_region_effect,
 )
 from dnd5e_engine.evaluation_rng import RNGTransition
+from dnd5e_engine.evaluation_ruleset import verify_ruleset
 from dnd5e_engine.evaluation_state import CharacterStateV2, NonCombatSnapshot
 from dnd5e_engine.events import CheckRolled
 from dnd5e_engine.rules.conditions import (
@@ -139,6 +141,29 @@ def check_support_failure(
     return admission if isinstance(admission, dict) else None
 
 
+def check_fact_needs(
+    request: RuleEvaluationRequest, loader: AssetLoader
+) -> tuple[CreatureSightNeed, ...]:
+    """Declare the exact missing World sight relationships without touching RNG.
+
+    Requests rejected by ordinary check admission and checks still awaiting a
+    DC need no World read. Formal evaluation reports any unsupported input.
+    """
+    verify_ruleset(request.ruleset_binding, loader)
+    if (
+        request.operation_kind != "rules.check"
+        or not isinstance(request.payload, CheckPayload)
+        or request.payload.dc is None
+    ):
+        return ()
+    required: list[CreatureSightNeed] = []
+    admission = _admit_check(request, loader, sight_needs=required)
+    if isinstance(admission, dict):
+        return ()
+    supplied = {fact.need for fact in request.creature_sight_facts}
+    return tuple(need for need in required if need not in supplied)
+
+
 def _linked_condition_effect(
     condition: ActiveCondition, pending_links: dict[tuple[str, str], EffectState]
 ) -> EffectState | None:
@@ -162,8 +187,10 @@ def _linked_condition_effect(
     return effect
 
 
-def _charmer_id(condition: ActiveCondition, effect: EffectState | None) -> str:
-    """Resolve a social check's source from a direct condition or its linked cast."""
+def _condition_source_id(
+    condition: ActiveCondition, effect: EffectState | None, source_role: str
+) -> str:
+    """Resolve an exact source from a direct condition or its linked actor effect."""
     source = condition.source_entity_id
     if effect is not None:
         origin_type, _, origin_detail = effect.origin.partition(":")
@@ -172,13 +199,33 @@ def _charmer_id(condition: ActiveCondition, effect: EffectState | None) -> str:
             source = origin_actor
             if effect.lifecycle is not None and effect.lifecycle.source_id != source:
                 raise _InvalidCheckFactsError(
-                    "charmer's effect origin differs from its captured source"
+                    f"{source_role}'s effect origin differs from its captured source"
                 )
         elif effect.lifecycle is not None:
             source = effect.lifecycle.source_id
     if not source.strip() or source.startswith("implied:"):
-        raise _InvalidCheckFactsError("social check requires the active charmer's source identity")
+        raise _InvalidCheckFactsError(f"check requires the active {source_role}'s source identity")
     return source
+
+
+def _fear_sight_needs(
+    actor_id: str,
+    names: list[str],
+    conditions: list[tuple[ActiveCondition, EffectState | None]],
+) -> tuple[CreatureSightNeed, ...]:
+    """Find distinct fear sources when the bound sight gate can affect this roll."""
+    if conditions_grant_disadvantage_on_ability_checks(
+        names, fear_source_in_sight=True
+    ) == conditions_grant_disadvantage_on_ability_checks(names, fear_source_in_sight=False):
+        return ()
+    return tuple(
+        CreatureSightNeed(observer_id=actor_id, source_id=source_id)
+        for source_id in dict.fromkeys(
+            _condition_source_id(condition, effect, "fear source")
+            for condition, effect in conditions
+            if condition.condition == Condition.FRIGHTENED
+        )
+    )
 
 
 def _check_actor_effects(
@@ -186,8 +233,11 @@ def _check_actor_effects(
     effects: list[EffectState],
     payload: CheckPayload,
     loader: AssetLoader | None,
+    *,
+    sight_facts: tuple[CreatureSightFact, ...] = (),
+    sight_needs: list[CreatureSightNeed] | None = None,
 ) -> CheckActorState:
-    """Project fixed effects; native callers also bind condition assets when supplied."""
+    """Project fixed effects and validate the roller's conditional sight inputs."""
     pending_links: dict[tuple[str, str], EffectState] = {}
     active: list[ActiveEffect] = []
     for effect in effects:
@@ -219,38 +269,54 @@ def _check_actor_effects(
             raise _InvalidCheckFactsError(
                 f"{status} clauses differ from the pinned compiled rule projection"
             )
+    condition_sources = []
     for record in actor.conditions:
         condition = ActiveCondition.model_validate(record.model_dump())
         if condition.condition == Condition.EXHAUSTION and condition.exhaustion_level < 1:
             raise _InvalidCheckFactsError("active Exhaustion requires a positive level")
         linked_effect = _linked_condition_effect(condition, pending_links)
+        condition_sources.append((condition, linked_effect))
 
         if (
             payload.social_interaction
             and actor.entity_id == payload.target_id
             and conditions_charmer_social_advantage([condition.condition])
         ):
-            charmer_ids.append(_charmer_id(condition, linked_effect))
+            charmer_ids.append(_condition_source_id(condition, linked_effect, "charmer"))
     if pending_links:
         raise _InvalidCheckFactsError("active effect is missing its projected condition")
 
+    fear_source_in_sight = True
     if actor.entity_id == payload.actor_id:
-        names = sorted(statuses)
-        if conditions_grant_disadvantage_on_ability_checks(
-            names, fear_source_in_sight=True
-        ) != conditions_grant_disadvantage_on_ability_checks(names, fear_source_in_sight=False):
-            raise _InvalidCheckFactsError("ability check requires the fear source's visibility")
+        required = _fear_sight_needs(actor.entity_id, sorted(statuses), condition_sources)
+        if sight_needs is not None:
+            sight_needs.extend(required)
+        else:
+            known = {fact.need: fact.visible for fact in sight_facts}
+            if set(required) != known.keys():
+                raise _InvalidCheckFactsError(
+                    "ability check requires visibility for its exact fear sources"
+                )
+            if required:
+                fear_source_in_sight = any(known.values())
         for active_effect in effective_effects(active):
             for change in active_effect.changes:
                 try:
                     validate_check_effect_change(change, payload)
                 except ValueError as exc:
                     raise _InvalidCheckFactsError(f"invalid {change.key} change: {exc}") from exc
-    return CheckActorState(effects=tuple(active), charmer_ids=tuple(charmer_ids))
+    return CheckActorState(
+        effects=tuple(active),
+        charmer_ids=tuple(charmer_ids),
+        fear_source_in_sight=fear_source_in_sight,
+    )
 
 
 def _admit_check(
-    request: RuleEvaluationRequest, loader: AssetLoader
+    request: RuleEvaluationRequest,
+    loader: AssetLoader,
+    *,
+    sight_needs: list[CreatureSightNeed] | None = None,
 ) -> CheckEvaluation | tuple[CharacterStateV2, CharacterStateV2 | None, dict[str, CheckActorState]]:
     """Admit the roller and named target with their relevant fixed check inputs."""
     snapshot, payload = request.state_snapshot, request.payload
@@ -318,7 +384,14 @@ def _admit_check(
             effects_by_actor[effect.target_id].append(effect)
     try:
         check_states = {
-            actor_id: _check_actor_effects(state, effects_by_actor[actor_id], payload, loader)
+            actor_id: _check_actor_effects(
+                state,
+                effects_by_actor[actor_id],
+                payload,
+                loader,
+                sight_facts=request.creature_sight_facts,
+                sight_needs=sight_needs,
+            )
             for actor_id, state in actors.items()
         }
     except ValidationError:

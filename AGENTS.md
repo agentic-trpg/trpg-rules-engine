@@ -27,6 +27,8 @@ in the current user task when they differ. Keep changes scoped to the requested 
 
 ## Authoritative project architecture (mandatory)
 
+**规则求值必读。** 每次接手检定、豁免、攻击、施法、骰子、效果修正或 SM／RE 接口任务，先读逻辑同级 DOC 的 [Module Contracts §4.2a](../agentic-trpg/docs/MODULE_CONTRACTS.md#42a-按规则声明补齐求值事实)。RE 根据已绑定规则声明所需事实并选择已有计算步骤，SM 取齐固定事实并提交结果。设计或重构前沿真实公开入口核对已有共用读取、计算、提交和重放，只迁移需要接入的专用逻辑。平行 worktree 先定位本任务配对的 DOC。
+
 This Rules Engine is one repository in the Agentic TRPG project. The sibling
 `agentic-trpg` repository holds the authoritative cross-module architecture.
 For structural, ownership or cross-repository interface changes, first read

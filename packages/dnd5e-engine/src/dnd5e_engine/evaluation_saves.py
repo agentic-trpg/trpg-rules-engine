@@ -1,18 +1,24 @@
 """Bounded explicit saving throws over supplied actor facts and private RNG."""
 
 import random
-from typing import get_args
+from collections.abc import Iterable
+from functools import lru_cache
+from typing import Literal, get_args
 
-from dnd5e_srd_data.loader import AssetLoader
+from dnd5e_srd_data.loader import AssetLoader, BundledAssetLoader
+from dnd5e_srd_data.schema.monster import MonsterTrait, MonsterTraitMechanic
+from dnd5e_srd_data.schema.spell import Spell
 
 from dnd5e_engine.activities.actor_stats import _SCORE_ATTR, save_modifier
 from dnd5e_engine.activities.context import ActivityResolutionContext
 from dnd5e_engine.activities.d20 import AdvantageSources
-from dnd5e_engine.activities.save_primitive import SaveRoll, roll_save
+from dnd5e_engine.activities.effects import passive_effect_to_active_effect
+from dnd5e_engine.activities.save_primitive import SaveBonusDie, SaveRoll, roll_save
 from dnd5e_engine.evaluation_actor import combatant
 from dnd5e_engine.evaluation_beacon import is_reviewed_beacon_effect
 from dnd5e_engine.evaluation_contracts import RuleEvaluationRequest, SavePayload
 from dnd5e_engine.evaluation_delta import StateDelta
+from dnd5e_engine.evaluation_effects import EffectState, effect_state
 from dnd5e_engine.evaluation_rng import RNGTransition
 from dnd5e_engine.evaluation_state import CharacterStateV2, NonCombatSnapshot
 from dnd5e_engine.evaluation_turn import TurnEvaluation, _refuse
@@ -25,12 +31,107 @@ from dnd5e_engine.rules.conditions import (
     project_passive_save_modifiers,
 )
 
+_SAVE_SPELL_DICE: dict[str, tuple[str, Literal[-1, 1]]] = {
+    "effect:blessed": ("bless", 1),
+    "effect:bane": ("bane", -1),
+}
+_MAGIC_RESISTANCE_SLUG = "magic-resistance"
+
+
+@lru_cache(maxsize=2)
+def _reviewed_save_spell(slug: str, sign: Literal[-1, 1]) -> tuple[Spell, EffectState]:
+    """Normalize the canonical application and verify its compiled signed d4."""
+    spell = BundledAssetLoader().get_spell(slug)
+    if spell is None or len(spell.passive_effects) != 1:
+        raise ValueError(f"{slug} has no unique reviewed save modifier")
+    application = passive_effect_to_active_effect(
+        spell.passive_effects[0],
+        target_id="reviewed-target",
+        caster_id="reviewed-source",
+        concentration=True,
+    )
+    save_changes = [
+        change for change in application.changes if change.key == "system.bonuses.abilities.save"
+    ]
+    expected = "1d4" if sign == 1 else "-1d4"
+    if len(save_changes) != 1 or (save_changes[0].mode, save_changes[0].value) != ("add", expected):
+        raise ValueError(f"{slug} has no reviewed signed d4 save modifier")
+    return spell, effect_state(application)
+
+
+def project_save_bonus_dice(
+    effects: Iterable[EffectState],
+    loader: AssetLoader,
+    *,
+    allow_lifecycle_marker: bool = False,
+) -> dict[str, tuple[SaveBonusDie, ...]]:
+    """Project reviewed applications per target in persisted application order.
+
+    Disabled sources contribute nothing. The latest equal-potency cast of a
+    spell wins, with the preceding cast available if it ends first. Unknown
+    active mechanics fail admission before any caller draws dice.
+    """
+    winners: dict[str, dict[str, tuple[int, SaveBonusDie]]] = {}
+    bound_spells: dict[str, Spell | None] = {}
+    for ordinal, effect in enumerate(effects):
+        if effect.disabled:
+            continue
+        rule = _SAVE_SPELL_DICE.get(effect.id)
+        if rule is None:
+            if allow_lifecycle_marker and (
+                not (
+                    effect.changes or effect.statuses or effect.action_policy or effect.end_effects
+                )
+                and effect.lifecycle is None
+                and (
+                    not effect.flags
+                    or (
+                        effect.flags.keys() == {"concentration"}
+                        and effect.flags["concentration"] is True
+                    )
+                )
+            ):
+                continue
+            raise ValueError("target has unsupported save effect modifiers")
+        slug, sign = rule
+        spell, reviewed = _reviewed_save_spell(slug, sign)
+        if slug not in bound_spells:
+            bound_spells[slug] = loader.get_spell(slug)
+        prefix = reviewed.origin.removesuffix("reviewed-source")
+        if (
+            not effect.origin.startswith(prefix)
+            or not effect.origin.removeprefix(prefix).strip()
+            or bound_spells[slug] != spell
+            or effect
+            != reviewed.model_copy(update={"target_id": effect.target_id, "origin": effect.origin})
+            or effect.flags.get("concentration") is not True
+        ):
+            raise ValueError(f"{slug} save modifier differs from its reviewed application")
+        winners.setdefault(effect.target_id, {})[slug] = (
+            ordinal,
+            SaveBonusDie(source=f"{effect.id}@{effect.origin}", sides=4, sign=sign),
+        )
+    return {
+        target_id: tuple(die for _, die in sorted(ranked.values()))
+        for target_id, ranked in winners.items()
+    }
+
+
+@lru_cache(maxsize=1)
+def _reviewed_magic_resistance() -> MonsterTrait | None:
+    """Read the canonical typed Magic Resistance definition from the bundled rules."""
+    return BundledAssetLoader().get_trait(_MAGIC_RESISTANCE_SLUG)
+
 
 def resolve_snapshot_save(
-    state: CharacterStateV2, payload: SavePayload, rng: random.Random
+    state: CharacterStateV2,
+    payload: SavePayload,
+    rng: random.Random,
+    *,
+    bonus_dice: tuple[SaveBonusDie, ...] = (),
 ) -> SaveRolled:
     """Shared calculation seam; caller must prove full modifier/lifecycle admission."""
-    roll = roll_snapshot_save(state, payload, rng)
+    roll = roll_snapshot_save(state, payload, rng, bonus_dice=bonus_dice)
     return SaveRolled(
         target_id=state.entity_id,
         ability=payload.ability,
@@ -46,7 +147,11 @@ def resolve_snapshot_save(
 
 
 def roll_snapshot_save(
-    state: CharacterStateV2, payload: SavePayload, rng: random.Random
+    state: CharacterStateV2,
+    payload: SavePayload,
+    rng: random.Random,
+    *,
+    bonus_dice: tuple[SaveBonusDie, ...] = (),
 ) -> SaveRoll:
     """Roll with the fixed actor's admitted save profile and supplied RNG."""
     target = combatant(state)
@@ -79,6 +184,7 @@ def roll_snapshot_save(
             RollFixedModifier(source="ability", value=profile.ability_mod),
             RollFixedModifier(source="save_proficiency", value=profile.proficiency),
         ),
+        bonus_dice=bonus_dice,
     )
 
 
@@ -114,6 +220,7 @@ def save_actor_failure(
     reviewed_identity: bool = False,
     reviewed_concentration: bool = False,
     reviewed_equipment: bool = False,
+    magic_resistance_loader: AssetLoader | None = None,
     include_implied_conditions: bool = False,
 ) -> str | None:
     """Check actor prerequisites for the admitted saving throw."""
@@ -127,7 +234,6 @@ def save_actor_failure(
     if (
         ((state.worn_armor or state.shield_equipped) and not reviewed_equipment)
         or (state.concentration_effect_id and not reviewed_concentration)
-        or state.trait_mechanics
         or (
             not reviewed_identity
             and (
@@ -143,6 +249,17 @@ def save_actor_failure(
         or state.legendary_resistances_remaining
     ):
         return "feature, trait, concentration and resource-dependent saves are not migrated"
+    if state.trait_mechanics:
+        canonical = _reviewed_magic_resistance() if magic_resistance_loader is not None else None
+        if (
+            state.entity_type == "Character"
+            or state.trait_mechanics != [MonsterTraitMechanic.MAGIC_RESISTANCE]
+            or magic_resistance_loader is None
+            or canonical is None
+            or canonical.mechanic != MonsterTraitMechanic.MAGIC_RESISTANCE
+            or magic_resistance_loader.get_trait(_MAGIC_RESISTANCE_SLUG) != canonical
+        ):
+            return "feature, trait, concentration and resource-dependent saves are not migrated"
     if failure := save_condition_failure(state, loader, include_implied=include_implied_conditions):
         return failure
     for slug in state.carried_item_slugs:
@@ -167,15 +284,18 @@ def evaluate_save(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
         return _refuse(
             "unsupported", "save.cover", "cover needs a complete source geometry contract"
         )
-    active_effects = tuple(
+    active_effects = [
         effect
         for effect in snapshot.effect_states
         if effect.target_id == target.entity_id and not effect.disabled
-    )
-    if any(not is_reviewed_beacon_effect(effect, loader) for effect in active_effects):
-        return _refuse(
-            "unsupported", "save.effects", "active effect modifiers require closed deltas"
-        )
+    ]
+    other_effects = [
+        effect for effect in active_effects if not is_reviewed_beacon_effect(effect, loader)
+    ]
+    try:
+        bonus_dice = project_save_bonus_dice(other_effects, loader).get(target.entity_id, ())
+    except ValueError as exc:
+        return _refuse("unsupported", "save.effects", str(exc))
     if set(payload.advantage + payload.disadvantage) - {"flag"}:
         return _refuse(
             "unsupported", "save.sources", "only explicitly adjudicated flags are admitted"
@@ -200,13 +320,13 @@ def evaluate_save(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
         return _refuse(
             "unsupported", "save.conditions", "condition lifecycle dependencies are not migrated"
         )
-    failure = save_actor_failure(target, loader)
+    failure = save_actor_failure(target, loader, magic_resistance_loader=loader)
     if failure:
         return _refuse("unsupported", "save.actor", failure)
     rng = request.rng_context.state.restore()
-    if payload.ability == "wis" and active_effects:
+    if payload.ability == "wis" and len(active_effects) != len(other_effects):
         payload = payload.model_copy(update={"advantage": (*payload.advantage, "effect")})
-    event = resolve_snapshot_save(target, payload, rng)
+    event = resolve_snapshot_save(target, payload, rng, bonus_dice=bonus_dice)
     return dict(
         status="accepted",
         state_delta=StateDelta(expected_world_version=snapshot.world_version, operations=()),

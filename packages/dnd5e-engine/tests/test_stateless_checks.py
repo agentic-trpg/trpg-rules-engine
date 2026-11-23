@@ -1,5 +1,6 @@
 """Actual check resolver parity, explicit adjudication and unpublished failures."""
 
+import json
 from copy import deepcopy
 from typing import get_args
 
@@ -11,6 +12,8 @@ from pydantic import ValidationError
 from dnd5e_engine.activities.effects import passive_effect_to_active_effect
 from dnd5e_engine.check import CheckSpec, resolve_check
 from dnd5e_engine.effect_lifecycle import conditions_after_effect_application
+from dnd5e_engine.evaluation_check_facts import CreatureSightFact, CreatureSightNeed
+from dnd5e_engine.evaluation_checks import check_fact_needs
 from dnd5e_engine.evaluation_contracts import (
     CheckPayload,
     RuleEvaluationRequest,
@@ -639,6 +642,84 @@ def test_only_the_rollers_fear_requires_visibility_before_rng(monkeypatch):
     assert result.error.code == "check.effects"
     assert "visibility" in result.error.reason
     assert result.rng_transition is None
+
+
+@pytest.mark.parametrize("visible", [(False, False), (True, False), (False, True)])
+def test_frightened_check_declares_distinct_direct_and_linked_sources(visible):
+    caster_id = "npc:012345abcdfe"
+    effect = effect_state(
+        ActiveEffect(
+            id="effect:fear",
+            name="Fear",
+            origin=f"cast:fear:{caster_id}",
+            target_id=HERO,
+            statuses={"frightened"},
+        )
+    )
+    (linked,), _ = conditions_after_effect_application((), effect.id, effect.statuses)
+    direct = ActiveCondition(
+        condition="frightened", source_entity_id="npc:012345abcdef", scope="session"
+    )
+    duplicate_source = direct.model_copy(update={"source_entity_id": caster_id})
+    records = [
+        ConditionRecord.model_validate(condition.model_dump())
+        for condition in (direct, linked, duplicate_source)
+    ]
+    request = check_case(seed=5, actor_updates={"conditions": records})
+    request = request.model_copy(
+        update={
+            "state_snapshot": request.state_snapshot.model_copy(update={"effect_states": (effect,)})
+        }
+    )
+    loader = synthetic_loader()
+    needs = check_fact_needs(request, loader)
+    assert needs == (
+        CreatureSightNeed(observer_id=HERO, source_id=direct.source_entity_id),
+        CreatureSightNeed(observer_id=HERO, source_id=caster_id),
+    )
+    facts = tuple(
+        CreatureSightFact(need=need, visible=value)
+        for need, value in zip(needs, visible, strict=True)
+    )
+    partial = request.model_copy(update={"creature_sight_facts": facts[:1]})
+    assert check_fact_needs(partial, loader) == needs[1:]
+    refused = execute(partial, loader)
+    assert refused.status == "unsupported"
+    assert refused.rng_transition is None
+    request = RuleEvaluationRequest.model_validate_json(
+        request.model_copy(update={"creature_sight_facts": facts}).model_dump_json()
+    )
+    assert check_fact_needs(request, loader) == ()
+    result = execute(request, loader)
+    assert result.status == "accepted", result.error
+    (event,) = result.proposed_events
+    rng = request.rng_context.state.restore()
+    rolls = tuple(rng.randint(1, 20) for _ in range(2 if any(visible) else 1))
+    assert event.advantage == ("disadvantage" if any(visible) else "normal")
+    assert event.rolled_natural == min(rolls)
+    assert event.disadvantage_sources == (["condition:attacker"] if any(visible) else [])
+    assert result.rng_transition.next_state == RNGState.capture(rng)
+
+
+def test_frightened_check_rejects_inexact_visibility_before_rng(monkeypatch):
+    raw = ActiveCondition(
+        condition="frightened", source_entity_id="npc:012345abcdfe", scope="session"
+    )
+    case = check_case(
+        actor_updates={"conditions": [ConditionRecord.model_validate(raw.model_dump())]}
+    )
+    unrelated = CreatureSightNeed(observer_id=HERO, source_id="npc:012345abcdef")
+    supplied = case.model_copy(
+        update={"creature_sight_facts": (CreatureSightFact(need=unrelated, visible=False),)}
+    )
+    monkeypatch.setattr(RNGState, "restore", lambda self: pytest.fail("RNG before unsupported"))
+    result = execute(supplied)
+    assert result.status == "unsupported"
+    assert result.rng_transition is None
+    malformed = supplied.model_dump(mode="json")
+    malformed["creature_sight_facts"][0]["visible"] = "false"
+    with pytest.raises(ValidationError, match="boolean"):
+        RuleEvaluationRequest.model_validate_json(json.dumps(malformed))
 
 
 @pytest.mark.parametrize(("flag", "advantage"), [("true", "advantage"), ("false", "normal")])

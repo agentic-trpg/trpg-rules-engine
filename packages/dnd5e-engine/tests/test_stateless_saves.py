@@ -9,6 +9,7 @@ from dataclasses import replace
 import pytest
 from dnd5e_srd_data import BundledAssetLoader, MemoryAssetLoader
 from dnd5e_srd_data.schema.common import SaveActivity, SaveBlock, SaveDcBlock
+from dnd5e_srd_data.schema.monster import MonsterTraitMechanic
 from pydantic import ValidationError
 
 from dnd5e_engine import evaluation_saves
@@ -33,7 +34,7 @@ from tests.test_stateless_attack import execute, request_and_live
 from tests.test_stateless_item_closure_core import isolate
 
 
-def save_loader():
+def save_loader(*, traits=()):
     canonical = BundledAssetLoader()
     source = synthetic_loader()
     return MemoryAssetLoader(
@@ -50,6 +51,7 @@ def save_loader():
                 "prone",
             )
         ],
+        traits=traits,
     )
 
 
@@ -281,6 +283,43 @@ def test_restrained_disadvantage_and_flag_cancel_preserve_provenance():
     assert result.rng_transition.next_state == state
 
 
+@pytest.mark.parametrize("magical", [False, True])
+def test_reviewed_magic_resistance_uses_the_actual_save_kind(magical):
+    """A known trait affects magical saves and leaves other saves ordinary."""
+    request, _ = save_case(ability="dex", npc=True)
+    loader = save_loader(traits=[BundledAssetLoader().get_trait("magic-resistance")])
+    snapshot = request.state_snapshot
+    snapshot = snapshot.model_copy(
+        update={
+            "character_states": tuple(
+                actor.model_copy(
+                    update={"trait_mechanics": [MonsterTraitMechanic.MAGIC_RESISTANCE]}
+                )
+                if actor.entity_id == FOE
+                else actor
+                for actor in snapshot.character_states
+            )
+        }
+    )
+    request = request.model_copy(
+        update={
+            "state_snapshot": snapshot,
+            "payload": request.payload.model_copy(update={"is_magical": magical}),
+            "ruleset_binding": ruleset_binding(loader),
+        }
+    )
+    result = execute(request, loader)
+    assert result.status == "accepted", result.error
+    (event,) = result.proposed_events
+    expected_rng = random.Random(0)
+    faces = [expected_rng.randint(1, 20) for _ in range(2 if magical else 1)]
+    assert event.roll_detail.d20.faces == faces
+    assert event.advantage == ("advantage" if magical else "normal")
+    assert event.sources == (["trait"] if magical else [])
+    assert event.natural == max(faces)
+    assert result.rng_transition.next_state == RNGState.capture(expected_rng)
+
+
 @pytest.mark.parametrize("bad", ["target", "effect", "condition", "feature", "source", "snapshot"])
 def test_refusals_before_rng_or_modifiers(monkeypatch, bad):
     request, _ = save_case()
@@ -338,8 +377,8 @@ def test_post_draw_fault_is_unpublished_and_inputs_unchanged(monkeypatch, fault)
 
     original = evaluation_saves.resolve_snapshot_save
 
-    def fail(state, payload, rng):
-        event = original(state, payload, rng)
+    def fail(state, payload, rng, *, bonus_dice):
+        event = original(state, payload, rng, bonus_dice=bonus_dice)
         assert event.natural == 13
         assert event.roll_total == 20
         raise fault("post-draw save fault")

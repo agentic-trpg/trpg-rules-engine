@@ -34,7 +34,7 @@ MIRRORS, does not import from, ``effects/save.py``:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Final, Literal
 
 import d20
 from dnd5e_srd_data.schema.monster import MonsterTraitMechanic
@@ -58,6 +58,15 @@ if TYPE_CHECKING:
 # Test-determinism seam for the natural save d20 (our own code; effects/save.py
 # has none and relies on a seeded ctx.rng). Scoped to the first target.
 FORCE_SAVE_D20: Final = "force_save_d20"
+
+
+@dataclass(frozen=True)
+class SaveBonusDie:
+    """One admitted signed die carrying its fixed source identity."""
+
+    source: str
+    sides: int
+    sign: Literal[-1, 1]
 
 
 @dataclass(frozen=True)
@@ -112,6 +121,7 @@ def roll_save(
     ignore_cover: bool = False,
     additional_sources: AdvantageSources | None = None,
     fixed_contributions: tuple[RollFixedModifier, ...] | None = None,
+    bonus_dice: tuple[SaveBonusDie, ...] = (),
 ) -> SaveRoll:
     """Roll ``target``'s ``ability`` save vs ``dc``; return the ``SaveRoll`` envelope.
 
@@ -151,6 +161,8 @@ def roll_save(
     sidecars reproduce the prior single-d20 + per-ability-mod behavior exactly.
     ``fixed_contributions`` lets an admitted caller expose the components of
     its resolved base modifier; other callers retain its aggregate provenance.
+    ``bonus_dice`` supplies typed dice with their application identities.
+    They are rolled in supplied order after the d20 and never on automatic results.
     """
     # An automatic outcome is still a saving throw. Consume the one-use clause
     # once, even though no d20 is drawn and no advantage mode applies.
@@ -212,6 +224,13 @@ def roll_save(
         additional_sources=additional_sources,
     )
     bonus = _passive_save_bonus(ctx, target, contributions)
+    for die in bonus_dice:
+        face = ctx.rng.randint(1, die.sides)
+        value = die.sign * face
+        contributions.append(
+            RollDieModifier(source=die.source, sides=die.sides, face=face, value=value)
+        )
+        bonus += value
     total = roll.total + bonus
     return _convert_if_legendary_resistance_armed(
         ctx,

@@ -91,6 +91,7 @@ def roll_d20_test(
     """
     mode = resolve_mode(sources)
     applied = sources.advantage + sources.disadvantage
+    faces: tuple[int, ...]
     if forced_natural is not None:
         kept = first = int(forced_natural)
         faces = (first,)

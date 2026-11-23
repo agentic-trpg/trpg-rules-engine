@@ -13,6 +13,7 @@ from dnd5e_engine.evaluation_environmental_contracts import (
 from dnd5e_engine.evaluation_environmental_contracts import (
     WorldEnvironmentalEffectEnd as WorldEnvironmentalEffectEnd,
 )
+from dnd5e_engine.evaluation_environmental_contracts import WorldVisualEffectCreate
 from dnd5e_engine.evaluation_haste_delta import (
     EffectFollowUpCreate,
     HasteGraphCreate,
@@ -660,6 +661,7 @@ StateDeltaOperation = Annotated[
     | WorldCastActivityBegin
     | WorldEnvironmentalEffectCreate
     | WorldEnvironmentalEffectEnd
+    | WorldVisualEffectCreate
     | CombatEffectCreate
     | EffectLifecycleUpdate
     | ConcentrationUpdate

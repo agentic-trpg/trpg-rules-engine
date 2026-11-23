@@ -8,20 +8,26 @@ from dnd5e_srd_data.loader import AssetLoader, BundledAssetLoader
 from dnd5e_srd_data.schema.environment import EnvironmentalSpec
 from dnd5e_srd_data.schema.spell import Spell, SpellDurationUnits
 
-from dnd5e_engine.activities.actor_stats import _SCORE_ATTR
+from dnd5e_engine.activities.actor_stats import (
+    _SCORE_ATTR,
+    ability_modifier_of,
+    proficiency_bonus_of,
+)
 from dnd5e_engine.activities.check_pipeline import resolve_check_request
 from dnd5e_engine.activities.context import ActivityResolutionContext
-from dnd5e_engine.areas import area_activity, area_template
+from dnd5e_engine.areas import AreaTemplate, area_activity, area_cells, area_template
 from dnd5e_engine.evaluation_actor import combatant
 from dnd5e_engine.evaluation_casting import CastingStateV20
 from dnd5e_engine.evaluation_checks import _check_actor_effects
 from dnd5e_engine.evaluation_contracts import (
     DISPEL_MAGIC_SCHEMA_VERSION,
     ENVIRONMENTAL_SPELL_SCHEMA_VERSION,
+    FAERIE_FIRE_SCHEMA_VERSION,
     FOG_CLOUD_SCHEMA_VERSION,
     CheckPayload,
     RuleEvaluationRequest,
     RuleEvaluationResult,
+    SavePayload,
 )
 from dnd5e_engine.evaluation_delta import ResourceUpdate, StateDelta, StateDeltaOperation
 from dnd5e_engine.evaluation_environmental_contracts import (
@@ -30,13 +36,16 @@ from dnd5e_engine.evaluation_environmental_contracts import (
     EnvironmentalMagicEffectTarget,
     EnvironmentalPointTarget,
     ExplorationEnvironmentalSpellCastPayload,
+    VisualTargetEffect,
     WorldEnvironmentalEffect,
     WorldEnvironmentalEffectCreate,
     WorldEnvironmentalEffectEnd,
+    WorldVisualEffectCreate,
 )
 from dnd5e_engine.evaluation_payments import spell_payment
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError
 from dnd5e_engine.evaluation_rng import RNGTransition
+from dnd5e_engine.evaluation_saves import resolve_snapshot_save, save_actor_failure
 from dnd5e_engine.evaluation_spell_termination import WorldSpellEnd
 from dnd5e_engine.evaluation_state import CharacterStateV2, NonCombatSnapshot
 from dnd5e_engine.evaluation_timed_spells import (
@@ -44,8 +53,17 @@ from dnd5e_engine.evaluation_timed_spells import (
     exploration_spell_reaches,
 )
 from dnd5e_engine.evaluation_turn import TurnEvaluation, _refuse
-from dnd5e_engine.events import Ability, CheckRolled, CombatEvent, IntentSubmitted, SpellCast
+from dnd5e_engine.events import (
+    Ability,
+    CheckRolled,
+    CombatEvent,
+    IntentSubmitted,
+    SaveRolled,
+    SpellCast,
+)
 from dnd5e_engine.rules.conditions import conditions_block_actions
+from dnd5e_engine.spatial import GridTopology
+from dnd5e_engine.specs import GridScene
 from dnd5e_engine.spellcasting import derive_pact_slots, spell_component_metadata
 from dnd5e_engine.types.checks import CheckRequest
 
@@ -57,6 +75,7 @@ _CLASSES = {
     "dispel-magic": frozenset(
         {"bard", "cleric", "druid", "paladin", "ranger", "sorcerer", "warlock", "wizard"}
     ),
+    "faerie-fire": frozenset({"bard", "druid"}),
 }
 _LIGHT = EnvironmentalSpec(kind="light", light="bright", dim_extension_ft=20, object_anchoring=True)
 _SECONDS_PER_UNIT = {SpellDurationUnits.MINUTE: 60, SpellDurationUnits.HOUR: 3600}
@@ -76,7 +95,9 @@ def environmental_spell_schema_version(
         else None
     )
     return (
-        FOG_CLOUD_SCHEMA_VERSION
+        FAERIE_FIRE_SCHEMA_VERSION
+        if spell_id == "faerie-fire"
+        else FOG_CLOUD_SCHEMA_VERSION
         if environment is not None and environment.obscurement != "none"
         else ENVIRONMENTAL_SPELL_SCHEMA_VERSION
     )
@@ -399,6 +420,128 @@ def _dispel_check(
     return event.succeeded is True
 
 
+def _faerie_plan(
+    request: RuleEvaluationRequest, spell: Spell
+) -> tuple[tuple[StateDeltaOperation, ...], tuple[CombatEvent, ...], RNGTransition]:
+    """Select fixed cube occupants once and roll each creature's Dexterity save.
+
+    The returned visual target product is shared with later light and sight
+    consumers. World owns occupant completeness and all eventual writes.
+    """
+    snapshot, payload, positions = request.state_snapshot, request.payload, request.spell_positions
+    if not isinstance(snapshot, NonCombatSnapshot) or not isinstance(
+        payload, ExplorationEnvironmentalSpellCastPayload
+    ):
+        raise TypeError("Faerie Fire requires an exploration spell request")
+    reviewed = BundledAssetLoader()
+    if positions is None or not isinstance(payload.target, EnvironmentalPointTarget):
+        raise ValueError("Faerie Fire requires a placed point and fixed occupants")
+    if spell.slug != "faerie-fire" or payload.slot_level < 1:
+        raise ValueError("Faerie Fire requires its reviewed level-one spell")
+    grid = GridTopology(GridScene.model_validate(snapshot.scene_state.grid.model_dump()))
+    template = AreaTemplate("cube", "square", 20, "target", True)
+    cells = area_cells(grid, template, positions.target_cell, None)
+    if any(occupant.cell_id not in cells for occupant in positions.visual_occupants):
+        raise ValueError("visual target is outside the cube")
+    if len({(o.target_kind, o.target_id) for o in positions.visual_occupants}) != len(
+        positions.visual_occupants
+    ):
+        raise ValueError("duplicate visual target")
+    casting = snapshot.casting_state
+    if not isinstance(casting, CastingStateV20):
+        raise TypeError("Faerie Fire requires a fixed casting source")
+    caster = next((a for a in snapshot.character_states if a.entity_id == request.actor_id), None)
+    if caster is None:
+        raise ValueError("Faerie Fire caster is missing")
+    source = next(
+        (
+            source
+            for actor in casting.actors
+            if actor.actor_id == caster.entity_id
+            for source in actor.sources
+            if source.source_id == payload.spell_source_id
+        ),
+        None,
+    )
+    if source is None:
+        raise ValueError("Faerie Fire source is missing")
+    avatar = combatant(caster)
+    ability = source.ability
+    dc = 8 + proficiency_bonus_of(avatar) + ability_modifier_of(avatar, ability)
+    actors = {actor.entity_id: actor for actor in snapshot.character_states}
+    rng = request.rng_context.state.restore()
+    saves: list[SaveRolled] = []
+    selected: list[VisualTargetEffect] = []
+    for occupant in sorted(
+        positions.visual_occupants, key=lambda value: (value.target_kind, value.target_id)
+    ):
+        if occupant.target_kind == "creature":
+            target = actors.get(occupant.target_id)
+            if target is None or not target.is_alive:
+                raise ValueError("Faerie Fire creature lacks fixed living facts")
+            if any(
+                effect.target_id == target.entity_id
+                and not effect.disabled
+                and (effect.changes or effect.flags)
+                for effect in snapshot.effect_states
+            ):
+                # RUO-54-F1: the standalone save primitive projects conditions,
+                # not arbitrary active effect modifiers. Revisit with a shared
+                # admitted target save profile; status-only Invisible is valid.
+                raise ValueError("RUO-54-F1: target has unsupported save effect modifiers")
+            if failure := save_actor_failure(
+                target,
+                reviewed,
+                reviewed_identity=True,
+                reviewed_concentration=True,
+                reviewed_equipment=True,
+                include_implied_conditions=True,
+            ):
+                # RUO-54-F1: special trait/resource save modifiers need a reviewed
+                # shared resolver input before this area save can admit them.
+                raise ValueError(f"RUO-54-F1: {failure}")
+            save = resolve_snapshot_save(
+                target,
+                SavePayload(
+                    kind="rules.save",
+                    target_id=target.entity_id,
+                    ability="dex",
+                    dc=dc,
+                    advantage=(),
+                    disadvantage=(),
+                    is_magical=True,
+                ),
+                rng,
+            )
+            saves.append(save)
+            if save.succeeded:
+                continue
+        selected.append(
+            VisualTargetEffect(
+                target_kind=occupant.target_kind,
+                target_id=occupant.target_id,
+                dim_radius_ft=10,
+                suppresses_invisible=True,
+                visible_attack_advantage=True,
+            )
+        )
+    visual = WorldVisualEffectCreate(
+        kind="world.visual_effect_create",
+        source_id=caster.entity_id,
+        spell_source_id=payload.spell_source_id,
+        spell_id=spell.slug,
+        slot_level=payload.slot_level,
+        duration_seconds=60,
+        concentration=True,
+        targets=tuple(selected),
+    )
+    return (
+        (_payment(snapshot, caster.entity_id, payload.slot_level), visual),
+        (*_events(caster.entity_id, payload, spell), *saves),
+        RNGTransition.between(request.rng_context, rng),
+    )
+
+
 def evaluate_environmental_spell(
     request: RuleEvaluationRequest, loader: AssetLoader
 ) -> TurnEvaluation:
@@ -408,6 +551,10 @@ def evaluate_environmental_spell(
         payload, ExplorationEnvironmentalSpellCastPayload
     ):
         raise EvaluationInvariantError("environmental spell requires a spatial noncombat request")
+    if (payload.spell_id == "faerie-fire") != (
+        request.schema_version == FAERIE_FIRE_SCHEMA_VERSION
+    ):
+        return _refuse("unsupported", "spell.asset", "spell requires its reviewed visual schema")
     if (payload.spell_id == "fog-cloud") != (request.schema_version == FOG_CLOUD_SCHEMA_VERSION):
         return _refuse("unsupported", "spell.asset", "spell requires its reviewed spatial schema")
     classes = _CLASSES.get(payload.spell_id)
@@ -457,6 +604,21 @@ def evaluate_environmental_spell(
         allow_pact=spell.slug == "darkness",
     ):
         return _refuse("rejected", "spell.source", failure)
+    if request.schema_version == FAERIE_FIRE_SCHEMA_VERSION:
+        try:
+            operations, events, transition = _faerie_plan(request, spell)
+        except ValueError as exc:
+            return _refuse("unsupported", "spell.visual_targets", str(exc))
+        return dict(
+            status="accepted",
+            state_delta=StateDelta(
+                expected_world_version=snapshot.world_version, operations=operations
+            ),
+            proposed_events=events,
+            rng_transition=transition,
+            choice=None,
+            error=None,
+        )
     try:
         if request.schema_version == DISPEL_MAGIC_SCHEMA_VERSION:
             _admit_dispel_targets(request, loader)
@@ -495,6 +657,17 @@ def verify_environmental_cast(
     ):
         raise TypeError("environmental effect requires its original spatial world request")
     spell = _reviewed_spell(payload.spell_id)
+    if request.schema_version == FAERIE_FIRE_SCHEMA_VERSION:
+        if spell is None or result.state_delta is None:
+            raise ValueError("Faerie Fire result lacks its reviewed spell or delta")
+        operations, events, transition = _faerie_plan(request, spell)
+        if (
+            result.state_delta.operations != operations
+            or result.proposed_events != events
+            or result.rng_transition != transition
+        ):
+            raise ValueError("Faerie Fire result differs from fixed occupants and RNG")
+        return
     if request.schema_version == DISPEL_MAGIC_SCHEMA_VERSION:
         operations, events, transition = _dispel_plan(request, snapshot, payload, loader)
         if (

@@ -73,6 +73,37 @@ class EnvironmentalMagicEffectFacts(EvaluationModel):
     )
 
 
+class VisualTargetFact(EvaluationModel):
+    """Fix one occupant and its cell at a placed area spell's cast instant."""
+
+    target_kind: Literal["creature", "object"]
+    target_id: Annotated[str, Field(min_length=1)]
+    cell_id: Annotated[str, Field(min_length=1)]
+
+
+class VisualTargetEffect(EvaluationModel):
+    """One source-linked selected target, independent of its later position."""
+
+    target_kind: Literal["creature", "object"]
+    target_id: Annotated[str, Field(min_length=1)]
+    dim_radius_ft: Annotated[int, Field(ge=0)]
+    suppresses_invisible: bool
+    visible_attack_advantage: bool
+
+
+class WorldVisualEffectCreate(EvaluationModel):
+    """Propose a bounded visual effect group without committing World facts."""
+
+    kind: Literal["world.visual_effect_create"]
+    source_id: Annotated[str, Field(min_length=1)]
+    spell_source_id: Annotated[str, Field(min_length=1)]
+    spell_id: Annotated[str, Field(min_length=1)]
+    slot_level: Annotated[int, Field(ge=0, le=9)]
+    duration_seconds: Annotated[int, Field(gt=0)]
+    concentration: bool
+    targets: tuple[VisualTargetEffect, ...]
+
+
 class ExplorationEnvironmentalSpellCastPayload(EvaluationModel):
     """Choose an exploration spell and a spatial placement or existing spell target."""
 

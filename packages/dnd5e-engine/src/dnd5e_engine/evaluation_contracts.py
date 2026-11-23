@@ -23,8 +23,10 @@ from dnd5e_engine.evaluation_environmental_contracts import (
     EnvironmentalCreatureTarget,
     EnvironmentalMagicEffectFacts,
     EnvironmentalMagicEffectTarget,
+    VisualTargetFact,
     WorldEnvironmentalEffectCreate,
     WorldEnvironmentalEffectEnd,
+    WorldVisualEffectCreate,
 )
 from dnd5e_engine.evaluation_environmental_contracts import (
     EnvironmentalItemFacts as EnvironmentalItemFacts,
@@ -70,6 +72,7 @@ from dnd5e_engine.types.checks import CheckRequest, GrantedDie
 SCHEMA_VERSION = "engine-evaluation/30"
 ENVIRONMENTAL_SPELL_SCHEMA_VERSION = "engine-evaluation/31"
 FOG_CLOUD_SCHEMA_VERSION = "engine-evaluation/46"
+FAERIE_FIRE_SCHEMA_VERSION = "engine-evaluation/47"
 CHARGED_ITEM_SCHEMA_VERSION = "engine-evaluation/32"
 STAFF_CAST_SCHEMA_VERSION = "engine-evaluation/41"
 MULTI_SPELL_SCHEMA_VERSION = "engine-evaluation/33"
@@ -98,6 +101,7 @@ EvaluationVersion = Literal[
     "engine-evaluation/42",
     "engine-evaluation/45",
     "engine-evaluation/46",
+    "engine-evaluation/47",
 ]
 
 
@@ -224,6 +228,9 @@ class ExplorationSpellPositions(EvaluationModel):
     )
     visible_target_id: Annotated[str, Field(min_length=1)] | None = Field(
         default=None, exclude_if=lambda value: value is None
+    )
+    visual_occupants: tuple[VisualTargetFact, ...] = Field(
+        default=(), exclude_if=lambda value: not value
     )
 
 
@@ -455,6 +462,7 @@ class RuleEvaluationRequest(EvaluationModel):
             "engine-evaluation/30": "engine-snapshot/20",
             ENVIRONMENTAL_SPELL_SCHEMA_VERSION: "engine-snapshot/20",
             FOG_CLOUD_SCHEMA_VERSION: "engine-snapshot/20",
+            FAERIE_FIRE_SCHEMA_VERSION: "engine-snapshot/20",
             CHARGED_ITEM_SCHEMA_VERSION: "engine-snapshot/20",
             STAFF_CAST_SCHEMA_VERSION: "engine-snapshot/20",
             MULTI_SPELL_SCHEMA_VERSION: "engine-snapshot/20",
@@ -603,7 +611,11 @@ class RuleEvaluationRequest(EvaluationModel):
             return True
         if self.spell_positions is not None and self.operation_kind != "world.cast_spell":
             raise ValueError("spell positions require world.cast_spell")
-        if self.schema_version in (ENVIRONMENTAL_SPELL_SCHEMA_VERSION, FOG_CLOUD_SCHEMA_VERSION):
+        if self.schema_version in (
+            ENVIRONMENTAL_SPELL_SCHEMA_VERSION,
+            FOG_CLOUD_SCHEMA_VERSION,
+            FAERIE_FIRE_SCHEMA_VERSION,
+        ):
             self._validate_environmental_spell()
             return True
         return False
@@ -728,6 +740,22 @@ class RuleEvaluationRequest(EvaluationModel):
         if positions.willing_target_id is not None:
             raise ValueError("verified willingness requires a creature spell target")
         target = self.payload.target
+        if self.schema_version == FAERIE_FIRE_SCHEMA_VERSION:
+            if (
+                self.payload.spell_id != "faerie-fire"
+                or not isinstance(target, EnvironmentalPointTarget)
+                or positions.target_cell != target.cell_id
+                or positions.target_item is not None
+                or positions.target_effect is not None
+                or positions.target_applications
+                or positions.visible_target_id is not None
+                or len({(o.target_kind, o.target_id) for o in positions.visual_occupants})
+                != len(positions.visual_occupants)
+            ):
+                raise ValueError("evaluation/47 requires exact placed cube occupants")
+            return
+        if positions.visual_occupants:
+            raise ValueError("visual occupants require evaluation/47")
         if self.schema_version == DISPEL_MAGIC_SCHEMA_VERSION:
             if self.payload.spell_id != "dispel-magic" or positions.target_item is not None:
                 raise ValueError("evaluation/42 requires Dispel Magic and exact target facts")
@@ -926,6 +954,11 @@ class RuleEvaluationResult(EvaluationModel):
                 raise ValueError(
                     "spatial creation schema requires exactly one environmental effect creation"
                 )
+            visual = sum(
+                isinstance(op, WorldVisualEffectCreate) for op in self.state_delta.operations
+            )
+            if visual != int(self.schema_version == FAERIE_FIRE_SCHEMA_VERSION):
+                raise ValueError("evaluation/47 requires exactly one visual effect creation")
             spatial_ends = sum(
                 isinstance(op, WorldEnvironmentalEffectEnd) for op in self.state_delta.operations
             )
@@ -1057,6 +1090,7 @@ class RuleEvaluationResult(EvaluationModel):
             if request.schema_version in (
                 ENVIRONMENTAL_SPELL_SCHEMA_VERSION,
                 FOG_CLOUD_SCHEMA_VERSION,
+                FAERIE_FIRE_SCHEMA_VERSION,
                 SPATIAL_EFFECT_END_SCHEMA_VERSION,
                 DISPEL_MAGIC_SCHEMA_VERSION,
             ):

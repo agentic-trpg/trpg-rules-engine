@@ -482,12 +482,12 @@ def _faerie_plan(
             if any(
                 effect.target_id == target.entity_id
                 and not effect.disabled
-                and (effect.changes or effect.flags)
+                and (effect.changes or (effect.flags and effect.flags != {"concentration": True}))
                 for effect in snapshot.effect_states
             ):
                 # RUO-54-F1: the standalone save primitive projects conditions,
-                # not arbitrary active effect modifiers. Revisit with a shared
-                # admitted target save profile; status-only Invisible is valid.
+                # not arbitrary active effect modifiers. The reviewed
+                # concentration flag records lifecycle only; it changes no save.
                 raise ValueError("RUO-54-F1: target has unsupported save effect modifiers")
             if failure := save_actor_failure(
                 target,

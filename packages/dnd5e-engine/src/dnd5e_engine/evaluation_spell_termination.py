@@ -28,6 +28,7 @@ SpellCastEvaluationVersion = Literal[
     "engine-evaluation/42",
     "engine-evaluation/45",
     "engine-evaluation/46",
+    "engine-evaluation/47",
 ]
 EndReason = Literal["spell_cast", "dismissed", "dispelled"]
 Nonempty = Annotated[str, Field(min_length=1)]

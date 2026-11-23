@@ -67,6 +67,8 @@ def test_range_airborne_and_object_motion_require_explicit_facts():
 
 
 def test_canonical_edges_are_required():
+    with pytest.raises(ValueError, match="material"):
+        Surface("a", "floor", "lava")
     with pytest.raises(ValueError, match="sorted"):
         SurfaceConnection("z", "a")
     with pytest.raises(ValueError, match="unique"):

@@ -22,6 +22,16 @@ class Surface:
     kind: Literal["floor", "wall"]
     material: Literal["stone", "other", "unknown"] = "unknown"
 
+    def __post_init__(self) -> None:
+        """Reject malformed authored geometry and unknown material vocabulary."""
+        if (
+            type(self.surface_id) is not str
+            or not self.surface_id
+            or self.kind not in ("floor", "wall")
+            or self.material not in ("stone", "other", "unknown")
+        ):
+            raise ValueError("invalid surface identity, kind, or material")
+
 
 @dataclass(frozen=True, slots=True)
 class SurfaceConnection:

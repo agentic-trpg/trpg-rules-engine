@@ -11,9 +11,11 @@ from dnd5e_engine.environment import EnvironmentalSource, environmental_dispels
 from dnd5e_engine.evaluation_contracts import (
     DISPEL_MAGIC_SCHEMA_VERSION,
     ENVIRONMENTAL_SPELL_SCHEMA_VERSION,
+    FAERIE_FIRE_SCHEMA_VERSION,
     FOG_CLOUD_SCHEMA_VERSION,
     SCHEMA_VERSION,
     SPATIAL_EFFECT_END_SCHEMA_VERSION,
+    ExplorationSpellPositions,
     RuleEvaluationRequest,
     RuleEvaluationResult,
 )
@@ -21,10 +23,18 @@ from dnd5e_engine.evaluation_delta import (
     ResourceUpdate,
     WorldEnvironmentalEffectCreate,
     WorldEnvironmentalEffectEnd,
+    WorldVisualEffectCreate,
 )
-from dnd5e_engine.evaluation_environmental_spells import environmental_spell_schema_version
+from dnd5e_engine.evaluation_environmental_contracts import (
+    ExplorationEnvironmentalSpellCastPayload,
+)
+from dnd5e_engine.evaluation_environmental_spells import (
+    environmental_spell_schema_version,
+    prepare_environmental_spell,
+)
+from dnd5e_engine.evaluation_rng import RNGTransition
 from dnd5e_engine.evaluation_ruleset import freeze_ruleset, ruleset_binding
-from dnd5e_engine.events import IntentSubmitted, SpellCast
+from dnd5e_engine.events import IntentSubmitted, SaveRolled, SpellCast
 from tests.evaluation_support import FOE, HERO
 from tests.test_stateless_attack import execute
 from tests.test_stateless_timed_spells import spell_wire
@@ -140,6 +150,140 @@ def test_environmental_wire_selection_uses_typed_obscuration():
         environmental_spell_schema_version("fog-cloud", loader, ending=True)
         == DISPEL_MAGIC_SCHEMA_VERSION
     )
+
+
+@pytest.mark.parametrize(
+    "spell_id,target,schema_version,actor_ids",
+    [
+        (
+            "faerie-fire",
+            {"kind": "point", "cell_id": "1,0"},
+            FAERIE_FIRE_SCHEMA_VERSION,
+            (HERO, "second", FOE),
+        ),
+        ("fog-cloud", {"kind": "point", "cell_id": "1,0"}, FOG_CLOUD_SCHEMA_VERSION, (HERO,)),
+        (
+            "dispel-magic",
+            {"kind": "creature", "target_id": FOE},
+            DISPEL_MAGIC_SCHEMA_VERSION,
+            (HERO, FOE),
+        ),
+        (
+            "dispel-magic",
+            {"kind": "effect", "effect_id": "effect"},
+            DISPEL_MAGIC_SCHEMA_VERSION,
+            (HERO,),
+        ),
+    ],
+)
+def test_environmental_preparation_declares_exact_actor_scope(
+    spell_id, target, schema_version, actor_ids
+):
+    """Keep World order, deduplicate actors, and ignore object occupants."""
+    payload = ExplorationEnvironmentalSpellCastPayload.model_validate(
+        dict(
+            kind="world.cast_spell",
+            spell_id=spell_id,
+            spell_source_id="class:druid",
+            slot_level=1,
+            target=target,
+        )
+    )
+    positions = ExplorationSpellPositions.model_validate(
+        dict(
+            source_cell="0,0",
+            target_cell="1,0",
+            visual_occupants=tuple(
+                {"target_kind": kind, "target_id": target_id, "cell_id": "1,0"}
+                for kind, target_id in [
+                    ("creature", "second"),
+                    ("object", "scenery"),
+                    ("creature", HERO),
+                    ("creature", FOE),
+                    ("creature", "second"),
+                ]
+            ),
+        )
+    )
+    preparation = prepare_environmental_spell(payload, HERO, positions, BundledAssetLoader())
+    assert preparation.actor_ids == actor_ids
+    assert preparation.schema_version == schema_version
+
+
+def _faerie_wire():
+    """Build a cast that includes a creature and an object."""
+    wire, loader = _wire("faerie-fire", point=True, caster_class="druid")
+    wire["schema_version"] = FAERIE_FIRE_SCHEMA_VERSION
+    wire["state_snapshot"]["character_states"][0]["wisdom"] = 16
+    wire["spell_positions"]["visual_occupants"] = [
+        {"target_kind": "object", "target_id": "scenery", "cell_id": "1,0"},
+        {"target_kind": "creature", "target_id": FOE, "cell_id": "1,0"},
+    ]
+    return wire, loader
+
+
+def test_faerie_preparation_requires_a_typed_area_save_for_occupant_facts():
+    """Keep the Faerie Fire wire while deriving creature scope from its activity."""
+    wire, loader = _faerie_wire()
+    request = _request(wire)
+    spell = loader.get_spell("faerie-fire")
+    spell.activities.clear()
+    preparation = prepare_environmental_spell(
+        request.payload, HERO, request.spell_positions, MemoryAssetLoader(spells=[spell])
+    )
+    assert preparation.schema_version == FAERIE_FIRE_SCHEMA_VERSION
+    assert preparation.actor_ids == (HERO,)
+
+
+def test_faerie_fire_uses_its_bound_activity_and_exact_rng():
+    """Use the druid's spell DC, rolling once for the creature and paying once."""
+    wire, loader = _faerie_wire()
+    request = _request(wire)
+    result = execute(request, loader)
+    assert result.status == "accepted", result.error
+    intent, cast, save = result.proposed_events
+    assert isinstance(intent, IntentSubmitted)
+    assert isinstance(cast, SpellCast)
+    assert isinstance(save, SaveRolled)
+    assert (save.target_id, save.ability, save.dc) == (FOE, "dex", 13)
+    expected_rng = request.rng_context.state.restore()
+    assert save.natural == expected_rng.randint(1, 20)
+    assert result.rng_transition == RNGTransition.between(request.rng_context, expected_rng)
+    spend, visual = result.state_delta.operations
+    assert isinstance(spend, ResourceUpdate)
+    assert (spend.expected.current, spend.value.current) == (2, 1)
+    assert isinstance(visual, WorldVisualEffectCreate)
+    assert [target.target_id for target in visual.targets] == (
+        ["scenery"] if save.succeeded else [FOE, "scenery"]
+    )
+    RuleEvaluationResult.model_validate_json(result.model_dump_json()).verify_request(request)
+
+
+@pytest.mark.parametrize("change", ["ability", "dc"])
+def test_faerie_fire_rejects_bound_unreviewed_save_activity(change):
+    """A consistent ruleset binding alone cannot admit a changed save profile."""
+    wire, _ = _faerie_wire()
+    canonical = BundledAssetLoader()
+    spell = canonical.get_spell("faerie-fire")
+    spell_data = spell.model_dump()
+    save = spell_data["activities"][0]["save"]
+    if change == "ability":
+        save["ability"] = ["con"]
+    else:
+        save["dc"].update(calculation="flat", formula="13")
+    loader = freeze_ruleset(
+        MemoryAssetLoader(
+            items=[canonical.get_item("component-pouch")],
+            spells=[type(spell).model_validate(spell_data)],
+            classes=[canonical.get_class("druid")],
+        )
+    )
+    wire["ruleset_binding"] = ruleset_binding(loader).model_dump(mode="json")
+    result = execute(_request(wire), loader)
+    assert (result.status, result.error.code) == ("unsupported", "spell.asset")
+    assert result.state_delta is None
+    assert result.proposed_events == ()
+    assert result.rng_transition is None
 
 
 @pytest.mark.parametrize("point", [False, True])

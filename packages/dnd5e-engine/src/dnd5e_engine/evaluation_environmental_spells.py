@@ -1,10 +1,12 @@
-"""Evaluate creation and termination of spatial spell effects from fixed exploration facts."""
+"""Declare actor dependencies and evaluate spatial spells from fixed exploration facts."""
 
+from dataclasses import dataclass
 from functools import lru_cache
 from random import Random
 from typing import Literal
 
 from dnd5e_srd_data.loader import AssetLoader, BundledAssetLoader
+from dnd5e_srd_data.schema.common import Activity, SaveActivity
 from dnd5e_srd_data.schema.environment import EnvironmentalSpec
 from dnd5e_srd_data.schema.spell import Spell, SpellDurationUnits
 
@@ -15,6 +17,7 @@ from dnd5e_engine.activities.actor_stats import (
 )
 from dnd5e_engine.activities.check_pipeline import resolve_check_request
 from dnd5e_engine.activities.context import ActivityResolutionContext
+from dnd5e_engine.activities.save import _resolve_save_ability, spellcasting_save_dc
 from dnd5e_engine.areas import AreaTemplate, area_activity, area_cells, area_template
 from dnd5e_engine.evaluation_actor import combatant
 from dnd5e_engine.evaluation_casting import CastingStateV20
@@ -25,6 +28,7 @@ from dnd5e_engine.evaluation_contracts import (
     FAERIE_FIRE_SCHEMA_VERSION,
     FOG_CLOUD_SCHEMA_VERSION,
     CheckPayload,
+    ExplorationSpellPositions,
     RuleEvaluationRequest,
     RuleEvaluationResult,
     SavePayload,
@@ -81,12 +85,28 @@ _LIGHT = EnvironmentalSpec(kind="light", light="bright", dim_extension_ft=20, ob
 _SECONDS_PER_UNIT = {SpellDurationUnits.MINUTE: 60, SpellDurationUnits.HOUR: 3600}
 
 
+@dataclass(frozen=True)
+class EnvironmentalSpellPreparation:
+    """Declare the evaluation wire and distinct actor facts needed from the host."""
+
+    actor_ids: tuple[str, ...]
+    schema_version: str
+
+
 def environmental_spell_schema_version(
     spell_id: str, loader: AssetLoader, *, ending: bool = False
 ) -> str:
     """Select the spatial wire from typed spell mechanics, leaving admission to RE."""
+    schema_version, _ = _environmental_spell_profile(spell_id, loader, ending=ending)
+    return schema_version
+
+
+def _environmental_spell_profile(
+    spell_id: str, loader: AssetLoader, *, ending: bool
+) -> tuple[str, Activity | None]:
+    """Look up one area activity and use it to select the candidate spatial wire."""
     if ending:
-        return DISPEL_MAGIC_SCHEMA_VERSION
+        return DISPEL_MAGIC_SCHEMA_VERSION, None
     spell = loader.get_spell(spell_id)
     activity = area_activity(spell.activities) if spell is not None else None
     environment = (
@@ -94,13 +114,44 @@ def environmental_spell_schema_version(
         if activity is not None and activity.persistent_area is not None
         else None
     )
-    return (
+    schema_version = (
         FAERIE_FIRE_SCHEMA_VERSION
         if spell_id == "faerie-fire"
         else FOG_CLOUD_SCHEMA_VERSION
         if environment is not None and environment.obscurement != "none"
         else ENVIRONMENTAL_SPELL_SCHEMA_VERSION
     )
+    return schema_version, activity
+
+
+def prepare_environmental_spell(
+    payload: ExplorationEnvironmentalSpellCastPayload,
+    actor_id: str,
+    positions: ExplorationSpellPositions,
+    loader: AssetLoader,
+) -> EnvironmentalSpellPreparation:
+    """Declare the wire and ordered actor facts from fixed World geometry.
+
+    Include the caster, a named creature target, and creature occupants for the
+    Faerie Fire area save. World supplies the occupants and evaluation checks their
+    mechanical facts and spell admission. Preparation does not use RNG.
+    """
+    target = payload.target
+    schema_version, activity = _environmental_spell_profile(
+        payload.spell_id,
+        loader,
+        ending=isinstance(target, (EnvironmentalCreatureTarget, EnvironmentalMagicEffectTarget)),
+    )
+    actor_ids = [actor_id]
+    if isinstance(target, EnvironmentalCreatureTarget):
+        actor_ids.append(target.target_id)
+    if schema_version == FAERIE_FIRE_SCHEMA_VERSION and isinstance(activity, SaveActivity):
+        actor_ids.extend(
+            occupant.target_id
+            for occupant in positions.visual_occupants
+            if occupant.target_kind == "creature"
+        )
+    return EnvironmentalSpellPreparation(tuple(dict.fromkeys(actor_ids)), schema_version)
 
 
 @lru_cache(maxsize=len(_CLASSES))
@@ -423,7 +474,7 @@ def _dispel_check(
 def _faerie_plan(
     request: RuleEvaluationRequest, spell: Spell
 ) -> tuple[tuple[StateDeltaOperation, ...], tuple[CombatEvent, ...], RNGTransition]:
-    """Select fixed cube occupants once and roll each creature's Dexterity save.
+    """Select fixed cube occupants and resolve their saves using the reviewed activity.
 
     The returned visual target product is shared with later light and sight
     consumers. World owns occupant completeness and all eventual writes.
@@ -438,6 +489,10 @@ def _faerie_plan(
         raise ValueError("Faerie Fire requires a placed point and fixed occupants")
     if spell.slug != "faerie-fire" or payload.slot_level < 1:
         raise ValueError("Faerie Fire requires its reviewed level-one spell")
+    activity = area_activity(spell.activities)
+    if not isinstance(activity, SaveActivity) or activity.save.dc.calculation != "spellcasting":
+        raise ValueError("Faerie Fire requires its reviewed spellcasting save activity")
+    save_ability = _resolve_save_ability(activity)
     grid = GridTopology(GridScene.model_validate(snapshot.scene_state.grid.model_dump()))
     template = AreaTemplate("cube", "square", 20, "target", True)
     cells = area_cells(grid, template, positions.target_cell, None)
@@ -466,8 +521,9 @@ def _faerie_plan(
     if source is None:
         raise ValueError("Faerie Fire source is missing")
     avatar = combatant(caster)
-    ability = source.ability
-    dc = 8 + proficiency_bonus_of(avatar) + ability_modifier_of(avatar, ability)
+    dc = spellcasting_save_dc(
+        proficiency_bonus_of(avatar), ability_modifier_of(avatar, source.ability)
+    )
     actors = {actor.entity_id: actor for actor in snapshot.character_states}
     rng = request.rng_context.state.restore()
     saves: list[SaveRolled] = []
@@ -505,7 +561,7 @@ def _faerie_plan(
                 SavePayload(
                     kind="rules.save",
                     target_id=target.entity_id,
-                    ability="dex",
+                    ability=save_ability,
                     dc=dc,
                     advantage=(),
                     disadvantage=(),

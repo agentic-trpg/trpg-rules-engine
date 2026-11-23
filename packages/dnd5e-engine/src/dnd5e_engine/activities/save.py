@@ -158,6 +158,11 @@ def resolve_save(activity: SaveActivity, ctx: ActivityResolutionContext) -> None
 # ── DC + ability resolution ──────────────────────────────────────────────────
 
 
+def spellcasting_save_dc(proficiency_bonus: int, ability_modifier: int) -> int:
+    """Calculate the SRD spell save DC from the caster's resolved modifiers."""
+    return 8 + proficiency_bonus + ability_modifier
+
+
 def _resolve_dc(activity: SaveActivity, ctx: ActivityResolutionContext) -> int:
     """Resolve ``save.dc`` to a concrete int per ``save.dc.calculation``.
 
@@ -192,7 +197,9 @@ def _resolve_dc(activity: SaveActivity, ctx: ActivityResolutionContext) -> int:
                 "save.dc.calculation == 'spellcasting' requires a caster "
                 "spellcasting ability but the context supplies none"
             )
-        return 8 + ctx.caster_proficiency_bonus + ctx.ability_mod(ctx.spellcasting_ability)
+        return spellcasting_save_dc(
+            ctx.caster_proficiency_bonus, ctx.ability_mod(ctx.spellcasting_ability)
+        )
     if calculation in _ABILITIES:
         return 8 + ctx.caster_proficiency_bonus + ctx.ability_mod(calculation)
     if calculation == "flat" or (calculation == "" and formula):

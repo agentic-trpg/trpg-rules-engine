@@ -860,6 +860,19 @@ available for separately admitted lifecycle calculations. Evaluation /11 and eva
 /17 are local candidates; Snapshot /7 and availability /6 remain unchanged.
 
 
+### Exploration save and rest evidence in evaluator /67
+
+The reviewed held-weapon save clause uses the exact inventory instance and the
+bound asset's passive modifier. A stowed copy contributes zero. When present,
+the instance and bonus are part of the original save evidence and the Bardic
+continuation fingerprint. The fixed binding supplies the equipment rule.
+
+A synchronous bound save evaluator lets a current world stage use the existing
+save calculation and return a verified result without submitting a second
+command. The stage owns the trigger, choice admission, and result adoption.
+Short-rest evidence retains each original Hit Die face and Constitution modifier
+as well as its adjusted healing, without an extra RNG draw.
+
 ## R16 explicit resources and bounded Short Rest
 
 Snapshot /8 requires `resource_state: ResourceState | None` on both scene contexts.

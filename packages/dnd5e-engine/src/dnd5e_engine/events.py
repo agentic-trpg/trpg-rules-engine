@@ -1106,17 +1106,15 @@ class RestSpend(BaseModel):
         """Validate that supplied roll evidence contains the required number of dice."""
         if len(self.healing_rolls) != self.amount or any(n < 1 for n in self.healing_rolls):
             raise ValueError("rest roll evidence must match spent dice")
-        if (self.raw_faces is None) != (self.constitution_modifier is None):
+        faces, modifier = self.raw_faces, self.constitution_modifier
+        if faces is None and modifier is None:
+            return self
+        if faces is None or modifier is None:
             raise ValueError("rest raw faces and Constitution modifier must appear together")
-        if self.raw_faces is not None:
-            if len(self.raw_faces) != self.amount or any(
-                not 1 <= face <= self.die_size for face in self.raw_faces
-            ):
-                raise ValueError("rest raw faces must match spent dice and die size")
-            if self.healing_rolls != tuple(
-                max(1, face + self.constitution_modifier) for face in self.raw_faces
-            ):
-                raise ValueError("rest adjusted healing differs from raw faces and Constitution")
+        if len(faces) != self.amount or any(not 1 <= face <= self.die_size for face in faces):
+            raise ValueError("rest raw faces must match spent dice and die size")
+        if self.healing_rolls != tuple(max(1, face + modifier) for face in faces):
+            raise ValueError("rest adjusted healing differs from raw faces and Constitution")
         return self
 
 

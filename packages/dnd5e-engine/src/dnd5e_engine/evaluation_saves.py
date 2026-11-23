@@ -8,6 +8,7 @@ from json import dumps
 from typing import Literal, get_args
 
 from dnd5e_srd_data.loader import AssetLoader, BundledAssetLoader
+from dnd5e_srd_data.schema.item import Weapon
 from dnd5e_srd_data.schema.monster import MonsterTrait, MonsterTraitMechanic
 from dnd5e_srd_data.schema.spell import Spell
 
@@ -49,7 +50,63 @@ type _PreparedSave = tuple[
     SavePayload,
     list[EffectState],
     tuple[SaveBonusDie, ...],
+    tuple[str, int] | None,
 ]
+
+
+def reviewed_held_save_weapon(item: Weapon) -> bool:
+    """Recognize one authored fixed save clause, without other item mechanics."""
+    if (
+        item.requires_attunement
+        or item.uses is not None
+        or item.magical_bonus
+        or len(item.passive_effects) != 1
+    ):
+        return False
+    effect = item.passive_effects[0]
+    return bool(
+        not effect.disabled
+        and effect.transfer
+        and effect.duration is None
+        and effect.action_policy is None
+        and not effect.statuses
+        and len(effect.changes) == 1
+        and effect.changes[0].key == "system.bonuses.abilities.save"
+        and effect.changes[0].mode == 2
+        and effect.changes[0].value in ("1", "+1")
+    )
+
+
+def _save_equipment(
+    state: CharacterStateV2, snapshot: NonCombatSnapshot, loader: AssetLoader
+) -> tuple[tuple[str, int] | None, frozenset[str]]:
+    """Admit one bound held weapon's save clause; stowed copies contribute zero."""
+    allowed: set[str] = set()
+    for slug in state.carried_item_slugs:
+        item = loader.get_item(slug)
+        if item is not None and item.passive_effects:
+            if not isinstance(item, Weapon) or not reviewed_held_save_weapon(item):
+                raise ValueError("unmigrated equipment save modifiers")
+            allowed.add(slug)
+    if not allowed:
+        return None, frozenset()
+    if snapshot.snapshot_schema_version not in ("engine-snapshot/19", "engine-snapshot/20"):
+        raise ValueError("save weapon needs an exact equipment instance")
+    held = state.held_weapon_instance_id
+    if held is None or state.weapon_in_hands not in allowed:
+        return None, frozenset(allowed)
+    matches = [
+        entry
+        for entry in snapshot.inventory_state.entries
+        if entry.instance_id == held
+        and entry.owner_id == state.entity_id
+        and entry.item_slug == state.weapon_in_hands
+        and entry.quantity == 1
+        and entry.accessible
+    ]
+    if len(matches) != 1:
+        raise ValueError("held save weapon differs from the owned inventory instance")
+    return (f"equipment:{held}:{state.weapon_in_hands}", 1), frozenset(allowed)
 
 
 def _held_inspiration(effect: EffectState, loader: AssetLoader) -> bool:
@@ -182,9 +239,12 @@ def resolve_snapshot_save(
     rng: random.Random,
     *,
     bonus_dice: tuple[SaveBonusDie, ...] = (),
+    equipment_bonus: tuple[str, int] | None = None,
 ) -> SaveRolled:
     """Shared calculation seam; caller must prove full modifier/lifecycle admission."""
-    roll = roll_snapshot_save(state, payload, rng, bonus_dice=bonus_dice)
+    roll = roll_snapshot_save(
+        state, payload, rng, bonus_dice=bonus_dice, equipment_bonus=equipment_bonus
+    )
     return SaveRolled(
         target_id=state.entity_id,
         ability=payload.ability,
@@ -205,8 +265,9 @@ def roll_snapshot_save(
     rng: random.Random,
     *,
     bonus_dice: tuple[SaveBonusDie, ...] = (),
+    equipment_bonus: tuple[str, int] | None = None,
 ) -> SaveRoll:
-    """Roll with admitted save facts, including Exhaustion, and supplied RNG."""
+    """Roll with admitted actor and held-item facts using the supplied RNG."""
     target = combatant(state)
     projected = project_passive_save_modifiers([c.condition for c in target.conditions])
     ctx = ActivityResolutionContext(
@@ -216,7 +277,10 @@ def roll_snapshot_save(
         targets=[target],
         event_emitter=lambda event: None,
         passive_save_modifiers={
-            target.entity_id: {ab: save_modifier(target, ab).total for ab in get_args(Ability)}
+            target.entity_id: {
+                ab: save_modifier(target, ab).total + (equipment_bonus[1] if equipment_bonus else 0)
+                for ab in get_args(Ability)
+            }
         },
         passive_save_adv={target.entity_id: projected["passive_save_adv"]},
         passive_save_dis={target.entity_id: projected["passive_save_dis"]},
@@ -237,6 +301,11 @@ def roll_snapshot_save(
         fixed_contributions=(
             RollFixedModifier(source="ability", value=profile.ability_mod),
             RollFixedModifier(source="save_proficiency", value=profile.proficiency),
+        )
+        + (
+            (RollFixedModifier(source=equipment_bonus[0], value=equipment_bonus[1]),)
+            if equipment_bonus
+            else ()
         ),
         bonus_dice=bonus_dice,
     )
@@ -276,6 +345,7 @@ def save_actor_failure(
     reviewed_equipment: bool = False,
     magic_resistance_loader: AssetLoader | None = None,
     include_implied_conditions: bool = False,
+    reviewed_save_item_slugs: frozenset[str] = frozenset(),
 ) -> str | None:
     """Check actor prerequisites for the admitted saving throw."""
     if (
@@ -323,7 +393,11 @@ def save_actor_failure(
         return failure
     for slug in state.carried_item_slugs:
         item = loader.get_item(slug)
-        if item is None or item.passive_effects or item.requires_attunement:
+        if (
+            item is None
+            or (item.passive_effects and slug not in reviewed_save_item_slugs)
+            or item.requires_attunement
+        ):
             return "unmigrated equipment save modifiers"
     return None
 
@@ -400,11 +474,16 @@ def _prepare_save(
         if failure:
             return _refuse("unsupported", "save.actor", failure)
         reviewed_identity = True
+    try:
+        equipment_bonus, allowed_save_items = _save_equipment(target, snapshot, loader)
+    except ValueError as exc:
+        return _refuse("unsupported", "save.actor", str(exc))
     failure = save_actor_failure(
         target,
         loader,
         reviewed_identity=reviewed_identity,
         magic_resistance_loader=loader,
+        reviewed_save_item_slugs=allowed_save_items,
     )
     if failure:
         return _refuse("unsupported", "save.actor", failure)
@@ -412,7 +491,7 @@ def _prepare_save(
         is_reviewed_beacon_effect(effect, loader) for effect in active_effects
     ):
         payload = payload.model_copy(update={"advantage": (*payload.advantage, "effect")})
-    return target, payload, active_effects, bonus_dice
+    return target, payload, active_effects, bonus_dice, equipment_bonus
 
 
 def save_bardic_fingerprint(request: RuleEvaluationRequest, loader: AssetLoader) -> str:
@@ -423,7 +502,7 @@ def save_bardic_fingerprint(request: RuleEvaluationRequest, loader: AssetLoader)
     prepared = _prepare_save(request, loader)
     if not isinstance(prepared, tuple):
         raise ValueError("saving throw was rejected")  # noqa: TRY004
-    target, payload, effects, bonus_dice = prepared
+    target, payload, effects, bonus_dice, equipment_bonus = prepared
     roller = combatant(target)
     selected = getattr(roller, _SCORE_ATTR[payload.ability])
     condition_projection = project_passive_save_modifiers(
@@ -447,6 +526,7 @@ def save_bardic_fingerprint(request: RuleEvaluationRequest, loader: AssetLoader)
             if payload.ability == "wis" and is_reviewed_beacon_effect(effect, loader)
         ],
         "bonus_dice": [(die.source, die.sides, die.sign) for die in bonus_dice],
+        "equipment_bonus": equipment_bonus,
     }
     return sha256(dumps(facts, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
@@ -504,10 +584,12 @@ def evaluate_save(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
     prepared = _prepare_save(request, loader)
     if not isinstance(prepared, tuple):
         return prepared
-    target, payload, _, bonus_dice = prepared
+    target, payload, _, bonus_dice, equipment_bonus = prepared
     snapshot = request.state_snapshot
     rng = request.rng_context.state.restore()
-    event = resolve_snapshot_save(target, payload, rng, bonus_dice=bonus_dice)
+    event = resolve_snapshot_save(
+        target, payload, rng, bonus_dice=bonus_dice, equipment_bonus=equipment_bonus
+    )
     return dict(
         status="accepted",
         state_delta=StateDelta(expected_world_version=snapshot.world_version, operations=()),

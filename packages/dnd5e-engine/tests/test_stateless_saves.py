@@ -443,8 +443,10 @@ def test_post_draw_fault_is_unpublished_and_inputs_unchanged(monkeypatch, fault)
 
     original = evaluation_saves.resolve_snapshot_save
 
-    def fail(state, payload, rng, *, bonus_dice):
-        event = original(state, payload, rng, bonus_dice=bonus_dice)
+    def fail(state, payload, rng, *, bonus_dice, equipment_bonus):
+        event = original(
+            state, payload, rng, bonus_dice=bonus_dice, equipment_bonus=equipment_bonus
+        )
         assert event.natural == 13
         assert event.roll_total == 20
         raise fault("post-draw save fault")

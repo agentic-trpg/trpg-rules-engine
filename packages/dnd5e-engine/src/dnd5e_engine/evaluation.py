@@ -27,7 +27,7 @@ from dnd5e_engine.evaluation_projection import EvaluationInvariantError, attack_
 from dnd5e_engine.evaluation_rest import evaluate_rest
 from dnd5e_engine.evaluation_rng import RNGTransition
 from dnd5e_engine.evaluation_ruleset import RulesetBinding, get_default_ruleset, verify_ruleset
-from dnd5e_engine.evaluation_saves import evaluate_save
+from dnd5e_engine.evaluation_saves import _held_inspiration, evaluate_save
 from dnd5e_engine.evaluation_spell_termination import (
     SPELL_TERMINATION_SCHEMA_VERSION,
     WorldSpellEnd,
@@ -66,6 +66,41 @@ def _turn_result(common: _ResultIdentity, outcome: TurnEvaluation) -> RuleEvalua
     )
 
 
+def _result_identity(request: RuleEvaluationRequest) -> _ResultIdentity:
+    """Build the shared identity and world-version read fence for one result."""
+    return dict(
+        schema_version=request.schema_version,
+        session_id=request.session_id,
+        command_id=request.command_id,
+        input_world_version=request.state_snapshot.world_version,
+        input_ruleset_binding=request.ruleset_binding,
+        read_set=(
+            ReadVersion(
+                kind="world", ref=request.session_id, version=request.state_snapshot.world_version
+            ),
+        ),
+    )
+
+
+def _equipment_rejection(
+    request: RuleEvaluationRequest, loader: AssetLoader, common: _ResultIdentity
+) -> RuleEvaluationResult | None:
+    """Return the existing equipment capability refusal, if the snapshot needs one."""
+    failure = snapshot_equipment_kind_failure(request.state_snapshot, loader)
+    if failure is None:
+        return None
+    return RuleEvaluationResult(
+        **common,
+        status="unsupported",
+        state_delta=None,
+        proposed_events=(),
+        stage_facts=None,
+        rng_transition=None,
+        choice=None,
+        error=RuleError(code="snapshot.capability", reason=failure),
+    )
+
+
 def _stage_coverage(status: str, facts: EventStageFacts | None = None) -> EventStageFacts | None:
     """Select complete or explicitly uncovered event-stage metadata for this result."""
     if status != "accepted":
@@ -73,6 +108,37 @@ def _stage_coverage(status: str, facts: EventStageFacts | None = None) -> EventS
     return (
         facts if facts is not None else EventStageFacts.uncovered("operation_not_in_stage_profile")
     )
+
+
+def evaluate_bound_save(
+    request: RuleEvaluationRequest, *, loader: AssetLoader
+) -> RuleEvaluationResult:
+    """Evaluate a bound save synchronously inside one already admitted world stage.
+
+    This pure local entry retains the ordinary save's binding, equipment, typed
+    result and RNG checks. Nested world actions have no player choice window.
+    """
+    request = RuleEvaluationRequest.model_validate(copy.deepcopy(request))
+    if request.operation_kind != "rules.save":
+        raise ValueError("Expected a typed saving throw request")
+    verify_ruleset(request.ruleset_binding, loader)
+    common = _result_identity(request)
+    if equipment_rejection := _equipment_rejection(request, loader, common):
+        result = equipment_rejection
+    elif any(
+        effect.target_id == request.actor_id
+        and not effect.disabled
+        and _held_inspiration(effect, loader)
+        for effect in request.state_snapshot.effect_states
+    ):
+        result = _turn_result(
+            common,
+            _refuse("unsupported", "save.choice", "Nested saves cannot open an Inspiration choice"),
+        )
+    else:
+        result = _turn_result(common, evaluate_save(request, loader))
+    result.verify_request(request)
+    return result
 
 
 async def evaluate(
@@ -119,30 +185,9 @@ async def _evaluate(
         )
         result.verify_request(request)
         return result
-    common: _ResultIdentity = dict(
-        schema_version=request.schema_version,
-        session_id=request.session_id,
-        command_id=request.command_id,
-        input_world_version=request.state_snapshot.world_version,
-        input_ruleset_binding=request.ruleset_binding,
-        # A conservative whole-session OCC read fence, not invented per-entity versions.
-        read_set=(
-            ReadVersion(
-                kind="world", ref=request.session_id, version=request.state_snapshot.world_version
-            ),
-        ),
-    )
-    if failure := snapshot_equipment_kind_failure(request.state_snapshot, assets):
-        return RuleEvaluationResult(
-            **common,
-            status="unsupported",
-            state_delta=None,
-            proposed_events=(),
-            stage_facts=None,
-            rng_transition=None,
-            choice=None,
-            error=RuleError(code="snapshot.capability", reason=failure),
-        )
+    common = _result_identity(request)
+    if equipment_rejection := _equipment_rejection(request, assets, common):
+        return equipment_rejection
     if request.operation_kind in {"combat.item", "world.use_item"}:
         item = (
             await evaluate_item(request, assets)

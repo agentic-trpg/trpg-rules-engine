@@ -20,6 +20,7 @@ from dnd5e_engine.events import EffectApplied, SaveRolled
 from dnd5e_engine.lib_loader import scoped_lib_loader
 from dnd5e_engine.specs import GridScene
 from tests.evaluation_support import FOE, HERO, WEAPON
+from tests.repeat_save_parity import expected_repeat_save_events
 from tests.test_stateless_attack import apply_delta, execute
 from tests.test_stateless_attack_concentration import ATTACKER, attack_concentration_case
 from tests.test_stateless_item_closure_core import forbidden, isolate
@@ -161,7 +162,9 @@ def step(request, loader, handle, live, monkeypatch, actor=None, intent=None):
         live, current.state_snapshot, GridScene(width=3, height=3)
     )
     assert after == expected
-    assert result.proposed_events == tuple(live.event_log[offset:])
+    assert result.proposed_events == expected_repeat_save_events(
+        live.event_log[offset:], ability_modifier=0, proficiency=0
+    )
     assert result.rng_transition.next_state == RNGState.capture(live.rng)
     assert RuleEvaluationResult.model_validate_json(result.model_dump_json()) == result
     assert current == original
@@ -189,7 +192,8 @@ def test_source_pass_then_correct_target_repeat_full_parity(pc, seed, monkeypatc
     assert not any(isinstance(e, SaveRolled) for e in free.proposed_events)
     request, target = step(request, loader, handle, live, monkeypatch)
     save = next(e for e in target.proposed_events if isinstance(e, SaveRolled))
-    natural = Random(seed).randint(1, 20)
+    expected_rng = Random(seed)
+    natural = expected_rng.randint(1, 20)
     assert (save.target_id, save.ability, save.dc, save.modifier, save.natural) == (
         HERO,
         "wis",
@@ -198,6 +202,7 @@ def test_source_pass_then_correct_target_repeat_full_parity(pc, seed, monkeypatc
         natural,
     )
     assert save.succeeded is (natural >= 15)
+    assert target.rng_transition.next_state == RNGState.capture(expected_rng)
     kinds = [e.type for e in target.proposed_events]
     assert kinds.index("turn_phase") < kinds.index("save_rolled") < kinds.index("turn_ended")
     if save.succeeded:

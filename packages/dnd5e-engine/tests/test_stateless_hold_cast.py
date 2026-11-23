@@ -23,6 +23,7 @@ from dnd5e_engine.evaluation_state import CombatSnapshot, InventoryEntry, Invent
 from dnd5e_engine.rules.character import proficiency_grants
 from dnd5e_engine.specs import GridScene
 from tests.evaluation_support import FOE, HERO, WEAPON
+from tests.repeat_save_parity import expected_repeat_save_events
 from tests.test_stateless_attack import apply_delta, execute
 from tests.test_stateless_attack_concentration import ATTACKER, attack_concentration_case
 from tests.test_stateless_hold_turn import isolated
@@ -338,7 +339,9 @@ def step(request, handle, live, loader, monkeypatch, intent=None):
     )
     expected = capture_evaluation_snapshot(live, after, GridScene(width=3, height=3))
     assert after == expected
-    assert result.proposed_events == tuple(live.event_log[offset:])
+    assert result.proposed_events == expected_repeat_save_events(
+        live.event_log[offset:], ability_modifier=0, proficiency=0
+    )
     assert result.rng_transition.next_state == RNGState.capture(live.rng)
     assert RuleEvaluationResult.model_validate_json(result.model_dump_json()) == result
     assert request == before

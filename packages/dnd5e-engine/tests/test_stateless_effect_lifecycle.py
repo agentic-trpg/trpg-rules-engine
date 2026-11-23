@@ -29,13 +29,14 @@ from dnd5e_engine.events import (
 from dnd5e_engine.lib_loader import scoped_lib_loader
 from dnd5e_engine.specs import GridScene
 from tests.evaluation_support import FOE, HERO, WEAPON, synthetic_loader
+from tests.repeat_save_parity import expected_repeat_save_events
 from tests.test_stateless_attack import apply_delta, execute, request_and_live
 from tests.test_stateless_item_closure_core import isolate
 
 FEATURE, ACTIVITY = "cunning-strike", "n64fvJMT9fPUy7DH"
 
 
-def effect_case(*, npc=True, seed=0, round_number=1, ended_target=True, dc=17):
+def effect_case(*, npc=True, seed=0, round_number=1, ended_target=True, dc=17, constitution=14):
     request, handle, live = request_and_live(seed=seed)
     bundled = BundledAssetLoader()
     feature = bundled.get_feature(FEATURE)
@@ -50,7 +51,7 @@ def effect_case(*, npc=True, seed=0, round_number=1, ended_target=True, dc=17):
     index = int(npc)
     live.initiative[index] = live.initiative[index].model_copy(
         update={
-            "constitution": 14,
+            "constitution": constitution,
             "save_proficiencies": ["con"],
             "proficiency_bonus_override": 2,
         }
@@ -133,13 +134,15 @@ def apply_effect_delta(snapshot, result):
     return CombatSnapshot.model_validate_json(to_json(after.model_dump(mode="python")))
 
 
-def parity(request, handle, live, loader, result):
+def parity(request, handle, live, loader, result, *, ability_modifier=2):
     with scoped_lib_loader(loader):
         asyncio.run(orch.submit_player_intent(handle, request.actor_id, request.payload))
     expected = capture_evaluation_snapshot(
         live, request.state_snapshot, GridScene(width=3, height=3)
     )
-    assert result.proposed_events == tuple(live.event_log)
+    assert result.proposed_events == expected_repeat_save_events(
+        live.event_log, ability_modifier=ability_modifier, proficiency=2
+    )
     assert result.rng_transition.next_state == RNGState.capture(live.rng)
     assert apply_effect_delta(request.state_snapshot, result) == expected
     return expected
@@ -147,12 +150,19 @@ def parity(request, handle, live, loader, result):
 
 @pytest.mark.parametrize("npc", [False, True])
 @pytest.mark.parametrize(
-    "seed,natural,success", [(0, 13, True), (1, 5, False), (31, 1, False), (5, 20, True)]
+    "seed,natural,constitution,ability_modifier,success",
+    [
+        (0, 13, 14, 2, True),
+        (1, 5, 14, 2, False),
+        (31, 1, 14, 2, False),
+        (5, 20, 14, 2, True),
+        (0, 13, 6, -2, False),
+    ],
 )
 def test_real_poison_pc_npc_save_expiry_and_full_legacy_parity(
-    monkeypatch, npc, seed, natural, success
+    monkeypatch, npc, seed, natural, constitution, ability_modifier, success
 ):
-    request, handle, live, loader = effect_case(npc=npc, seed=seed)
+    request, handle, live, loader = effect_case(npc=npc, seed=seed, constitution=constitution)
     before = deepcopy(request)
     with monkeypatch.context() as scoped:
         isolate(scoped)
@@ -160,10 +170,11 @@ def test_real_poison_pc_npc_save_expiry_and_full_legacy_parity(
         assert result.status == "accepted", result.error
         assert result == execute(request, loader)
     [save] = [e for e in result.proposed_events if isinstance(e, SaveRolled)]
+    total_modifier = ability_modifier + 2
     assert (save.natural, save.modifier, save.roll_total, save.dc, save.succeeded) == (
         natural,
-        4,
-        natural + 4,
+        total_modifier,
+        natural + total_modifier,
         17,
         success,
     )
@@ -179,7 +190,7 @@ def test_real_poison_pc_npc_save_expiry_and_full_legacy_parity(
         if npc
         else ["turn_ended", "turn_started"]
     )
-    after = parity(request, handle, live, loader, result)
+    after = parity(request, handle, live, loader, result, ability_modifier=ability_modifier)
     if success:
         assert not after.effect_states
         assert not after.combat_state.effect_lifecycles

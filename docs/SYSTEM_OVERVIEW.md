@@ -116,6 +116,11 @@ SM 持有效果、实际锚点、期限和集中状态。见
 当前 `evaluate` 产生保守的 world-version read fence；它不是每实体细粒度版本协议，
 也不是执行全 Session 完整性审计。必要完整机械 Snapshot 检查仍须保留。
 
+探索的独立豁免从 `evaluation_saves.py` 进入，和妖火共用豁免计算。`evaluation_spells.py`
+按已绑定活动选择神导术的技能效果，并沿治疗求值记录掷过的治疗骰。`evaluation_bardic_grant.py`
+验证探索中的激励资格并提出支付及效果。独立豁免的激励续算沿用已固定的原结果，
+按当前相关事实重验后使用调用方提供的 RNG。
+
 ### 行动可用性与专项接口
 
 `evaluation_availability.py::query_action_availability` 深复制／验证输入和绑定，

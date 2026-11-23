@@ -150,8 +150,9 @@ def evaluate(
     crit: bool = False,
     die_floor: int | None = None,
     maximize_dice: bool = False,
+    die_draws: list[tuple[int, int]] | None = None,
 ) -> int:
-    """Evaluate the expression, optionally using each die’s maximum without drawing."""
+    """Evaluate the expression and optionally record each actual (size, face) draw."""
     if node.op == "int":
         return node.value
     if node.op == "dice":
@@ -160,9 +161,22 @@ def evaluate(
             return count * node.value
         if rng is None:
             raise ValueError("dice require a resolution RNG")
-        return sum(max(rng.randint(1, node.value), die_floor or 1) for _ in range(count))
+        total = 0
+        for _ in range(count):
+            face = rng.randint(1, node.value)
+            if die_draws is not None:
+                die_draws.append((node.value, face))
+            total += max(face, die_floor or 1)
+        return total
     values = [
-        evaluate(arg, rng, crit=crit, die_floor=die_floor, maximize_dice=maximize_dice)
+        evaluate(
+            arg,
+            rng,
+            crit=crit,
+            die_floor=die_floor,
+            maximize_dice=maximize_dice,
+            die_draws=die_draws,
+        )
         for arg in node.args
     ]
     match node.op:

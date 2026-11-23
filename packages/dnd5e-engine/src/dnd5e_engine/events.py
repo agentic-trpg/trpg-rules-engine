@@ -480,12 +480,27 @@ class DamageApplied(BaseModel):
     is_crit: bool = False
 
 
+class HealingDieDraw(BaseModel):
+    """Record one raw healing die face drawn during expression evaluation."""
+
+    die_size: int = Field(ge=1)
+    face: int = Field(ge=1)
+
+
+class HealingRollDetail(BaseModel):
+    """Keep raw dice and reviewed additive bonuses separate from applied HP."""
+
+    dice: tuple[HealingDieDraw, ...]
+    fixed_addends: tuple[RollFixedModifier, ...]
+
+
 class HealingApplied(BaseModel):
-    """Describe resolved healing for a target."""
+    """Describe a healing amount; its cap semantics belong to the producing path."""
 
     type: Literal["healing_applied"] = "healing_applied"
     target_id: str
     amount: int
+    roll_detail: HealingRollDetail | None = Field(default=None, exclude_if=lambda v: v is None)
 
 
 class TempHpApplied(BaseModel):

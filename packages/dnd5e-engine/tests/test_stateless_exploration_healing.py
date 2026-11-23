@@ -9,7 +9,7 @@ from dnd5e_engine.evaluation_contracts import RuleEvaluationRequest, RuleEvaluat
 from dnd5e_engine.evaluation_delta import HPDelta, ResourceUpdate
 from dnd5e_engine.evaluation_rng import RNGState
 from dnd5e_engine.evaluation_ruleset import ruleset_binding
-from dnd5e_engine.events import HealingApplied
+from dnd5e_engine.events import HealingApplied, HealingDieDraw, HealingRollDetail, RollFixedModifier
 from tests.evaluation_support import FOE, HERO
 from tests.test_stateless_attack import execute
 from tests.test_stateless_casting_v20 import canonical_healing_wire
@@ -49,8 +49,19 @@ def test_exploration_healing_has_only_payment_and_capped_hp_proposals() -> None:
     assert isinstance(healing, HPDelta)
     target = next(a for a in request.state_snapshot.character_states if a.entity_id == FOE)
     rng = request.rng_context.state.restore()
-    amount = rng.randint(1, 8) + rng.randint(1, 8) + 3
-    assert result.proposed_events[-1] == HealingApplied(target_id=FOE, amount=amount)
+    faces = (rng.randint(1, 8), rng.randint(1, 8))
+    amount = sum(faces) + 3
+    assert result.proposed_events[-1] == HealingApplied(
+        target_id=FOE,
+        amount=amount,
+        roll_detail=HealingRollDetail(
+            dice=tuple(HealingDieDraw(die_size=8, face=face) for face in faces),
+            fixed_addends=(
+                RollFixedModifier(source="spell_bonus", value=3),
+                RollFixedModifier(source="recipient_bonus", value=0),
+            ),
+        ),
+    )
     assert healing.target_id == FOE
     assert healing.expected_hp == target.hp_current
     assert healing.resulting_hp == min(target.hp_max, target.hp_current + amount)

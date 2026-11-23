@@ -171,7 +171,12 @@ def evaluate_exploration_healing(
         passive_damage_modifiers={},
         save_modifiers={},
     )
-    resolve_heal(activity, context, modifiers={target.entity_id: modifiers})
+    resolve_heal(
+        activity,
+        context,
+        modifiers={target.entity_id: modifiers},
+        record_roll_detail=spell.slug == "cure-wounds",
+    )
     if (
         len(events) != 3
         or not isinstance(healing := events[2], HealingApplied)

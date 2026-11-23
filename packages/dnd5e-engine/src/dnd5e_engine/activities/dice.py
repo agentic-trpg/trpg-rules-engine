@@ -98,6 +98,7 @@ def roll_damage_part(
     slot_level: int | None = None,
     base_level: int | None = None,
     maximize_dice: bool = False,
+    die_draws: list[tuple[int, int]] | None = None,
 ) -> int:
     """Roll a damage part against ``rng``, applying scaling then crit doubling.
 
@@ -146,10 +147,18 @@ def roll_damage_part(
         if scaling is not None and steps and scaling.formula
         else None
     )
-    total = evaluate(node, rng, crit=crit, die_floor=die_floor, maximize_dice=maximize_dice)
+    total = evaluate(
+        node,
+        rng,
+        crit=crit,
+        die_floor=die_floor,
+        maximize_dice=maximize_dice,
+        die_draws=die_draws,
+    )
     if scaling_formula is not None:
         total += sum(
-            evaluate(scaling_formula, rng, maximize_dice=maximize_dice) for _ in range(steps)
+            evaluate(scaling_formula, rng, maximize_dice=maximize_dice, die_draws=die_draws)
+            for _ in range(steps)
         )
     return total
 

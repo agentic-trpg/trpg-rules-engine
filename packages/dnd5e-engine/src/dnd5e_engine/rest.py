@@ -74,7 +74,8 @@ class RestOutcome:
 
     ``healed`` / ``dice_spent`` / ``dice_remaining`` / ``rolls`` describe a Short
     Rest's hit-dice spend (``rolls`` is empty for a Long Rest, whose recovery draws
-    no dice). ``hp_current`` and ``pool`` are populated by ``resolve_long_rest``
+    no dice). ``raw_faces`` carries the Short Rest's pre-CON dice and stays
+    ``None`` for a Long Rest. ``hp_current`` and ``pool`` are populated by ``resolve_long_rest``
     (the caller reads the post-rest HP and the fully-restored pool from them) and
     left ``None`` by ``resolve_short_rest``, which only mutates the dice pool.
 
@@ -95,6 +96,7 @@ class RestOutcome:
     spell_slots: dict[int, int] | None = None
     pact_slots: dict[int, int] | None = None
     exhaustion_level: int | None = None
+    raw_faces: tuple[int, ...] | None = None
 
 
 def _restored_pool(
@@ -126,7 +128,9 @@ def resolve_short_rest(
 
     Each spent die heals ``max(1, 1d<hit_die_size> + con_modifier)`` — the 2024
     Foundry-parity per-die floor (the minimum applies to EACH die's own roll+CON,
-    never to the summed total). Pure: every draw flows through the passed-in ``rng``.
+    never to the summed total). ``raw_faces`` records the original draws in order;
+    ``rolls`` records their adjusted per-die healing. Pure: every draw flows
+    through the passed-in ``rng``.
 
     Rejects an overspend (``dice_to_spend`` exceeding ``pool.dice_remaining``) and a
     negative spend with ``ValueError``; the resolver never silently clamps.
@@ -146,9 +150,8 @@ def resolve_short_rest(
     # Validate BEFORE any rng draw: a rejected call must never mutate rng state
     # (determinism — seeded reproducibility is a hard engine promise).
     restored_pact = _restored_pool(pact_slots, pact_slot_max, name="pact_slots")
-    rolls = tuple(
-        max(1, rng.randint(1, pool.hit_die_size) + con_modifier) for _ in range(dice_to_spend)
-    )
+    raw_faces = tuple(rng.randint(1, pool.hit_die_size) for _ in range(dice_to_spend))
+    rolls = tuple(max(1, face + con_modifier) for face in raw_faces)
     healed = sum(rolls)
     dice_remaining = pool.dice_remaining - dice_to_spend
     return RestOutcome(
@@ -156,6 +159,7 @@ def resolve_short_rest(
         dice_spent=dice_to_spend,
         dice_remaining=dice_remaining,
         rolls=rolls,
+        raw_faces=raw_faces,
         pool=HitDicePool(
             hit_die_size=pool.hit_die_size,
             dice_remaining=dice_remaining,

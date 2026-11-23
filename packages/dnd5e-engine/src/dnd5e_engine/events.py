@@ -1091,19 +1091,32 @@ class LegendaryResistanceUsed(BaseModel):
 
 
 class RestSpend(BaseModel):
-    """Record hit-dice expenditure and associated healing rolls."""
+    """Record spent Hit Dice, adjusted healing, and optional original draw evidence."""
 
     model_config = {"extra": "forbid", "frozen": True}
     pool_id: str = Field(min_length=1)
     die_size: Literal[6, 8, 10, 12]
     amount: int = Field(ge=1)
     healing_rolls: tuple[int, ...]
+    raw_faces: tuple[int, ...] | None = Field(default=None, exclude_if=lambda v: v is None)
+    constitution_modifier: int | None = Field(default=None, exclude_if=lambda v: v is None)
 
     @model_validator(mode="after")
     def roll_count(self) -> RestSpend:
         """Validate that supplied roll evidence contains the required number of dice."""
         if len(self.healing_rolls) != self.amount or any(n < 1 for n in self.healing_rolls):
             raise ValueError("rest roll evidence must match spent dice")
+        if (self.raw_faces is None) != (self.constitution_modifier is None):
+            raise ValueError("rest raw faces and Constitution modifier must appear together")
+        if self.raw_faces is not None:
+            if len(self.raw_faces) != self.amount or any(
+                not 1 <= face <= self.die_size for face in self.raw_faces
+            ):
+                raise ValueError("rest raw faces must match spent dice and die size")
+            if self.healing_rolls != tuple(
+                max(1, face + self.constitution_modifier) for face in self.raw_faces
+            ):
+                raise ValueError("rest adjusted healing differs from raw faces and Constitution")
         return self
 
 

@@ -234,6 +234,8 @@ def _compute_rest(
                     die_size=pool.die_size,
                     amount=amount,
                     healing_rolls=outcome.rolls,
+                    raw_faces=outcome.raw_faces,
+                    constitution_modifier=con,
                 )
             )
     restored = outcomes[0].pact_slots

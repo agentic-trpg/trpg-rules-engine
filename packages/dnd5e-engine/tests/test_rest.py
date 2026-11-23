@@ -32,6 +32,8 @@ def test_short_rest_spends_dice_and_heals_within_per_die_bounds():
     assert len(outcome.rolls) == 3
     assert 9 <= outcome.healed <= 36
     assert outcome.healed == sum(outcome.rolls)
+    assert outcome.raw_faces is not None
+    assert outcome.rolls == tuple(max(1, face + 2) for face in outcome.raw_faces)
     # Pool mirror reflects the spend but keeps the full total intact.
     assert outcome.pool is not None
     assert outcome.pool.dice_remaining == 2
@@ -45,6 +47,8 @@ def test_short_rest_per_die_floor_applies_to_each_die_not_the_sum():
     outcome = resolve_short_rest(pool, dice_to_spend=4, con_modifier=-10, rng=random.Random(1))
 
     assert all(r == 1 for r in outcome.rolls)  # every die floored to 1 individually
+    assert outcome.raw_faces is not None
+    assert all(1 <= face <= 6 for face in outcome.raw_faces)
     assert outcome.healed == 4  # 4 × 1, NOT max(1, sum) == 1
 
 
@@ -73,6 +77,7 @@ def test_short_rest_zero_dice_is_a_noop_heal():
     outcome = resolve_short_rest(pool, dice_to_spend=0, con_modifier=2, rng=random.Random(7))
     assert outcome.healed == 0
     assert outcome.rolls == ()
+    assert outcome.raw_faces == ()
     assert outcome.dice_remaining == 5
 
 

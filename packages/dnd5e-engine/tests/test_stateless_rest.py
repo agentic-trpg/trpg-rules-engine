@@ -25,7 +25,7 @@ from dnd5e_engine.evaluation_resources import (
 from dnd5e_engine.evaluation_rng import RNGState
 from dnd5e_engine.evaluation_ruleset import ruleset_binding
 from dnd5e_engine.evaluation_state import NonCombatSnapshot
-from dnd5e_engine.events import HealingApplied
+from dnd5e_engine.events import HealingApplied, RestSpend
 from dnd5e_engine.rest import HitDicePool, resolve_short_rest
 from tests.evaluation_support import HERO, synthetic_loader
 from tests.test_stateless_attack import execute, request_and_live
@@ -159,6 +159,11 @@ def test_real_short_rest_mixed_pools_matches_independent_values_and_legacy(monke
     assert result.rng_transition.next_state == RNGState.capture(rng)
     assert result.proposed_events[0].hit_dice[0].healing_rolls == old1.rolls
     assert result.proposed_events[0].hit_dice[1].healing_rolls == old2.rolls
+    assert [spend.raw_faces for spend in result.proposed_events[0].hit_dice] == [
+        old1.raw_faces,
+        old2.raw_faces,
+    ]
+    assert [spend.constitution_modifier for spend in result.proposed_events[0].hit_dice] == [2, 2]
     assert result.proposed_events[0].hp_regained == 18
     assert result.proposed_events[1] == HealingApplied(target_id=HERO, amount=18)
     assert request == before
@@ -168,6 +173,30 @@ def test_real_short_rest_mixed_pools_matches_independent_values_and_legacy(monke
         apply_rest(after, result)
     with pytest.raises(AssertionError):
         apply_rest(request.state_snapshot, result, world_version=8)
+
+
+def test_rest_spend_keeps_historical_adjusted_only_event_shape():
+    old = RestSpend.model_validate(
+        {"pool_id": "hd:fighter", "die_size": 10, "amount": 1, "healing_rolls": [9]}
+    )
+    assert old.raw_faces is None
+    assert old.constitution_modifier is None
+    assert old.model_dump(mode="json") == {
+        "pool_id": "hd:fighter",
+        "die_size": 10,
+        "amount": 1,
+        "healing_rolls": [9],
+    }
+    with pytest.raises(ValidationError):
+        RestSpend.model_validate(
+            {
+                "pool_id": "hd:fighter",
+                "die_size": 10,
+                "amount": 1,
+                "healing_rolls": [9],
+                "raw_faces": [7],
+            }
+        )
 
 
 @pytest.mark.parametrize(("hp", "con", "seed", "expected"), [(39, 14, 0, 40), (10, 1, 2, 12)])

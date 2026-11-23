@@ -70,6 +70,7 @@ from dnd5e_engine.spellcasting import (
     spell_range_ft,
 )
 from dnd5e_engine.types.effects import ActiveEffect, ActiveEffectChange, ActiveEffectDuration
+from dnd5e_engine.visual_sight import SEE_INVISIBLE_KEY
 
 _SECONDS_PER_UNIT = {
     SpellDurationUnits.MINUTE: 60,
@@ -89,10 +90,14 @@ def _flat_skill_bonus(change: ActiveEffectChange) -> bool:
     )
 
 
-def _validate_passive_changes(passive: PassiveEffect, active: ActiveEffect) -> None:
+def _validate_passive_changes(
+    passive: PassiveEffect, active: ActiveEffect, *, see_invisibility: bool = False
+) -> None:
     """Validate each elapsed utility modifier before proposing payment."""
     stat_changes = []
     for source, change in zip(passive.changes, active.changes, strict=True):
+        if see_invisibility and source.key == "system.attributes.senses.special":
+            continue
         if "@" in source.value:
             raise ValueError("timed spell modifiers require concrete values")
         if source.key.startswith(("system.attributes.movement.", "system.attributes.senses.")):
@@ -133,6 +138,7 @@ def _passive_profile(
         and len(spell.passive_effects) == 1
         and not spell.passive_effects[0].changes
     )
+    see_invisibility = spell.slug == "see-invisibility" and spell == _reviewed_see_invisibility()
     ready_timing = (
         (
             time.unit in (CastingTimeUnit.MINUTE, CastingTimeUnit.HOUR)
@@ -170,7 +176,11 @@ def _passive_profile(
         consumed_material_slug(spell, activity.consumption)
     target = activity.target
     target_capacity = resolve_target_count(target.affects.count, cast_level=spell.level)
-    if ritual_anchor and target.affects.type == "self" and not target.affects.count:
+    if (
+        (ritual_anchor or see_invisibility)
+        and target.affects.type == "self"
+        and not target.affects.count
+    ):
         target_capacity = 1
     allowed_targets: tuple[str, ...] = ("creature", "willing")
     if spell.range.units == SpellRangeUnits.SELF:
@@ -188,7 +198,7 @@ def _passive_profile(
             and activity.consumption
             not in (
                 (ConsumptionBlock(), ConsumptionBlock(spell_slot=True))
-                if ritual_anchor
+                if ritual_anchor or see_invisibility
                 else (ConsumptionBlock(),)
             )
         )
@@ -248,11 +258,17 @@ def _passive_profile(
     active = passive_effect_to_active_effect(
         passive, target_id=target_id, caster_id=caster_id, concentration=spell.concentration
     )
+    _validate_passive_changes(passive, active, see_invisibility=see_invisibility)
+    if see_invisibility:
+        active = active.model_copy(
+            update={
+                "changes": [ActiveEffectChange(key=SEE_INVISIBLE_KEY, mode="override", value=True)]
+            }
+        )
     if invisible:
         active = active.model_copy(
             update={"id": "effect:invisibility", "origin": f"cast:invisibility:{caster_id}"}
         )
-    _validate_passive_changes(passive, active)
     if (
         spell.concentration
         and not ritual_anchor
@@ -264,6 +280,15 @@ def _passive_profile(
         active.model_copy(update={"duration": ActiveEffectDuration(seconds=seconds)}),
         target_capacity,
     )
+
+
+@lru_cache(maxsize=1)
+def _reviewed_see_invisibility() -> Spell:
+    """Bind the visual grant to the exact reviewed SRD spell definition."""
+    spell = BundledAssetLoader().get_spell("see-invisibility")
+    if spell is None:
+        raise EvaluationInvariantError("bundled See Invisibility is missing")
+    return spell
 
 
 @lru_cache(maxsize=1)
@@ -440,6 +465,8 @@ def is_healing_neutral_elapsed_spell(effect: EffectState) -> bool:
     validate_elapsed_spell_shape(effect, allow_concentration=True)
     stat_changes = []
     for change in effect.changes:
+        if change.key == SEE_INVISIBLE_KEY and change.mode == "override" and change.value is True:
+            continue
         if change.key.startswith(("system.attributes.movement.", "system.attributes.senses.")):
             if not isinstance(change.value, str) or change.mode not in ("add", "upgrade"):
                 return False
@@ -466,6 +493,8 @@ def attack_world_spell_modifiers(effect: EffectState) -> tuple[int, int | None]:
     walk = []
     floors = []
     for change in effect.changes:
+        if change.key == SEE_INVISIBLE_KEY and change.mode == "override" and change.value is True:
+            continue
         if (
             change.key == "system.attributes.movement.walk"
             and change.mode == "add"

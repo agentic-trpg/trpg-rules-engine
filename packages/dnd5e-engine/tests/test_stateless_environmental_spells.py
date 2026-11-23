@@ -37,6 +37,7 @@ from dnd5e_engine.evaluation_environmental_spells import (
 from dnd5e_engine.evaluation_rng import RNGState, RNGTransition
 from dnd5e_engine.evaluation_ruleset import freeze_ruleset, ruleset_binding
 from dnd5e_engine.events import IntentSubmitted, RollDieModifier, SaveRolled, SpellCast
+from dnd5e_engine.rules.conditions import CONDITION_IMPLIES, Condition
 from tests.evaluation_support import FOE, HERO
 from tests.test_stateless_attack import execute
 from tests.test_stateless_saves import condition
@@ -276,12 +277,25 @@ def _faerie_save_loader(wire, *, include_bless=True):
     """Bind the fixed cast and every reviewed asset for the supplied save sources."""
     canonical = BundledAssetLoader()
     spells = ["faerie-fire", "bane", "bless"] if include_bless else ["faerie-fire", "bane"]
+    names = {
+        name
+        for actor in wire["state_snapshot"]["character_states"]
+        for record in actor["conditions"]
+        for name in (
+            record["condition"],
+            *(
+                implied.value
+                for implied in CONDITION_IMPLIES.get(Condition(record["condition"]), [])
+            ),
+        )
+    }
     loader = freeze_ruleset(
         MemoryAssetLoader(
             items=[canonical.get_item("component-pouch")],
             spells=[canonical.get_spell(slug) for slug in spells],
             classes=[canonical.get_class("druid")],
             traits=[canonical.get_trait("magic-resistance")],
+            conditions=[canonical.get_condition(name) for name in sorted(names)],
         )
     )
     wire["ruleset_binding"] = ruleset_binding(loader).model_dump(mode="json")

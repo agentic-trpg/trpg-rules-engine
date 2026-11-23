@@ -507,7 +507,6 @@ def _faerie_plan(
         payload, ExplorationEnvironmentalSpellCastPayload
     ):
         raise TypeError("Faerie Fire requires an exploration spell request")
-    reviewed = BundledAssetLoader()
     if positions is None or not isinstance(payload.target, EnvironmentalPointTarget):
         raise ValueError("Faerie Fire requires a placed point and fixed occupants")
     if spell.slug != "faerie-fire" or payload.slot_level < 1:
@@ -560,7 +559,7 @@ def _faerie_plan(
             raise ValueError("Faerie Fire creature lacks fixed living facts")
         if failure := save_actor_failure(
             target,
-            reviewed,
+            loader,
             reviewed_identity=True,
             reviewed_concentration=True,
             reviewed_equipment=True,

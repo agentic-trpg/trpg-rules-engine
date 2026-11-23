@@ -28,6 +28,7 @@ from dnd5e_engine.rules.conditions import (
     CONDITION_IMPLIES,
     Condition,
     condition_matches_compiled,
+    d20_test_penalty,
     project_passive_save_modifiers,
 )
 
@@ -153,7 +154,7 @@ def roll_snapshot_save(
     *,
     bonus_dice: tuple[SaveBonusDie, ...] = (),
 ) -> SaveRoll:
-    """Roll with the fixed actor's admitted save profile and supplied RNG."""
+    """Roll with admitted save facts, including Exhaustion, and supplied RNG."""
     target = combatant(state)
     projected = project_passive_save_modifiers([c.condition for c in target.conditions])
     ctx = ActivityResolutionContext(
@@ -168,6 +169,7 @@ def roll_snapshot_save(
         passive_save_adv={target.entity_id: projected["passive_save_adv"]},
         passive_save_dis={target.entity_id: projected["passive_save_dis"]},
         passive_save_auto_fail={target.entity_id: projected["passive_save_auto_fail"]},
+        d20_test_penalty={target.entity_id: d20_test_penalty(target.conditions)},
         save_is_magical=payload.is_magical,
     )
     profile = save_modifier(target, payload.ability)
@@ -231,6 +233,11 @@ def save_actor_failure(
         or set(state.save_proficiencies) - set(get_args(Ability))
     ):
         return "invalid save ability/proficiency facts"
+    if any(
+        condition.condition == "exhaustion" and not 1 <= condition.exhaustion_level <= 5
+        for condition in state.conditions
+    ):
+        return "living saving actor has invalid Exhaustion level"
     if (
         ((state.worn_armor or state.shield_equipped) and not reviewed_equipment)
         or (state.concentration_effect_id and not reviewed_concentration)
@@ -308,6 +315,7 @@ def evaluate_save(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
         "unconscious",
         "incapacitated",
         "prone",
+        "exhaustion",
     }
     if any(
         c.condition not in known

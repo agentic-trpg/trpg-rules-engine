@@ -49,6 +49,7 @@ def save_loader(*, traits=()):
                 "unconscious",
                 "incapacitated",
                 "prone",
+                "exhaustion",
             )
         ],
         traits=traits,
@@ -283,6 +284,26 @@ def test_restrained_disadvantage_and_flag_cancel_preserve_provenance():
     assert result.rng_transition.next_state == state
 
 
+def test_ordinary_save_admits_bound_exhaustion_and_records_flat_penalty():
+    """The standalone save uses the same canonical level-one penalty and RNG draw."""
+    request, live = save_case(
+        ability="dex", dc=18, proficiency=False, conditions=(condition("exhaustion"),)
+    )
+    result = execute(request, save_loader())
+    old, state = legacy_save(request, live)
+    assert result.status == "accepted", result.error
+    (event,) = result.proposed_events
+    assert event.roll_detail.d20.faces == [13]
+    assert event.roll_total == old.roll_total == 15
+    assert event.succeeded is False
+    assert [(part.source, part.value) for part in event.roll_detail.modifiers] == [
+        ("ability", 4),
+        ("save_proficiency", 0),
+        ("exhaustion", -2),
+    ]
+    assert result.rng_transition.next_state == state
+
+
 @pytest.mark.parametrize("magical", [False, True])
 def test_reviewed_magic_resistance_uses_the_actual_save_kind(magical):
     """A known trait affects magical saves and leaves other saves ordinary."""
@@ -349,7 +370,7 @@ def test_refusals_before_rng_or_modifiers(monkeypatch, bad):
             }
         )
     elif bad == "condition":
-        actors[0] = actors[0].model_copy(update={"conditions": [condition("exhaustion")]})
+        actors[0] = actors[0].model_copy(update={"conditions": [condition("poisoned")]})
     elif bad == "feature":
         actors[0] = actors[0].model_copy(update={"granted_features": ("indomitable",)})
     elif bad == "source":

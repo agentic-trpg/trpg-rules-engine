@@ -3,6 +3,8 @@
 import random
 from collections.abc import Iterable
 from functools import lru_cache
+from hashlib import sha256
+from json import dumps
 from typing import Literal, get_args
 
 from dnd5e_srd_data.loader import AssetLoader, BundledAssetLoader
@@ -15,14 +17,19 @@ from dnd5e_engine.activities.d20 import AdvantageSources
 from dnd5e_engine.activities.effects import passive_effect_to_active_effect
 from dnd5e_engine.activities.save_primitive import SaveBonusDie, SaveRoll, roll_save
 from dnd5e_engine.evaluation_actor import combatant
+from dnd5e_engine.evaluation_bardic_check import (
+    BARDIC_INSPIRATION_DIE_SIDES,
+    BARDIC_INSPIRATION_SOURCE,
+)
 from dnd5e_engine.evaluation_beacon import is_reviewed_beacon_effect
 from dnd5e_engine.evaluation_contracts import RuleEvaluationRequest, SavePayload
 from dnd5e_engine.evaluation_delta import StateDelta
 from dnd5e_engine.evaluation_effects import EffectState, effect_state
-from dnd5e_engine.evaluation_rng import RNGTransition
+from dnd5e_engine.evaluation_rng import RNGContext, RNGTransition
+from dnd5e_engine.evaluation_ruleset import verify_ruleset
 from dnd5e_engine.evaluation_state import CharacterStateV2, NonCombatSnapshot
 from dnd5e_engine.evaluation_turn import TurnEvaluation, _refuse
-from dnd5e_engine.events import Ability, RollFixedModifier, SaveRolled
+from dnd5e_engine.events import Ability, RollDieModifier, RollFixedModifier, SaveRolled
 from dnd5e_engine.rules.conditions import (
     _DECLARATIVE_CONDITION_EFFECTS,
     CONDITION_IMPLIES,
@@ -37,6 +44,45 @@ _SAVE_SPELL_DICE: dict[str, tuple[str, Literal[-1, 1]]] = {
     "effect:bane": ("bane", -1),
 }
 _MAGIC_RESISTANCE_SLUG = "magic-resistance"
+
+
+def _held_inspiration(effect: EffectState, loader: AssetLoader) -> bool:
+    """Recognize only an inert issued Inspired grant, not arbitrary save effects."""
+    grant = effect.flags.get("bardic_inspiration")
+    shape = bool(
+        effect.id == "effect:inspired"
+        and effect.origin.startswith("cast:inspired:")
+        and effect.origin != "cast:inspired:"
+        and not effect.disabled
+        and not effect.transfer
+        and not effect.changes
+        and not effect.statuses
+        and not effect.end_effects
+        and effect.lifecycle is None
+        and effect.action_policy is None
+        and set(effect.flags) == {"bardic_inspiration"}
+        and type(grant) is dict
+        and type(grant.get("grant_id")) is str
+        and bool(grant["grant_id"])
+        and type(grant.get("die_sides")) is int
+        and grant["die_sides"] in BARDIC_INSPIRATION_DIE_SIDES
+        and set(grant) == {"grant_id", "die_sides"}
+    )
+    if not shape:
+        return False
+    feature = loader.get_feature("bardic-inspiration")
+    canonical = BundledAssetLoader().get_feature("bardic-inspiration")
+    if feature is None or feature != canonical or len(feature.passive_effects) != 1:
+        return False
+    expected = effect_state(
+        passive_effect_to_active_effect(
+            feature.passive_effects[0],
+            target_id=effect.target_id,
+            caster_id=effect.origin.removeprefix("cast:inspired:"),
+            extra_flags={"bardic_inspiration": grant},
+        )
+    )
+    return effect == expected
 
 
 @lru_cache(maxsize=2)
@@ -276,10 +322,8 @@ def save_actor_failure(
     return None
 
 
-def evaluate_save(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEvaluation:
-    """Evaluate the admitted saving throw with explicit RNG and return uncommitted
-    evidence.
-    """
+def _prepare_save(request: RuleEvaluationRequest, loader: AssetLoader):
+    """Run the save's actual admission decisions without restoring or drawing RNG."""
     snapshot, payload = request.state_snapshot, request.payload
     assert isinstance(payload, SavePayload)
     if not isinstance(snapshot, NonCombatSnapshot) or snapshot.combat_setup is not None:
@@ -297,7 +341,9 @@ def evaluate_save(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
         if effect.target_id == target.entity_id and not effect.disabled
     ]
     other_effects = [
-        effect for effect in active_effects if not is_reviewed_beacon_effect(effect, loader)
+        effect
+        for effect in active_effects
+        if not is_reviewed_beacon_effect(effect, loader) and not _held_inspiration(effect, loader)
     ]
     try:
         bonus_dice = project_save_bonus_dice(other_effects, loader).get(target.entity_id, ())
@@ -354,9 +400,105 @@ def evaluate_save(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
     )
     if failure:
         return _refuse("unsupported", "save.actor", failure)
-    rng = request.rng_context.state.restore()
-    if payload.ability == "wis" and len(active_effects) != len(other_effects):
+    if payload.ability == "wis" and any(
+        is_reviewed_beacon_effect(effect, loader) for effect in active_effects
+    ):
         payload = payload.model_copy(update={"advantage": (*payload.advantage, "effect")})
+    return target, payload, active_effects, bonus_dice
+
+
+def save_bardic_fingerprint(request: RuleEvaluationRequest, loader: AssetLoader) -> str:
+    """Hash the admitted save's selected rule facts, omitting RNG and world version."""
+    if request.operation_kind != "rules.save" or not isinstance(request.payload, SavePayload):
+        raise ValueError("Bardic Inspiration requires a standalone save")
+    verify_ruleset(request.ruleset_binding, loader)
+    prepared = _prepare_save(request, loader)
+    if not isinstance(prepared, tuple):
+        raise ValueError("saving throw was rejected")  # noqa: TRY004
+    target, payload, effects, bonus_dice = prepared
+    roller = combatant(target)
+    selected = getattr(roller, _SCORE_ATTR[payload.ability])
+    condition_projection = project_passive_save_modifiers(
+        [condition.condition for condition in roller.conditions]
+    )
+    ability = payload.ability.upper()
+    facts = {
+        "binding": request.ruleset_binding.model_dump(mode="json"),
+        "payload": payload.model_dump(mode="json"),
+        "ability_score": selected,
+        "modifier": save_modifier(roller, payload.ability).total,
+        "exhaustion": d20_test_penalty(roller.conditions),
+        "condition_advantage": ability in condition_projection["passive_save_adv"],
+        "condition_disadvantage": ability in condition_projection["passive_save_dis"],
+        "condition_auto_fail": ability in condition_projection["passive_save_auto_fail"],
+        "magic_resistance": payload.is_magical
+        and MonsterTraitMechanic.MAGIC_RESISTANCE in target.trait_mechanics,
+        "beacon_sources": [
+            (effect.id, effect.origin)
+            for effect in effects
+            if payload.ability == "wis" and is_reviewed_beacon_effect(effect, loader)
+        ],
+        "bonus_dice": [(die.source, die.sides, die.sign) for die in bonus_dice],
+    }
+    return sha256(dumps(facts, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def resolve_bardic_save_choice(
+    original: SaveRolled, die_sides: int, rng_context: RNGContext, *, use: bool
+) -> tuple[SaveRolled, RNGTransition]:
+    """Apply one optional Bardic die to fixed failed save evidence and compare to DC."""
+    detail = original.roll_detail
+    d20 = detail.d20 if detail is not None else None
+    if (
+        type(die_sides) is not int
+        or die_sides not in BARDIC_INSPIRATION_DIE_SIDES
+        or original.succeeded is not False
+        or original.roll_total >= original.dc
+        or detail is None
+        or detail.status != "rolled"
+        or d20 is None
+        or d20.origin != "rng"
+        or len(d20.faces) != (1 if original.advantage == "normal" else 2)
+        or not 0 <= d20.kept_index < len(d20.faces)
+        or any(not 1 <= face <= 20 for face in d20.faces)
+        or d20.faces[d20.kept_index] != original.natural
+        or original.modifier is None
+        or original.natural is None
+        or original.natural + sum(item.value for item in detail.modifiers) != original.roll_total
+        or any(item.source == BARDIC_INSPIRATION_SOURCE for item in detail.modifiers)
+    ):
+        raise ValueError("Bardic Inspiration requires an original failed rolled save")
+    event = original.model_copy(deep=True)
+    if not use:
+        return event, RNGTransition(
+            stream_id=rng_context.stream_id,
+            input_version=rng_context.version,
+            input_state=rng_context.state,
+            next_state=rng_context.state,
+            state_changed=False,
+        )
+    rng = rng_context.state.restore()
+    face = rng.randint(1, die_sides)
+    assert event.roll_detail is not None
+    event.roll_detail.modifiers.append(
+        RollDieModifier(source=BARDIC_INSPIRATION_SOURCE, sides=die_sides, face=face, value=face)
+    )
+    return event.model_copy(
+        update={
+            "roll_total": original.roll_total + face,
+            "succeeded": original.roll_total + face >= original.dc,
+        }
+    ), RNGTransition.between(rng_context, rng)
+
+
+def evaluate_save(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEvaluation:
+    """Evaluate one preflighted standalone save with explicit private RNG."""
+    prepared = _prepare_save(request, loader)
+    if not isinstance(prepared, tuple):
+        return prepared
+    target, payload, _, bonus_dice = prepared
+    snapshot = request.state_snapshot
+    rng = request.rng_context.state.restore()
     event = resolve_snapshot_save(target, payload, rng, bonus_dice=bonus_dice)
     return dict(
         status="accepted",

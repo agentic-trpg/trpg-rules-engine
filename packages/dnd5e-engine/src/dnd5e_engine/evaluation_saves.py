@@ -44,6 +44,12 @@ _SAVE_SPELL_DICE: dict[str, tuple[str, Literal[-1, 1]]] = {
     "effect:bane": ("bane", -1),
 }
 _MAGIC_RESISTANCE_SLUG = "magic-resistance"
+type _PreparedSave = tuple[
+    CharacterStateV2,
+    SavePayload,
+    list[EffectState],
+    tuple[SaveBonusDie, ...],
+]
 
 
 def _held_inspiration(effect: EffectState, loader: AssetLoader) -> bool:
@@ -322,7 +328,9 @@ def save_actor_failure(
     return None
 
 
-def _prepare_save(request: RuleEvaluationRequest, loader: AssetLoader):
+def _prepare_save(
+    request: RuleEvaluationRequest, loader: AssetLoader
+) -> TurnEvaluation | _PreparedSave:
     """Run the save's actual admission decisions without restoring or drawing RNG."""
     snapshot, payload = request.state_snapshot, request.payload
     assert isinstance(payload, SavePayload)

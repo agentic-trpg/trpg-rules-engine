@@ -1,6 +1,6 @@
 """Plan a draw-free exploration Bardic Inspiration grant from fixed facts."""
 
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 
 from dnd5e_srd_data.loader import AssetLoader
 from dnd5e_srd_data.schema.common import UtilityActivity
@@ -50,7 +50,7 @@ class BardicGrantRequest(EvaluationModel):
     ruleset_binding: RulesetBinding
 
     @model_validator(mode="after")
-    def fixed_identity(self):
+    def fixed_identity(self) -> Self:
         """Reject a mismatched or self-directed fixed request."""
         if self.actor_id == self.target_id or self.snapshot.session_id != self.session_id:
             raise ValueError("Bardic Inspiration requires another creature")

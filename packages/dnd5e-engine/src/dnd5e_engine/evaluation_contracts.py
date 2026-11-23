@@ -170,8 +170,9 @@ class ExplorationSpellCastPayload(EvaluationModel):
     kind: Literal["world.cast_spell"]
     spell_id: Annotated[str, Field(min_length=1)]
     spell_source_id: Annotated[str, Field(min_length=1)]
-    slot_level: Annotated[int, Field(ge=1, le=9)]
+    slot_level: Annotated[int, Field(ge=0, le=9)]
     target_id: Annotated[str, Field(min_length=1)]
+    selected_skill: Skill | None = Field(default=None, exclude_if=lambda value: value is None)
     material_instance_id: Annotated[str, Field(min_length=1)] | None = Field(
         default=None, exclude_if=lambda value: value is None
     )

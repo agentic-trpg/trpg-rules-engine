@@ -46,6 +46,7 @@ from dnd5e_engine.evaluation_exploration_healing import (
 from dnd5e_engine.evaluation_payments import spell_payment
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError
 from dnd5e_engine.evaluation_rng import RNGTransition
+from dnd5e_engine.evaluation_ruleset import get_default_ruleset
 from dnd5e_engine.evaluation_spell_materials import consumed_material_slug, spell_material_payment
 from dnd5e_engine.evaluation_spell_termination import reviewed_invisibility
 from dnd5e_engine.evaluation_spells import source_failure
@@ -55,6 +56,7 @@ from dnd5e_engine.evaluation_world_effect import EffectExpiryPolicy, WorldEffect
 from dnd5e_engine.events import EffectApplied, IntentSubmitted, SpellCast
 from dnd5e_engine.rules.armor_class import ARMOR_CLASS_FLOOR_KEYS, armor_class_floor_value
 from dnd5e_engine.rules.conditions import conditions_block_actions
+from dnd5e_engine.rules.skill_bonuses import SKILL_CHECK_CHANGE_KEYS
 from dnd5e_engine.spatial import GridTopology, canonical_cell_id
 from dnd5e_engine.specs import GridScene
 from dnd5e_engine.spellcasting import (
@@ -115,6 +117,29 @@ def _validate_passive_changes(
         raise ValueError("unsupported passive movement or sense modifier")
 
 
+def _guidance_passive(spell: Spell, selected_skill: str | None) -> PassiveEffect:
+    """Find the canonical selected effect from its typed skill change."""
+    if (
+        spell.slug != "guidance"
+        or spell != get_default_ruleset().get_spell("guidance")
+        or len(spell.activities) != 1
+        or not isinstance(spell.activities[0], UtilityActivity)
+    ):
+        raise ValueError("selected skill requires canonical Guidance")
+    matches = [
+        passive
+        for passive in spell.passive_effects
+        if len(passive.changes) == 1
+        and SKILL_CHECK_CHANGE_KEYS.get(passive.changes[0].key) == selected_skill
+        and passive.changes[0].value == "1d4"
+        and passive.changes[0].mode == 2
+        and any(ref.id == passive.id for ref in spell.activities[0].effects)
+    ]
+    if len(matches) != 1:
+        raise ValueError("Guidance requires one canonical selected skill")
+    return matches[0]
+
+
 def _passive_profile(
     spell: Spell,
     *,
@@ -123,8 +148,9 @@ def _passive_profile(
     max_target_capacity: int = 1,
     allow_consumed_material: bool = False,
     casting_activity: bool = False,
+    selected_skill: str | None = None,
 ) -> tuple[UtilityActivity, ActiveEffect, int]:
-    """Build an admitted utility effect, including an inert Ritual concentration anchor."""
+    """Build an admitted utility effect, including a selected Guidance variant."""
     if reviewed_beacon_spell(spell) and not casting_activity and not allow_consumed_material:
         activity = spell.activities[0]
         assert isinstance(activity, UtilityActivity)
@@ -165,11 +191,17 @@ def _passive_profile(
         or seconds_per_unit is None
         or not spell.duration.value
         or len(spell.activities) != 1
-        or len(spell.passive_effects) != 1
+        or (len(spell.passive_effects) != 1 and spell.slug != "guidance")
     ):
         raise ValueError("requires one finite touch or self spell")
     activity = spell.activities[0]
-    passive = spell.passive_effects[0]
+    passive = (
+        _guidance_passive(spell, selected_skill)
+        if spell.slug == "guidance"
+        else spell.passive_effects[0]
+    )
+    if selected_skill is not None and spell.slug != "guidance":
+        raise ValueError("selected skill belongs only to Guidance")
     if not isinstance(activity, UtilityActivity) or not activity.id or not passive.id:
         raise ValueError("requires one identifiable utility activity and its passive effect")
     if allow_consumed_material:
@@ -213,9 +245,12 @@ def _passive_profile(
         or activity.forced_movement is not None
         or activity.action_type is not None
         or activity.roll.formula
-        or activity.effect_selection is not None
-        or activity.effects != [AppliedEffectRef(id=passive.id)]
-        or activity.applied_effects not in ([], [passive.id])
+        or activity.effect_selection != ("one_per_target" if spell.slug == "guidance" else None)
+        or (
+            spell.slug != "guidance"
+            and activity.effects != [AppliedEffectRef.model_validate({"id": passive.id})]
+        )
+        or (spell.slug != "guidance" and activity.applied_effects not in ([], [passive.id]))
         or target.override
         or target.requires_willing
         or target.requires_sight
@@ -258,7 +293,8 @@ def _passive_profile(
     active = passive_effect_to_active_effect(
         passive, target_id=target_id, caster_id=caster_id, concentration=spell.concentration
     )
-    _validate_passive_changes(passive, active, see_invisibility=see_invisibility)
+    if spell.slug != "guidance":
+        _validate_passive_changes(passive, active, see_invisibility=see_invisibility)
     if see_invisibility:
         active = active.model_copy(
             update={
@@ -272,7 +308,9 @@ def _passive_profile(
     if (
         spell.concentration
         and not ritual_anchor
-        and not all(_flat_skill_bonus(change) for change in active.changes)
+        and not all(
+            _flat_skill_bonus(change) or spell.slug == "guidance" for change in active.changes
+        )
     ):
         raise ValueError("elapsed concentration supports only flat skill bonuses")
     return (
@@ -414,6 +452,7 @@ def verify_timed_spell_effect(
             target_id=payload.target_id,
             caster_id=request.actor_id,
             allow_consumed_material=payload.material_instance_id is not None,
+            selected_skill=payload.selected_skill,
         )
     admitted = _admit_elapsed_overlap(active, spell, actor, snapshot, request.command_id)
     if admitted is None or creation != _timed_effect_creation(request, spell, admitted):
@@ -638,6 +677,8 @@ def exploration_spell_reaches(
 
 def _supported_exploration_slot(spell: Spell, level: int, *, healing: bool, aid: bool) -> bool:
     """Keep direct-cast slot admission scoped to reviewed higher-level cases."""
+    if spell.level == 0:
+        return spell.slug == "guidance" and level == 0
     if not 1 <= spell.level <= level <= 9:
         return False
     if spell.level == level:
@@ -707,6 +748,8 @@ def evaluate_exploration_spell(  # noqa: C901 - bounded spell profiles share one
             "unsupported", "spell.condition_choice", "spell has no reviewed condition choice"
         )
     aid = is_reviewed_aid(spell)
+    if payload.selected_skill is not None and spell.slug != "guidance":
+        return _refuse("unsupported", "spell.selection", "selected skill belongs only to Guidance")
     if not _supported_exploration_slot(
         spell, payload.slot_level, healing=healing is not None, aid=aid
     ):
@@ -730,6 +773,7 @@ def evaluate_exploration_spell(  # noqa: C901 - bounded spell profiles share one
                     target_id=payload.target_id,
                     caster_id=request.actor_id,
                     allow_consumed_material=material_instance is not None,
+                    selected_skill=payload.selected_skill,
                 )
         except ValueError as exc:
             return _refuse("unsupported", "spell.mechanism", str(exc))
@@ -798,7 +842,9 @@ def evaluate_exploration_spell(  # noqa: C901 - bounded spell profiles share one
         if admitted is None:
             return _refuse("rejected", "spell.effect_exists", "target already has this effect")
         active = admitted
-    if snapshot.resource_state is None or actor.spell_slots.get(payload.slot_level, 0) <= 0:
+    if spell.level and (
+        snapshot.resource_state is None or actor.spell_slots.get(payload.slot_level, 0) <= 0
+    ):
         return _refuse("rejected", "spell.slot", "no owned ordinary slot remains")
     if (
         healing is None
@@ -819,12 +865,18 @@ def evaluate_exploration_spell(  # noqa: C901 - bounded spell profiles share one
             ),
             error=None,
         )
-    payment = spell_payment(snapshot.resource_state, actor.entity_id, payload.slot_level)
-    if payment.expected.kind != "spell_slot":
+    if spell.level:
+        assert snapshot.resource_state is not None
+        payment = spell_payment(snapshot.resource_state, actor.entity_id, payload.slot_level)
+    else:
+        payment = None
+    if payment is not None and payment.expected.kind != "spell_slot":
         raise EvaluationInvariantError("world spell payment must use an ordinary slot")
     if healing is not None:
+        assert payment is not None
         return evaluate_exploration_healing(request, spell, healing, actor, target, payment, loader)
     if removal is not None:
+        assert payment is not None
         return evaluate_condition_choice(request, spell, actor, target, payment, removal)
     creation = _timed_effect_creation(request, spell, active)
     components, material, consumed, cost = spell_component_metadata(spell)
@@ -833,7 +885,9 @@ def evaluate_exploration_spell(  # noqa: C901 - bounded spell profiles share one
         state_delta=StateDelta(
             expected_world_version=snapshot.world_version,
             operations=(
-                (payment, creation)
+                (creation,)
+                if payment is None
+                else (payment, creation)
                 if material_debit is None
                 else (payment, material_debit, creation)
             ),
@@ -850,7 +904,7 @@ def evaluate_exploration_spell(  # noqa: C901 - bounded spell profiles share one
             SpellCast(
                 actor_id=actor.entity_id,
                 spell_id=spell.slug,
-                slot_level=payload.slot_level,
+                slot_level=payload.slot_level if spell.level else None,
                 ritual=False,
                 components=list(components),
                 material=material,

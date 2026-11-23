@@ -1,6 +1,7 @@
 """R15 Save mechanics, independent expectations, Legacy parity and isolation."""
 
 import asyncio
+import json
 import random
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
@@ -24,7 +25,7 @@ from dnd5e_engine.evaluation_contracts import (
 )
 from dnd5e_engine.evaluation_effects import effect_state
 from dnd5e_engine.evaluation_rng import RNGState
-from dnd5e_engine.evaluation_ruleset import ruleset_binding
+from dnd5e_engine.evaluation_ruleset import get_default_ruleset, ruleset_binding
 from dnd5e_engine.evaluation_state import ConditionRecord, NonCombatSnapshot
 from dnd5e_engine.events import SaveRolled
 from dnd5e_engine.types.conditions import ActiveCondition
@@ -32,6 +33,7 @@ from dnd5e_engine.types.effects import ActiveEffect
 from tests.evaluation_support import FOE, HERO, synthetic_loader
 from tests.test_stateless_attack import execute, request_and_live
 from tests.test_stateless_item_closure_core import isolate
+from tests.test_stateless_spell_attack import spell_attack_wire
 
 
 def save_loader(*, traits=()):
@@ -54,6 +56,49 @@ def save_loader(*, traits=()):
         ],
         traits=traits,
     )
+
+
+def test_standalone_save_admits_complete_canonical_wizard_one_profile():
+    """Use the existing complete Wizard 1 class, grants and resource fixture."""
+    from dnd5e_engine.evaluation import evaluate
+
+    wire = spell_attack_wire("fire-bolt")
+    snapshot = wire["state_snapshot"]
+    snapshot.pop("combat_state")
+    snapshot["snapshot_kind"] = "non_combat"
+    snapshot["combat_setup"] = None
+    snapshot["character_states"] = [snapshot["character_states"][0]]
+    wire["operation_kind"] = "rules.save"
+    wire["payload"] = {
+        "kind": "rules.save",
+        "target_id": HERO,
+        "ability": "wis",
+        "dc": 10,
+        "advantage": [],
+        "disadvantage": [],
+        "is_magical": False,
+    }
+    request = RuleEvaluationRequest.model_validate_json(json.dumps(wire))
+    result = asyncio.run(evaluate(request, loader=get_default_ruleset()))
+    assert result.status == "accepted", result.error
+    assert result.proposed_events[0].target_id == HERO
+    assert result.proposed_events[0].modifier == 2
+    incomplete = request.model_copy(
+        update={
+            "state_snapshot": request.state_snapshot.model_copy(
+                update={
+                    "character_states": (
+                        request.state_snapshot.character_states[0].model_copy(
+                            update={"granted_features": ("spellcasting",)}
+                        ),
+                    )
+                }
+            )
+        }
+    )
+    rejected = asyncio.run(evaluate(incomplete, loader=get_default_ruleset()))
+    assert rejected.status == "unsupported"
+    assert rejected.error.code == "save.actor"
 
 
 def save_case(

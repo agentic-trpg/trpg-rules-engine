@@ -328,7 +328,30 @@ def evaluate_save(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
         return _refuse(
             "unsupported", "save.conditions", "condition lifecycle dependencies are not migrated"
         )
-    failure = save_actor_failure(target, loader, magic_resistance_loader=loader)
+    # Only the complete canonical Wizard 1 profile has been reviewed for this
+    # standalone save. Other classes and subclasses retain their dependency gate.
+    reviewed_identity = False
+    if target.classes or target.class_slug or target.granted_features:
+        from dnd5e_engine.evaluation_class_dependencies import class_dependencies
+        from dnd5e_engine.evaluation_ruleset import get_default_ruleset
+
+        levels = target.classes or (
+            {target.class_slug: target.character_level} if target.class_slug else {}
+        )
+        if levels != {"wizard": 1} or target.subclass_slug is not None:
+            return _refuse(
+                "unsupported", "save.actor", "only the Wizard 1 class profile is reviewed"
+            )
+        failure = class_dependencies(target, snapshot, loader, get_default_ruleset())
+        if failure:
+            return _refuse("unsupported", "save.actor", failure)
+        reviewed_identity = True
+    failure = save_actor_failure(
+        target,
+        loader,
+        reviewed_identity=reviewed_identity,
+        magic_resistance_loader=loader,
+    )
     if failure:
         return _refuse("unsupported", "save.actor", failure)
     rng = request.rng_context.state.restore()

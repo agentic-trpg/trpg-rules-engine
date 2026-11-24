@@ -382,7 +382,9 @@ def roll_snapshot_save(
         target,
         payload.ability,
         payload.dc,
-        ignore_cover=not payload.requires_cover,
+        ignore_cover=not (
+            payload.requires_cover or isinstance(payload.effect_reach, DirectMechanismEffect)
+        ),
         additional_sources=AdvantageSources(
             advantage=payload.advantage, disadvantage=payload.disadvantage
         ),

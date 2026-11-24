@@ -1,6 +1,7 @@
 """Evaluate the reviewed Bless and Bane creature casts from fixed world facts."""
 
-from dataclasses import dataclass
+import copy
+from dataclasses import dataclass, replace
 from functools import lru_cache
 
 from dnd5e_srd_data.loader import AssetLoader, BundledAssetLoader
@@ -9,26 +10,33 @@ from dnd5e_srd_data.schema.spell import Spell
 
 from dnd5e_engine.activities.actor_stats import ability_modifier_of, proficiency_bonus_of
 from dnd5e_engine.activities.effects import passive_effect_to_active_effect
-from dnd5e_engine.activities.save import spellcasting_save_dc
+from dnd5e_engine.activities.save import _resolve_save_ability, spellcasting_save_dc
 from dnd5e_engine.areas import has_line_of_effect
 from dnd5e_engine.evaluation_actor import combatant
 from dnd5e_engine.evaluation_casting import CastingStateV20
 from dnd5e_engine.evaluation_contracts import (
+    WARD_SPELL_SCHEMA_VERSION,
     ExplorationSpellCastPayload,
     RuleEvaluationRequest,
     RuleEvaluationResult,
-    SavePayload,
 )
 from dnd5e_engine.evaluation_delta import StateDelta, WorldEffectCreate
-from dnd5e_engine.evaluation_effects import effect_state
+from dnd5e_engine.evaluation_effects import EffectState, effect_state
 from dnd5e_engine.evaluation_equipment_dependencies import HOLY_SYMBOL_SLUGS, reviewed_holy_symbol
 from dnd5e_engine.evaluation_payments import spell_payment
 from dnd5e_engine.evaluation_rng import RNGTransition
 from dnd5e_engine.evaluation_saves import (
     _save_equipment,
     project_save_bonus_dice,
-    resolve_snapshot_save,
     save_actor_failure,
+)
+from dnd5e_engine.evaluation_spell_saves import (
+    ORDINARY_SPELL_SAVES,
+    SpellSaveContinuation,
+    SpellSaveProgress,
+    SpellSaveStep,
+    resolve_ordered_spell_saves,
+    split_spell_save_effects,
 )
 from dnd5e_engine.evaluation_spells import spell_event
 from dnd5e_engine.evaluation_state import NonCombatSnapshot
@@ -147,10 +155,23 @@ def _holy_symbol_failure(
     return None
 
 
-def evaluate_ward_spell(  # noqa: C901 - two fixed ward outcomes share one admission path
-    request: RuleEvaluationRequest, loader: AssetLoader
-) -> TurnEvaluation:
-    """Resolve ordered Bane saves and propose one payment plus surviving effects."""
+def evaluate_ward_spell(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEvaluation:
+    """Resolve the ordinary draw-free Bless or ordered Bane cast to completion."""
+    plan = _ward_plan(request, loader)
+    if isinstance(plan, tuple):
+        outcome, _ = plan
+        assert outcome is not None
+        return outcome
+    return plan
+
+
+def _ward_plan(  # noqa: C901 - two fixed ward outcomes share one admission path
+    request: RuleEvaluationRequest,
+    loader: AssetLoader,
+    *,
+    continuation: SpellSaveContinuation = ORDINARY_SPELL_SAVES,
+) -> TurnEvaluation | tuple[TurnEvaluation | None, SpellSaveProgress]:
+    """Preflight the ward and either pause Bane or build its ordinary cast proposal."""
     snapshot, payload, positions = (
         request.state_snapshot,
         request.payload,
@@ -225,12 +246,11 @@ def evaluate_ward_spell(  # noqa: C901 - two fixed ward outcomes share one admis
     except ValueError as exc:
         return _refuse("rejected", "spell.target", str(exc))
     existing = {(effect.target_id, effect.id, effect.origin) for effect in snapshot.effect_states}
-    rng = request.rng_context.state.restore()
-    saves = []
-    selected = []
-    bonus = {}
-    equipment = {}
-    if spell.slug == "bane":
+    progress = None
+    saves = ()
+    selected = payload.target_ids
+    if isinstance(activity, SaveActivity):
+        equipment = {}
         for target_id in payload.target_ids:
             try:
                 equipment[target_id], allowed_items = _save_equipment(
@@ -250,15 +270,12 @@ def evaluate_ward_spell(  # noqa: C901 - two fixed ward outcomes share one admis
             ):
                 return _refuse("unsupported", "spell.save", failure)
         try:
-            bonus = project_save_bonus_dice(
-                (
-                    effect
-                    for effect in snapshot.effect_states
-                    if effect.target_id in payload.target_ids
-                ),
+            targets = set(payload.target_ids)
+            active, grants = split_spell_save_effects(
+                (effect for effect in snapshot.effect_states if effect.target_id in targets),
                 loader,
-                allow_lifecycle_marker=True,
             )
+            bonus = project_save_bonus_dice(active, loader, allow_lifecycle_marker=True)
         except ValueError as exc:
             return _refuse("unsupported", "spell.save", str(exc))
         casting = snapshot.casting_state
@@ -280,27 +297,22 @@ def evaluate_ward_spell(  # noqa: C901 - two fixed ward outcomes share one admis
             proficiency_bonus_of(combatant(caster)),
             ability_modifier_of(combatant(caster), casting_source.ability),
         )
-    for target_id in payload.target_ids:
-        if spell.slug == "bane":
-            save = resolve_snapshot_save(
-                actors[target_id],
-                SavePayload(
-                    kind="rules.save",
-                    target_id=target_id,
-                    ability="cha",
-                    dc=dc,
-                    advantage=(),
-                    disadvantage=(),
-                    is_magical=True,
-                ),
-                rng,
-                bonus_dice=bonus.get(target_id, ()),
-                equipment_bonus=equipment[target_id],
-            )
-            saves.append(save)
-            if save.succeeded:
-                continue
-        selected.append(target_id)
+        progress, rng = resolve_ordered_spell_saves(
+            request.rng_context,
+            (actors[target_id] for target_id in payload.target_ids),
+            ability=_resolve_save_ability(activity),
+            dc=dc,
+            bonus=bonus,
+            equipment=equipment,
+            grants=grants,
+            continuation=continuation,
+        )
+        if progress.pending_target_id is not None:
+            return None, progress
+        saves = tuple(step.final or step.original for step in progress.steps)
+        selected = tuple(save.target_id for save in saves if not save.succeeded)
+    else:
+        rng = request.rng_context.state.restore()
     creations = []
     effects = []
     for target_id in selected:
@@ -309,7 +321,8 @@ def evaluate_ward_spell(  # noqa: C901 - two fixed ward outcomes share one admis
         )
         effect = effect_state(active)
         if (effect.target_id, effect.id, effect.origin) in existing:
-            return _refuse("rejected", "spell.effect_exists", "target already has this ward")
+            refusal = _refuse("rejected", "spell.effect_exists", "target already has this ward")
+            return (refusal, progress) if progress is not None else refusal
         effects.append(EffectApplied(effect=active))
         creations.append(
             WorldEffectCreate(
@@ -326,7 +339,7 @@ def evaluate_ward_spell(  # noqa: C901 - two fixed ward outcomes share one admis
                 ),
             )
         )
-    return dict(
+    outcome: TurnEvaluation = dict(
         status="accepted",
         state_delta=StateDelta(
             expected_world_version=snapshot.world_version,
@@ -351,6 +364,90 @@ def evaluate_ward_spell(  # noqa: C901 - two fixed ward outcomes share one admis
         choice=None,
         error=None,
     )
+    return (outcome, progress) if progress is not None else outcome
+
+
+def evaluate_bound_bane_step(
+    request: RuleEvaluationRequest,
+    *,
+    choice_target_id: str,
+    prior_steps: tuple[SpellSaveStep, ...] = (),
+    choice: bool | None = None,
+    choice_die_sides: int | None = None,
+    loader: AssetLoader,
+) -> SpellSaveProgress:
+    """Stage a bound Bane cast for the single recipient authorized by the Host."""
+    return _bound_bane_plan(
+        request,
+        loader,
+        SpellSaveContinuation(
+            prior_steps=prior_steps,
+            choice=choice,
+            choice_die_sides=choice_die_sides,
+            choice_target_id=choice_target_id,
+            pause=True,
+        ),
+    )
+
+
+def _bound_bane_plan(
+    request: RuleEvaluationRequest, loader: AssetLoader, continuation: SpellSaveContinuation
+) -> SpellSaveProgress:
+    """Use normal bound admission and result identity on the staged calculation."""
+    from dnd5e_engine.evaluation import _equipment_rejection, _result_identity, _turn_result
+    from dnd5e_engine.evaluation_ruleset import verify_ruleset
+
+    request = RuleEvaluationRequest.model_validate(copy.deepcopy(request))
+    verify_ruleset(request.ruleset_binding, loader)
+    payload = request.payload
+    if (
+        request.schema_version != WARD_SPELL_SCHEMA_VERSION
+        or request.operation_kind != "world.cast_spell"
+        or not isinstance(payload, ExplorationSpellCastPayload)
+        or payload.spell_id != "bane"
+        or payload.target_ids is None
+        or continuation.choice_target_id not in payload.target_ids
+    ):
+        raise ValueError("expected a bound Bane action and a selected choice recipient")
+    identity = _result_identity(request)
+    if blocked := _equipment_rejection(request, loader, identity):
+        return SpellSaveProgress((), None, blocked)
+    plan = _ward_plan(request, loader, continuation=continuation)
+    if isinstance(plan, tuple):
+        outcome, progress = plan
+        if outcome is None:
+            return progress
+        return replace(
+            progress,
+            result=_turn_result(identity, outcome),
+            spent_grants=progress.spent_grants if outcome["status"] == "accepted" else (),
+        )
+    return SpellSaveProgress((), None, _turn_result(identity, plan))
+
+
+def verify_bound_bane_result(
+    result: RuleEvaluationResult,
+    request: RuleEvaluationRequest,
+    steps: tuple[SpellSaveStep, ...],
+    *,
+    choice_target_id: str,
+    loader: AssetLoader,
+) -> tuple[EffectState, ...]:
+    """Replay the ordered cast and prove its complete result and exact spent grants."""
+    expected = _bound_bane_plan(
+        request,
+        loader,
+        SpellSaveContinuation(
+            prior_steps=steps, choice_target_id=choice_target_id, pause=True, replay=True
+        ),
+    )
+    if (
+        expected.pending_target_id is not None
+        or expected.steps != steps
+        or expected.result != result
+    ):
+        raise ValueError("Bane result differs from ordered saves and fixed RNG")
+    return expected.spent_grants
 
 
 def verify_ward_cast(

@@ -32,7 +32,6 @@ from dnd5e_engine.evaluation_contracts import (
     ExplorationSpellPositions,
     RuleEvaluationRequest,
     RuleEvaluationResult,
-    SavePayload,
 )
 from dnd5e_engine.evaluation_delta import ResourceUpdate, StateDelta, StateDeltaOperation
 from dnd5e_engine.evaluation_effects import EffectState, effect_state
@@ -50,14 +49,23 @@ from dnd5e_engine.evaluation_environmental_contracts import (
 )
 from dnd5e_engine.evaluation_payments import spell_payment
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError
-from dnd5e_engine.evaluation_rng import RNGContext, RNGState, RNGTransition
+from dnd5e_engine.evaluation_rng import RNGTransition
 from dnd5e_engine.evaluation_saves import (
-    _held_inspiration,
     _save_equipment,
     project_save_bonus_dice,
-    resolve_bardic_save_choice,
-    resolve_snapshot_save,
     save_actor_failure,
+)
+from dnd5e_engine.evaluation_spell_saves import (
+    ORDINARY_SPELL_SAVES,
+    SpellSaveContinuation,
+    resolve_ordered_spell_saves,
+    split_spell_save_effects,
+)
+from dnd5e_engine.evaluation_spell_saves import (
+    SpellSaveProgress as FaerieProgress,
+)
+from dnd5e_engine.evaluation_spell_saves import (
+    SpellSaveStep as FaerieSaveStep,
 )
 from dnd5e_engine.evaluation_spell_termination import WorldSpellEnd, reviewed_invisibility
 from dnd5e_engine.evaluation_state import CharacterStateV2, NonCombatSnapshot
@@ -72,7 +80,6 @@ from dnd5e_engine.events import (
     CheckRolled,
     CombatEvent,
     IntentSubmitted,
-    SaveRolled,
     SpellCast,
 )
 from dnd5e_engine.rules.conditions import conditions_block_actions
@@ -93,29 +100,6 @@ _CLASSES = {
 }
 _LIGHT = EnvironmentalSpec(kind="light", light="bright", dim_extension_ft=20, object_anchoring=True)
 _SECONDS_PER_UNIT = {SpellDurationUnits.MINUTE: 60, SpellDurationUnits.HOUR: 3600}
-
-
-@dataclass(frozen=True)
-class FaerieSaveStep:
-    """One ordered creature save and its exact action-local random boundaries."""
-
-    target_id: str
-    original: SaveRolled
-    final: SaveRolled | None
-    rng_after: RNGState
-    rng_after_bonus: RNGState
-    choice: Literal["accept", "decline"] | None = None
-    grant: EffectState | None = None
-
-
-@dataclass(frozen=True)
-class FaerieProgress:
-    """Uncommitted ordered cast progress; only a completed result may be adopted."""
-
-    steps: tuple[FaerieSaveStep, ...]
-    pending_target_id: str | None
-    result: RuleEvaluationResult | None
-    spent_grants: tuple[EffectState, ...]
 
 
 @dataclass(frozen=True)
@@ -521,16 +505,12 @@ def _is_faerie_save_inert(effect: EffectState, loader: AssetLoader) -> bool:
     return effect.flags.get("concentration") is True and effect == effect_state(expected)
 
 
-def _faerie_plan(  # noqa: C901 - ordered action stages share one preflight and RNG chain
+def _faerie_plan(
     request: RuleEvaluationRequest,
     spell: Spell,
     loader: AssetLoader,
     *,
-    prior_steps: tuple[FaerieSaveStep, ...] = (),
-    choice: bool | None = None,
-    choice_die_sides: int | None = None,
-    pause: bool = False,
-    replay_prior: bool = False,
+    continuation: SpellSaveContinuation = ORDINARY_SPELL_SAVES,
 ) -> tuple[
     tuple[StateDeltaOperation, ...] | None,
     tuple[CombatEvent, ...] | None,
@@ -612,174 +592,47 @@ def _faerie_plan(  # noqa: C901 - ordered action stages share one preflight and 
         ):
             raise ValueError(f"RUO-54-F1: {failure}")
         equipment_bonuses[target_id] = equipment_bonus
-    inspiration_by_target = {}
-    for effect in snapshot.effect_states:
-        if (
-            effect.target_id not in creature_ids
-            or effect.id != "effect:inspired"
-            or effect.disabled
-        ):
-            continue
-        if not _held_inspiration(effect, loader):
-            raise ValueError("target has an invalid Inspiration grant")
-        if effect.target_id in inspiration_by_target:
-            raise ValueError("Faerie Fire target has duplicate Inspiration grants")
-        inspiration_by_target[effect.target_id] = effect
     try:
-        bonus_dice = project_save_bonus_dice(
+        active, grants = split_spell_save_effects(
             (
                 effect
                 for effect in snapshot.effect_states
-                if effect.target_id in creature_ids
-                and not _is_faerie_save_inert(effect, loader)
-                and effect != inspiration_by_target.get(effect.target_id)
+                if effect.target_id in creature_ids and not _is_faerie_save_inert(effect, loader)
             ),
             loader,
-            allow_lifecycle_marker=True,
         )
+        bonus_dice = project_save_bonus_dice(active, loader, allow_lifecycle_marker=True)
     except ValueError as exc:
         raise ValueError(f"RUO-54-F1: {exc}") from exc
-
-    if choice is not None and (not pause or not prior_steps or prior_steps[-1].choice is not None):
-        raise ValueError("Faerie Fire choice lacks a pending ordered save")
-    if choice_die_sides is not None and choice is None:
-        raise ValueError("Faerie Fire die requires an explicit choice")
-    rng = request.rng_context.state.restore()
-    saves: list[SaveRolled] = []
-    steps: list[FaerieSaveStep] = []
-    spent: list[EffectState] = []
-    resolved_choice = False
-    selected: list[VisualTargetEffect] = []
-    for occupant in occupants:
-        if occupant.target_kind == "creature":
-            target = actors[occupant.target_id]
-            grant = inspiration_by_target.get(target.entity_id)
-            index = len(steps)
-            previous = prior_steps[index] if index < len(prior_steps) else None
-            if previous is not None and previous.target_id != target.entity_id:
-                raise ValueError("Faerie Fire prior step differs from occupant order")
-            if previous is not None and not replay_prior:
-                if previous.grant != grant and previous.choice is not None:
-                    raise ValueError("Faerie Fire prior grant differs from fixed effects")
-                rng.setstate(previous.rng_after_bonus.restore().getstate())
-                save = previous.final or previous.original
-                step = copy.deepcopy(previous)
-            else:
-                original = resolve_snapshot_save(
-                    target,
-                    SavePayload(
-                        kind="rules.save",
-                        target_id=target.entity_id,
-                        ability=save_ability,
-                        dc=dc,
-                        advantage=(),
-                        disadvantage=(),
-                        is_magical=True,
-                    ),
-                    rng,
-                    bonus_dice=bonus_dice.get(target.entity_id, ()),
-                    equipment_bonus=equipment_bonuses[target.entity_id],
-                )
-                after = RNGState.capture(rng)
-                if previous is not None:
-                    if previous.original != original or previous.rng_after != after:
-                        raise ValueError("Faerie Fire original save differs from fixed RNG")
-                    step = copy.deepcopy(previous)
-                    save = step.final or original
-                    if step.choice is not None:
-                        if grant is None or step.grant != grant:
-                            raise ValueError("Faerie Fire grant differs from fixed effects")
-                        final, transition = resolve_bardic_save_choice(
-                            original,
-                            grant.flags["bardic_inspiration"]["die_sides"],
-                            RNGContext(
-                                stream_id=request.rng_context.stream_id,
-                                version=request.rng_context.version,
-                                state=after,
-                            ),
-                            use=step.choice == "accept",
-                        )
-                        if step.final != final or step.rng_after_bonus != transition.next_state:
-                            raise ValueError("Faerie Fire bonus differs from fixed RNG")
-                        rng.setstate(transition.next_state.restore().getstate())
-                    elif step.final is not None or step.rng_after_bonus != after:
-                        raise ValueError("Faerie Fire pending save has altered evidence")
-                else:
-                    save = original
-                    step = FaerieSaveStep(target.entity_id, original, None, after, after)
-            if (
-                previous is not None
-                and previous.choice is None
-                and grant is not None
-                and previous.original.succeeded is False
-                and previous.original.roll_detail is not None
-                and previous.original.roll_detail.status == "rolled"
-            ):
-                if index != len(prior_steps) - 1:
-                    raise ValueError("Faerie Fire pending save must be last")
-                if choice is None:
-                    steps.append(step)
-                    return (
-                        None,
-                        None,
-                        None,
-                        FaerieProgress(tuple(steps), target.entity_id, None, tuple(spent)),
-                    )
-                die_sides = grant.flags["bardic_inspiration"]["die_sides"]
-                if choice_die_sides != die_sides:
-                    raise ValueError("Faerie Fire selected die differs from held grant")
-                final, transition = resolve_bardic_save_choice(
-                    step.original,
-                    die_sides,
-                    RNGContext(
-                        stream_id=request.rng_context.stream_id,
-                        version=request.rng_context.version,
-                        state=step.rng_after,
-                    ),
-                    use=choice,
-                )
-                rng.setstate(transition.next_state.restore().getstate())
-                step = FaerieSaveStep(
-                    target.entity_id,
-                    step.original,
-                    final,
-                    step.rng_after,
-                    transition.next_state,
-                    "accept" if choice else "decline",
-                    grant,
-                )
-                save = final
-                resolved_choice = True
-            elif (
-                previous is None
-                and pause
-                and grant is not None
-                and save.succeeded is False
-                and save.roll_detail is not None
-                and save.roll_detail.status == "rolled"
-            ):
-                steps.append(step)
-                return (
-                    None,
-                    None,
-                    None,
-                    FaerieProgress(tuple(steps), target.entity_id, None, tuple(spent)),
-                )
-            steps.append(step)
-            if step.choice == "accept" and step.grant is not None:
-                spent.append(step.grant)
-            saves.append(save)
-            if save.succeeded:
-                continue
-        selected.append(
-            VisualTargetEffect(
-                target_kind=occupant.target_kind,
-                target_id=occupant.target_id,
-                dim_radius_ft=10,
-                suppresses_invisible=True,
-                visible_attack_advantage=True,
-            )
+    progress, rng = resolve_ordered_spell_saves(
+        request.rng_context,
+        (
+            actors[occupant.target_id]
+            for occupant in occupants
+            if occupant.target_kind == "creature"
+        ),
+        ability=save_ability,
+        dc=dc,
+        bonus=bonus_dice,
+        equipment=equipment_bonuses,
+        grants=grants,
+        continuation=continuation,
+    )
+    if progress.pending_target_id is not None:
+        return None, None, None, progress
+    saves = tuple(step.final or step.original for step in progress.steps)
+    failed = {save.target_id for save in saves if not save.succeeded}
+    selected = tuple(
+        VisualTargetEffect(
+            target_kind=occupant.target_kind,
+            target_id=occupant.target_id,
+            dim_radius_ft=10,
+            suppresses_invisible=True,
+            visible_attack_advantage=True,
         )
+        for occupant in occupants
+        if occupant.target_kind != "creature" or occupant.target_id in failed
+    )
     visual = WorldVisualEffectCreate(
         kind="world.visual_effect_create",
         source_id=caster.entity_id,
@@ -788,18 +641,14 @@ def _faerie_plan(  # noqa: C901 - ordered action stages share one preflight and 
         slot_level=payload.slot_level,
         duration_seconds=60,
         concentration=True,
-        targets=tuple(selected),
+        targets=selected,
     )
     transition = RNGTransition.between(request.rng_context, rng)
-    if (prior_steps and len(prior_steps) != len(steps)) or (
-        choice is not None and not resolved_choice
-    ):
-        raise ValueError("Faerie Fire prior steps or choice do not match occupants")
     return (
         (_payment(snapshot, caster.entity_id, payload.slot_level), visual),
         (*_events(caster.entity_id, payload, spell), *saves),
         transition,
-        FaerieProgress(tuple(steps), None, None, tuple(spent)),
+        progress,
     )
 
 
@@ -809,6 +658,7 @@ def evaluate_bound_faerie_step(
     prior_steps: tuple[FaerieSaveStep, ...] = (),
     choice: bool | None = None,
     choice_die_sides: int | None = None,
+    choice_target_id: str | None = None,
     loader: AssetLoader | None = None,
 ) -> FaerieProgress:
     """Advance one ordered Faerie Fire cast without redrawing completed saves.
@@ -860,10 +710,13 @@ def evaluate_bound_faerie_step(
         request,
         spell,
         assets,
-        prior_steps=prior_steps,
-        choice=choice,
-        choice_die_sides=choice_die_sides,
-        pause=True,
+        continuation=SpellSaveContinuation(
+            prior_steps=prior_steps,
+            choice=choice,
+            choice_die_sides=choice_die_sides,
+            choice_target_id=choice_target_id,
+            pause=True,
+        ),
     )
     if progress.pending_target_id is not None:
         return progress
@@ -890,6 +743,7 @@ def verify_bound_faerie_result(
     request: RuleEvaluationRequest,
     steps: tuple[FaerieSaveStep, ...],
     *,
+    choice_target_id: str | None = None,
     loader: AssetLoader | None = None,
 ) -> tuple[EffectState, ...]:
     """Replay fixed action steps from the original RNG and return exact spent grants."""
@@ -936,9 +790,12 @@ def verify_bound_faerie_result(
         request,
         spell,
         assets,
-        prior_steps=steps,
-        pause=True,
-        replay_prior=True,
+        continuation=SpellSaveContinuation(
+            prior_steps=steps,
+            choice_target_id=choice_target_id,
+            pause=True,
+            replay=True,
+        ),
     )
     identity = _result_identity(request)
     if (

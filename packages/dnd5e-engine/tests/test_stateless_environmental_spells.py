@@ -307,7 +307,7 @@ def test_faerie_continuation_keeps_original_save_and_exact_grant(use, monkeypatc
     assert pending.steps[0].original.succeeded is True
     original = pending.steps[1].original
     assert original.succeeded is False
-    from dnd5e_engine import evaluation_environmental_spells as module
+    from dnd5e_engine import evaluation_spell_saves as module
 
     original_resolver = module.resolve_snapshot_save
     monkeypatch.setattr(module, "resolve_snapshot_save", lambda *a, **k: pytest.fail("redraw"))
@@ -325,7 +325,7 @@ def test_faerie_continuation_keeps_original_save_and_exact_grant(use, monkeypatc
         (grant,) if use else ()
     )
     altered = replace(complete.steps[1], original=complete.steps[0].original)
-    with pytest.raises(ValueError, match="original save differs"):
+    with pytest.raises(ValueError, match="spell save evidence differs"):
         verify_bound_faerie_result(
             complete.result, request, (complete.steps[0], altered), loader=loader
         )

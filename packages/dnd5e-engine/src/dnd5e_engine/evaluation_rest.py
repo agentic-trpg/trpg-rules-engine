@@ -17,6 +17,7 @@ from dnd5e_engine.evaluation_rng import RNGTransition
 from dnd5e_engine.evaluation_ruleset import get_default_ruleset
 from dnd5e_engine.evaluation_state import CharacterStateV2, InventoryState, NonCombatSnapshot
 from dnd5e_engine.evaluation_turn import TurnEvaluation, _refuse
+from dnd5e_engine.evaluation_wearables import reviewed_protective_cloak
 from dnd5e_engine.events import CombatEvent, HealingApplied, RestResolved, RestSpend
 from dnd5e_engine.rest import (
     HitDicePool,
@@ -72,7 +73,11 @@ def evaluate_rest(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
         or actor.fighting_styles
     )
     failure = (
-        class_dependencies(actor, snapshot, loader, get_default_ruleset()) if reviewed else None
+        class_dependencies(
+            actor, snapshot, loader, get_default_ruleset(), allow_reviewed_cloak=True
+        )
+        if reviewed
+        else None
     )
     if (
         failure
@@ -96,7 +101,10 @@ def evaluate_rest(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
         return _refuse("unsupported", "rest.constitution", "invalid Constitution fact")
     for slug in actor.carried_item_slugs:
         item = loader.get_item(slug)
-        if item is None or item.passive_effects or item.requires_attunement:
+        if item is None or (
+            (item.passive_effects or item.requires_attunement)
+            and not reviewed_protective_cloak(item)
+        ):
             return _refuse(
                 "unsupported", "rest.equipment", "equipment rest dependencies are not migrated"
             )
@@ -430,8 +438,10 @@ def _recovery_dependencies_failure(
             item = loader.get_item(entry.item_slug)
             if (
                 item is None
-                or item.passive_effects
-                or item.requires_attunement
+                or (
+                    (item.passive_effects or item.requires_attunement)
+                    and not reviewed_protective_cloak(item)
+                )
                 or (item.uses is not None and item.uses.recovery)
             ):
                 return "owned item recovery/passive closure is not migrated"

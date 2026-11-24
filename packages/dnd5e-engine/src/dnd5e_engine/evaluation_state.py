@@ -285,6 +285,9 @@ class CharacterStateV2(CharacterState):
     offhand_item_instance_id: Annotated[str, Field(min_length=1)] | None = Field(
         default=None, exclude_if=lambda value: value is None
     )
+    worn_item_instance_ids: tuple[Annotated[str, Field(min_length=1)], ...] = Field(
+        default=(), exclude_if=lambda value: not value
+    )
     weapon_grip: Literal["none", "one_handed", "two_handed"]
     other_hand_occupied: bool
     weapon_mastery_slugs: tuple[Annotated[str, Field(min_length=1)], ...]
@@ -300,6 +303,8 @@ class CharacterStateV2(CharacterState):
             raise ValueError("two-handed grip conflicts with an occupied other hand")
         if len(set(self.weapon_mastery_slugs)) != len(self.weapon_mastery_slugs):
             raise ValueError("duplicate weapon mastery identity")
+        if len(set(self.worn_item_instance_ids)) != len(self.worn_item_instance_ids):
+            raise ValueError("duplicate worn item identity")
         return self
 
 

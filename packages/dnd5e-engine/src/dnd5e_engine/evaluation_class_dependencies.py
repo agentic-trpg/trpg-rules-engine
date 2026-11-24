@@ -16,6 +16,7 @@ from dnd5e_engine.evaluation_equipment_dependencies import (
 from dnd5e_engine.evaluation_resources import FeatureResource, SlotResource
 from dnd5e_engine.evaluation_ruleset import get_default_ruleset
 from dnd5e_engine.evaluation_state import CharacterStateV2, CombatSnapshot, NonCombatSnapshot
+from dnd5e_engine.evaluation_wearables import reviewed_protective_cloak
 from dnd5e_engine.feature_runtime import DrawFreeRandom, scalar_formula
 
 # Canonical grants are reviewed together with the operation, not globally disabled.
@@ -34,6 +35,7 @@ def _class_equipment_profile(
     allow_stowed_healing_potions: bool,
     stowed_consumable_ids: frozenset[str],
     allow_life_pouch: bool = False,
+    allow_reviewed_cloak: bool = False,
 ) -> tuple[bool, str | None]:
     """Check equipment dependencies while retaining the complete inventory identity."""
     if (allow_stowed_healing_potions or stowed_consumable_ids) and set(
@@ -45,12 +47,18 @@ def _class_equipment_profile(
     }:
         return False, "supplied equipment and inventory identities disagree"
     has_worn_or_offhand = actor.worn_armor or actor.shield_equipped or actor.other_hand_occupied
+
+    def admitted_cloak(slug: str) -> bool:
+        """Ignore only the checked cloak's inert rest dependency."""
+        return allow_reviewed_cloak and reviewed_protective_cloak(loader.get_item(slug))
+
     has_equipment = bool(
         has_worn_or_offhand
         or (
             not stowed_consumable_ids
             and any(
-                not allow_stowed_healing_potions or slug != HEALING_POTION_SLUG
+                (not allow_stowed_healing_potions or slug != HEALING_POTION_SLUG)
+                and not admitted_cloak(slug)
                 for slug in actor.carried_item_slugs
             )
         )
@@ -58,6 +66,7 @@ def _class_equipment_profile(
             entry.owner_id == actor.entity_id
             and entry.instance_id not in stowed_consumable_ids
             and (not allow_stowed_healing_potions or not is_stowed_healing_potion(entry, actor))
+            and not admitted_cloak(entry.item_slug)
             for entry in snapshot.inventory_state.entries
         )
     )
@@ -93,6 +102,7 @@ def class_dependencies(
     reviewed_lore_bard: bool = False,
     reviewed_wizard_pouch: bool = False,
     reviewed_life_healing: bool = False,
+    allow_reviewed_cloak: bool = False,
 ) -> str | None:
     """Check class dependencies within the caller's reviewed operation profile.
 
@@ -130,6 +140,7 @@ def class_dependencies(
             and levels in ({"cleric": 3}, {"cleric": 5})
             and actor.subclass_slug == "life"
         ),
+        allow_reviewed_cloak=allow_reviewed_cloak,
     )
     if failure:
         return failure

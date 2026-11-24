@@ -30,6 +30,7 @@ from dnd5e_engine.evaluation_rng import RNGContext, RNGTransition
 from dnd5e_engine.evaluation_ruleset import verify_ruleset
 from dnd5e_engine.evaluation_state import CharacterStateV2, NonCombatSnapshot
 from dnd5e_engine.evaluation_turn import TurnEvaluation, _refuse
+from dnd5e_engine.evaluation_wearables import reviewed_protective_cloak
 from dnd5e_engine.events import Ability, RollDieModifier, RollFixedModifier, SaveRolled
 from dnd5e_engine.rules.conditions import (
     _DECLARATIVE_CONDITION_EFFECTS,
@@ -52,7 +53,7 @@ type _PreparedSave = tuple[
     SavePayload,
     list[EffectState],
     tuple[SaveBonusDie, ...],
-    tuple[str, int] | None,
+    tuple[tuple[str, int], ...],
     str,
 ]
 
@@ -106,22 +107,43 @@ def reviewed_held_save_weapon(item: Weapon) -> bool:
 
 def _save_equipment(
     state: CharacterStateV2, snapshot: NonCombatSnapshot, loader: AssetLoader
-) -> tuple[tuple[str, int] | None, frozenset[str]]:
-    """Admit one bound held weapon's save clause; stowed copies contribute zero."""
+) -> tuple[tuple[tuple[str, int], ...], frozenset[str]]:
+    """Admit exact held and worn source bonuses; stowed copies contribute zero."""
     allowed: set[str] = set()
     for slug in state.carried_item_slugs:
         item = loader.get_item(slug)
         if item is not None and item.passive_effects:
-            if not isinstance(item, Weapon) or not reviewed_held_save_weapon(item):
+            if not reviewed_protective_cloak(item) and (
+                not isinstance(item, Weapon) or not reviewed_held_save_weapon(item)
+            ):
                 raise ValueError("unmigrated equipment save modifiers")
             allowed.add(slug)
     if not allowed:
-        return None, frozenset()
+        return (), frozenset()
     if snapshot.snapshot_schema_version not in ("engine-snapshot/19", "engine-snapshot/20"):
-        raise ValueError("save weapon needs an exact equipment instance")
+        raise ValueError("save equipment needs an exact instance")
+    bonuses: list[tuple[str, int]] = []
+    worn = state.worn_item_instance_ids
+    if len(worn) > 1:
+        raise ValueError("unreviewed multiple worn item combinations")
+    for iid in worn:
+        matches = [
+            entry
+            for entry in snapshot.inventory_state.entries
+            if entry.instance_id == iid
+            and entry.owner_id == state.entity_id
+            and entry.quantity == 1
+            and entry.accessible
+        ]
+        if len(matches) != 1 or not reviewed_protective_cloak(
+            loader.get_item(matches[0].item_slug)
+        ):
+            raise ValueError("worn save item differs from the owned inventory instance")
+        if matches[0].attuned_actor_id == state.entity_id:
+            bonuses.append((f"equipment:{iid}:{matches[0].item_slug}", 1))
     held = state.held_weapon_instance_id
     if held is None or state.weapon_in_hands not in allowed:
-        return None, frozenset(allowed)
+        return tuple(bonuses), frozenset(allowed)
     matches = [
         entry
         for entry in snapshot.inventory_state.entries
@@ -133,7 +155,8 @@ def _save_equipment(
     ]
     if len(matches) != 1:
         raise ValueError("held save weapon differs from the owned inventory instance")
-    return (f"equipment:{held}:{state.weapon_in_hands}", 1), frozenset(allowed)
+    bonuses.append((f"equipment:{held}:{state.weapon_in_hands}", 1))
+    return tuple(bonuses), frozenset(allowed)
 
 
 def _held_inspiration(effect: EffectState, loader: AssetLoader) -> bool:
@@ -269,7 +292,7 @@ def resolve_snapshot_save(
     rng: random.Random,
     *,
     bonus_dice: tuple[SaveBonusDie, ...] = (),
-    equipment_bonus: tuple[str, int] | None = None,
+    equipment_bonus: tuple[tuple[str, int], ...] = (),
     cover: str = "none",
 ) -> SaveRolled:
     """Shared calculation seam; caller must prove full modifier/lifecycle admission."""
@@ -296,7 +319,7 @@ def roll_snapshot_save(
     rng: random.Random,
     *,
     bonus_dice: tuple[SaveBonusDie, ...] = (),
-    equipment_bonus: tuple[str, int] | None = None,
+    equipment_bonus: tuple[tuple[str, int], ...] = (),
     cover: str = "none",
 ) -> SaveRoll:
     """Roll with admitted actor, held item and directional cover using supplied RNG."""
@@ -310,7 +333,7 @@ def roll_snapshot_save(
         event_emitter=lambda event: None,
         passive_save_modifiers={
             target.entity_id: {
-                ab: save_modifier(target, ab).total + (equipment_bonus[1] if equipment_bonus else 0)
+                ab: save_modifier(target, ab).total + sum(value for _, value in equipment_bonus)
                 for ab in get_args(Ability)
             }
         },
@@ -334,11 +357,7 @@ def roll_snapshot_save(
         fixed_contributions=(
             RollFixedModifier(source="ability", value=profile.ability_mod),
             RollFixedModifier(source="save_proficiency", value=profile.proficiency),
-        )
-        + (
-            (RollFixedModifier(source=equipment_bonus[0], value=equipment_bonus[1]),)
-            if equipment_bonus
-            else ()
+            *(RollFixedModifier(source=source, value=value) for source, value in equipment_bonus),
         ),
         bonus_dice=bonus_dice,
     )
@@ -429,7 +448,7 @@ def save_actor_failure(
         if (
             item is None
             or (item.passive_effects and slug not in reviewed_save_item_slugs)
-            or item.requires_attunement
+            or (item.requires_attunement and slug not in reviewed_save_item_slugs)
         ):
             return "unmigrated equipment save modifiers"
     return None
@@ -510,7 +529,9 @@ def _prepare_save(
                 "save.actor",
                 "only Wizard 1 and Cleric 1 class profiles are reviewed",
             )
-        failure = class_dependencies(target, snapshot, loader, get_default_ruleset())
+        failure = class_dependencies(
+            target, snapshot, loader, get_default_ruleset(), allow_reviewed_cloak=True
+        )
         if failure:
             return _refuse("unsupported", "save.actor", failure)
         reviewed_identity = True

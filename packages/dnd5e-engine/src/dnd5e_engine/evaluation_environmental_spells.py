@@ -594,7 +594,7 @@ def _faerie_plan(  # noqa: C901 - ordered action stages share one preflight and 
     creature_ids = {
         occupant.target_id for occupant in occupants if occupant.target_kind == "creature"
     }
-    equipment_bonuses: dict[str, tuple[str, int] | None] = {}
+    equipment_bonuses: dict[str, tuple[tuple[str, int], ...]] = {}
     for target_id in sorted(creature_ids):
         target = actors.get(target_id)
         if target is None or not target.is_alive:

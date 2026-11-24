@@ -1,5 +1,6 @@
 """Declare actor dependencies and evaluate spatial spells from fixed exploration facts."""
 
+import copy
 from dataclasses import dataclass
 from functools import lru_cache
 from random import Random
@@ -49,10 +50,12 @@ from dnd5e_engine.evaluation_environmental_contracts import (
 )
 from dnd5e_engine.evaluation_payments import spell_payment
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError
-from dnd5e_engine.evaluation_rng import RNGTransition
+from dnd5e_engine.evaluation_rng import RNGContext, RNGState, RNGTransition
 from dnd5e_engine.evaluation_saves import (
+    _held_inspiration,
     _save_equipment,
     project_save_bonus_dice,
+    resolve_bardic_save_choice,
     resolve_snapshot_save,
     save_actor_failure,
 )
@@ -90,6 +93,29 @@ _CLASSES = {
 }
 _LIGHT = EnvironmentalSpec(kind="light", light="bright", dim_extension_ft=20, object_anchoring=True)
 _SECONDS_PER_UNIT = {SpellDurationUnits.MINUTE: 60, SpellDurationUnits.HOUR: 3600}
+
+
+@dataclass(frozen=True)
+class FaerieSaveStep:
+    """One ordered creature save and its exact action-local random boundaries."""
+
+    target_id: str
+    original: SaveRolled
+    final: SaveRolled | None
+    rng_after: RNGState
+    rng_after_bonus: RNGState
+    choice: Literal["accept", "decline"] | None = None
+    grant: EffectState | None = None
+
+
+@dataclass(frozen=True)
+class FaerieProgress:
+    """Uncommitted ordered cast progress; only a completed result may be adopted."""
+
+    steps: tuple[FaerieSaveStep, ...]
+    pending_target_id: str | None
+    result: RuleEvaluationResult | None
+    spent_grants: tuple[EffectState, ...]
 
 
 @dataclass(frozen=True)
@@ -495,9 +521,22 @@ def _is_faerie_save_inert(effect: EffectState, loader: AssetLoader) -> bool:
     return effect.flags.get("concentration") is True and effect == effect_state(expected)
 
 
-def _faerie_plan(
-    request: RuleEvaluationRequest, spell: Spell, loader: AssetLoader
-) -> tuple[tuple[StateDeltaOperation, ...], tuple[CombatEvent, ...], RNGTransition]:
+def _faerie_plan(  # noqa: C901 - ordered action stages share one preflight and RNG chain
+    request: RuleEvaluationRequest,
+    spell: Spell,
+    loader: AssetLoader,
+    *,
+    prior_steps: tuple[FaerieSaveStep, ...] = (),
+    choice: bool | None = None,
+    choice_die_sides: int | None = None,
+    pause: bool = False,
+    replay_prior: bool = False,
+) -> tuple[
+    tuple[StateDeltaOperation, ...] | None,
+    tuple[CombatEvent, ...] | None,
+    RNGTransition | None,
+    FaerieProgress,
+]:
     """Select fixed cube occupants and resolve their saves using the reviewed activity.
 
     Each creature uses the shared bound save-equipment admission and calculation.
@@ -573,12 +612,27 @@ def _faerie_plan(
         ):
             raise ValueError(f"RUO-54-F1: {failure}")
         equipment_bonuses[target_id] = equipment_bonus
+    inspiration_by_target = {}
+    for effect in snapshot.effect_states:
+        if (
+            effect.target_id not in creature_ids
+            or effect.id != "effect:inspired"
+            or effect.disabled
+        ):
+            continue
+        if not _held_inspiration(effect, loader):
+            raise ValueError("target has an invalid Inspiration grant")
+        if effect.target_id in inspiration_by_target:
+            raise ValueError("Faerie Fire target has duplicate Inspiration grants")
+        inspiration_by_target[effect.target_id] = effect
     try:
         bonus_dice = project_save_bonus_dice(
             (
                 effect
                 for effect in snapshot.effect_states
-                if effect.target_id in creature_ids and not _is_faerie_save_inert(effect, loader)
+                if effect.target_id in creature_ids
+                and not _is_faerie_save_inert(effect, loader)
+                and effect != inspiration_by_target.get(effect.target_id)
             ),
             loader,
             allow_lifecycle_marker=True,
@@ -586,27 +640,134 @@ def _faerie_plan(
     except ValueError as exc:
         raise ValueError(f"RUO-54-F1: {exc}") from exc
 
+    if choice is not None and (not pause or not prior_steps or prior_steps[-1].choice is not None):
+        raise ValueError("Faerie Fire choice lacks a pending ordered save")
+    if choice_die_sides is not None and choice is None:
+        raise ValueError("Faerie Fire die requires an explicit choice")
     rng = request.rng_context.state.restore()
     saves: list[SaveRolled] = []
+    steps: list[FaerieSaveStep] = []
+    spent: list[EffectState] = []
+    resolved_choice = False
     selected: list[VisualTargetEffect] = []
     for occupant in occupants:
         if occupant.target_kind == "creature":
             target = actors[occupant.target_id]
-            save = resolve_snapshot_save(
-                target,
-                SavePayload(
-                    kind="rules.save",
-                    target_id=target.entity_id,
-                    ability=save_ability,
-                    dc=dc,
-                    advantage=(),
-                    disadvantage=(),
-                    is_magical=True,
-                ),
-                rng,
-                bonus_dice=bonus_dice.get(target.entity_id, ()),
-                equipment_bonus=equipment_bonuses[target.entity_id],
-            )
+            grant = inspiration_by_target.get(target.entity_id)
+            index = len(steps)
+            previous = prior_steps[index] if index < len(prior_steps) else None
+            if previous is not None and previous.target_id != target.entity_id:
+                raise ValueError("Faerie Fire prior step differs from occupant order")
+            if previous is not None and not replay_prior:
+                if previous.grant != grant and previous.choice is not None:
+                    raise ValueError("Faerie Fire prior grant differs from fixed effects")
+                rng.setstate(previous.rng_after_bonus.restore().getstate())
+                save = previous.final or previous.original
+                step = copy.deepcopy(previous)
+            else:
+                original = resolve_snapshot_save(
+                    target,
+                    SavePayload(
+                        kind="rules.save",
+                        target_id=target.entity_id,
+                        ability=save_ability,
+                        dc=dc,
+                        advantage=(),
+                        disadvantage=(),
+                        is_magical=True,
+                    ),
+                    rng,
+                    bonus_dice=bonus_dice.get(target.entity_id, ()),
+                    equipment_bonus=equipment_bonuses[target.entity_id],
+                )
+                after = RNGState.capture(rng)
+                if previous is not None:
+                    if previous.original != original or previous.rng_after != after:
+                        raise ValueError("Faerie Fire original save differs from fixed RNG")
+                    step = copy.deepcopy(previous)
+                    save = step.final or original
+                    if step.choice is not None:
+                        if grant is None or step.grant != grant:
+                            raise ValueError("Faerie Fire grant differs from fixed effects")
+                        final, transition = resolve_bardic_save_choice(
+                            original,
+                            grant.flags["bardic_inspiration"]["die_sides"],
+                            RNGContext(
+                                stream_id=request.rng_context.stream_id,
+                                version=request.rng_context.version,
+                                state=after,
+                            ),
+                            use=step.choice == "accept",
+                        )
+                        if step.final != final or step.rng_after_bonus != transition.next_state:
+                            raise ValueError("Faerie Fire bonus differs from fixed RNG")
+                        rng.setstate(transition.next_state.restore().getstate())
+                    elif step.final is not None or step.rng_after_bonus != after:
+                        raise ValueError("Faerie Fire pending save has altered evidence")
+                else:
+                    save = original
+                    step = FaerieSaveStep(target.entity_id, original, None, after, after)
+            if (
+                previous is not None
+                and previous.choice is None
+                and grant is not None
+                and previous.original.succeeded is False
+                and previous.original.roll_detail is not None
+                and previous.original.roll_detail.status == "rolled"
+            ):
+                if index != len(prior_steps) - 1:
+                    raise ValueError("Faerie Fire pending save must be last")
+                if choice is None:
+                    steps.append(step)
+                    return (
+                        None,
+                        None,
+                        None,
+                        FaerieProgress(tuple(steps), target.entity_id, None, tuple(spent)),
+                    )
+                die_sides = grant.flags["bardic_inspiration"]["die_sides"]
+                if choice_die_sides != die_sides:
+                    raise ValueError("Faerie Fire selected die differs from held grant")
+                final, transition = resolve_bardic_save_choice(
+                    step.original,
+                    die_sides,
+                    RNGContext(
+                        stream_id=request.rng_context.stream_id,
+                        version=request.rng_context.version,
+                        state=step.rng_after,
+                    ),
+                    use=choice,
+                )
+                rng.setstate(transition.next_state.restore().getstate())
+                step = FaerieSaveStep(
+                    target.entity_id,
+                    step.original,
+                    final,
+                    step.rng_after,
+                    transition.next_state,
+                    "accept" if choice else "decline",
+                    grant,
+                )
+                save = final
+                resolved_choice = True
+            elif (
+                previous is None
+                and pause
+                and grant is not None
+                and save.succeeded is False
+                and save.roll_detail is not None
+                and save.roll_detail.status == "rolled"
+            ):
+                steps.append(step)
+                return (
+                    None,
+                    None,
+                    None,
+                    FaerieProgress(tuple(steps), target.entity_id, None, tuple(spent)),
+                )
+            steps.append(step)
+            if step.choice == "accept" and step.grant is not None:
+                spent.append(step.grant)
             saves.append(save)
             if save.succeeded:
                 continue
@@ -629,11 +790,172 @@ def _faerie_plan(
         concentration=True,
         targets=tuple(selected),
     )
+    transition = RNGTransition.between(request.rng_context, rng)
+    if (prior_steps and len(prior_steps) != len(steps)) or (
+        choice is not None and not resolved_choice
+    ):
+        raise ValueError("Faerie Fire prior steps or choice do not match occupants")
     return (
         (_payment(snapshot, caster.entity_id, payload.slot_level), visual),
         (*_events(caster.entity_id, payload, spell), *saves),
-        RNGTransition.between(request.rng_context, rng),
+        transition,
+        FaerieProgress(tuple(steps), None, None, tuple(spent)),
     )
+
+
+def evaluate_bound_faerie_step(
+    request: RuleEvaluationRequest,
+    *,
+    prior_steps: tuple[FaerieSaveStep, ...] = (),
+    choice: bool | None = None,
+    choice_die_sides: int | None = None,
+    loader: AssetLoader | None = None,
+) -> FaerieProgress:
+    """Advance one ordered Faerie Fire cast without redrawing completed saves.
+
+    The caller retains this candidate privately and submits the final proposal
+    only after every target has resolved. No result here commits a world change.
+    """
+    from dnd5e_engine.evaluation import _result_identity
+    from dnd5e_engine.evaluation_ruleset import get_default_ruleset, verify_ruleset
+    from dnd5e_engine.evaluation_stages import EventStageFacts
+
+    request = RuleEvaluationRequest.model_validate(copy.deepcopy(request))
+    assets = loader if loader is not None else get_default_ruleset()
+    verify_ruleset(request.ruleset_binding, assets)
+    payload, snapshot = request.payload, request.state_snapshot
+    if (
+        request.schema_version != FAERIE_FIRE_SCHEMA_VERSION
+        or request.operation_kind != "world.cast_spell"
+        or not isinstance(payload, ExplorationEnvironmentalSpellCastPayload)
+        or not isinstance(snapshot, NonCombatSnapshot)
+    ):
+        raise ValueError("Expected a bound Faerie Fire world cast")
+    spell = assets.get_spell("faerie-fire")
+    if spell is None or spell != _reviewed_spell("faerie-fire"):
+        raise ValueError("Faerie Fire requires its reviewed spell")
+    caster = next(
+        (actor for actor in snapshot.character_states if actor.entity_id == request.actor_id), None
+    )
+    if (
+        caster is None
+        or not caster.is_alive
+        or caster.hp_current <= 0
+        or conditions_block_actions([condition.condition for condition in caster.conditions])
+        or _target_failure(request, spell)
+        or not exploration_spell_reaches(request, snapshot, spell)
+        or not _slot_valid(payload, spell)
+        or exploration_source_failure(
+            snapshot,
+            caster,
+            payload.spell_source_id,
+            spell,
+            assets,
+            allowed_classes=_CLASSES["faerie-fire"],
+            allow_pact=False,
+        )
+    ):
+        raise ValueError("Faerie Fire cast failed bound admission")
+    operations, events, transition, progress = _faerie_plan(
+        request,
+        spell,
+        assets,
+        prior_steps=prior_steps,
+        choice=choice,
+        choice_die_sides=choice_die_sides,
+        pause=True,
+    )
+    if progress.pending_target_id is not None:
+        return progress
+    assert operations is not None
+    assert events is not None
+    assert transition is not None
+    result = RuleEvaluationResult(
+        **_result_identity(request),
+        status="accepted",
+        state_delta=StateDelta(
+            expected_world_version=snapshot.world_version, operations=operations
+        ),
+        proposed_events=events,
+        stage_facts=EventStageFacts.uncovered("operation_not_in_stage_profile"),
+        rng_transition=transition,
+        choice=None,
+        error=None,
+    )
+    return FaerieProgress(progress.steps, None, result, progress.spent_grants)
+
+
+def verify_bound_faerie_result(
+    result: RuleEvaluationResult,
+    request: RuleEvaluationRequest,
+    steps: tuple[FaerieSaveStep, ...],
+    *,
+    loader: AssetLoader | None = None,
+) -> tuple[EffectState, ...]:
+    """Replay fixed action steps from the original RNG and return exact spent grants."""
+    from dnd5e_engine.evaluation import _result_identity
+    from dnd5e_engine.evaluation_ruleset import get_default_ruleset, verify_ruleset
+    from dnd5e_engine.evaluation_stages import EventStageFacts
+
+    assets = loader if loader is not None else get_default_ruleset()
+    verify_ruleset(request.ruleset_binding, assets)
+    spell = assets.get_spell("faerie-fire")
+    if spell is None or spell != _reviewed_spell("faerie-fire"):
+        raise ValueError("Faerie Fire requires its reviewed spell")
+    payload, snapshot = request.payload, request.state_snapshot
+    if (
+        request.schema_version != FAERIE_FIRE_SCHEMA_VERSION
+        or not isinstance(payload, ExplorationEnvironmentalSpellCastPayload)
+        or not isinstance(snapshot, NonCombatSnapshot)
+    ):
+        raise ValueError("Faerie Fire verifier requires its bound request")
+    caster = next(
+        (actor for actor in snapshot.character_states if actor.entity_id == request.actor_id), None
+    )
+    if (
+        caster is None
+        or not _slot_valid(payload, spell)
+        or _target_failure(request, spell)
+        or not exploration_spell_reaches(request, snapshot, spell)
+        or exploration_source_failure(
+            snapshot,
+            caster,
+            payload.spell_source_id,
+            spell,
+            assets,
+            allowed_classes=_CLASSES["faerie-fire"],
+            allow_pact=False,
+        )
+    ):
+        raise ValueError("Faerie Fire verifier rejected fixed cast facts")
+    operations, events, transition, progress = _faerie_plan(
+        request,
+        spell,
+        assets,
+        prior_steps=steps,
+        pause=True,
+        replay_prior=True,
+    )
+    identity = _result_identity(request)
+    if (
+        progress.pending_target_id is not None
+        or progress.steps != steps
+        or result.schema_version != request.schema_version
+        or result.session_id != request.session_id
+        or result.command_id != request.command_id
+        or result.input_world_version != request.state_snapshot.world_version
+        or result.input_ruleset_binding != request.ruleset_binding
+        or result.read_set != identity["read_set"]
+        or result.status != "accepted"
+        or result.stage_facts != EventStageFacts.uncovered("operation_not_in_stage_profile")
+        or result.state_delta is None
+        or result.state_delta.expected_world_version != request.state_snapshot.world_version
+        or result.state_delta.operations != operations
+        or result.proposed_events != events
+        or result.rng_transition != transition
+    ):
+        raise ValueError("Faerie Fire result differs from ordered saves and fixed RNG")
+    return progress.spent_grants
 
 
 def evaluate_environmental_spell(
@@ -700,7 +1022,10 @@ def evaluate_environmental_spell(
         return _refuse("rejected", "spell.source", failure)
     if request.schema_version == FAERIE_FIRE_SCHEMA_VERSION:
         try:
-            operations, events, transition = _faerie_plan(request, spell, loader)
+            operations, events, transition, _ = _faerie_plan(request, spell, loader)
+            assert operations is not None
+            assert events is not None
+            assert transition is not None
         except ValueError as exc:
             return _refuse("unsupported", "spell.visual_targets", str(exc))
         return dict(
@@ -754,7 +1079,7 @@ def verify_environmental_cast(
     if request.schema_version == FAERIE_FIRE_SCHEMA_VERSION:
         if spell is None or result.state_delta is None:
             raise ValueError("Faerie Fire result lacks its reviewed spell or delta")
-        operations, events, transition = _faerie_plan(
+        operations, events, transition, _ = _faerie_plan(
             request, spell, loader if loader is not None else BundledAssetLoader()
         )
         if (

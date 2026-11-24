@@ -34,7 +34,9 @@ from dnd5e_engine.evaluation_environmental_contracts import (
 )
 from dnd5e_engine.evaluation_environmental_spells import (
     environmental_spell_schema_version,
+    evaluate_bound_faerie_step,
     prepare_environmental_spell,
+    verify_bound_faerie_result,
 )
 from dnd5e_engine.evaluation_rng import RNGState, RNGTransition
 from dnd5e_engine.evaluation_ruleset import freeze_ruleset, ruleset_binding
@@ -263,6 +265,104 @@ def test_faerie_fire_uses_its_bound_activity_and_exact_rng():
         ["scenery"] if save.succeeded else [FOE, "scenery"]
     )
     RuleEvaluationResult.model_validate_json(result.model_dump_json()).verify_request(request)
+
+
+@pytest.mark.parametrize("use", [True, False])
+def test_faerie_continuation_keeps_original_save_and_exact_grant(use, monkeypatch):
+    """A failed save pauses once, then uses only the held die on the original RNG path."""
+    wire, _ = _faerie_wire()
+    wire["state_snapshot"]["character_states"][1]["dexterity"] = 1
+    earlier = dict(wire["state_snapshot"]["character_states"][1])
+    earlier.update(entity_id="a-success", dexterity=20)
+    wire["state_snapshot"]["character_states"].append(earlier)
+    wire["spell_positions"]["visual_occupants"].append(
+        {"target_kind": "creature", "target_id": "a-success", "cell_id": "1,0"}
+    )
+    canonical = BundledAssetLoader()
+    feature = canonical.get_feature("bardic-inspiration")
+    grant = effect_state(
+        passive_effect_to_active_effect(
+            feature.passive_effects[0],
+            target_id=FOE,
+            caster_id="bard",
+            extra_flags={"bardic_inspiration": {"grant_id": "grant-1", "die_sides": 6}},
+        )
+    )
+    wire["state_snapshot"]["effect_states"] = [grant.model_dump(mode="json")]
+    loader = freeze_ruleset(
+        MemoryAssetLoader(
+            items=[canonical.get_item("component-pouch")],
+            spells=[canonical.get_spell("faerie-fire")],
+            classes=[canonical.get_class("druid")],
+            features=[feature],
+        )
+    )
+    wire["ruleset_binding"] = ruleset_binding(loader).model_dump(mode="json")
+    request = _request(wire)
+    pending = evaluate_bound_faerie_step(request, loader=loader)
+    assert pending.pending_target_id == FOE
+    assert pending.result is None
+    assert len(pending.steps) == 2
+    assert pending.steps[0].target_id == "a-success"
+    assert pending.steps[0].original.succeeded is True
+    original = pending.steps[1].original
+    assert original.succeeded is False
+    from dnd5e_engine import evaluation_environmental_spells as module
+
+    original_resolver = module.resolve_snapshot_save
+    monkeypatch.setattr(module, "resolve_snapshot_save", lambda *a, **k: pytest.fail("redraw"))
+    complete = evaluate_bound_faerie_step(
+        request, prior_steps=pending.steps, choice=use, choice_die_sides=6, loader=loader
+    )
+    assert complete.pending_target_id is None
+    assert complete.result is not None
+    assert complete.steps[0] == pending.steps[0]
+    assert complete.steps[1].original == original
+    assert complete.steps[1].final is not None
+    assert complete.spent_grants == ((grant,) if use else ())
+    monkeypatch.setattr(module, "resolve_snapshot_save", original_resolver)
+    monkeypatch.setattr(module, "resolve_snapshot_save", original_resolver)
+    assert verify_bound_faerie_result(complete.result, request, complete.steps, loader=loader) == (
+        (grant,) if use else ()
+    )
+    altered = replace(complete.steps[1], original=complete.steps[0].original)
+    with pytest.raises(ValueError, match="original save differs"):
+        verify_bound_faerie_result(
+            complete.result, request, (complete.steps[0], altered), loader=loader
+        )
+
+
+def test_faerie_success_with_held_grant_has_no_choice_or_spend():
+    """An already successful save cannot open a Bardic choice."""
+    wire, _ = _faerie_wire()
+    wire["state_snapshot"]["character_states"][1]["dexterity"] = 20
+    canonical = BundledAssetLoader()
+    feature = canonical.get_feature("bardic-inspiration")
+    grant = effect_state(
+        passive_effect_to_active_effect(
+            feature.passive_effects[0],
+            target_id=FOE,
+            caster_id="bard",
+            extra_flags={"bardic_inspiration": {"grant_id": "grant-1", "die_sides": 6}},
+        )
+    )
+    wire["state_snapshot"]["effect_states"] = [grant.model_dump(mode="json")]
+    loader = freeze_ruleset(
+        MemoryAssetLoader(
+            items=[canonical.get_item("component-pouch")],
+            spells=[canonical.get_spell("faerie-fire")],
+            classes=[canonical.get_class("druid")],
+            features=[feature],
+        )
+    )
+    wire["ruleset_binding"] = ruleset_binding(loader).model_dump(mode="json")
+    request = _request(wire)
+    progress = evaluate_bound_faerie_step(request, loader=loader)
+    assert progress.pending_target_id is None
+    assert progress.result is not None
+    assert progress.spent_grants == ()
+    assert progress.steps[0].original.succeeded is True
+    assert verify_bound_faerie_result(progress.result, request, progress.steps, loader=loader) == ()
 
 
 def _attached_save_effect(slug, caster_id):

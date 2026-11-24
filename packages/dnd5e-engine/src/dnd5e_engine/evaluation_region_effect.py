@@ -161,8 +161,10 @@ def claims_region_condition_identity(effect_id: str, origin: str) -> bool:
     return effect_id.startswith(_EFFECT_ID_PREFIX) or origin.startswith(_ORIGIN_PREFIX)
 
 
-def _region_profile(effect_id: str, origin: str) -> tuple[str, tuple[str, ...]] | None:
-    """Return the profile encoded in an exact canonical fixed-area identity."""
+def _region_profile(
+    effect_id: str, origin: str, *, scene_id: str | None = None
+) -> tuple[str, tuple[str, ...]] | None:
+    """Decode an exact canonical fixed-area identity, optionally in one scene."""
     if not effect_id.startswith(_EFFECT_ID_PREFIX) or not origin.startswith(_ORIGIN_PREFIX):
         return None
     try:
@@ -181,7 +183,11 @@ def _region_profile(effect_id: str, origin: str) -> tuple[str, tuple[str, ...]] 
         canonical_origin = _region_origin(source[0], source[1], profile, statuses)
     except (ValueError, RecursionError):
         return None
-    if canonical_origin == origin and _region_effect_id(canonical_origin, profile) == effect_id:
+    if (
+        (scene_id is None or source[0] == scene_id)
+        and canonical_origin == origin
+        and _region_effect_id(canonical_origin, profile) == effect_id
+    ):
         return profile, statuses
     return None
 
@@ -266,6 +272,18 @@ def is_fixed_region_condition_effect(effect: EffectState) -> bool:
     return region_condition_status(effect.id, effect.origin) is not None and is_fixed_region_effect(
         effect
     )
+
+
+def validate_current_region_condition_source(
+    effect: EffectState, *, scene_id: str, loader: AssetLoader
+) -> None:
+    """Require an already shape-checked condition source in the same scene and bound rules."""
+    profile = _region_profile(effect.id, effect.origin, scene_id=scene_id)
+    if profile is None or profile[0] == _PASSIVE_PROFILE:
+        raise ValueError(
+            "active fixed-area condition requires an exact source in the current scene"
+        )
+    _resolve_condition(f"condition:{profile[0]}", loader, allow_omitted_legacy=True)
 
 
 def is_fixed_combat_poisoned_condition(condition: ConditionRecord) -> bool:

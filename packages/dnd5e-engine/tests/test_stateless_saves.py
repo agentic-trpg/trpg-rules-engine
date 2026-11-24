@@ -32,7 +32,10 @@ from dnd5e_engine.evaluation_contracts import (
     SavePayload,
 )
 from dnd5e_engine.evaluation_effects import effect_state
-from dnd5e_engine.evaluation_region_effect import plan_region_condition_transition
+from dnd5e_engine.evaluation_region_effect import (
+    plan_region_condition_transition,
+    region_condition_identity,
+)
 from dnd5e_engine.evaluation_rng import RNGState
 from dnd5e_engine.evaluation_ruleset import get_default_ruleset, ruleset_binding
 from dnd5e_engine.evaluation_state import ConditionRecord, NonCombatSnapshot
@@ -545,7 +548,10 @@ def test_ordinary_save_uses_exact_target_effect_while_concentration_continues(mo
     assert result.state_delta.operations == ()
 
 
-@pytest.mark.parametrize("case", ["active", "missing", "disabled", "missing_status", "repeat"])
+@pytest.mark.parametrize(
+    "case",
+    ["active", "missing", "disabled", "missing_status", "repeat", "foreign_scene", "paralyzed"],
+)
 def test_ordinary_save_requires_exact_active_region_condition(monkeypatch, case):
     """Only the matching active condition projection can exclude its source from save dice."""
     request, _ = save_case(ability="dex")
@@ -554,7 +560,7 @@ def test_ordinary_save_requires_exact_active_region_condition(monkeypatch, case)
     binding = ruleset_binding(loader)
     region = plan_region_condition_transition(
         ruleset_binding=binding,
-        scene_id=snapshot.scene_state.scene_id,
+        scene_id=("scene.other" if case == "foreign_scene" else snapshot.scene_state.scene_id),
         source_id="source.test",
         target_id=request.actor_id,
         entering=True,
@@ -566,6 +572,21 @@ def test_ordinary_save_requires_exact_active_region_condition(monkeypatch, case)
     assert effect is not None
     if case == "disabled":
         effect = effect.model_copy(update={"disabled": True})
+    if case == "paralyzed":
+        _, effect_id, origin = region_condition_identity(
+            snapshot.scene_state.scene_id,
+            "source.test",
+            request.actor_id,
+            rule_ref="condition:paralyzed",
+        )
+        effect = effect.model_copy(
+            update={
+                "id": effect_id,
+                "origin": origin,
+                "name": "Paralyzed",
+                "statuses": {"paralyzed"},
+            }
+        )
     records, _ = conditions_after_effect_application(
         (), effect.id, effect.statuses, scope="session"
     )

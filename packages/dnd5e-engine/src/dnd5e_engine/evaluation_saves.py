@@ -33,7 +33,10 @@ from dnd5e_engine.evaluation_contracts import (
 )
 from dnd5e_engine.evaluation_delta import StateDelta
 from dnd5e_engine.evaluation_effects import EffectState, effect_state
-from dnd5e_engine.evaluation_region_effect import is_fixed_region_condition_effect
+from dnd5e_engine.evaluation_region_effect import (
+    is_fixed_region_condition_effect,
+    validate_current_region_condition_source,
+)
 from dnd5e_engine.evaluation_rng import RNGContext, RNGTransition
 from dnd5e_engine.evaluation_ruleset import verify_ruleset
 from dnd5e_engine.evaluation_state import CharacterStateV2, NonCombatSnapshot
@@ -480,9 +483,9 @@ def save_actor_failure(
 
 
 def _save_condition_effects(
-    target: CharacterStateV2, active_effects: list[EffectState], loader: AssetLoader
+    target: CharacterStateV2, active_effects: list[EffectState], scene_id: str, loader: AssetLoader
 ) -> set[tuple[str, str]]:
-    """Verify current fixed-area condition records and return their effect identities.
+    """Verify bound same-scene fixed-area condition sources and return their effect identities.
 
     Only status-only fixed coverage is handled here. Independent round/turn
     clocks and repeat-save lifecycles need their own supported action scope.
@@ -492,6 +495,7 @@ def _save_condition_effects(
     for effect in active_effects:
         if not is_fixed_region_condition_effect(effect):
             continue
+        validate_current_region_condition_source(effect, scene_id=scene_id, loader=loader)
         regional.add((effect.id, effect.origin))
         projected, _ = conditions_after_effect_application(
             (), effect.id, effect.statuses, scope="session"
@@ -574,7 +578,9 @@ def _prepare_save(
         if effect.target_id == target.entity_id and not effect.disabled
     ]
     try:
-        condition_effects = _save_condition_effects(target, active_effects, loader)
+        condition_effects = _save_condition_effects(
+            target, active_effects, snapshot.scene_state.scene_id, loader
+        )
     except ValueError as exc:
         return _refuse("unsupported", "save.conditions", str(exc))
     other_effects = [

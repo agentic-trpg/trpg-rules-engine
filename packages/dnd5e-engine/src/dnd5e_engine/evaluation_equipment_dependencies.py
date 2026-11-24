@@ -21,6 +21,50 @@ from dnd5e_engine.rules.character import (
 from dnd5e_engine.rules.dice import ability_modifier
 
 HEALING_POTION_SLUG = "potion-of-healing"
+HOLY_SYMBOL_SLUGS = frozenset({"amulet", "emblem", "reliquary"})
+
+
+def reviewed_holy_symbol(slug: str, loader: AssetLoader, canonical: AssetLoader) -> bool:
+    """Check the exact canonical casting component and its reviewed material value."""
+    if slug not in HOLY_SYMBOL_SLUGS:
+        return False
+    item = loader.get_item(slug)
+    return bool(
+        item is not None
+        and item == canonical.get_item(slug)
+        and item.cost_gp is not None
+        and item.cost_gp >= 5
+    )
+
+
+def stowed_holy_symbol(
+    actor: CharacterStateV2,
+    snapshot: NonCombatSnapshot,
+    loader: AssetLoader,
+    canonical: AssetLoader,
+) -> str | None:
+    """Find a unique canonical component which occupies no slot or attunement."""
+    if snapshot.snapshot_schema_version != "engine-snapshot/20":
+        return None
+    symbols = [
+        entry
+        for entry in snapshot.inventory_state.entries
+        if entry.owner_id == actor.entity_id and entry.item_slug in HOLY_SYMBOL_SLUGS
+    ]
+    if len(symbols) != 1:
+        return None
+    (item,) = symbols
+    if (
+        item.quantity == 1
+        and item.accessible
+        and item.charges_remaining_per_unit == 0
+        and item.attuned_actor_id is None
+        and is_stowed_inventory_entry(item, actor)
+        and item.instance_id not in actor.worn_item_instance_ids
+        and reviewed_holy_symbol(item.item_slug, loader, canonical)
+    ):
+        return item.instance_id
+    return None
 
 
 def reviewed_healing_potion_owners(

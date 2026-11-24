@@ -21,6 +21,7 @@ from dnd5e_engine.evaluation_contracts import (
 )
 from dnd5e_engine.evaluation_delta import StateDelta, WorldEffectCreate
 from dnd5e_engine.evaluation_effects import effect_state
+from dnd5e_engine.evaluation_equipment_dependencies import HOLY_SYMBOL_SLUGS, reviewed_holy_symbol
 from dnd5e_engine.evaluation_payments import spell_payment
 from dnd5e_engine.evaluation_rng import RNGTransition
 from dnd5e_engine.evaluation_saves import (
@@ -138,12 +139,10 @@ def _holy_symbol_failure(
         or entry.owner_id != actor_id
         or not entry.accessible
         or entry.quantity != 1
-        or entry.item_slug not in {"amulet", "emblem", "reliquary"}
+        or entry.item_slug not in HOLY_SYMBOL_SLUGS
     ):
         return "Bless requires an accessible Holy Symbol worth at least 5 GP"
-    item = loader.get_item(entry.item_slug)
-    canonical = BundledAssetLoader().get_item(entry.item_slug)
-    if item is None or item != canonical or item.cost_gp is None or item.cost_gp < 5:
+    if not reviewed_holy_symbol(entry.item_slug, loader, BundledAssetLoader()):
         return "Holy Symbol differs from the reviewed material"
     return None
 

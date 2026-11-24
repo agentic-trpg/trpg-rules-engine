@@ -17,7 +17,9 @@ from dnd5e_engine import evaluation_saves
 from dnd5e_engine import orchestrator as orch
 from dnd5e_engine.activities.actor_stats import _SCORE_ATTR
 from dnd5e_engine.activities.build_context import build_activity_context
+from dnd5e_engine.activities.effects import passive_effect_to_active_effect
 from dnd5e_engine.activities.save import resolve_save
+from dnd5e_engine.effect_lifecycle import conditions_after_effect_application
 from dnd5e_engine.evaluation_contracts import (
     RuleEvaluationRequest,
     RuleEvaluationResult,
@@ -25,6 +27,7 @@ from dnd5e_engine.evaluation_contracts import (
     SavePayload,
 )
 from dnd5e_engine.evaluation_effects import effect_state
+from dnd5e_engine.evaluation_region_effect import plan_region_condition_transition
 from dnd5e_engine.evaluation_rng import RNGState
 from dnd5e_engine.evaluation_ruleset import get_default_ruleset, ruleset_binding
 from dnd5e_engine.evaluation_state import ConditionRecord, NonCombatSnapshot
@@ -37,7 +40,7 @@ from tests.test_stateless_item_closure_core import isolate
 from tests.test_stateless_spell_attack import spell_attack_wire
 
 
-def save_loader(*, traits=()):
+def save_loader(*, traits=(), spells=(), extra_conditions=()):
     canonical = BundledAssetLoader()
     source = synthetic_loader()
     return MemoryAssetLoader(
@@ -53,9 +56,11 @@ def save_loader(*, traits=()):
                 "incapacitated",
                 "prone",
                 "exhaustion",
+                *extra_conditions,
             )
         ],
         traits=traits,
+        spells=spells,
     )
 
 
@@ -416,6 +421,114 @@ def condition(name):
         exhaustion_level=1,
         source_effect_id=None,
     )
+
+
+@pytest.mark.parametrize("case", ["off_target", "active", "disabled", "mismatched"])
+def test_ordinary_save_uses_exact_target_effect_while_concentration_continues(monkeypatch, case):
+    """Concentration can be maintained with or without an actual self-targeted Bless."""
+    request, _ = save_case(ability="dex")
+    spell = BundledAssetLoader().get_spell("bless")
+    loader = save_loader(spells=(spell,))
+    snapshot = request.state_snapshot
+    actor = snapshot.character_states[0].model_copy(
+        update={"concentration_effect_id": "effect:blessed"}
+    )
+    effect = effect_state(
+        passive_effect_to_active_effect(
+            spell.passive_effects[0],
+            target_id=FOE if case == "off_target" else request.actor_id,
+            caster_id=request.actor_id,
+            concentration=True,
+        )
+    )
+    if case == "disabled":
+        effect = effect.model_copy(update={"disabled": True})
+    if case == "mismatched":
+        effect = effect.model_copy(update={"origin": "unbacked:blessed"})
+    request = request.model_copy(
+        update={
+            "ruleset_binding": ruleset_binding(loader),
+            "state_snapshot": snapshot.model_copy(
+                update={
+                    "character_states": (actor, *snapshot.character_states[1:]),
+                    "effect_states": (effect,),
+                }
+            ),
+        }
+    )
+    if case == "mismatched":
+        monkeypatch.setattr(RNGState, "restore", lambda *_: pytest.fail("invalid ward drew RNG"))
+        result = execute(request, loader)
+        assert result.status == "unsupported"
+        assert result.error.code == "save.effects"
+        assert result.rng_transition is None
+        return
+    result = execute(request, loader)
+    assert result.status == "accepted", result.error
+    (roll,) = result.proposed_events
+    assert [item.source for item in roll.roll_detail.modifiers if item.kind == "die"] == (
+        [f"{effect.id}@{effect.origin}"] if case == "active" else []
+    )
+    independent = random.Random(0)
+    independent.randint(1, 20)
+    if case == "active":
+        independent.randint(1, 4)
+    assert result.rng_transition.next_state == RNGState.capture(independent)
+    assert result.state_delta.operations == ()
+
+
+@pytest.mark.parametrize("case", ["active", "missing", "disabled", "missing_status", "repeat"])
+def test_ordinary_save_requires_exact_active_region_condition(monkeypatch, case):
+    """Only the matching active condition projection can exclude its source from save dice."""
+    request, _ = save_case(ability="dex")
+    loader = save_loader(extra_conditions=("poisoned",))
+    snapshot = request.state_snapshot
+    binding = ruleset_binding(loader)
+    region = plan_region_condition_transition(
+        ruleset_binding=binding,
+        scene_id=snapshot.scene_state.scene_id,
+        source_id="source.test",
+        target_id=request.actor_id,
+        entering=True,
+        present=False,
+        condition_immunities=(),
+        loader=loader,
+    )
+    effect = region.effect
+    assert effect is not None
+    if case == "disabled":
+        effect = effect.model_copy(update={"disabled": True})
+    records, _ = conditions_after_effect_application(
+        (), effect.id, effect.statuses, scope="session"
+    )
+    record = ConditionRecord.model_validate(records[0].model_dump())
+    if case == "repeat":
+        record = record.model_copy(update={"save_dc": 11, "duration_rounds": 3})
+    actor = snapshot.character_states[0].model_copy(
+        update={"conditions": [] if case == "missing_status" else [record]}
+    )
+    request = request.model_copy(
+        update={
+            "ruleset_binding": binding,
+            "state_snapshot": snapshot.model_copy(
+                update={
+                    "character_states": (actor, *snapshot.character_states[1:]),
+                    "effect_states": () if case == "missing" else (effect,),
+                }
+            ),
+        }
+    )
+    if case != "active":
+        monkeypatch.setattr(RNGState, "restore", lambda *_: pytest.fail("invalid lineage drew RNG"))
+    result = execute(request, loader)
+    if case == "active":
+        assert result.status == "accepted", result.error
+        assert result.proposed_events[0].advantage == "normal"
+    else:
+        assert result.status == "unsupported"
+        assert result.error.code == "save.conditions"
+        assert result.rng_transition is None
+        assert result.proposed_events == ()
 
 
 @pytest.mark.parametrize("name", ["paralyzed", "stunned", "petrified", "unconscious"])

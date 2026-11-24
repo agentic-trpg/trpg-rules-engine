@@ -12,6 +12,7 @@ from dnd5e_engine.evaluation_equipment_dependencies import (
     inert_component_pouch,
     is_stowed_healing_potion,
     reviewed_healing_potion_owners,
+    stowed_holy_symbol,
 )
 from dnd5e_engine.evaluation_resources import FeatureResource, SlotResource
 from dnd5e_engine.evaluation_ruleset import get_default_ruleset
@@ -36,9 +37,15 @@ def _class_equipment_profile(
     stowed_consumable_ids: frozenset[str],
     allow_life_pouch: bool = False,
     allow_reviewed_cloak: bool = False,
+    allow_reviewed_holy_symbol: bool = False,
 ) -> tuple[bool, str | None]:
     """Check equipment dependencies while retaining the complete inventory identity."""
-    if (allow_stowed_healing_potions or stowed_consumable_ids) and set(
+    holy_symbol = (
+        stowed_holy_symbol(actor, snapshot, loader, canonical)
+        if allow_reviewed_holy_symbol and isinstance(snapshot, NonCombatSnapshot)
+        else None
+    )
+    if (allow_stowed_healing_potions or stowed_consumable_ids or holy_symbol) and set(
         actor.carried_item_slugs
     ) != {
         entry.item_slug
@@ -55,7 +62,7 @@ def _class_equipment_profile(
     has_equipment = bool(
         has_worn_or_offhand
         or (
-            not stowed_consumable_ids
+            not (stowed_consumable_ids or holy_symbol)
             and any(
                 (not allow_stowed_healing_potions or slug != HEALING_POTION_SLUG)
                 and not admitted_cloak(slug)
@@ -64,6 +71,7 @@ def _class_equipment_profile(
         )
         or any(
             entry.owner_id == actor.entity_id
+            and entry.instance_id != holy_symbol
             and entry.instance_id not in stowed_consumable_ids
             and (not allow_stowed_healing_potions or not is_stowed_healing_potion(entry, actor))
             and not admitted_cloak(entry.item_slug)
@@ -103,6 +111,7 @@ def class_dependencies(
     reviewed_wizard_pouch: bool = False,
     reviewed_life_healing: bool = False,
     allow_reviewed_cloak: bool = False,
+    allow_reviewed_holy_symbol: bool = False,
 ) -> str | None:
     """Check class dependencies within the caller's reviewed operation profile.
 
@@ -110,6 +119,7 @@ def class_dependencies(
     Bard/Lore grants. This profile does not admit Bard feature invocations.
     A caller can admit only the reviewed Wizard pouch without enabling other equipment.
     Exploration healing can use Life Cleric 3 or 5 with the complete Life grants.
+    Ordinary saves can admit a stowed canonical Cleric 1 Holy Symbol as inert stock.
     """
     if actor.species_slug:
         return "subclass/species operation dependencies are not migrated"
@@ -141,6 +151,7 @@ def class_dependencies(
             and actor.subclass_slug == "life"
         ),
         allow_reviewed_cloak=allow_reviewed_cloak,
+        allow_reviewed_holy_symbol=allow_reviewed_holy_symbol and levels == {"cleric": 1},
     )
     if failure:
         return failure

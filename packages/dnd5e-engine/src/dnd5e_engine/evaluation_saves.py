@@ -17,6 +17,7 @@ from dnd5e_engine.activities.context import ActivityResolutionContext
 from dnd5e_engine.activities.d20 import AdvantageSources
 from dnd5e_engine.activities.effects import passive_effect_to_active_effect
 from dnd5e_engine.activities.save_primitive import SaveBonusDie, SaveRoll, roll_save
+from dnd5e_engine.effect_lifecycle import conditions_after_effect_application
 from dnd5e_engine.evaluation_actor import combatant
 from dnd5e_engine.evaluation_bardic_check import (
     BARDIC_INSPIRATION_DIE_SIDES,
@@ -26,6 +27,7 @@ from dnd5e_engine.evaluation_beacon import is_reviewed_beacon_effect
 from dnd5e_engine.evaluation_contracts import RuleEvaluationRequest, SavePayload
 from dnd5e_engine.evaluation_delta import StateDelta
 from dnd5e_engine.evaluation_effects import EffectState, effect_state
+from dnd5e_engine.evaluation_region_effect import is_fixed_region_condition_effect
 from dnd5e_engine.evaluation_rng import RNGContext, RNGTransition
 from dnd5e_engine.evaluation_ruleset import verify_ruleset
 from dnd5e_engine.evaluation_state import CharacterStateV2, NonCombatSnapshot
@@ -48,6 +50,18 @@ _SAVE_SPELL_DICE: dict[str, tuple[str, Literal[-1, 1]]] = {
     "effect:bane": ("bane", -1),
 }
 _MAGIC_RESISTANCE_SLUG = "magic-resistance"
+_INDEPENDENT_SAVE_CONDITIONS = frozenset(
+    {
+        "restrained",
+        "paralyzed",
+        "stunned",
+        "petrified",
+        "unconscious",
+        "incapacitated",
+        "prone",
+        "exhaustion",
+    }
+)
 type _PreparedSave = tuple[
     CharacterStateV2,
     SavePayload,
@@ -451,10 +465,63 @@ def save_actor_failure(
     return None
 
 
+def _save_condition_effects(
+    target: CharacterStateV2, active_effects: list[EffectState], loader: AssetLoader
+) -> set[tuple[str, str]]:
+    """Verify current fixed-area condition records and return their effect identities.
+
+    Only status-only fixed coverage is handled here. Independent round/turn
+    clocks and repeat-save lifecycles need their own supported action scope.
+    """
+    regional = set()
+    pending = {}
+    for effect in active_effects:
+        if not is_fixed_region_condition_effect(effect):
+            continue
+        regional.add((effect.id, effect.origin))
+        projected, _ = conditions_after_effect_application(
+            (), effect.id, effect.statuses, scope="session"
+        )
+        for condition in projected:
+            key = (effect.id, condition.condition)
+            if key in pending:
+                raise ValueError("condition has ambiguous active effect lineage")
+            pending[key] = condition.model_dump()
+    for condition in target.conditions:
+        if condition.source_effect_id is None:
+            if (
+                condition.condition not in _INDEPENDENT_SAVE_CONDITIONS
+                or condition.scope != "session"
+                or condition.duration_rounds is not None
+                or condition.save_dc is not None
+                or condition.source_entity_id == "implied:effect"
+            ):
+                raise ValueError("condition requires unsupported save or round lifecycle facts")
+        elif pending.pop((condition.source_effect_id, condition.condition), None) != (
+            condition.model_dump()
+        ):
+            raise ValueError("condition lacks its exact active fixed-area effect lineage")
+        definition = loader.get_condition(condition.condition)
+        if (
+            definition is None
+            or definition.slug != condition.condition
+            or not condition_matches_compiled(definition)
+        ):
+            raise ValueError("condition clauses differ from the pinned compiled rule projection")
+    if pending:
+        raise ValueError("active fixed-area effect is missing its projected condition")
+    return regional
+
+
 def _prepare_save(
     request: RuleEvaluationRequest, loader: AssetLoader
 ) -> TurnEvaluation | _PreparedSave:
-    """Run the save's actual admission decisions without restoring or drawing RNG."""
+    """Check bound rules and the host's fixed current facts before restoring RNG.
+
+    The host already owns the projected active conditions and target effects.
+    Directional cover can require extra geometry. A target modifier uses its
+    exact active application, independent of the roller's concentration slot.
+    """
     snapshot, payload = request.state_snapshot, request.payload
     assert isinstance(payload, SavePayload)
     if not isinstance(snapshot, NonCombatSnapshot) or snapshot.combat_setup is not None:
@@ -476,10 +543,16 @@ def _prepare_save(
         for effect in snapshot.effect_states
         if effect.target_id == target.entity_id and not effect.disabled
     ]
+    try:
+        condition_effects = _save_condition_effects(target, active_effects, loader)
+    except ValueError as exc:
+        return _refuse("unsupported", "save.conditions", str(exc))
     other_effects = [
         effect
         for effect in active_effects
-        if not is_reviewed_beacon_effect(effect, loader) and not _held_inspiration(effect, loader)
+        if (effect.id, effect.origin) not in condition_effects
+        and not is_reviewed_beacon_effect(effect, loader)
+        and not _held_inspiration(effect, loader)
     ]
     try:
         bonus_dice = project_save_bonus_dice(other_effects, loader).get(target.entity_id, ())
@@ -488,27 +561,6 @@ def _prepare_save(
     if set(payload.advantage + payload.disadvantage) - {"flag"}:
         return _refuse(
             "unsupported", "save.sources", "only explicitly adjudicated flags are admitted"
-        )
-    known = {
-        "restrained",
-        "paralyzed",
-        "stunned",
-        "petrified",
-        "unconscious",
-        "incapacitated",
-        "prone",
-        "exhaustion",
-    }
-    if any(
-        c.condition not in known
-        or c.scope != "session"
-        or c.duration_rounds is not None
-        or c.save_dc is not None
-        or c.source_effect_id is not None
-        for c in target.conditions
-    ):
-        return _refuse(
-            "unsupported", "save.conditions", "condition lifecycle dependencies are not migrated"
         )
     # Only these complete canonical level-one profiles are admitted here;
     # class_dependencies still checks their exact grants, pools and binding.
@@ -527,7 +579,12 @@ def _prepare_save(
                 "only Wizard 1 and Cleric 1 class profiles are reviewed",
             )
         failure = class_dependencies(
-            target, snapshot, loader, get_default_ruleset(), allow_reviewed_cloak=True
+            target,
+            snapshot,
+            loader,
+            get_default_ruleset(),
+            allow_reviewed_cloak=True,
+            allow_reviewed_holy_symbol=True,
         )
         if failure:
             return _refuse("unsupported", "save.actor", failure)
@@ -540,6 +597,8 @@ def _prepare_save(
         target,
         loader,
         reviewed_identity=reviewed_identity,
+        # This ordinary save neither tests nor changes existing concentration.
+        reviewed_concentration=True,
         magic_resistance_loader=loader,
         reviewed_save_item_slugs=allowed_save_items,
     )

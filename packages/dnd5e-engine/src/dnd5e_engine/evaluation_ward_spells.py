@@ -4,7 +4,8 @@ from dataclasses import dataclass
 from functools import lru_cache
 
 from dnd5e_srd_data.loader import AssetLoader, BundledAssetLoader
-from dnd5e_srd_data.schema.common import SaveActivity, UtilityActivity
+from dnd5e_srd_data.schema.common import PassiveEffect, SaveActivity, UtilityActivity
+from dnd5e_srd_data.schema.spell import Spell
 
 from dnd5e_engine.activities.actor_stats import ability_modifier_of, proficiency_bonus_of
 from dnd5e_engine.activities.effects import passive_effect_to_active_effect
@@ -62,25 +63,30 @@ def prepare_ward_spell(
     if payload.target_ids is None:
         return None
     spell = loader.get_spell(payload.spell_id)
+    if spell is None:
+        return None
     try:
         _profile(spell, payload.slot_level)
     except (AttributeError, ValueError):
         return None
+    range_ft = spell_range_ft(spell)
+    if range_ft is None:
+        return None
     return WardSpellNeeds(
         actor_ids=tuple(dict.fromkeys((actor_id, *payload.target_ids))),
         sight_target_ids=payload.target_ids if spell.slug == "bane" else (),
-        range_ft=spell_range_ft(spell),
+        range_ft=range_ft,
         material_instance_id=payload.material_instance_id,
     )
 
 
 @lru_cache(maxsize=2)
-def _canonical(spell_id: str):
+def _canonical(spell_id: str) -> Spell | None:
     """Keep the two reviewed SRD spell profiles separate from arbitrary overrides."""
     return BundledAssetLoader().get_spell(spell_id)
 
 
-def _profile(spell, level):
+def _profile(spell: Spell, level: int) -> tuple[UtilityActivity | SaveActivity, PassiveEffect, int]:
     """Read target capacity and the actual activity from the bound spell."""
     if spell.slug not in ("bless", "bane") or spell != _canonical(spell.slug):
         raise ValueError("ward requires its reviewed canonical spell")
@@ -96,38 +102,40 @@ def _profile(spell, level):
         raise ValueError("ward duration, range or activity differs")
     activity = spell.activities[0]
     capacity = resolve_target_count(activity.target.affects.count, cast_level=level)
-    if (
-        capacity != level + 2
-        or activity.target.affects.type != "creature"
-        or not isinstance(activity, UtilityActivity if spell.slug == "bless" else SaveActivity)
-    ):
+    if capacity != level + 2 or activity.target.affects.type != "creature":
         raise ValueError("ward target or save activity differs")
-    if spell.slug == "bane" and (
+    if spell.slug == "bless":
+        if not isinstance(activity, UtilityActivity):
+            raise ValueError("Bless requires its bound utility activity")
+    elif not isinstance(activity, SaveActivity):
+        raise ValueError("Bane requires its bound save activity")
+    if isinstance(activity, SaveActivity) and (
         activity.save.ability != ["cha"] or activity.save.dc.calculation != "spellcasting"
     ):
         raise ValueError("Bane requires its bound Charisma save")
     return activity, spell.passive_effects[0], capacity
 
 
-def _holy_symbol_failure(request, loader):
+def _holy_symbol_failure(
+    payload: ExplorationSpellCastPayload,
+    snapshot: NonCombatSnapshot,
+    actor_id: str,
+    loader: AssetLoader,
+) -> str | None:
     """Require a reviewed priced symbol from one fixed accessible instance.
 
     RUO-62-T1: equip/wear posture is not present in the current inventory
     fact. Extend this gate when the owner exposes that typed fact and a public
     cast verifies it; until then this supports accessible canonical symbols.
     """
-    instance_id = request.payload.material_instance_id
+    instance_id = payload.material_instance_id
     entry = next(
-        (
-            item
-            for item in request.state_snapshot.inventory_state.entries
-            if item.instance_id == instance_id
-        ),
+        (item for item in snapshot.inventory_state.entries if item.instance_id == instance_id),
         None,
     )
     if (
         entry is None
-        or entry.owner_id != request.actor_id
+        or entry.owner_id != actor_id
         or not entry.accessible
         or entry.quantity != 1
         or entry.item_slug not in {"amulet", "emblem", "reliquary"}
@@ -157,6 +165,8 @@ def evaluate_ward_spell(  # noqa: C901 - two fixed ward outcomes share one admis
     ):
         raise ValueError("ward requires fixed noncombat target facts")
     spell = loader.get_spell(payload.spell_id)
+    if spell is None:
+        return _refuse("unsupported", "spell.asset", "ward spell is absent")
     try:
         activity, passive, capacity = _profile(spell, payload.slot_level)
     except (AttributeError, ValueError) as exc:
@@ -164,7 +174,7 @@ def evaluate_ward_spell(  # noqa: C901 - two fixed ward outcomes share one admis
     if len(payload.target_ids) > capacity:
         return _refuse("rejected", "spell.target_count", "too many ward targets")
     if spell.slug == "bless":
-        failure = _holy_symbol_failure(request, loader)
+        failure = _holy_symbol_failure(payload, snapshot, request.actor_id, loader)
         if failure:
             return _refuse("rejected", "spell.material", failure)
     elif payload.material_instance_id is not None:
@@ -255,7 +265,7 @@ def evaluate_ward_spell(  # noqa: C901 - two fixed ward outcomes share one admis
         casting = snapshot.casting_state
         if not isinstance(casting, CastingStateV20):
             return _refuse("rejected", "spell.source", "fixed casting source is absent")
-        source = next(
+        casting_source = next(
             (
                 item
                 for actor in casting.actors
@@ -265,11 +275,11 @@ def evaluate_ward_spell(  # noqa: C901 - two fixed ward outcomes share one admis
             ),
             None,
         )
-        if source is None:
+        if casting_source is None:
             return _refuse("rejected", "spell.source", "selected casting source is absent")
         dc = spellcasting_save_dc(
             proficiency_bonus_of(combatant(caster)),
-            ability_modifier_of(combatant(caster), source.ability),
+            ability_modifier_of(combatant(caster), casting_source.ability),
         )
     for target_id in payload.target_ids:
         if spell.slug == "bane":

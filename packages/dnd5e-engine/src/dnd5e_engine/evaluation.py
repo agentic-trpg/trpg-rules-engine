@@ -14,6 +14,7 @@ from dnd5e_engine.evaluation_contracts import (
     CombatIntentPayload,
     EvaluationVersion,
     ExplorationEnvironmentalSpellCastPayload,
+    ExplorationSpellCastPayload,
     ReadVersion,
     RuleError,
     RuleEvaluationRequest,
@@ -232,7 +233,10 @@ async def _evaluate(
             from dnd5e_engine.evaluation_environmental_spells import evaluate_environmental_spell
 
             outcome = evaluate_environmental_spell(request, assets)
-        elif request.payload.target_ids is not None:
+        elif (
+            isinstance(request.payload, ExplorationSpellCastPayload)
+            and request.payload.target_ids is not None
+        ):
             from dnd5e_engine.evaluation_ward_spells import evaluate_ward_spell
 
             outcome = evaluate_ward_spell(request, assets)

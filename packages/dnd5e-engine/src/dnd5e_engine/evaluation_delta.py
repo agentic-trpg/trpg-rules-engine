@@ -403,6 +403,11 @@ class WorldEffectCreate(EvaluationModel):
         concentration_anchor = (
             not effect.statuses and not effect.changes and self.value.concentration
         )
+        ward_rounds = (
+            self.value.concentration
+            and effect.duration.seconds == 60
+            and (effect.id, effect.duration.rounds) in {("effect:blessed", 10), ("effect:bane", 1)}
+        )
         if (
             effect.disabled
             or effect.transfer
@@ -415,7 +420,7 @@ class WorldEffectCreate(EvaluationModel):
                 and not concentration_anchor
                 and (effect.statuses or not effect.changes)
             )
-            or effect.duration.rounds is not None
+            or (effect.duration.rounds is not None and not ward_rounds)
             or effect.duration.turns is not None
             or effect.duration.start_round is not None
             or effect.duration.start_turn is not None

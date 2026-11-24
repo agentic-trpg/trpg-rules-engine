@@ -236,9 +236,6 @@ def project_save_bonus_dice(
     for ordinal, effect in enumerate(effects):
         if effect.disabled:
             continue
-        if _held_inspiration(effect, loader):
-            # The optional die is a later choice, not an automatic save bonus.
-            continue
         rule = _SAVE_SPELL_DICE.get(effect.id)
         if rule is None:
             if allow_lifecycle_marker and (

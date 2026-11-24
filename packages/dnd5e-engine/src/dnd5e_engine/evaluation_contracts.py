@@ -78,6 +78,7 @@ FAERIE_FIRE_SCHEMA_VERSION = "engine-evaluation/47"
 CHARGED_ITEM_SCHEMA_VERSION = "engine-evaluation/32"
 STAFF_CAST_SCHEMA_VERSION = "engine-evaluation/41"
 MULTI_SPELL_SCHEMA_VERSION = "engine-evaluation/33"
+WARD_SPELL_SCHEMA_VERSION = "engine-evaluation/48"
 SPATIAL_EFFECT_END_SCHEMA_VERSION = "engine-evaluation/34"
 DISPEL_MAGIC_SCHEMA_VERSION = "engine-evaluation/42"
 MATERIAL_SPELL_SCHEMA_VERSION = "engine-evaluation/35"
@@ -104,6 +105,7 @@ EvaluationVersion = Literal[
     "engine-evaluation/45",
     "engine-evaluation/46",
     "engine-evaluation/47",
+    "engine-evaluation/48",
 ]
 
 
@@ -173,6 +175,9 @@ class ExplorationSpellCastPayload(EvaluationModel):
     spell_source_id: Annotated[str, Field(min_length=1)]
     slot_level: Annotated[int, Field(ge=0, le=9)]
     target_id: Annotated[str, Field(min_length=1)]
+    target_ids: tuple[Annotated[str, Field(min_length=1)], ...] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     selected_skill: Skill | None = Field(default=None, exclude_if=lambda value: value is None)
     material_instance_id: Annotated[str, Field(min_length=1)] | None = Field(
         default=None, exclude_if=lambda value: value is None
@@ -191,6 +196,16 @@ class ExplorationSpellCastPayload(EvaluationModel):
             raise ValueError("select an independent condition by name or identity")
         if self.selected_condition_id is not None and self.material_instance_id is not None:
             raise ValueError("exact condition selection does not use a selected material")
+        if self.target_ids is not None and (
+            self.spell_id not in ("bless", "bane")
+            or not self.target_ids
+            or len(self.target_ids) > MAX_EXPLORATION_SPELL_TARGETS
+            or self.target_ids[0] != self.target_id
+            or len(set(self.target_ids)) != len(self.target_ids)
+            or self.selected_skill is not None
+            or self.has_condition_choice
+        ):
+            raise ValueError("ordered ward targets require a Bless or Bane cast")
         return self
 
     @property
@@ -264,6 +279,7 @@ class ExplorationMultiSpellTarget(EvaluationModel):
     target_id: Annotated[str, Field(min_length=1)]
     cell_id: Annotated[str, Field(min_length=1)]
     willing: bool
+    visible: bool = False
 
 
 class ExplorationMultiSpellPositions(EvaluationModel):
@@ -495,6 +511,7 @@ class RuleEvaluationRequest(EvaluationModel):
             CHARGED_ITEM_SCHEMA_VERSION: "engine-snapshot/20",
             STAFF_CAST_SCHEMA_VERSION: "engine-snapshot/20",
             MULTI_SPELL_SCHEMA_VERSION: "engine-snapshot/20",
+            WARD_SPELL_SCHEMA_VERSION: "engine-snapshot/20",
             SPATIAL_EFFECT_END_SCHEMA_VERSION: "engine-snapshot/20",
             DISPEL_MAGIC_SCHEMA_VERSION: "engine-snapshot/20",
             MATERIAL_SPELL_SCHEMA_VERSION: "engine-snapshot/20",
@@ -652,6 +669,9 @@ class RuleEvaluationRequest(EvaluationModel):
         if self.schema_version == MULTI_SPELL_SCHEMA_VERSION:
             self._validate_multi_spell()
             return True
+        if self.schema_version == WARD_SPELL_SCHEMA_VERSION:
+            self._validate_ward_spell()
+            return True
         if self.multi_spell_positions is not None or self.operation_kind == "world.cast_spell_many":
             raise ValueError("multi-target spell facts require evaluation/33")
         if self.schema_version in (CHARGED_ITEM_SCHEMA_VERSION, STAFF_CAST_SCHEMA_VERSION):
@@ -686,6 +706,24 @@ class RuleEvaluationRequest(EvaluationModel):
             )
         ):
             raise ValueError("evaluation/33 requires matching exploration spell target facts")
+
+    def _validate_ward_spell(self) -> None:
+        """Associate each selected ward target with fixed, ordered creature placement."""
+        positions = self.multi_spell_positions
+        if (
+            self.operation_kind != "world.cast_spell"
+            or not isinstance(self.payload, ExplorationSpellCastPayload)
+            or self.payload.target_ids is None
+            or not isinstance(self.state_snapshot, NonCombatSnapshot)
+            or self.state_snapshot.combat_setup is not None
+            or self.spell_positions is not None
+            or positions is None
+            or tuple(target.target_id for target in positions.targets) != self.payload.target_ids
+            or any(
+                target.willing for target in positions.targets if target.target_id != self.actor_id
+            )
+        ):
+            raise ValueError("evaluation/48 requires matching fixed ward target facts")
 
     def _validate_charged_item(self) -> None:
         """Require an exploration charged cast with only creature position facts."""
@@ -730,6 +768,7 @@ class RuleEvaluationRequest(EvaluationModel):
                 CONDITION_CHOICE_SCHEMA_VERSION,
             }
             or not isinstance(self.payload, ExplorationSpellCastPayload)
+            or self.payload.target_ids is not None
             or not isinstance(self.state_snapshot, NonCombatSnapshot)
             or self.state_snapshot.combat_setup is not None
         ):
@@ -1085,7 +1124,7 @@ class RuleEvaluationResult(EvaluationModel):
         result.verify_request(base, loader=loader)
         return result
 
-    def verify_request(
+    def verify_request(  # noqa: C901
         self, request: RuleEvaluationRequest, *, loader: AssetLoader | None = None
     ) -> None:
         """Validate the fixed request and, when supplied, its bound asset definitions."""
@@ -1131,6 +1170,10 @@ class RuleEvaluationResult(EvaluationModel):
             verify_multi_spell_cast(self, request)
         elif isinstance(self.choice, MultiSpellWillingnessChoice):
             raise ValueError("multi-target willingness choice requires evaluation/33")
+        if request.schema_version == WARD_SPELL_SCHEMA_VERSION:
+            from dnd5e_engine.evaluation_ward_spells import verify_ward_cast
+
+            verify_ward_cast(self, request, loader=loader)
         if self.state_delta is not None:
             from dnd5e_engine.evaluation_haste_delta import (
                 EffectFollowUpCreate,

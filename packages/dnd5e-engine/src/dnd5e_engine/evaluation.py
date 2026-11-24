@@ -232,6 +232,10 @@ async def _evaluate(
             from dnd5e_engine.evaluation_environmental_spells import evaluate_environmental_spell
 
             outcome = evaluate_environmental_spell(request, assets)
+        elif request.payload.target_ids is not None:
+            from dnd5e_engine.evaluation_ward_spells import evaluate_ward_spell
+
+            outcome = evaluate_ward_spell(request, assets)
         else:
             from dnd5e_engine.evaluation_timed_spells import evaluate_exploration_spell
 

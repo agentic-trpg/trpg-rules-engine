@@ -43,7 +43,7 @@ from dnd5e_engine.evaluation_state import NonCombatSnapshot
 from dnd5e_engine.evaluation_timed_spells import exploration_source_failure
 from dnd5e_engine.evaluation_turn import TurnEvaluation, _refuse
 from dnd5e_engine.evaluation_world_effect import EffectExpiryPolicy, WorldEffectApplication
-from dnd5e_engine.events import EffectApplied, IntentSubmitted
+from dnd5e_engine.events import EffectApplied, IntentSubmitted, SaveRolled
 from dnd5e_engine.rules.conditions import conditions_block_actions
 from dnd5e_engine.spatial import GridTopology, canonical_cell_id
 from dnd5e_engine.specs import GridScene
@@ -247,7 +247,7 @@ def _ward_plan(  # noqa: C901 - two fixed ward outcomes share one admission path
         return _refuse("rejected", "spell.target", str(exc))
     existing = {(effect.target_id, effect.id, effect.origin) for effect in snapshot.effect_states}
     progress = None
-    saves = ()
+    saves: tuple[SaveRolled, ...] = ()
     selected = payload.target_ids
     if isinstance(activity, SaveActivity):
         equipment = {}
@@ -271,11 +271,11 @@ def _ward_plan(  # noqa: C901 - two fixed ward outcomes share one admission path
                 return _refuse("unsupported", "spell.save", failure)
         try:
             targets = set(payload.target_ids)
-            active, grants = split_spell_save_effects(
+            modifiers, grants = split_spell_save_effects(
                 (effect for effect in snapshot.effect_states if effect.target_id in targets),
                 loader,
             )
-            bonus = project_save_bonus_dice(active, loader, allow_lifecycle_marker=True)
+            bonus = project_save_bonus_dice(modifiers, loader, allow_lifecycle_marker=True)
         except ValueError as exc:
             return _refuse("unsupported", "spell.save", str(exc))
         casting = snapshot.casting_state

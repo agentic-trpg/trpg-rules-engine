@@ -482,11 +482,11 @@ def _save_condition_effects(
         projected, _ = conditions_after_effect_application(
             (), effect.id, effect.statuses, scope="session"
         )
-        for condition in projected:
-            key = (effect.id, condition.condition)
+        for projected_condition in projected:
+            key = (effect.id, projected_condition.condition)
             if key in pending:
                 raise ValueError("condition has ambiguous active effect lineage")
-            pending[key] = condition.model_dump()
+            pending[key] = projected_condition.model_dump()
     for condition in target.conditions:
         if condition.source_effect_id is None:
             if (

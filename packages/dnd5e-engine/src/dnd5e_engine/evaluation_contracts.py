@@ -2,6 +2,7 @@
 
 from typing import Annotated, Literal, Self, cast
 
+from dnd5e_srd_data.loader import AssetLoader
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 from pydantic_core import to_json
 
@@ -1031,8 +1032,10 @@ class RuleEvaluationResult(EvaluationModel):
                 raise ValueError("rejected/unsupported require error and forbid choice")
         return self
 
-    def without_spell_ends(self, request: RuleEvaluationRequest) -> Self:
-        """Validate and remove the extension's exact terminal operations."""
+    def without_spell_ends(
+        self, request: RuleEvaluationRequest, *, loader: AssetLoader | None = None
+    ) -> Self:
+        """Validate and remove exact terminal operations with the bound asset loader."""
         base = request.without_spell_ends()
         facts = request.spell_end_facts
         assert facts is not None
@@ -1057,11 +1060,13 @@ class RuleEvaluationResult(EvaluationModel):
                 update={"schema_version": base.schema_version, "state_delta": state_delta}
             )
         )
-        result.verify_request(base)
+        result.verify_request(base, loader=loader)
         return result
 
-    def verify_request(self, request: RuleEvaluationRequest) -> None:
-        """Validate result association and invariants against its original fixed request."""
+    def verify_request(
+        self, request: RuleEvaluationRequest, *, loader: AssetLoader | None = None
+    ) -> None:
+        """Validate the fixed request and, when supplied, its bound asset definitions."""
         if (
             self.schema_version,
             self.session_id,
@@ -1077,7 +1082,7 @@ class RuleEvaluationResult(EvaluationModel):
         ):
             raise ValueError("result does not match request identity/version/binding")
         if request.schema_version == SPELL_TERMINATION_SCHEMA_VERSION:
-            self.without_spell_ends(request)
+            self.without_spell_ends(request, loader=loader)
             return
         if isinstance(self.choice, SpellWillingnessChoice):
             positions = request.spell_positions
@@ -1121,7 +1126,7 @@ class RuleEvaluationResult(EvaluationModel):
             ):
                 from dnd5e_engine.evaluation_environmental_spells import verify_environmental_cast
 
-                verify_environmental_cast(self, request)
+                verify_environmental_cast(self, request, loader)
 
             if request.schema_version in (CHARGED_ITEM_SCHEMA_VERSION, STAFF_CAST_SCHEMA_VERSION):
                 from dnd5e_engine.evaluation_charged_item import verify_charged_item_cast

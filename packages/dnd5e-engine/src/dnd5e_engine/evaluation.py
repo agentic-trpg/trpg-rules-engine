@@ -137,7 +137,7 @@ def evaluate_bound_save(
         )
     else:
         result = _turn_result(common, evaluate_save(request, loader))
-    result.verify_request(request)
+    result.verify_request(request, loader=loader)
     return result
 
 
@@ -183,7 +183,7 @@ async def _evaluate(
         result = result.model_copy(
             update={"schema_version": request.schema_version, "state_delta": delta}
         )
-        result.verify_request(request)
+        result.verify_request(request, loader=assets)
         return result
     common = _result_identity(request)
     if equipment_rejection := _equipment_rejection(request, assets, common):
@@ -219,7 +219,7 @@ async def _evaluate(
 
             outcome = evaluate_exploration_spell(request, assets)
         result = _turn_result(common, outcome)
-        result.verify_request(request)
+        result.verify_request(request, loader=assets)
         return result
     if request.operation_kind == "rules.rest":
         result = _turn_result(common, evaluate_rest(request, assets))

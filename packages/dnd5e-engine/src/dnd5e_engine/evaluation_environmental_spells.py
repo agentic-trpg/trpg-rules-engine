@@ -51,6 +51,7 @@ from dnd5e_engine.evaluation_payments import spell_payment
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError
 from dnd5e_engine.evaluation_rng import RNGTransition
 from dnd5e_engine.evaluation_saves import (
+    _save_equipment,
     project_save_bonus_dice,
     resolve_snapshot_save,
     save_actor_failure,
@@ -499,6 +500,7 @@ def _faerie_plan(
 ) -> tuple[tuple[StateDeltaOperation, ...], tuple[CombatEvent, ...], RNGTransition]:
     """Select fixed cube occupants and resolve their saves using the reviewed activity.
 
+    Each creature uses the shared bound save-equipment admission and calculation.
     The returned visual target product is shared with later light and sight
     consumers. World owns occupant completeness and all eventual writes.
     """
@@ -553,20 +555,24 @@ def _faerie_plan(
     creature_ids = {
         occupant.target_id for occupant in occupants if occupant.target_kind == "creature"
     }
+    equipment_bonuses: dict[str, tuple[str, int] | None] = {}
     for target_id in sorted(creature_ids):
         target = actors.get(target_id)
         if target is None or not target.is_alive:
             raise ValueError("Faerie Fire creature lacks fixed living facts")
+        equipment_bonus, allowed_save_items = _save_equipment(target, snapshot, loader)
         if failure := save_actor_failure(
             target,
             loader,
             reviewed_identity=True,
             reviewed_concentration=True,
             reviewed_equipment=True,
+            reviewed_save_item_slugs=allowed_save_items,
             magic_resistance_loader=loader,
             include_implied_conditions=True,
         ):
             raise ValueError(f"RUO-54-F1: {failure}")
+        equipment_bonuses[target_id] = equipment_bonus
     try:
         bonus_dice = project_save_bonus_dice(
             (
@@ -599,6 +605,7 @@ def _faerie_plan(
                 ),
                 rng,
                 bonus_dice=bonus_dice.get(target.entity_id, ()),
+                equipment_bonus=equipment_bonuses[target.entity_id],
             )
             saves.append(save)
             if save.succeeded:
@@ -737,7 +744,7 @@ def evaluate_environmental_spell(
 def verify_environmental_cast(
     result: RuleEvaluationResult, request: RuleEvaluationRequest, loader: AssetLoader | None = None
 ) -> None:
-    """Bind profile, target identity, exact transition, payment and evidence to the input."""
+    """Bind profile, target, payment and dice to fixed input and the supplied ruleset."""
     payload, snapshot = request.payload, request.state_snapshot
     if not isinstance(payload, ExplorationEnvironmentalSpellCastPayload) or not isinstance(
         snapshot, NonCombatSnapshot

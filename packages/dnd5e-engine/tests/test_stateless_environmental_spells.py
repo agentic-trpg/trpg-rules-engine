@@ -2,9 +2,11 @@
 
 import json
 from dataclasses import replace
+from random import Random
 
 import pytest
 from dnd5e_srd_data import BundledAssetLoader, MemoryAssetLoader
+from dnd5e_srd_data.schema.common import PassiveEffect, PassiveEffectChange
 from pydantic import ValidationError
 
 from dnd5e_engine.activities.effects import passive_effect_to_active_effect
@@ -273,7 +275,7 @@ def _attached_save_effect(slug, caster_id):
     ).model_dump(mode="json")
 
 
-def _faerie_save_loader(wire, *, include_bless=True):
+def _faerie_save_loader(wire, *, include_bless=True, items=()):
     """Bind the fixed cast and every reviewed asset for the supplied save sources."""
     canonical = BundledAssetLoader()
     spells = ["faerie-fire", "bane", "bless"] if include_bless else ["faerie-fire", "bane"]
@@ -291,7 +293,7 @@ def _faerie_save_loader(wire, *, include_bless=True):
     }
     loader = freeze_ruleset(
         MemoryAssetLoader(
-            items=[canonical.get_item("component-pouch")],
+            items=[canonical.get_item("component-pouch"), *items],
             spells=[canonical.get_spell(slug) for slug in spells],
             classes=[canonical.get_class("druid")],
             traits=[canonical.get_trait("magic-resistance")],
@@ -300,6 +302,70 @@ def _faerie_save_loader(wire, *, include_bless=True):
     )
     wire["ruleset_binding"] = ruleset_binding(loader).model_dump(mode="json")
     return loader
+
+
+@pytest.mark.parametrize("held", [False, True])
+def test_faerie_save_uses_bound_held_weapon_and_verifies_with_same_loader(held):
+    """A carried authored weapon affects the save only while its exact instance is held."""
+    wire, _ = _faerie_wire()
+    wire["rng_context"]["state"] = RNGState.capture(Random(16)).model_dump(mode="json")
+    slug, instance = "fixture-warding-quarterstaff", "staff.1"
+    canonical = BundledAssetLoader()
+    staff = canonical.get_weapon("quarterstaff").model_copy(
+        update={
+            "slug": slug,
+            "name": "Fixture Warding Quarterstaff",
+            "passive_effects": [
+                PassiveEffect(
+                    _id="fixture-save-bonus",
+                    name="Held save bonus",
+                    changes=[
+                        PassiveEffectChange(key="system.bonuses.abilities.save", mode=2, value="+1")
+                    ],
+                )
+            ],
+        }
+    )
+    target = wire["state_snapshot"]["character_states"][1]
+    target["carried_item_slugs"].append(slug)
+    if held:
+        target.update(
+            held_weapon_instance_id=instance, weapon_in_hands=slug, weapon_grip="one_handed"
+        )
+    wire["state_snapshot"]["inventory_state"]["entries"].append(
+        dict(
+            instance_id=instance,
+            owner_id=FOE,
+            item_slug=slug,
+            quantity=1,
+            charges_remaining_per_unit=0,
+            accessible=True,
+        )
+    )
+    loader = _faerie_save_loader(wire, items=(staff,))
+    request = _request(wire)
+    result = execute(request, loader)
+    assert result.status == "accepted", result.error
+    save = result.proposed_events[-1]
+    equipment = [
+        modifier
+        for modifier in save.roll_detail.modifiers
+        if modifier.source.startswith("equipment:")
+    ]
+    assert [(part.source, part.value) for part in equipment] == (
+        [(f"equipment:{instance}:{slug}", 1)] if held else []
+    )
+    assert (save.natural, save.dc, save.roll_total, save.succeeded) == (
+        12,
+        13,
+        13 if held else 12,
+        held,
+    )
+    restored = RuleEvaluationResult.model_validate_json(result.model_dump_json())
+    restored.verify_request(request, loader=loader)
+    if held:
+        with pytest.raises(ValueError):
+            restored.verify_request(request)
 
 
 @pytest.mark.parametrize("latest_ended", [False, True])

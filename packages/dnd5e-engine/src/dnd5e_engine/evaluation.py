@@ -118,6 +118,24 @@ def evaluate_bound_save(
     This pure local entry retains the ordinary save's binding, equipment, typed
     result and RNG checks. Nested world actions have no player choice window.
     """
+    return _evaluate_bound_save(request, loader=loader, action_choice=False)
+
+
+def evaluate_bound_action_save(
+    request: RuleEvaluationRequest, *, loader: AssetLoader
+) -> RuleEvaluationResult:
+    """Roll an action-owned save before its host opens a durable Inspiration choice.
+
+    The original save remains uncommitted. Only a caller that owns the complete
+    enclosing action and its continuation may use this variant.
+    """
+    return _evaluate_bound_save(request, loader=loader, action_choice=True)
+
+
+def _evaluate_bound_save(
+    request: RuleEvaluationRequest, *, loader: AssetLoader, action_choice: bool
+) -> RuleEvaluationResult:
+    """Share bound save admission while preserving the nested-choice boundary."""
     request = RuleEvaluationRequest.model_validate(copy.deepcopy(request))
     if request.operation_kind != "rules.save":
         raise ValueError("Expected a typed saving throw request")
@@ -125,7 +143,7 @@ def evaluate_bound_save(
     common = _result_identity(request)
     if equipment_rejection := _equipment_rejection(request, loader, common):
         result = equipment_rejection
-    elif any(
+    elif not action_choice and any(
         effect.target_id == request.actor_id
         and not effect.disabled
         and _held_inspiration(effect, loader)

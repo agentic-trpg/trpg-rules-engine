@@ -296,7 +296,7 @@ class CheckPayload(CheckRequest):
 
 
 class SavePayload(EvaluationModel):
-    """Actor makes its own explicitly adjudicated save; no system source ABI."""
+    """Actor makes an adjudicated save; directional cover needs a named actor source."""
 
     kind: Literal["rules.save"]
     target_id: Annotated[str, Field(min_length=1)]
@@ -305,6 +305,18 @@ class SavePayload(EvaluationModel):
     advantage: tuple[AdvantageSource, ...]
     disadvantage: tuple[AdvantageSource, ...]
     is_magical: bool
+    source_id: Annotated[str, Field(min_length=1)] | None = None
+    requires_cover: bool = False
+
+
+class SaveGeometryFact(EvaluationModel):
+    """Host-fixed positions for the declared source and saving target."""
+
+    source_id: Annotated[str, Field(min_length=1)]
+    target_id: Annotated[str, Field(min_length=1)]
+    scene_id: Annotated[str, Field(min_length=1)]
+    source_cell: Annotated[str, Field(min_length=1)]
+    target_cell: Annotated[str, Field(min_length=1)]
 
 
 class RestPayload(EvaluationModel):
@@ -395,6 +407,16 @@ class RuleEvaluationRequest(EvaluationModel):
     creature_sight_facts: tuple[CreatureSightFact, ...] = Field(
         default=(), exclude_if=lambda value: not value
     )
+    save_geometry: SaveGeometryFact | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+
+    @model_validator(mode="after")
+    def save_geometry_scope(self) -> Self:
+        """Keep directional save facts out of unrelated rule operations."""
+        if self.save_geometry is not None and self.operation_kind != "rules.save":
+            raise ValueError("save geometry requires a standalone saving throw")
+        return self
 
     def without_spell_ends(self) -> Self:
         """Return the native cast request after checking the extension's scope."""

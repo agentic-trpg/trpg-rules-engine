@@ -21,6 +21,7 @@ from dnd5e_engine.activities.save import resolve_save
 from dnd5e_engine.evaluation_contracts import (
     RuleEvaluationRequest,
     RuleEvaluationResult,
+    SaveGeometryFact,
     SavePayload,
 )
 from dnd5e_engine.evaluation_effects import effect_state
@@ -101,6 +102,41 @@ def test_standalone_save_admits_complete_canonical_wizard_one_profile():
     assert rejected.error.code == "save.actor"
 
 
+def test_standalone_save_admits_bound_cleric_one_guidance_profile():
+    """The canonical Cleric 1 casting profile enters the shared save admission."""
+    from dnd5e_engine.evaluation import evaluate
+    from tests.test_stateless_spell_feature import healing_case
+
+    original, loader, _, _ = healing_case(spell="guidance")
+    snapshot = original.state_snapshot.model_dump(mode="json")
+    snapshot.pop("combat_state")
+    snapshot["snapshot_kind"] = "non_combat"
+    snapshot["combat_setup"] = None
+    snapshot["character_states"] = [
+        actor for actor in snapshot["character_states"] if actor["entity_id"] == HERO
+    ]
+    request = RuleEvaluationRequest.model_validate_json(
+        json.dumps(
+            {
+                **original.model_dump(mode="json"),
+                "operation_kind": "rules.save",
+                "state_snapshot": snapshot,
+                "payload": {
+                    "kind": "rules.save",
+                    "target_id": HERO,
+                    "ability": "dex",
+                    "dc": 10,
+                    "advantage": [],
+                    "disadvantage": [],
+                    "is_magical": False,
+                },
+            }
+        )
+    )
+    result = asyncio.run(evaluate(request, loader=loader))
+    assert result.status == "accepted", result.error
+
+
 def save_case(
     *,
     ability="str",
@@ -169,6 +205,93 @@ def save_case(
             ),
         }
     ), live
+
+
+def test_standalone_dex_cover_requires_fixed_directional_geometry():
+    """The source side changes cover, while an undeclared save ignores the same map."""
+    from dnd5e_engine.evaluation_saves import _prepare_save, _save_cover, save_geometry_need
+
+    request, _ = save_case(ability="dex", seed=11)
+    target = request.actor_id
+    scene = request.state_snapshot.scene_state
+    grid = scene.grid.model_copy(update={"cover_cells": {"1,1": "half"}})
+    snapshot = request.state_snapshot.model_copy(
+        update={"scene_state": scene.model_copy(update={"grid": grid})}
+    )
+    request = request.model_copy(update={"state_snapshot": snapshot})
+    assert isinstance(_prepare_save(request, save_loader()), tuple)
+    payload = request.payload.model_copy(update={"source_id": "source", "requires_cover": True})
+    across = request.model_copy(
+        update={
+            "payload": payload,
+            "save_geometry": SaveGeometryFact(
+                source_id="source",
+                target_id=target,
+                scene_id=scene.scene_id,
+                source_cell="0,1",
+                target_cell="2,1",
+            ),
+        }
+    )
+    same_side = across.model_copy(
+        update={"save_geometry": across.save_geometry.model_copy(update={"source_cell": "2,0"})}
+    )
+    assert _save_cover(across) == "half"
+    assert _save_cover(same_side) == "none"
+    assert save_geometry_need(across, save_loader()) == ("source", target)
+    assert save_geometry_need(request, save_loader()) is None
+    same_cell = across.model_copy(
+        update={"save_geometry": across.save_geometry.model_copy(update={"source_cell": "2,1"})}
+    )
+    assert _save_cover(same_cell) == "none"
+    assert isinstance(_prepare_save(across, save_loader()), tuple)
+    missing = across.model_copy(update={"save_geometry": None})
+    assert _prepare_save(missing, save_loader())["error"].code == "save.cover"
+    total_grid = grid.model_copy(update={"cover_cells": {"1,1": "total"}})
+    total = across.model_copy(
+        update={
+            "state_snapshot": snapshot.model_copy(
+                update={"scene_state": scene.model_copy(update={"grid": total_grid})}
+            )
+        }
+    )
+    assert _prepare_save(total, save_loader())["error"].code == "save.cover"
+
+
+def test_action_bound_save_keeps_verified_inspiration_for_later_choice():
+    """A valid held grant is inert for the original roll in an action continuation."""
+    from dnd5e_engine.activities.effects import passive_effect_to_active_effect
+    from dnd5e_engine.evaluation import evaluate_bound_action_save, evaluate_bound_save
+
+    request, _ = save_case(ability="dex", seed=3)
+    canonical = BundledAssetLoader()
+    feature = canonical.get_feature("bardic-inspiration")
+    base = save_loader()
+    loader = MemoryAssetLoader(
+        items=[base.get_item(s) for s in base.list_slugs("items")],
+        conditions=[base.get_condition(s) for s in base.list_slugs("conditions")],
+        features=[feature],
+    )
+    effect = effect_state(
+        passive_effect_to_active_effect(
+            feature.passive_effects[0],
+            target_id=request.actor_id,
+            caster_id="bard",
+            extra_flags={"bardic_inspiration": {"grant_id": "grant.1", "die_sides": 8}},
+        )
+    )
+    request = request.model_copy(
+        update={
+            "state_snapshot": request.state_snapshot.model_copy(
+                update={"effect_states": (effect,)}
+            ),
+            "ruleset_binding": ruleset_binding(loader),
+        }
+    )
+    assert evaluate_bound_save(request, loader=loader).error.code == "save.choice"
+    result = evaluate_bound_action_save(request, loader=loader)
+    assert result.status == "accepted", result.error
+    assert result.proposed_events[0].roll_detail.status == "rolled"
 
 
 def legacy_save(request, live):
@@ -443,9 +566,9 @@ def test_post_draw_fault_is_unpublished_and_inputs_unchanged(monkeypatch, fault)
 
     original = evaluation_saves.resolve_snapshot_save
 
-    def fail(state, payload, rng, *, bonus_dice, equipment_bonus):
+    def fail(state, payload, rng, *, bonus_dice, equipment_bonus, cover):
         event = original(
-            state, payload, rng, bonus_dice=bonus_dice, equipment_bonus=equipment_bonus
+            state, payload, rng, bonus_dice=bonus_dice, equipment_bonus=equipment_bonus, cover=cover
         )
         assert event.natural == 13
         assert event.roll_total == 20
@@ -480,6 +603,13 @@ def test_complete_dependency_refusal_before_rng(monkeypatch, bad):
         grid = snapshot.scene_state.grid.model_copy(update={"cover_cells": {"0,0": "half"}})
         snapshot = snapshot.model_copy(
             update={"scene_state": snapshot.scene_state.model_copy(update={"grid": grid})}
+        )
+        request = request.model_copy(
+            update={
+                "payload": request.payload.model_copy(
+                    update={"ability": "dex", "requires_cover": True}
+                )
+            }
         )
     elif bad == "armor":
         actor = actor.model_copy(update={"shield_equipped": True})

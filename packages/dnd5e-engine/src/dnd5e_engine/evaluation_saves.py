@@ -5,7 +5,7 @@ from collections.abc import Iterable
 from functools import lru_cache
 from hashlib import sha256
 from json import dumps
-from typing import Literal, get_args
+from typing import Literal, NamedTuple, get_args
 
 from dnd5e_srd_data.loader import AssetLoader, BundledAssetLoader
 from dnd5e_srd_data.schema.item import Weapon
@@ -39,6 +39,8 @@ from dnd5e_engine.rules.conditions import (
     d20_test_penalty,
     project_passive_save_modifiers,
 )
+from dnd5e_engine.spatial import GridTopology, canonical_cell_id
+from dnd5e_engine.specs import GridScene
 
 _SAVE_SPELL_DICE: dict[str, tuple[str, Literal[-1, 1]]] = {
     "effect:blessed": ("bless", 1),
@@ -51,7 +53,32 @@ type _PreparedSave = tuple[
     list[EffectState],
     tuple[SaveBonusDie, ...],
     tuple[str, int] | None,
+    str,
 ]
+
+
+class SaveGeometryNeed(NamedTuple):
+    """Exact actor pair whose World positions a directional save requires."""
+
+    source_id: str
+    target_id: str
+
+
+def save_geometry_need(
+    request: RuleEvaluationRequest, loader: AssetLoader
+) -> SaveGeometryNeed | None:
+    """Declare bounded source/target position facts after checking the rules binding."""
+    verify_ruleset(request.ruleset_binding, loader)
+    payload = request.payload
+    if (
+        request.operation_kind == "rules.save"
+        and isinstance(payload, SavePayload)
+        and payload.requires_cover
+        and payload.ability == "dex"
+        and payload.source_id is not None
+    ):
+        return SaveGeometryNeed(payload.source_id, payload.target_id)
+    return None
 
 
 def reviewed_held_save_weapon(item: Weapon) -> bool:
@@ -186,6 +213,9 @@ def project_save_bonus_dice(
     for ordinal, effect in enumerate(effects):
         if effect.disabled:
             continue
+        if _held_inspiration(effect, loader):
+            # The optional die is a later choice, not an automatic save bonus.
+            continue
         rule = _SAVE_SPELL_DICE.get(effect.id)
         if rule is None:
             if allow_lifecycle_marker and (
@@ -240,10 +270,11 @@ def resolve_snapshot_save(
     *,
     bonus_dice: tuple[SaveBonusDie, ...] = (),
     equipment_bonus: tuple[str, int] | None = None,
+    cover: str = "none",
 ) -> SaveRolled:
     """Shared calculation seam; caller must prove full modifier/lifecycle admission."""
     roll = roll_snapshot_save(
-        state, payload, rng, bonus_dice=bonus_dice, equipment_bonus=equipment_bonus
+        state, payload, rng, bonus_dice=bonus_dice, equipment_bonus=equipment_bonus, cover=cover
     )
     return SaveRolled(
         target_id=state.entity_id,
@@ -266,8 +297,9 @@ def roll_snapshot_save(
     *,
     bonus_dice: tuple[SaveBonusDie, ...] = (),
     equipment_bonus: tuple[str, int] | None = None,
+    cover: str = "none",
 ) -> SaveRoll:
-    """Roll with admitted actor and held-item facts using the supplied RNG."""
+    """Roll with admitted actor, held item and directional cover using supplied RNG."""
     target = combatant(state)
     projected = project_passive_save_modifiers([c.condition for c in target.conditions])
     ctx = ActivityResolutionContext(
@@ -287,6 +319,7 @@ def roll_snapshot_save(
         passive_save_auto_fail={target.entity_id: projected["passive_save_auto_fail"]},
         d20_test_penalty={target.entity_id: d20_test_penalty(target.conditions)},
         save_is_magical=payload.is_magical,
+        target_cover={target.entity_id: cover},
     )
     profile = save_modifier(target, payload.ability)
     return roll_save(
@@ -294,7 +327,7 @@ def roll_snapshot_save(
         target,
         payload.ability,
         payload.dc,
-        ignore_cover=True,
+        ignore_cover=not payload.requires_cover,
         additional_sources=AdvantageSources(
             advantage=payload.advantage, disadvantage=payload.disadvantage
         ),
@@ -413,10 +446,15 @@ def _prepare_save(
     target = next((a for a in snapshot.character_states if a.entity_id == payload.target_id), None)
     if target is None or not target.is_alive or target.hp_current <= 0:
         return _refuse("rejected", "target_invalid", "saving actor is absent, dead or dying")
-    if snapshot.scene_state.grid.cover_cells:
-        return _refuse(
-            "unsupported", "save.cover", "cover needs a complete source geometry contract"
-        )
+    if payload.requires_cover and (payload.ability != "dex" or payload.source_id is None):
+        return _refuse("unsupported", "save.cover", "Dexterity cover needs a named source")
+    if not payload.requires_cover and request.save_geometry is not None:
+        return _refuse("rejected", "save.cover", "unrequested save geometry was supplied")
+    cover = _save_cover(request) if payload.requires_cover else "none"
+    if cover is None:
+        return _refuse("unsupported", "save.cover", "source or target geometry is missing")
+    if cover == "total":
+        return _refuse("unsupported", "save.cover", "total cover needs effect applicability")
     active_effects = [
         effect
         for effect in snapshot.effect_states
@@ -456,8 +494,8 @@ def _prepare_save(
         return _refuse(
             "unsupported", "save.conditions", "condition lifecycle dependencies are not migrated"
         )
-    # Only the complete canonical Wizard 1 profile has been reviewed for this
-    # standalone save. Other classes and subclasses retain their dependency gate.
+    # Only these complete canonical level-one profiles are admitted here;
+    # class_dependencies still checks their exact grants, pools and binding.
     reviewed_identity = False
     if target.classes or target.class_slug or target.granted_features:
         from dnd5e_engine.evaluation_class_dependencies import class_dependencies
@@ -466,9 +504,11 @@ def _prepare_save(
         levels = target.classes or (
             {target.class_slug: target.character_level} if target.class_slug else {}
         )
-        if levels != {"wizard": 1} or target.subclass_slug is not None:
+        if levels not in ({"wizard": 1}, {"cleric": 1}) or target.subclass_slug is not None:
             return _refuse(
-                "unsupported", "save.actor", "only the Wizard 1 class profile is reviewed"
+                "unsupported",
+                "save.actor",
+                "only Wizard 1 and Cleric 1 class profiles are reviewed",
             )
         failure = class_dependencies(target, snapshot, loader, get_default_ruleset())
         if failure:
@@ -491,7 +531,33 @@ def _prepare_save(
         is_reviewed_beacon_effect(effect, loader) for effect in active_effects
     ):
         payload = payload.model_copy(update={"advantage": (*payload.advantage, "effect")})
-    return target, payload, active_effects, bonus_dice, equipment_bonus
+    return target, payload, active_effects, bonus_dice, equipment_bonus, cover
+
+
+def _save_cover(request: RuleEvaluationRequest) -> str | None:
+    """Resolve the required directional cover from fixed cells and scene geometry."""
+    fact = request.save_geometry
+    payload = request.payload
+    if not isinstance(payload, SavePayload) or fact is None:
+        return None
+    scene = request.state_snapshot.scene_state
+    if (
+        fact.source_id != payload.source_id
+        or fact.source_id == fact.target_id
+        or fact.target_id != payload.target_id
+        or fact.scene_id != scene.scene_id
+    ):
+        return None
+    grid = GridTopology(GridScene.model_validate(scene.grid.model_dump()))
+    try:
+        if any(
+            canonical_cell_id(cell) != cell or grid.distance_ft(cell, cell) is None
+            for cell in (fact.source_cell, fact.target_cell)
+        ):
+            return None
+        return grid.cover_between(fact.source_cell, fact.target_cell)
+    except ValueError:
+        return None
 
 
 def save_bardic_fingerprint(request: RuleEvaluationRequest, loader: AssetLoader) -> str:
@@ -502,7 +568,7 @@ def save_bardic_fingerprint(request: RuleEvaluationRequest, loader: AssetLoader)
     prepared = _prepare_save(request, loader)
     if not isinstance(prepared, tuple):
         raise ValueError("saving throw was rejected")  # noqa: TRY004
-    target, payload, effects, bonus_dice, equipment_bonus = prepared
+    target, payload, effects, bonus_dice, equipment_bonus, cover = prepared
     roller = combatant(target)
     selected = getattr(roller, _SCORE_ATTR[payload.ability])
     condition_projection = project_passive_save_modifiers(
@@ -527,6 +593,12 @@ def save_bardic_fingerprint(request: RuleEvaluationRequest, loader: AssetLoader)
         ],
         "bonus_dice": [(die.source, die.sides, die.sign) for die in bonus_dice],
         "equipment_bonus": equipment_bonus,
+        "cover": cover if payload.requires_cover else None,
+        "save_geometry": (
+            request.save_geometry.model_dump(mode="json")
+            if request.save_geometry is not None
+            else None
+        ),
     }
     return sha256(dumps(facts, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
@@ -584,11 +656,16 @@ def evaluate_save(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
     prepared = _prepare_save(request, loader)
     if not isinstance(prepared, tuple):
         return prepared
-    target, payload, _, bonus_dice, equipment_bonus = prepared
+    target, payload, _, bonus_dice, equipment_bonus, cover = prepared
     snapshot = request.state_snapshot
     rng = request.rng_context.state.restore()
     event = resolve_snapshot_save(
-        target, payload, rng, bonus_dice=bonus_dice, equipment_bonus=equipment_bonus
+        target,
+        payload,
+        rng,
+        bonus_dice=bonus_dice,
+        equipment_bonus=equipment_bonus,
+        cover=cover,
     )
     return dict(
         status="accepted",

@@ -29,6 +29,7 @@ from dnd5e_engine.evaluation_contracts import (
     MechanismSaveNotApplicable,
     RadialMechanismPulse,
     RuleEvaluationRequest,
+    SaveNotApplicable,
     SavePayload,
 )
 from dnd5e_engine.evaluation_delta import StateDelta
@@ -97,20 +98,23 @@ def save_geometry_need(
     verify_ruleset(request.ruleset_binding, loader)
     payload = request.payload
     if (
-        request.operation_kind == "rules.save"
-        and isinstance(payload, SavePayload)
-        and payload.requires_cover
-        and payload.ability == "dex"
-        and payload.source_id is not None
+        request.operation_kind != "rules.save"
+        or not isinstance(payload, SavePayload)
+        or payload.source_id is None
     ):
-        source = request.mechanism_save_source
-        return SaveGeometryNeed(
-            payload.source_id,
-            payload.target_id,
-            "actor" if source is None else "world_object",
-            isinstance(source.effect_reach, DirectMechanismEffect) if source else False,
-        )
-    return None
+        return None
+    mechanism = request.mechanism_save_source
+    reach = mechanism.effect_reach if mechanism is not None else payload.effect_reach
+    if reach is None and not (payload.requires_cover and payload.ability == "dex"):
+        return None
+    source_kind = "world_object" if mechanism is not None else payload.source_kind
+    return SaveGeometryNeed(
+        payload.source_id,
+        payload.target_id,
+        source_kind,
+        isinstance(reach, DirectMechanismEffect)
+        or (source_kind == "world_object" and reach is None),
+    )
 
 
 def reviewed_held_save_weapon(item: Weapon) -> bool:
@@ -544,17 +548,30 @@ def _prepare_save(
     assert isinstance(payload, SavePayload)
     if not isinstance(snapshot, NonCombatSnapshot) or snapshot.combat_setup is not None:
         return _refuse("unsupported", "save.snapshot", "standalone save requires noncombat facts")
+    if payload.target_id != request.actor_id:
+        return _refuse("rejected", "target_invalid", "Save target differs from the actor")
     target = next((a for a in snapshot.character_states if a.entity_id == payload.target_id), None)
     if target is None or not target.is_alive or target.hp_current <= 0:
         return _refuse("rejected", "target_invalid", "saving actor is absent, dead or dying")
-    if payload.requires_cover and (payload.ability != "dex" or payload.source_id is None):
+    if payload.source_id is None and (
+        payload.effect_reach is not None or payload.source_kind == "world_object"
+    ):
+        return _refuse("rejected", "save.source", "A source ID is required")
+    if (
+        payload.effect_reach is None
+        and payload.requires_cover
+        and (payload.ability != "dex" or payload.source_id is None)
+    ):
         return _refuse("unsupported", "save.cover", "Dexterity cover needs a named source")
-    if not payload.requires_cover and request.save_geometry is not None:
+    if payload.requires_cover and isinstance(payload.effect_reach, RadialMechanismPulse):
+        return _refuse("rejected", "save.reach", "A radial pulse is independent of cover")
+    needs_geometry = payload.requires_cover or payload.effect_reach is not None
+    if not needs_geometry and request.save_geometry is not None:
         return _refuse("rejected", "save.cover", "unrequested save geometry was supplied")
-    cover = _save_cover(request) if payload.requires_cover else "none"
+    cover = _save_cover(request) if needs_geometry else "none"
     if cover is None:
         return _refuse("unsupported", "save.cover", "source or target geometry is missing")
-    if isinstance(cover, MechanismSaveNotApplicable):
+    if isinstance(cover, (MechanismSaveNotApplicable, SaveNotApplicable)):
         context = request.rng_context
         return dict(
             status="accepted",
@@ -647,18 +664,22 @@ def _prepare_save(
     return target, payload, active_effects, bonus_dice, equipment_bonus, cover
 
 
-def _save_cover(request: RuleEvaluationRequest) -> str | MechanismSaveNotApplicable | None:
+def _save_cover(
+    request: RuleEvaluationRequest,
+) -> str | MechanismSaveNotApplicable | SaveNotApplicable | None:
     """Apply source-specific reach and directional cover using fixed World facts."""
     fact = request.save_geometry
     payload = request.payload
     if not isinstance(payload, SavePayload) or fact is None:
         return None
     scene = request.state_snapshot.scene_state
-    source = request.mechanism_save_source
+    mechanism = request.mechanism_save_source
+    source_kind = "world_object" if mechanism is not None else payload.source_kind
+    reach = mechanism.effect_reach if mechanism is not None else payload.effect_reach
     if (
         fact.source_id != payload.source_id
-        or fact.source_kind != ("actor" if source is None else "world_object")
-        or (source is None and (fact.source_id == fact.target_id or fact.object_cover))
+        or fact.source_kind != source_kind
+        or (source_kind == "actor" and fact.source_id == fact.target_id)
         or fact.target_id != payload.target_id
         or fact.scene_id != scene.scene_id
     ):
@@ -671,9 +692,10 @@ def _save_cover(request: RuleEvaluationRequest) -> str | MechanismSaveNotApplica
             for cell in (origin, target)
         ):
             return None
-        if source is None:
+        if reach is None and source_kind == "actor":
+            if fact.object_cover:
+                return None
             return grid.cover_between(origin, target)
-        reach = source.effect_reach
         reason: Literal["total_cover", "out_of_range"]
         if isinstance(reach, RadialMechanismPulse):
             if fact.object_cover:
@@ -688,7 +710,8 @@ def _save_cover(request: RuleEvaluationRequest) -> str | MechanismSaveNotApplica
             if fact.object_cover:
                 ray = set(cover_ray_cells(origin, target))
                 if any(
-                    obstacle.cell not in ray or obstacle.object_id == source.object_id
+                    obstacle.cell not in ray
+                    or (source_kind == "world_object" and obstacle.object_id == fact.source_id)
                     for obstacle in fact.object_cover
                 ):
                     return None
@@ -699,11 +722,20 @@ def _save_cover(request: RuleEvaluationRequest) -> str | MechanismSaveNotApplica
                 )
                 if cover != "total":
                     return cover
+            if reach is None:
+                return "total"
             reason = "total_cover"
-        return MechanismSaveNotApplicable(
+        if mechanism is not None:
+            return MechanismSaveNotApplicable(
+                target_id=payload.target_id,
+                mechanism_object_id=mechanism.object_id,
+                source_ref=mechanism.source_ref,
+                reason=reason,
+            )
+        return SaveNotApplicable(
             target_id=payload.target_id,
-            mechanism_object_id=source.object_id,
-            source_ref=source.source_ref,
+            source_id=fact.source_id,
+            source_kind=fact.source_kind,
             reason=reason,
         )
     except ValueError:
@@ -743,7 +775,7 @@ def save_bardic_fingerprint(request: RuleEvaluationRequest, loader: AssetLoader)
         ],
         "bonus_dice": [(die.source, die.sides, die.sign) for die in bonus_dice],
         "equipment_bonus": equipment_bonus,
-        "cover": cover if payload.requires_cover else None,
+        "cover": cover if request.save_geometry is not None else None,
         "save_geometry": (
             request.save_geometry.model_dump(mode="json")
             if request.save_geometry is not None

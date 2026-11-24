@@ -25,10 +25,12 @@ from dnd5e_engine.evaluation_contracts import (
     DirectMechanismEffect,
     MechanismSaveNotApplicable,
     MechanismSaveSource,
+    RadialMechanismPulse,
     RuleEvaluationRequest,
     RuleEvaluationResult,
     SaveCoverObstacle,
     SaveGeometryFact,
+    SaveNotApplicable,
     SavePayload,
 )
 from dnd5e_engine.evaluation_effects import effect_state
@@ -332,6 +334,78 @@ def test_mechanism_save_requires_exact_world_geometry_and_has_typed_no_save_outc
         rejection = evaluate_bound_save(invalid, loader=loader)
         assert rejection.status == "unsupported"
         assert rejection.rng_transition is None
+
+
+@pytest.mark.parametrize(
+    ("reach", "obstacles", "ability", "expected"),
+    [
+        (DirectMechanismEffect(kind="direct"), "total", "dex", "total_cover"),
+        (DirectMechanismEffect(kind="direct"), "total", "wis", "total_cover"),
+        (DirectMechanismEffect(kind="direct"), "three_quarters", "dex", 5),
+        (DirectMechanismEffect(kind="direct"), "half", "wis", 0),
+        (RadialMechanismPulse(kind="radial_pulse", radius_ft=5), None, "dex", "out_of_range"),
+        (RadialMechanismPulse(kind="radial_pulse", radius_ft=10), None, "dex", 0),
+    ],
+)
+def test_explicit_world_save_reach(reach, obstacles, ability, expected):
+    """Only a reached target rolls, using Dexterity-only partial cover."""
+    original, _ = save_case(ability=ability)
+    loader = save_loader()
+    wire = original.model_dump(mode="json")
+    wire["payload"].update(
+        source_id="object.nozzle", source_kind="world_object", effect_reach=reach.model_dump()
+    )
+    request = RuleEvaluationRequest.model_validate_json(json.dumps(wire))
+    assert evaluation_saves.save_geometry_need(request, loader) == (
+        "object.nozzle",
+        request.actor_id,
+        "world_object",
+        isinstance(reach, DirectMechanismEffect),
+    )
+    missing = evaluate_bound_save(request, loader=loader)
+    assert (missing.status, missing.error.code) == ("unsupported", "save.cover")
+    assert missing.proposed_events == ()
+    assert missing.rng_transition is None
+    wire["save_geometry"] = {
+        "source_id": "object.nozzle",
+        "source_kind": "world_object",
+        "target_id": request.actor_id,
+        "scene_id": request.state_snapshot.scene_state.scene_id,
+        "source_cell": "0,1",
+        "target_cell": "2,1",
+        "object_cover": (
+            [{"object_id": "object.block", "cell": "1,1", "degree": obstacles}]
+            if obstacles is not None
+            else []
+        ),
+    }
+    request = RuleEvaluationRequest.model_validate_json(json.dumps(wire))
+    result = evaluate_bound_save(request, loader=loader)
+    result = RuleEvaluationResult.model_validate_json(result.model_dump_json())
+    result.verify_request(request)
+    assert result.status == "accepted", result
+    assert result.state_delta.operations == ()
+    (event,) = result.proposed_events
+    if isinstance(expected, str):
+        assert event == SaveNotApplicable(
+            target_id=request.actor_id,
+            source_id="object.nozzle",
+            source_kind="world_object",
+            reason=expected,
+        )
+        assert result.rng_transition.next_state == request.rng_context.state
+        assert not result.rng_transition.state_changed
+        wire["payload"]["effect_reach"] = None
+        altered = RuleEvaluationRequest.model_validate_json(json.dumps(wire))
+        with pytest.raises(ValueError, match="adjudicated save source and reach"):
+            result.verify_request(altered)
+    else:
+        assert isinstance(event, SaveRolled)
+        assert result.rng_transition.state_changed
+        assert (
+            sum(mod.value for mod in event.roll_detail.modifiers if mod.source == "cover")
+            == expected
+        )
 
 
 def test_action_bound_save_keeps_verified_inspiration_for_later_choice():

@@ -311,8 +311,30 @@ class CheckPayload(CheckRequest):
     redeem_granted_die: GrantedDie | None = Field(...)
 
 
+class DirectMechanismEffect(EvaluationModel):
+    """Effect that must target directly and respects directional cover."""
+
+    kind: Literal["direct"]
+
+
+class RadialMechanismPulse(EvaluationModel):
+    """Pulse reaching all cells within its radius, independently of cover."""
+
+    kind: Literal["radial_pulse"]
+    radius_ft: Annotated[int, Field(ge=1)]
+
+
+type MechanismEffectReach = Annotated[
+    DirectMechanismEffect | RadialMechanismPulse, Field(discriminator="kind")
+]
+
+
 class SavePayload(EvaluationModel):
-    """Actor makes an adjudicated save; directional cover needs a named source."""
+    """Adjudicate one save with optional actor or World-object source and reach.
+
+    The legacy Dexterity cover flag without reach adds partial cover but cannot
+    adjudicate total cover. Explicit reach determines whether the effect arrives.
+    """
 
     kind: Literal["rules.save"]
     target_id: Annotated[str, Field(min_length=1)]
@@ -323,24 +345,12 @@ class SavePayload(EvaluationModel):
     is_magical: bool
     source_id: Annotated[str, Field(min_length=1)] | None = None
     requires_cover: bool = False
-
-
-class DirectMechanismEffect(EvaluationModel):
-    """Package effect that must target directly and respects directional cover."""
-
-    kind: Literal["direct"]
-
-
-class RadialMechanismPulse(EvaluationModel):
-    """Package pulse reaching all cells within its radius, independently of cover."""
-
-    kind: Literal["radial_pulse"]
-    radius_ft: Annotated[int, Field(ge=1)]
-
-
-type MechanismEffectReach = Annotated[
-    DirectMechanismEffect | RadialMechanismPulse, Field(discriminator="kind")
-]
+    source_kind: Literal["actor", "world_object"] = Field(
+        default="actor", exclude_if=lambda value: value == "actor"
+    )
+    effect_reach: MechanismEffectReach | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
 
 class MechanismSaveSource(EvaluationModel):
@@ -396,6 +406,39 @@ class MechanismSaveNotApplicable(EvaluationModel):
             != isinstance(source.effect_reach, DirectMechanismEffect)
         ):
             raise ValueError("outcome differs from admitted mechanism save source")
+
+
+class SaveNotApplicable(EvaluationModel):
+    """An explicit adjudicated effect did not reach the saving actor."""
+
+    type: Literal["save_not_applicable"] = "save_not_applicable"
+    target_id: str
+    source_id: str
+    source_kind: Literal["actor", "world_object"]
+    reason: Literal["total_cover", "out_of_range"]
+
+    def verify_source(self, request: "RuleEvaluationRequest") -> None:
+        """Check the outcome belongs to the fixed standalone source and reach."""
+        payload = request.payload
+        fact = request.save_geometry
+        if (
+            request.operation_kind != "rules.save"
+            or request.mechanism_save_source is not None
+            or not isinstance(payload, SavePayload)
+            or fact is None
+            or payload.effect_reach is None
+            or self.target_id != request.actor_id
+            or self.target_id != payload.target_id
+            or self.target_id != fact.target_id
+            or self.source_id != payload.source_id
+            or self.source_id != fact.source_id
+            or self.source_kind != payload.source_kind
+            or self.source_kind != fact.source_kind
+            or fact.scene_id != request.state_snapshot.scene_state.scene_id
+            or (self.reason == "total_cover")
+            != isinstance(payload.effect_reach, DirectMechanismEffect)
+        ):
+            raise ValueError("outcome differs from adjudicated save source and reach")
 
 
 class RestPayload(EvaluationModel):
@@ -507,6 +550,8 @@ class RuleEvaluationRequest(EvaluationModel):
             or self.payload.ability != "dex"
             or self.payload.target_id != self.actor_id
             or not self.payload.requires_cover
+            or self.payload.source_kind != "actor"
+            or self.payload.effect_reach is not None
         ):
             raise ValueError("mechanism context requires its exact Dexterity save")
         return self
@@ -1014,7 +1059,8 @@ class PreflightChoice(EvaluationModel):
 
 ProposedEvents = tuple[
     Annotated[
-        CombatEvent | ObjectIdentified | MechanismSaveNotApplicable, Field(discriminator="type")
+        CombatEvent | ObjectIdentified | MechanismSaveNotApplicable | SaveNotApplicable,
+        Field(discriminator="type"),
     ],
     ...,
 ]
@@ -1079,6 +1125,7 @@ class RuleEvaluationResult(EvaluationModel):
                 *ALL_COMBAT_EVENT_TYPES,
                 ObjectIdentified,
                 MechanismSaveNotApplicable,
+                SaveNotApplicable,
             )
             kinds = {
                 model.model_fields["type"].default: set(model.model_fields)
@@ -1180,10 +1227,11 @@ class RuleEvaluationResult(EvaluationModel):
         return self
 
     @model_validator(mode="after")
-    def validate_mechanism_save_outcome(self) -> Self:
+    def validate_no_save_outcome(self) -> Self:
         """A no-save outcome is the sole proposal and carries no state changes."""
         if any(
-            isinstance(event, MechanismSaveNotApplicable) for event in self.proposed_events
+            isinstance(event, (MechanismSaveNotApplicable, SaveNotApplicable))
+            for event in self.proposed_events
         ) and (
             len(self.proposed_events) != 1
             or self.state_delta is None
@@ -1191,7 +1239,7 @@ class RuleEvaluationResult(EvaluationModel):
             or self.rng_transition is None
             or self.rng_transition.state_changed
         ):
-            raise ValueError("non-applicable mechanism save cannot draw or propose changes")
+            raise ValueError("non-applicable save cannot draw or propose changes")
         return self
 
     def without_spell_ends(
@@ -1244,7 +1292,7 @@ class RuleEvaluationResult(EvaluationModel):
         ):
             raise ValueError("result does not match request identity/version/binding")
         for event in self.proposed_events:
-            if isinstance(event, MechanismSaveNotApplicable):
+            if isinstance(event, (MechanismSaveNotApplicable, SaveNotApplicable)):
                 event.verify_source(request)
         if request.schema_version == SPELL_TERMINATION_SCHEMA_VERSION:
             self.without_spell_ends(request, loader=loader)
@@ -1340,7 +1388,7 @@ class RuleEvaluationResult(EvaluationModel):
     def _combat_events(self) -> tuple[CombatEvent, ...]:
         """Return only an audited combat event stream for stage and effect verifiers."""
         if any(
-            isinstance(event, (ObjectIdentified, MechanismSaveNotApplicable))
+            isinstance(event, (ObjectIdentified, MechanismSaveNotApplicable, SaveNotApplicable))
             for event in self.proposed_events
         ):
             raise ValueError("private exploration events are outside combat evidence")

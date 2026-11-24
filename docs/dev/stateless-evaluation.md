@@ -873,6 +873,23 @@ command. The stage owns the trigger, choice admission, and result adoption.
 Short-rest evidence retains each original Hit Die face and Constitution modifier
 as well as its adjusted healing, without an extra RNG draw.
 
+### Standalone saving throw source and reach in evaluator /70
+
+`rules.save` accepts an optional `source_id` with `source_kind` of `actor` (the
+default) or `world_object`. The host validates the source identity. RE declares the
+current scene positions and any local ray cover needed by the requested rule.
+`effect_reach` can describe a `direct` effect, which respects directional cover,
+or a `radial_pulse` with `radius_ft`, which only checks distance. Legacy
+`requires_cover` on Dexterity saves still supports partial cover with no explicit
+reach. Full cover in that legacy input still requires effect reach to adjudicate.
+
+A blocked explicit effect returns an accepted `save_not_applicable` proposal with
+the exact source, target and `total_cover` or `out_of_range` reason. Its Delta is
+empty and RNG unchanged. Reached Dexterity saves use the shared cover modifier
+and d20 path. Missing necessary geometry is a refusal. An admitted mechanism
+trigger still uses its own action result type, and SM owns world changes and
+committed events.
+
 ## R16 explicit resources and bounded Short Rest
 
 Snapshot /8 requires `resource_state: ResourceState | None` on both scene contexts.

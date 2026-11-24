@@ -17,6 +17,11 @@
 当前 Stateless 路径不持有跨请求世界权威、不读 SM SQL、不提交 SM 世界事实。
 但 Legacy combat loop 和 Bridge 确有进程内工作状态，不能说全仓库所有路径都无状态。
 
+独立 `rules.save` 允许主持为当前 PC 指定确切角色或 World 物体来源。
+RE 声明所需空间事实，并按已提供的效果到达方式裁定掩护或距离。
+完全掩护阻断直接效果时，RE 向 SM 返回无骰点、无 RNG 变化的效果不适用提案。
+见[独立豁免的来源和到达方式](dev/stateless-evaluation.md#standalone-saving-throw-source-and-reach-in-evaluator-70)。
+
 Stateless 转换仍是受限能力集。Legacy 和 Demo 中可运行的能力，不自动表示新的
 Stateless 接口或 SM pin／采用白名单支持它；完整迁移与跨仓库 ABI 批准单独跟踪。
 本库的 Bridge HTTP 和 Demo 也不代表 Agentic TRPG 已交付完整 Host／玩家 UI。

@@ -905,6 +905,7 @@ def verify_bound_faerie_result(
     payload, snapshot = request.payload, request.state_snapshot
     if (
         request.schema_version != FAERIE_FIRE_SCHEMA_VERSION
+        or request.operation_kind != "world.cast_spell"
         or not isinstance(payload, ExplorationEnvironmentalSpellCastPayload)
         or not isinstance(snapshot, NonCombatSnapshot)
     ):
@@ -914,6 +915,9 @@ def verify_bound_faerie_result(
     )
     if (
         caster is None
+        or not caster.is_alive
+        or caster.hp_current <= 0
+        or conditions_block_actions([condition.condition for condition in caster.conditions])
         or not _slot_valid(payload, spell)
         or _target_failure(request, spell)
         or not exploration_spell_reaches(request, snapshot, spell)
@@ -1077,11 +1081,14 @@ def verify_environmental_cast(
         raise TypeError("environmental effect requires its original spatial world request")
     spell = _reviewed_spell(payload.spell_id)
     if request.schema_version == FAERIE_FIRE_SCHEMA_VERSION:
-        if spell is None or result.state_delta is None:
-            raise ValueError("Faerie Fire result lacks its reviewed spell or delta")
-        operations, events, transition, _ = _faerie_plan(
-            request, spell, loader if loader is not None else BundledAssetLoader()
-        )
+        assets = loader if loader is not None else BundledAssetLoader()
+        if (
+            spell is None
+            or assets.get_spell(payload.spell_id) != spell
+            or result.state_delta is None
+        ):
+            raise ValueError("Faerie Fire result lacks its reviewed bound spell or delta")
+        operations, events, transition, _ = _faerie_plan(request, spell, assets)
         if (
             result.state_delta.operations != operations
             or result.proposed_events != events

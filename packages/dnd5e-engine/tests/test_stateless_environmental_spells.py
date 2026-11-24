@@ -321,7 +321,6 @@ def test_faerie_continuation_keeps_original_save_and_exact_grant(use, monkeypatc
     assert complete.steps[1].final is not None
     assert complete.spent_grants == ((grant,) if use else ())
     monkeypatch.setattr(module, "resolve_snapshot_save", original_resolver)
-    monkeypatch.setattr(module, "resolve_snapshot_save", original_resolver)
     assert verify_bound_faerie_result(complete.result, request, complete.steps, loader=loader) == (
         (grant,) if use else ()
     )
@@ -577,7 +576,9 @@ def test_faerie_fire_rejects_unreviewed_save_source_before_any_target_roll(monke
 @pytest.mark.parametrize("change", ["ability", "dc"])
 def test_faerie_fire_rejects_bound_unreviewed_save_activity(change):
     """A consistent ruleset binding alone cannot admit a changed save profile."""
-    wire, _ = _faerie_wire()
+    wire, original_loader = _faerie_wire()
+    original = execute(_request(wire), original_loader)
+    assert original.status == "accepted"
     canonical = BundledAssetLoader()
     spell = canonical.get_spell("faerie-fire")
     spell_data = spell.model_dump()
@@ -594,11 +595,29 @@ def test_faerie_fire_rejects_bound_unreviewed_save_activity(change):
         )
     )
     wire["ruleset_binding"] = ruleset_binding(loader).model_dump(mode="json")
-    result = execute(_request(wire), loader)
+    request = _request(wire)
+    result = execute(request, loader)
     assert (result.status, result.error.code) == ("unsupported", "spell.asset")
     assert result.state_delta is None
     assert result.proposed_events == ()
     assert result.rng_transition is None
+    proposal = original.model_copy(update={"input_ruleset_binding": request.ruleset_binding})
+    with pytest.raises(ValueError, match="reviewed bound spell"):
+        proposal.verify_request(request, loader=loader)
+
+
+def test_faerie_verifier_rejects_caster_unable_to_act():
+    """A final staged result is subject to the ordinary caster admission."""
+    wire, loader = _faerie_wire()
+    progress = evaluate_bound_faerie_step(_request(wire), loader=loader)
+    assert progress.result is not None
+    caster = next(
+        actor for actor in wire["state_snapshot"]["character_states"] if actor["entity_id"] == HERO
+    )
+    caster["hp_current"] = 0
+    refused = _request(wire)
+    with pytest.raises(ValueError, match="fixed cast facts"):
+        verify_bound_faerie_result(progress.result, refused, progress.steps, loader=loader)
 
 
 @pytest.mark.parametrize("point", [False, True])

@@ -20,9 +20,14 @@ from dnd5e_engine.activities.build_context import build_activity_context
 from dnd5e_engine.activities.effects import passive_effect_to_active_effect
 from dnd5e_engine.activities.save import resolve_save
 from dnd5e_engine.effect_lifecycle import conditions_after_effect_application
+from dnd5e_engine.evaluation import evaluate_bound_save
 from dnd5e_engine.evaluation_contracts import (
+    DirectMechanismEffect,
+    MechanismSaveNotApplicable,
+    MechanismSaveSource,
     RuleEvaluationRequest,
     RuleEvaluationResult,
+    SaveCoverObstacle,
     SaveGeometryFact,
     SavePayload,
 )
@@ -243,7 +248,7 @@ def test_standalone_dex_cover_requires_fixed_directional_geometry():
     )
     assert _save_cover(across) == "half"
     assert _save_cover(same_side) == "none"
-    assert save_geometry_need(across, save_loader()) == ("source", target)
+    assert save_geometry_need(across, save_loader()) == ("source", target, "actor", False)
     assert save_geometry_need(request, save_loader()) is None
     same_cell = across.model_copy(
         update={"save_geometry": across.save_geometry.model_copy(update={"source_cell": "2,1"})}
@@ -263,10 +268,73 @@ def test_standalone_dex_cover_requires_fixed_directional_geometry():
     assert _prepare_save(total, save_loader())["error"].code == "save.cover"
 
 
+def test_mechanism_save_requires_exact_world_geometry_and_has_typed_no_save_outcome():
+    request, _ = save_case(ability="dex")
+    source = MechanismSaveSource(
+        object_id="object.nozzle",
+        source_ref="mechanism.fixture",
+        effect_reach=DirectMechanismEffect(kind="direct"),
+    )
+    request = request.model_copy(
+        update={
+            "payload": request.payload.model_copy(
+                update={"source_id": source.object_id, "requires_cover": True}
+            ),
+            "mechanism_save_source": source,
+        }
+    )
+    loader = save_loader()
+    assert evaluation_saves.save_geometry_need(request, loader) == (
+        source.object_id,
+        request.actor_id,
+        "world_object",
+        True,
+    )
+    missing = evaluate_bound_save(request, loader=loader)
+    assert missing.status == "unsupported"
+    assert missing.rng_transition is None
+    geometry = SaveGeometryFact(
+        source_id=source.object_id,
+        target_id=request.actor_id,
+        scene_id=request.state_snapshot.scene_state.scene_id,
+        source_cell="0,1",
+        target_cell="2,1",
+        source_kind="world_object",
+        object_cover=(SaveCoverObstacle(object_id="object.block", cell="1,1", degree="total"),),
+    )
+    full = request.model_copy(update={"save_geometry": geometry})
+    full = RuleEvaluationRequest.model_validate_json(full.model_dump_json())
+    result = evaluate_bound_save(full, loader=loader)
+    result = RuleEvaluationResult.model_validate_json(result.model_dump_json())
+    result.verify_request(full)
+    assert result.status == "accepted"
+    assert result.rng_transition.next_state == request.rng_context.state
+    assert result.state_delta.operations == ()
+    assert result.proposed_events == (
+        MechanismSaveNotApplicable(
+            target_id=request.actor_id,
+            mechanism_object_id=source.object_id,
+            source_ref=source.source_ref,
+            reason="total_cover",
+        ),
+    )
+    with pytest.raises(ValueError, match="admitted mechanism save source"):
+        result.verify_request(full.model_copy(update={"mechanism_save_source": None}))
+    for corrupt in (
+        {"source_kind": "actor"},
+        {"source_id": "object.fake"},
+        {"scene_id": "elsewhere"},
+    ):
+        invalid = full.model_copy(update={"save_geometry": geometry.model_copy(update=corrupt)})
+        rejection = evaluate_bound_save(invalid, loader=loader)
+        assert rejection.status == "unsupported"
+        assert rejection.rng_transition is None
+
+
 def test_action_bound_save_keeps_verified_inspiration_for_later_choice():
     """A valid held grant is inert for the original roll in an action continuation."""
     from dnd5e_engine.activities.effects import passive_effect_to_active_effect
-    from dnd5e_engine.evaluation import evaluate_bound_action_save, evaluate_bound_save
+    from dnd5e_engine.evaluation import evaluate_bound_action_save
 
     request, _ = save_case(ability="dex", seed=3)
     canonical = BundledAssetLoader()

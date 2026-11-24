@@ -24,7 +24,13 @@ from dnd5e_engine.evaluation_bardic_check import (
     BARDIC_INSPIRATION_SOURCE,
 )
 from dnd5e_engine.evaluation_beacon import is_reviewed_beacon_effect
-from dnd5e_engine.evaluation_contracts import RuleEvaluationRequest, SavePayload
+from dnd5e_engine.evaluation_contracts import (
+    DirectMechanismEffect,
+    MechanismSaveNotApplicable,
+    RadialMechanismPulse,
+    RuleEvaluationRequest,
+    SavePayload,
+)
 from dnd5e_engine.evaluation_delta import StateDelta
 from dnd5e_engine.evaluation_effects import EffectState, effect_state
 from dnd5e_engine.evaluation_region_effect import is_fixed_region_condition_effect
@@ -42,7 +48,7 @@ from dnd5e_engine.rules.conditions import (
     d20_test_penalty,
     project_passive_save_modifiers,
 )
-from dnd5e_engine.spatial import GridTopology, canonical_cell_id
+from dnd5e_engine.spatial import GridTopology, canonical_cell_id, cover_ray_cells, strongest_cover
 from dnd5e_engine.specs import GridScene
 
 _SAVE_SPELL_DICE: dict[str, tuple[str, Literal[-1, 1]]] = {
@@ -73,10 +79,12 @@ type _PreparedSave = tuple[
 
 
 class SaveGeometryNeed(NamedTuple):
-    """Exact actor pair whose World positions a directional save requires."""
+    """Identify the required World endpoints and whether to read ray obstacles."""
 
     source_id: str
     target_id: str
+    source_kind: Literal["actor", "world_object"]
+    object_cover: bool
 
 
 def save_geometry_need(
@@ -92,7 +100,13 @@ def save_geometry_need(
         and payload.ability == "dex"
         and payload.source_id is not None
     ):
-        return SaveGeometryNeed(payload.source_id, payload.target_id)
+        source = request.mechanism_save_source
+        return SaveGeometryNeed(
+            payload.source_id,
+            payload.target_id,
+            "actor" if source is None else "world_object",
+            isinstance(source.effect_reach, DirectMechanismEffect) if source else False,
+        )
     return None
 
 
@@ -536,6 +550,22 @@ def _prepare_save(
     cover = _save_cover(request) if payload.requires_cover else "none"
     if cover is None:
         return _refuse("unsupported", "save.cover", "source or target geometry is missing")
+    if isinstance(cover, MechanismSaveNotApplicable):
+        context = request.rng_context
+        return dict(
+            status="accepted",
+            state_delta=StateDelta(expected_world_version=snapshot.world_version, operations=()),
+            proposed_events=(cover,),
+            rng_transition=RNGTransition(
+                stream_id=context.stream_id,
+                input_version=context.version,
+                input_state=context.state,
+                next_state=context.state,
+                state_changed=False,
+            ),
+            choice=None,
+            error=None,
+        )
     if cover == "total":
         return _refuse("unsupported", "save.cover", "total cover needs effect applicability")
     active_effects = [
@@ -611,28 +641,65 @@ def _prepare_save(
     return target, payload, active_effects, bonus_dice, equipment_bonus, cover
 
 
-def _save_cover(request: RuleEvaluationRequest) -> str | None:
-    """Resolve the required directional cover from fixed cells and scene geometry."""
+def _save_cover(request: RuleEvaluationRequest) -> str | MechanismSaveNotApplicable | None:
+    """Apply source-specific reach and directional cover using fixed World facts."""
     fact = request.save_geometry
     payload = request.payload
     if not isinstance(payload, SavePayload) or fact is None:
         return None
     scene = request.state_snapshot.scene_state
+    source = request.mechanism_save_source
     if (
         fact.source_id != payload.source_id
-        or fact.source_id == fact.target_id
+        or fact.source_kind != ("actor" if source is None else "world_object")
+        or (source is None and (fact.source_id == fact.target_id or fact.object_cover))
         or fact.target_id != payload.target_id
         or fact.scene_id != scene.scene_id
     ):
         return None
-    grid = GridTopology(GridScene.model_validate(scene.grid.model_dump()))
     try:
+        origin, target = fact.source_cell, fact.target_cell
+        grid = GridTopology(GridScene.model_validate(scene.grid.model_dump()))
         if any(
             canonical_cell_id(cell) != cell or grid.distance_ft(cell, cell) is None
-            for cell in (fact.source_cell, fact.target_cell)
+            for cell in (origin, target)
         ):
             return None
-        return grid.cover_between(fact.source_cell, fact.target_cell)
+        if source is None:
+            return grid.cover_between(origin, target)
+        reach = source.effect_reach
+        reason: Literal["total_cover", "out_of_range"]
+        if isinstance(reach, RadialMechanismPulse):
+            if fact.object_cover:
+                return None
+            distance = grid.distance_ft(origin, target)
+            if distance is None:
+                return None
+            if distance <= reach.radius_ft:
+                return "none"
+            reason = "out_of_range"
+        else:
+            if fact.object_cover:
+                ray = set(cover_ray_cells(origin, target))
+                if any(
+                    obstacle.cell not in ray or obstacle.object_id == source.object_id
+                    for obstacle in fact.object_cover
+                ):
+                    return None
+            if grid.has_line_of_sight(origin, target):
+                cover = strongest_cover(
+                    grid.cover_between(origin, target),
+                    *(obstacle.degree for obstacle in fact.object_cover),
+                )
+                if cover != "total":
+                    return cover
+            reason = "total_cover"
+        return MechanismSaveNotApplicable(
+            target_id=payload.target_id,
+            mechanism_object_id=source.object_id,
+            source_ref=source.source_ref,
+            reason=reason,
+        )
     except ValueError:
         return None
 

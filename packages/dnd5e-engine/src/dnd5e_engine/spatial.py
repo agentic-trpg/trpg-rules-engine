@@ -136,6 +136,16 @@ def _bresenham_cells(x0: int, y0: int, x1: int, y1: int) -> list[str]:
     return cells
 
 
+def cover_ray_cells(a: str, b: str) -> list[str]:
+    """Read cover ray cells in order, excluding the origin and including the target."""
+    return _bresenham_cells(*parse_cell(a), *parse_cell(b))[1:]
+
+
+def strongest_cover(first: CoverDegree, *others: CoverDegree) -> CoverDegree:
+    """Combine independent obstructions using the most protective degree."""
+    return max((first, *others), key=_COVER_RANK.__getitem__)
+
+
 @runtime_checkable
 class SpatialTopology(Protocol):
     """The positional seam every combat resolves over.
@@ -373,12 +383,8 @@ class GridTopology:
         occupied = set(occupied_cells)
         if not self._cover_cells and not self._blocked and not occupied:
             return "none"
-        ac, ar = parse_cell(a)
-        bc, br = parse_cell(b)
         best: CoverDegree = "none"
-        for cid in _bresenham_cells(ac, ar, bc, br):
-            if cid == a:
-                continue
+        for cid in cover_ray_cells(a, b):
             degree: CoverDegree | None = None
             if cid in self._blocked and cid != b:
                 degree = "total"

@@ -6,6 +6,7 @@ that this vertical slice cannot yet execute; this is not a general combat runtim
 """
 
 import random
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from dnd5e_engine.activities.context import DamageInstanceContext
@@ -42,12 +43,17 @@ from dnd5e_engine.events import (
     TurnStarted,
 )
 from dnd5e_engine.movement import MovementMode, project_speeds, speed_for_mode
+from dnd5e_engine.outcome_rules import derive_ended_reason
 from dnd5e_engine.rules.conditions import active_condition_names, exhaustion_level_of
 from dnd5e_engine.turn_rules import (
     fresh_turn_budget,
     next_turn_index,
 )
 from dnd5e_engine.types.combat import Combatant
+
+
+class TurnStartConflictError(ValueError):
+    """An ordered TurnStart would require a rule decision absent from the input."""
 
 
 @dataclass(frozen=True)
@@ -312,8 +318,46 @@ class CombatComputation:
             self.emit(ConditionRemoved(target_id=actor_id, condition="unconscious"))
             self.emit(ConditionApplied(target_id=actor_id, condition="prone"))
 
-    def finish_turn(self, actor_id: str) -> None:
-        """Advance an explicit Pass to the next turn in the private candidate state."""
+    def finish_turn(
+        self,
+        actor_id: str,
+        *,
+        start_effect: Callable[["CombatComputation", str, bool], None] | None = None,
+    ) -> None:
+        """Resolve TurnEnd and handoff, including any admitted start effect.
+
+        A positive-HP entrant brought to zero by that start effect reaches TurnEnd
+        before the next handoff, unless the damage settles the encounter. An eligible
+        death save uses the facts at entry, before resolving start effects.
+        """
+        while (entry := self._handoff(actor_id)) is not None:
+            entrant = self.actors[entry]
+            death_save_eligible = (
+                entrant.entity_type == "Character"
+                and entrant.hp_current == 0
+                and entrant.is_alive
+                and not entrant.death_saves.get("is_stable")
+            )
+            self._start_turn(entry)
+            if start_effect is not None:
+                start_effect(self, entry, death_save_eligible)
+            if death_save_eligible:
+                self.death_save(entry)
+            if start_effect is None or entrant.hp_current <= 0 or self.actors[entry].hp_current > 0:
+                return
+            if self.has_terminal_outcome():
+                return
+            actor_id = entry
+
+    def has_terminal_outcome(self) -> bool:
+        """Check whether recorded deaths settle victory or party defeat in the candidate."""
+        state = self.state
+        return derive_ended_reason(
+            list(self.actors.values()), state.party_ids, state.encounter_ids, state.dead_ids
+        ) in {"victory", "defeat_tpk"}
+
+    def _handoff(self, actor_id: str) -> str | None:
+        """Settle the outgoing end phase and select the next live initiative entry."""
         self.emit(
             TurnPhase(actor_id=actor_id, phase="turn_end", round_number=self.state.round_number)
         )
@@ -330,7 +374,7 @@ class CombatComputation:
         )
         if next_turn is None:
             self.sample_stage("turn_advanced")
-            return
+            return None
         index, new_round = next_turn
         self.state = self.state.model_copy(
             update={
@@ -344,7 +388,10 @@ class CombatComputation:
             self.emit(
                 TurnPhase(actor_id=None, phase="round_start", round_number=self.state.round_number)
             )
-        next_actor = self.state.initiative_ids[index]
+        return self.state.initiative_ids[index]
+
+    def _start_turn(self, next_actor: str) -> None:
+        """Open the selected turn and refresh its applicable budgets and expiry state."""
         self.state = self.state.model_copy(
             update={
                 "pending_reactions": [
@@ -394,7 +441,6 @@ class CombatComputation:
         )
         if start_event is not None:
             self.emit(start_event)
-        self.death_save(next_actor)
 
     def candidate_state(self) -> CombatSnapshot:
         """Project this computation's working actors and components into a new candidate

@@ -1,11 +1,13 @@
-"""Bounded explicit Pass / End Turn over supplied facts; no Legacy hooks."""
+"""Bounded explicit Pass over supplied TurnEnd and TurnStart facts."""
 
+from functools import partial
 from typing import Literal, NotRequired, TypedDict
 
 from dnd5e_srd_data.loader import AssetLoader
 
+from dnd5e_engine.evaluation_burning import apply_burning_turn_start, burning_turn_input
 from dnd5e_engine.evaluation_class_dependencies import operation_dependencies
-from dnd5e_engine.evaluation_computation import CombatComputation
+from dnd5e_engine.evaluation_computation import CombatComputation, TurnStartConflictError
 from dnd5e_engine.evaluation_contracts import (
     CombatIntentPayload,
     MultiSpellWillingnessChoice,
@@ -55,13 +57,19 @@ def _refuse(status: Literal["rejected", "unsupported"], code: str, reason: str) 
 
 
 def evaluate_turn(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEvaluation:
-    """Evaluate the admitted explicit plain-Pass turn advance.
+    """Evaluate an explicit Pass and return the ordered, uncommitted handoff.
 
-    Require the current actor/turn and supported mechanical dependency closure, then
-    choose the appropriate isolated effect/concentration computation and shared turn
-    lifecycle. Return projected guarded changes, ordered events, stage coverage and RNG
-    successor. This is not a host clock advance or an authoritative combat commit.
+    A simultaneous start boundary whose ordering remains undecided provides no
+    candidate, events or RNG transition.
     """
+    try:
+        return _evaluate_turn(request, loader)
+    except TurnStartConflictError as exc:
+        return _refuse("unsupported", "turn.start_order", str(exc))
+
+
+def _evaluate_turn(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEvaluation:
+    """Check the dependency profile, then advance the turn in isolation."""
     snapshot, intent = request.state_snapshot, request.payload
     if not isinstance(snapshot, CombatSnapshot) or not isinstance(intent, CombatIntentPayload):
         raise EvaluationInvariantError("turn evaluation requires a combat intent")
@@ -100,7 +108,20 @@ def evaluate_turn(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
         shield_support_failure,
     )
 
-    if has_haste_effects(snapshot):
+    try:
+        snapshot, burning = burning_turn_input(snapshot, loader)
+    except ValueError as exc:
+        return _refuse("unsupported", "turn.burning", str(exc))
+    start_effect = partial(apply_burning_turn_start, burning, loader) if burning else None
+    haste_effect = has_haste_effects(snapshot)
+    shield_effect = has_shield(snapshot)
+    if burning and (
+        (snapshot.effect_states and not haste_effect) or state.concentration_chain or shield_effect
+    ):
+        return _refuse(
+            "unsupported", "turn.burning", "Burning composes with a plain turn or Lethargy"
+        )
+    if haste_effect:
         if request.schema_version != "engine-evaluation/30":
             return _refuse("unsupported", "turn.haste", "Haste turns require evaluation/30")
         if failure := haste_support_failure(snapshot, loader):
@@ -109,8 +130,20 @@ def evaluate_turn(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
         haste = HasteComputation(snapshot, rng)
         haste.enable_stages()
         haste.emit(IntentSubmitted(actor_id=request.actor_id, intent_type="pass"))
-        haste.finish_turn(request.actor_id)
+        haste.finish_turn(request.actor_id, start_effect=start_effect)
         computed = haste.result()
+        # RUO-45-F2: closure cannot yet adopt a surviving Lethargy graph.
+        if (
+            burning
+            and computed.candidate_state.effect_states
+            and haste.state.dead_ids != state.dead_ids
+            and haste.has_terminal_outcome()
+        ):
+            return _refuse(
+                "unsupported",
+                "turn.burning_closure",
+                "RUO-45-F2: terminal Burning requires supported closure of outstanding Lethargy",
+            )
         return dict(
             status="accepted",
             state_delta=haste_delta(snapshot, computed.candidate_state, haste.follow_ups),
@@ -121,7 +154,7 @@ def evaluate_turn(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
             stage_facts=computed.stage_facts,
         )
 
-    if has_shield(snapshot):
+    if shield_effect:
         failure = shield_support_failure(snapshot, loader, turn=True) or template_support_failure(
             snapshot, loader
         )
@@ -186,10 +219,13 @@ def evaluate_turn(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
         else CombatComputation
     )
     computation = computation_type(snapshot, rng)
-    computation.enable_stages()
+    if burning:
+        computation.stage_reason = "complex_effects_or_reactions"
+    else:
+        computation.enable_stages()
     computation.emit(IntentSubmitted(actor_id=request.actor_id, intent_type="pass"))
     # Pass pays no Action; it closes the turn even with unused budgets.
-    computation.finish_turn(request.actor_id)
+    computation.finish_turn(request.actor_id, start_effect=start_effect)
     computed = computation.result()
     after = computed.candidate_state
     return dict(

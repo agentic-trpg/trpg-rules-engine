@@ -5,6 +5,7 @@ from typing import Literal, TypedDict
 from dnd5e_srd_data.loader import AssetLoader
 
 from dnd5e_engine.evaluation_actor import combatant
+from dnd5e_engine.evaluation_burning import burning_turn_input
 from dnd5e_engine.evaluation_class_dependencies import operation_dependencies
 from dnd5e_engine.evaluation_contracts import RuleError, RuleEvaluationRequest
 from dnd5e_engine.evaluation_death import death_consistency
@@ -61,6 +62,10 @@ def evaluate_closure(request: RuleEvaluationRequest, loader: AssetLoader) -> Clo
         return _refuse("rejected", "actor_invalid", "closure actor is absent from the roster")
     if state.ended:
         return _refuse("rejected", "combat_ended", "combat has already ended")
+    try:
+        snapshot, _ = burning_turn_input(snapshot, loader)
+    except ValueError as exc:
+        return _refuse("unsupported", "closure.capability", str(exc))
     failure = operation_dependencies(
         snapshot,
         loader,

@@ -463,6 +463,15 @@ class CombatClosePayload(EvaluationModel):
     kind: Literal["combat.close"]
 
 
+class ConfiguredCloseFact(EvaluationModel):
+    """A trusted host's verified condition for exactly one fixed combat snapshot."""
+
+    condition_id: Annotated[str, Field(min_length=1, max_length=256)]
+    combat_id: Annotated[str, Field(min_length=1)]
+    world_version: Annotated[int, Field(ge=0)]
+    satisfied: Literal[True]
+
+
 class CombatIntentPayload(PlayerIntent):
     """Reuse the legacy typed intent vocabulary; admission is evaluator-specific."""
 
@@ -510,6 +519,9 @@ class RuleEvaluationRequest(EvaluationModel):
     state_snapshot: StateSnapshot
     ruleset_binding: RulesetBinding
     rng_context: RNGContext
+    configured_close: ConfiguredCloseFact | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     spell_positions: ExplorationSpellPositions | None = Field(
         default=None, exclude_if=lambda value: value is None
     )
@@ -535,6 +547,18 @@ class RuleEvaluationRequest(EvaluationModel):
     mechanism_save_source: MechanismSaveSource | None = Field(
         default=None, exclude_if=lambda value: value is None
     )
+
+    @model_validator(mode="after")
+    def configured_close_scope(self) -> Self:
+        """Bind a host-verified close fact to this exact combat input."""
+        if self.configured_close is not None and (
+            self.operation_kind != "combat.close"
+            or not isinstance(self.state_snapshot, CombatSnapshot)
+            or self.configured_close.combat_id != self.state_snapshot.combat_state.combat_id
+            or self.configured_close.world_version != self.state_snapshot.world_version
+        ):
+            raise ValueError("configured close must match its fixed combat snapshot")
+        return self
 
     @model_validator(mode="after")
     def save_geometry_scope(self) -> Self:

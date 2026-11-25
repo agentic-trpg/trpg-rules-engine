@@ -11,6 +11,7 @@ from dnd5e_engine import evaluation_delta as delta
 from dnd5e_engine import orchestrator as orch
 from dnd5e_engine.evaluation_contracts import (
     CombatClosePayload,
+    ConfiguredCloseFact,
     RuleEvaluationRequest,
     RuleEvaluationResult,
 )
@@ -174,6 +175,54 @@ def test_nonterminal_and_alien_actor_rejected_without_rng(monkeypatch):
         assert result.state_delta is None
         assert result.rng_transition is None
         assert not result.proposed_events
+
+
+def test_verified_configured_closure_uses_forced_without_xp_and_terminal_precedes_it():
+    with pytest.raises(ValidationError):
+        CombatClosePayload.model_validate({"kind": "combat.close", "satisfied": True})
+    request, _, _ = request_and_live()
+    request = request.model_copy(
+        update={
+            "schema_version": "engine-evaluation/24",
+            "operation_kind": "combat.close",
+            "payload": CombatClosePayload(kind="combat.close"),
+        }
+    )
+    fact = ConfiguredCloseFact(
+        condition_id="test.switch",
+        combat_id=request.state_snapshot.combat_state.combat_id,
+        world_version=request.state_snapshot.world_version,
+        satisfied=True,
+    )
+    configured = RuleEvaluationRequest.model_validate(
+        request.model_copy(update={"configured_close": fact})
+    )
+    result = execute(configured)
+    assert result.status == "accepted"
+    close = result.state_delta.operations[0]
+    assert close.reason == "forced"
+    assert close.condition_id == "test.switch"
+    assert close.xp_increments == {}
+    assert result.proposed_events == (CombatEnded(reason="forced", condition_id="test.switch"),)
+    assert consume(configured.state_snapshot, result)[1] == 10
+
+    terminal, _, _ = terminal_request()
+    terminal = RuleEvaluationRequest.model_validate(
+        terminal.model_copy(
+            update={
+                "configured_close": fact.model_copy(
+                    update={
+                        "combat_id": terminal.state_snapshot.combat_state.combat_id,
+                        "world_version": terminal.state_snapshot.world_version,
+                    }
+                )
+            }
+        )
+    )
+    victory = execute(terminal).state_delta.operations[0]
+    assert victory.reason == "victory"
+    assert victory.condition_id is None
+    assert victory.xp_increments
 
 
 @pytest.mark.parametrize(

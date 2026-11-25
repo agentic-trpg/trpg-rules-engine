@@ -81,7 +81,8 @@ def evaluate_closure(request: RuleEvaluationRequest, loader: AssetLoader) -> Clo
         return _refuse("unsupported", "closure.resources", "resource ledger is not representable")
     actors = [combatant(a) for a in snapshot.character_states]
     reason = derive_ended_reason(actors, state.party_ids, state.encounter_ids, state.dead_ids)
-    if reason not in ("victory", "defeat_tpk"):
+    configured = request.configured_close if reason == "forced" else None
+    if reason not in ("victory", "defeat_tpk") and configured is None:
         return _refuse("rejected", "closure.nonterminal", "combat is not a victory or TPK")
     outcome = project_outcome(
         combat_id=state.combat_id,
@@ -118,7 +119,8 @@ def evaluate_closure(request: RuleEvaluationRequest, loader: AssetLoader) -> Clo
         expected_ended=False,
         ended=True,
         reason=reason,
-        xp_increments=outcome.xp_awarded,
+        condition_id=configured.condition_id if configured is not None else None,
+        xp_increments=outcome.xp_awarded if configured is None else {},
         historical=HistoricalCombatOutcome(
             deaths=tuple(ClosureDeath.model_validate(r.model_dump()) for r in outcome.deaths),
             residual_hp=outcome.residual_hp,
@@ -133,7 +135,12 @@ def evaluate_closure(request: RuleEvaluationRequest, loader: AssetLoader) -> Clo
             operations=(closure,),
             expected_world_version=snapshot.world_version,
         ),
-        proposed_events=(CombatEnded(reason=reason),),
+        proposed_events=(
+            CombatEnded(
+                reason=reason,
+                condition_id=configured.condition_id if configured is not None else None,
+            ),
+        ),
         rng_transition=RNGTransition(
             stream_id=request.rng_context.stream_id,
             input_version=request.rng_context.version,

@@ -1061,6 +1061,9 @@ class CombatEnded(BaseModel):
 
     type: Literal["combat_ended"] = "combat_ended"
     reason: Literal["victory", "defeat_tpk", "flee", "forced"]
+    condition_id: Annotated[str, Field(min_length=1, max_length=256)] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
 
 class LegendaryActionUsed(BaseModel):

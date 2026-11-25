@@ -258,7 +258,10 @@ class CombatClose(EvaluationModel):
     combat_id: Annotated[str, Field(min_length=1)]
     expected_ended: Literal[False]
     ended: Literal[True]
-    reason: Literal["victory", "defeat_tpk"]
+    reason: Literal["victory", "defeat_tpk", "forced"]
+    condition_id: Annotated[str, Field(min_length=1, max_length=256)] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     xp_increments: dict[str, Annotated[int, Field(gt=0)]]
     historical: HistoricalCombatOutcome
 

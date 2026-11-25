@@ -67,7 +67,10 @@ def test_real_item_success_without_legacy_matches_events_and_rng(monkeypatch, hp
     if last_resource:
         assert result.proposed_events == tuple(live.event_log[:-4])
         assert tuple(e.type for e in live.event_log[-4:]) == (
-            "turn_phase", "turn_ended", "turn_started", "turn_phase"
+            "turn_phase",
+            "turn_ended",
+            "turn_started",
+            "turn_phase",
         )
     else:
         assert result.proposed_events == tuple(live.event_log)

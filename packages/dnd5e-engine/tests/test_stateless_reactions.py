@@ -213,7 +213,10 @@ def test_full_legacy_state_event_rng_and_independent_srd_costs(seed, npc, monkey
     assert after.combat_state.last_ended_turn == request.state_snapshot.combat_state.last_ended_turn
     assert result.proposed_events == tuple(live.event_log[:-4])
     assert tuple(e.type for e in live.event_log[-4:]) == (
-        "turn_phase", "turn_ended", "turn_started", "turn_phase"
+        "turn_phase",
+        "turn_ended",
+        "turn_started",
+        "turn_phase",
     )
     assert result.rng_transition.next_state == RNGState.capture(live.rng)
     save = next(e for e in result.proposed_events if isinstance(e, SaveRolled))

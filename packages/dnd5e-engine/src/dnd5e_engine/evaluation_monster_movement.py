@@ -6,14 +6,21 @@ from dnd5e_engine.evaluation_npc_initialization import monster_actor_failure
 from dnd5e_engine.evaluation_ruleset import get_default_ruleset
 from dnd5e_engine.evaluation_state import CombatSnapshot
 
+# These canonical profiles have one reviewed melee action for threat geometry.
+REVIEWED_MONSTER_OPPORTUNITY_ACTIONS = {"ogre": "greatclub", "bandit": "scimitar"}
+
 
 def monster_movement_failure(snapshot: CombatSnapshot, loader: AssetLoader) -> str | None:
     """Validate every binding, even without consent or an available Reaction."""
     actors = {a.entity_id: a for a in snapshot.character_states}
     for actor_id, slug in snapshot.combat_state.monster_slug_by_entity.items():
         monster = loader.get_monster(slug)
-        if slug != "ogre" or monster is None or monster != get_default_ruleset().get_monster(slug):
-            return "only the pinned ordinary Ogre movement/reach profile is reviewed"
+        if (
+            slug not in REVIEWED_MONSTER_OPPORTUNITY_ACTIONS
+            or monster is None
+            or monster != get_default_ruleset().get_monster(slug)
+        ):
+            return "only the pinned ordinary Ogre and Bandit movement/reach profiles are reviewed"
         actor = actors[actor_id]
         if (
             actor.entity_type not in {"NPC", "Monster"}
@@ -60,5 +67,5 @@ def monster_movement_failure(snapshot: CombatSnapshot, loader: AssetLoader) -> s
             )
             or actor_id in snapshot.combat_state.opportunity_attack_weapons
         ):
-            return "bound Ogre has unreviewed class, equipment, resource or reach facts"
+            return f"bound {monster.name} has unreviewed class, equipment, resource or reach facts"
     return None

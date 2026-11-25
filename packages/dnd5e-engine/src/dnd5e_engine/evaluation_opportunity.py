@@ -12,6 +12,10 @@ from dnd5e_engine.activities.resolver import resolve_activity
 from dnd5e_engine.evaluation_actor import combatant
 from dnd5e_engine.evaluation_computation import CombatComputation
 from dnd5e_engine.evaluation_contracts import CombatIntentPayload
+from dnd5e_engine.evaluation_monster_movement import (
+    REVIEWED_MONSTER_OPPORTUNITY_ACTIONS,
+    monster_movement_failure,
+)
 from dnd5e_engine.evaluation_preflight import stat_block_admission, weapon_admission
 from dnd5e_engine.evaluation_reaction_state import (
     OpportunityAttackState,
@@ -81,8 +85,6 @@ def opportunity_dependencies(
             return None, "decline requires an opposing owner and mover"
         return OpportunityPlan(declaration, None, None, owner.melee_reach_ft), None
     if isinstance(declaration, StatBlockOpportunityAttackState):
-        from dnd5e_engine.evaluation_monster_movement import monster_movement_failure
-
         failure = monster_movement_failure(snapshot, loader)
         if failure:
             return None, failure
@@ -98,15 +100,15 @@ def opportunity_dependencies(
             target_id=mover.entity_id,
             stat_block_action_id=declaration.stat_block_action_id,
         )
-        refusal = stat_block_admission(snapshot, combatant(owner), intent, loader)
+        activity, refusal = stat_block_admission(snapshot, combatant(owner), intent, loader)
         if refusal is not None:
             return None, refusal.error.reason if refusal.error else "incomplete stat-block choice"
-        monster = loader.get_monster(declaration.monster_slug)
-        assert monster is not None
-        action = next(a for a in monster.actions if a.slug == declaration.stat_block_action_id)
-        activity = action.activities[0]
-        assert isinstance(activity, AttackActivity)
-        if activity.attack.type.value != "melee":
+        assert activity is not None
+        if (
+            activity.attack.type.value != "melee"
+            or declaration.stat_block_action_id
+            != REVIEWED_MONSTER_OPPORTUNITY_ACTIONS[declaration.monster_slug]
+        ):
             return None, "opportunity attack requires an explicit melee stat-block action"
         reach = attack_rules.monster_attack_range_ft([activity], owner.melee_reach_ft)
         assert reach is not None
@@ -186,10 +188,17 @@ def step_reactors(
         reach = owner.melee_reach_ft
         monster_slug = state.monster_slug_by_entity.get(owner_id)
         if monster_slug:
+            action_id = REVIEWED_MONSTER_OPPORTUNITY_ACTIONS.get(monster_slug)
             monster = loader.get_monster(monster_slug)
-            assert monster is not None  # Complete canonical closure ran before route planning.
-            action = next(a for a in monster.actions if a.slug == "greatclub")
-            reach = attack_rules.monster_attack_range_ft(action.activities, reach) or reach
+            if monster is None or action_id is None:
+                return False, "unknown stat-block opportunity attack profile"
+            action = next((a for a in monster.actions if a.slug == action_id), None)
+            if action is None:
+                return False, "unknown stat-block opportunity attack action"
+            stat_block_reach = attack_rules.monster_attack_range_ft(action.activities, reach)
+            if stat_block_reach is None:
+                return False, "unknown stat-block opportunity attack reach"
+            reach = stat_block_reach
         selected = state.opportunity_attack_weapons.get(owner_id)
         if selected and owner.entity_type == "Character":
             weapon = loader.get_weapon(selected)

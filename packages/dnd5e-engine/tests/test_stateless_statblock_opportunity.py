@@ -1,4 +1,4 @@
-"""Canonical Ogre OA: independent SRD expectations, actual Legacy parity and isolation."""
+"""Canonical stat-block OA, with independent SRD expectations and Legacy Ogre parity."""
 
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
@@ -33,8 +33,19 @@ MOVER, OGRE = "actor:r29-mover", "npc:r29-ogre"
 GRID = GridScene(width=12, height=4)
 
 
-def ogre_case(*, seed=0, npc=False, hp=40, temp=0, ac=1, defense=None, destination="3,0"):
-    monster = BundledAssetLoader().get_monster("ogre")
+def ogre_case(
+    *,
+    seed=0,
+    npc=False,
+    hp=40,
+    temp=0,
+    ac=1,
+    defense=None,
+    destination="3,0",
+    profile=("ogre", "greatclub"),
+):
+    monster_slug, action_id = profile
+    monster = BundledAssetLoader().get_monster(monster_slug)
     loader = MemoryAssetLoader(monsters=[monster])
     with scoped_lib_loader(loader):
         started = asyncio.run(
@@ -57,7 +68,7 @@ def ogre_case(*, seed=0, npc=False, hp=40, temp=0, ac=1, defense=None, destinati
                     EncounterMemberSpec(
                         entity_id=OGRE,
                         entity_type="NPC",
-                        name="Canonical Ogre",
+                        name=f"Canonical {monster.name}",
                         initiative=1,
                         hp_current=monster.hp,
                         hp_max=monster.hp,
@@ -111,8 +122,8 @@ def ogre_case(*, seed=0, npc=False, hp=40, temp=0, ac=1, defense=None, destinati
         source_kind="stat_block_opportunity_attack",
         owner_id=OGRE,
         mover_id=MOVER,
-        monster_slug="ogre",
-        stat_block_action_id="greatclub",
+        monster_slug=monster_slug,
+        stat_block_action_id=action_id,
         trigger="voluntary_leave_reach",
         expiry="owner_next_turn_start",
     )
@@ -529,6 +540,131 @@ def test_consumed_oa_composes_move_pass_reset_monster_move_attack(monkeypatch):
                 ),
             }
         )
+
+
+def test_bandit_scimitar_opportunity_then_paid_ordinary_walk(monkeypatch):
+    request, _, _, loader = ogre_case(profile=("bandit", "scimitar"))
+    original = deepcopy(request)
+    isolated(monkeypatch)
+    result = execute(request, loader)
+    assert result.status == "accepted", result.error
+    attack = next(e for e in result.proposed_events if isinstance(e, AttackRolled))
+    damage = next(e for e in result.proposed_events if isinstance(e, DamageApplied))
+    expected_rng = Random(0)
+    assert (attack.attacker_id, attack.target_id, attack.is_opportunity_attack) == (
+        OGRE,
+        MOVER,
+        True,
+    )
+    assert (attack.natural, attack.modifier) == (expected_rng.randint(1, 20), 3)
+    assert (damage.damage_type, damage.amount) == ("slashing", expected_rng.randint(1, 6) + 1)
+    assert result.rng_transition.next_state == RNGState.capture(expected_rng)
+    after = apply_opportunity(request.state_snapshot, result)
+    owner = next(a for a in after.character_states if a.entity_id == OGRE)
+    assert (owner.reaction_available, owner.action_available, owner.bonus_action_available) == (
+        False,
+        True,
+        True,
+    )
+    assert not after.combat_state.pending_reactions
+    assert after.combat_state.actor_zone[MOVER] == "3,0"
+    assert request == original
+
+    for actor_id, payload in (
+        (MOVER, CombatIntentPayload(intent_type="pass")),
+        (OGRE, CombatIntentPayload(intent_type="move", target_zone_id="2,0")),
+    ):
+        request = request.model_copy(
+            update={
+                "actor_id": actor_id,
+                "payload": payload,
+                "state_snapshot": after,
+                "rng_context": request.rng_context.model_copy(
+                    update={"state": result.rng_transition.next_state}
+                ),
+            }
+        )
+        result = execute(request, loader)
+        assert result.status == "accepted", result.error
+        assert not result.rng_transition.state_changed
+        after = apply_opportunity(request.state_snapshot, result)
+    owner = next(a for a in after.character_states if a.entity_id == OGRE)
+    ledger = after.combat_state.movement_ledgers[OGRE]
+    assert after.combat_state.actor_zone[OGRE] == "2,0"
+    assert (owner.base_speed, ledger.spent_ft, ledger.remaining(owner.base_speed)) == (30, 10, 20)
+    assert owner.reaction_available
+
+    strike = request.model_copy(
+        update={
+            "payload": CombatIntentPayload(
+                intent_type="attack", stat_block_action_id="scimitar", target_id=MOVER
+            ),
+            "state_snapshot": after,
+            "rng_context": request.rng_context.model_copy(
+                update={"state": result.rng_transition.next_state}
+            ),
+        }
+    )
+    result = execute(strike, loader)
+    assert result.status == "accepted", result.error
+    attack = next(e for e in result.proposed_events if isinstance(e, AttackRolled))
+    damage = next(e for e in result.proposed_events if isinstance(e, DamageApplied))
+    assert (attack.natural, attack.modifier) == (expected_rng.randint(1, 20), 3)
+    assert not attack.is_opportunity_attack
+    assert (damage.damage_type, damage.amount) == ("slashing", expected_rng.randint(1, 6) + 1)
+    assert result.rng_transition.next_state == RNGState.capture(expected_rng)
+
+
+@pytest.mark.parametrize(
+    "change,code,reason",
+    [
+        ("no consent", "movement.opportunity_attack", "without an authorized declaration"),
+        ("ranged", "movement.capability", "melee stat-block action"),
+        ("forged actor", "movement.template", "pinned template mechanical fact: base_speed"),
+        ("forged asset", "movement.template", "pinned ordinary"),
+        ("off scope", "movement.template", "pinned ordinary"),
+    ],
+)
+def test_bandit_walk_refuses_unreviewed_inputs_before_rng(change, code, reason, monkeypatch):
+    profile = ("bandit-captain", "scimitar") if change == "off scope" else ("bandit", "scimitar")
+    request, _, _, loader = ogre_case(profile=profile)
+    snapshot = request.state_snapshot
+    state = snapshot.combat_state
+    if change in {"no consent", "off scope"}:
+        state = state.model_copy(update={"pending_reactions": []})
+    elif change == "ranged":
+        declaration = state.pending_reactions[0]
+        state = state.model_copy(
+            update={
+                "pending_reactions": [
+                    declaration.model_copy(update={"stat_block_action_id": "light-crossbow"})
+                ]
+            }
+        )
+    elif change == "forged actor":
+        snapshot = snapshot.model_copy(
+            update={
+                "character_states": tuple(
+                    a.model_copy(update={"base_speed": 50}) if a.entity_id == OGRE else a
+                    for a in snapshot.character_states
+                )
+            }
+        )
+    elif change == "forged asset":
+        asset = loader.get_monster("bandit")
+        loader = MemoryAssetLoader(monsters=[asset.model_copy(update={"ac": asset.ac + 1})])
+    snapshot = snapshot.model_copy(update={"combat_state": state})
+    request = request.model_copy(
+        update={"state_snapshot": snapshot, "ruleset_binding": ruleset_binding(loader)}
+    )
+    monkeypatch.setattr(RNGState, "restore", lambda self: pytest.fail("unsupported RNG"))
+    result = execute(request, loader)
+    assert result.status == "unsupported"
+    assert result.error.code == code
+    assert reason in result.error.reason
+    assert result.state_delta is None
+    assert result.rng_transition is None
+    assert not result.proposed_events
 
 
 @pytest.mark.parametrize("npc", [False, True])

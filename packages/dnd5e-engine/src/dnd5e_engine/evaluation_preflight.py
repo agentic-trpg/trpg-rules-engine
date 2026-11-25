@@ -25,6 +25,7 @@ from dnd5e_engine.evaluation_death import (
 )
 from dnd5e_engine.evaluation_effects import EffectState
 from dnd5e_engine.evaluation_reaction_state import OpportunityAttackState, OpportunityDeclineState
+from dnd5e_engine.evaluation_ruleset import get_default_ruleset
 from dnd5e_engine.evaluation_state import CharacterStateV2, CombatSnapshot
 from dnd5e_engine.events import AttackFailed, CastFailed, DamageType
 from dnd5e_engine.intents import IntentRejectedError
@@ -335,14 +336,14 @@ def template_support_failure(snapshot: CombatSnapshot, loader: AssetLoader) -> s
 
 def stat_block_admission(
     snapshot: CombatSnapshot, current: Combatant, intent: CombatIntentPayload, loader: AssetLoader
-) -> AttackAdmission | None:
-    """Validate and prepare an admitted stat-block attack."""
+) -> tuple[AttackActivity | None, AttackAdmission | None]:
+    """Return the selected typed stat-block attack or an admission refusal."""
     if (
         current.entity_type not in ("Monster", "NPC")
         or current.entity_id not in snapshot.combat_state.encounter_ids
         or intent.weapon_id
     ):
-        return refused(
+        return None, refused(
             "rejected",
             "action_unavailable",
             "stat-block attack requires a bound NPC and one action reference",
@@ -355,7 +356,7 @@ def stat_block_admission(
         else None
     )
     if action is None:
-        return refused(
+        return None, refused(
             "rejected",
             "action_unavailable",
             "action ID is absent from the actor's bound stat block",
@@ -370,15 +371,28 @@ def stat_block_admission(
         or len(action.activities) != 1
         or not isinstance(action.activities[0], AttackActivity)
     ):
-        return refused(
+        return None, refused(
             "unsupported",
             "action.capability",
             "only one typed ordinary NPC attack activity is migrated",
         )
-    support = activity_support_failure(action.activities[0], stat_block=True)
+    activity = action.activities[0]
+    support = activity_support_failure(activity, stat_block=True)
     if support:
-        return refused("unsupported", "activity.capability", support)
-    return None
+        return None, refused("unsupported", "activity.capability", support)
+    # SRD 5.2.1 p. 261 uses Dexterity for this Scimitar. The canonical
+    # activity leaves its ability blank, so carry the reviewed ability into
+    # the resolver while keeping attack and damage magnitudes bound to the actor.
+    if (
+        slug == "bandit"
+        and action.slug == "scimitar"
+        and not activity.attack.ability
+        and monster == get_default_ruleset().get_monster(slug)
+    ):
+        activity = activity.model_copy(
+            update={"attack": activity.attack.model_copy(update={"ability": "dex"})}
+        )
+    return activity, None
 
 
 def weapon_admission(
@@ -651,10 +665,13 @@ def prepare_attack(
         ):
             return refused("rejected", "action_restricted", "invalid or spent Haste Attack grant")
         grant = effect
+    stat_block_activity = None
     if intent.stat_block_action_id is not None:
         if intent.weapon_instance_id is not None:
             return refused("rejected", "action_unavailable", "supply one attack source")
-        input_admission = stat_block_admission(snapshot, current, intent, loader)
+        stat_block_activity, input_admission = stat_block_admission(
+            snapshot, current, intent, loader
+        )
         weapon = None
     else:
         weapon_intent = intent
@@ -708,12 +725,8 @@ def prepare_attack(
             raise RuntimeError("unexpected ordinary attack economy refusal")
         return refused("rejected", str(failure.reason), "shared action economy refused the intent")
     if intent.stat_block_action_id is not None:
-        slug = state.monster_slug_by_entity[current.entity_id]
-        monster = loader.get_monster(slug)
-        assert monster is not None
-        action = next(a for a in monster.actions if a.slug == intent.stat_block_action_id)
-        activity = action.activities[0]
-        assert isinstance(activity, AttackActivity)
+        assert stat_block_activity is not None
+        activity = stat_block_activity
         maximum = attack_rules.monster_attack_range_ft([activity], current.melee_reach_ft)
     else:
         assert weapon is not None

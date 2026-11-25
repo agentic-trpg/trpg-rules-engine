@@ -5,10 +5,11 @@ from copy import deepcopy
 import pytest
 
 from dnd5e_engine import evaluation, evaluation_attack
+from dnd5e_engine.evaluation_contracts import CombatIntentPayload
 from dnd5e_engine.evaluation_stages import actor_facts, combat_facts
 from tests.evaluation_support import FOE, HERO
 from tests.test_npc_availability import npc_case
-from tests.test_stateless_attack import apply_delta, execute, request_and_live
+from tests.test_stateless_attack import apply_delta, execute, next_request, request_and_live
 from tests.test_stateless_shield import shield_case
 
 
@@ -127,13 +128,25 @@ def test_statblock_dying_and_immunity_filtered_events_have_exact_references(
     assert facts.coverage == "complete"
     assert len(facts.event_references) == len(result.proposed_events)
     assert any(s.kind == "damage_instance_completed" for s in facts.stages)
-    assert any(e.type == "death_save_rolled" for e in result.proposed_events)
+    assert not any(e.type == "death_save_rolled" for e in result.proposed_events)
     if immune:
         assert not any(
             e.type == "condition_applied" and e.condition == "unconscious"
             for e in result.proposed_events
         )
     assert_final(request.state_snapshot, computed, result)
+    followup = next_request(
+        request,
+        result,
+        apply_delta(request.state_snapshot, result),
+        command_id="command:pass-after-dying",
+        payload=CombatIntentPayload(intent_type="pass"),
+    )
+    passed = execute(followup, loader)
+    assert passed.status == "accepted", passed.error
+    passed.verify_request(followup)
+    assert any(e.type == "death_save_rolled" for e in passed.proposed_events)
+    assert any(s.kind == "death_save_completed" for s in passed.stage_facts.stages)
 
 
 def test_shield_keeps_rule_result_and_explicitly_has_no_stage_coverage(monkeypatch):

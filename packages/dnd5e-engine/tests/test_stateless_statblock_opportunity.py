@@ -25,7 +25,7 @@ from dnd5e_engine.evaluation_state import CombatSnapshot, InventoryState
 from dnd5e_engine.events import ActorMoved, AttackRolled, DamageApplied
 from dnd5e_engine.lib_loader import scoped_lib_loader
 from dnd5e_engine.specs import EncounterMemberSpec, GridScene, PartyMemberSpec, WallSegment
-from tests.test_stateless_attack import execute
+from tests.test_stateless_attack import execute, pass_after_attack
 from tests.test_stateless_item_closure_core import forbidden, isolate
 from tests.test_stateless_opportunity import apply_opportunity
 
@@ -171,6 +171,16 @@ def parity(request, handle, live, loader, result):
     with scoped_lib_loader(loader):
         asyncio.run(orch.submit_player_intent(handle, request.actor_id, request.payload))
     after = apply_opportunity(request.state_snapshot, result)
+    events = result.proposed_events
+    rng = result.rng_transition.next_state
+    if request.payload.intent_type == "attack":
+        combat = after.combat_state
+        assert combat.initiative_ids[combat.current_turn_index] == request.actor_id
+        passed, events = pass_after_attack(request, result, after, loader)
+        after = apply_opportunity(after, passed)
+        # These actual handoffs only refresh budgets with no new draws.
+        assert not passed.rng_transition.state_changed
+        rng = passed.rng_transition.next_state
     expected = capture_evaluation_snapshot(
         live,
         request.state_snapshot,
@@ -186,8 +196,8 @@ def parity(request, handle, live, loader, result):
         }
     )
     assert after == expected
-    assert result.proposed_events == tuple(live.event_log[offset:])
-    assert result.rng_transition.next_state == RNGState.capture(live.rng)
+    assert events == tuple(live.event_log[offset:])
+    assert rng == RNGState.capture(live.rng)
     assert RuleEvaluationResult.model_validate_json(result.model_dump_json()) == result
     return after
 

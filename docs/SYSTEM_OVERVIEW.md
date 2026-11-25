@@ -22,6 +22,10 @@ RE 声明所需空间事实，并按已提供的效果到达方式裁定掩护�
 完全掩护阻断直接效果时，RE 向 SM 返回无骰点、无 RNG 变化的效果不适用提案。
 见[独立豁免的来源和到达方式](dev/stateless-evaluation.md#standalone-saving-throw-source-and-reach-in-evaluator-70)。
 
+RE `/71` 的普通无状态武器攻击只提议行动支出、攻击结果和直接后果，保留当前 Turn。
+显式 Pass 计算下一位、换轮及规则时点，SM 采用结果并推进共享世界时钟。
+`FrozenRuleset.round_duration_seconds` 提供 D&D Round 的规则时长。
+
 Stateless 转换仍是受限能力集。Legacy 和 Demo 中可运行的能力，不自动表示新的
 Stateless 接口或 SM pin／采用白名单支持它；完整迁移与跨仓库 ABI 批准单独跟踪。
 本库的 Bridge HTTP 和 Demo 也不代表 Agentic TRPG 已交付完整 Host／玩家 UI。

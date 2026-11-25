@@ -24,7 +24,7 @@ from dnd5e_engine.rules.character import proficiency_grants
 from dnd5e_engine.specs import GridScene
 from tests.evaluation_support import FOE, HERO, WEAPON
 from tests.repeat_save_parity import expected_repeat_save_events
-from tests.test_stateless_attack import apply_delta, execute
+from tests.test_stateless_attack import apply_delta, execute, pass_after_attack
 from tests.test_stateless_attack_concentration import ATTACKER, attack_concentration_case
 from tests.test_stateless_hold_turn import isolated
 from tests.test_stateless_spell_feature import apply_healing
@@ -333,24 +333,33 @@ def step(request, handle, live, loader, monkeypatch, intent=None):
         ):
             scoped.setattr(orch, name, lambda *args, **kwargs: pytest.fail("Legacy cast fold"))
         result = execute(request, loader)
-    assert result.status == "accepted", result.error
-    after = (apply_cast if request.payload.intent_type == "cast_spell" else apply_existing)(
-        request.state_snapshot, result
-    )
+        assert result.status == "accepted", result.error
+        after = (apply_cast if request.payload.intent_type == "cast_spell" else apply_existing)(
+            request.state_snapshot, result
+        )
+        events = result.proposed_events
+        transition = result.rng_transition
+        if request.payload.intent_type == "attack":
+            assert (
+                after.combat_state.current_turn_index
+                == request.state_snapshot.combat_state.current_turn_index
+            )
+            assert after.combat_state.turn_serial == request.state_snapshot.combat_state.turn_serial
+            passed, events = pass_after_attack(request, result, after, loader)
+            after = apply_existing(after, passed)
+            transition = passed.rng_transition
     expected = capture_evaluation_snapshot(live, after, GridScene(width=3, height=3))
     assert after == expected
-    assert result.proposed_events == expected_repeat_save_events(
+    assert events == expected_repeat_save_events(
         live.event_log[offset:], ability_modifier=0, proficiency=0
     )
-    assert result.rng_transition.next_state == RNGState.capture(live.rng)
+    assert transition.next_state == RNGState.capture(live.rng)
     assert RuleEvaluationResult.model_validate_json(result.model_dump_json()) == result
     assert request == before
     return request.model_copy(
         update={
             "state_snapshot": after,
-            "rng_context": request.rng_context.model_copy(
-                update={"state": result.rng_transition.next_state}
-            ),
+            "rng_context": request.rng_context.model_copy(update={"state": transition.next_state}),
         }
     ), result
 

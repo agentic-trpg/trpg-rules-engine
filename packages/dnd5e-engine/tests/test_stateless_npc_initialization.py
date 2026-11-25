@@ -30,7 +30,7 @@ from dnd5e_engine.evaluation_state import (
 from dnd5e_engine.events import AttackRolled, DamageApplied
 from dnd5e_engine.lib_loader import scoped_lib_loader
 from dnd5e_engine.specs import EncounterMemberSpec, GridScene, PartyMemberSpec
-from tests.test_stateless_attack import apply_delta, execute
+from tests.test_stateless_attack import apply_delta, execute, pass_after_attack
 from tests.test_stateless_initialization import apply_creation
 from tests.test_stateless_item_closure_core import forbidden, isolate
 
@@ -223,18 +223,16 @@ def test_real_srd_init_then_npc_explicit_attack_without_legacy(monkeypatch, roll
         attack_result = execute(attack, loader)
         assert attack_result.status == "accepted", attack_result.error
         assert attack_result == execute(attack, loader)
+        attacked = apply_delta(after, attack_result)
+        combat = attacked.combat_state
+        assert combat.initiative_ids[combat.current_turn_index] == NPC
         if not rolled:
             roll = next(e for e in attack_result.proposed_events if isinstance(e, AttackRolled))
             damage = next(e for e in attack_result.proposed_events if isinstance(e, DamageApplied))
             assert roll.roll_total == 16  # d20=13 + DEX=1 + PB=2
             assert damage.amount == 8  # d8=7 + DEX=1
             assert (
-                next(
-                    a
-                    for a in apply_delta(after, attack_result).character_states
-                    if a.entity_id == HERO
-                ).hp_current
-                == 32
+                next(a for a in attacked.character_states if a.entity_id == HERO).hp_current == 32
             )
         movement = attack.model_copy(
             update={
@@ -249,10 +247,11 @@ def test_real_srd_init_then_npc_explicit_attack_without_legacy(monkeypatch, roll
         assert move_result.error.code == "movement.template"
         assert move_result.state_delta is None
         assert move_result.rng_transition is None
+        passed, events = pass_after_attack(attack, attack_result, attacked, loader)
     asyncio.run(orch.submit_player_intent(started.handle, NPC, attack.payload))
-    assert attack_result.proposed_events == tuple(live.event_log[len(started.events) :])
-    assert attack_result.rng_transition.next_state == RNGState.capture(live.rng)
-    assert apply_delta(after, attack_result) == capture_combat_snapshot(
+    assert events == tuple(live.event_log[len(started.events) :])
+    assert passed.rng_transition.next_state == RNGState.capture(live.rng)
+    assert apply_delta(attacked, passed) == capture_combat_snapshot(
         live,
         resource_state=None,
         casting_state=None,

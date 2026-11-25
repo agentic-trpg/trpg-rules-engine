@@ -5,6 +5,9 @@ from typing import Any
 
 from dnd5e_engine.types.combat import Combatant
 
+# SRD 5.2.1, The Order of Combat and Spell Duration.
+ROUND_DURATION_SECONDS = 6
+
 
 def reset_turn_budget(c: Combatant, *, effective_speed: int, attacks: int) -> Combatant:
     """Reset actor action counters for the beginning of a turn."""
@@ -53,6 +56,13 @@ def reset_turn_budget(c: Combatant, *, effective_speed: int, attacks: int) -> Co
             "extra_actions_remaining": 0,
             "action_surge_used_this_turn": False,
         }
+    )
+
+
+def fresh_turn_budget(c: Combatant, *, effective_speed: int) -> Combatant:
+    """Start the stateless ordinary turn with its supported single-attack budget."""
+    return reset_turn_budget(c, effective_speed=effective_speed, attacks=1).model_copy(
+        update={"sneak_attack_spent_this_turn": False}
     )
 
 

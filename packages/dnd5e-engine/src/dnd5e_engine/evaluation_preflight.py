@@ -78,15 +78,17 @@ def snapshot_support_failure(
     reviewed_world_effects: bool = False,
     reviewed_region_conditions: bool = False,
     reviewed_closure: bool = False,
+    reviewed_dying: bool = False,
 ) -> str | None:
     """Return a reason when snapshot mechanics exceed the supported operation profile.
 
     Movement evaluates terrain costs. Ordinary attacks can admit terrain as an
     independent input without enabling movement geometry.
     Closure can admit the implied Unconscious condition of a recorded dead Character.
+    A composed profile may independently validate a dying character's conditions.
     """
     state = snapshot.combat_state
-    failure = death_consistency(snapshot, allow_dying=turn_lifecycle)
+    failure = death_consistency(snapshot, allow_dying=turn_lifecycle or reviewed_dying)
     if failure is None and turn_lifecycle:
         failure = turn_lifecycle_support_failure(
             snapshot, reviewed_region_conditions=reviewed_region_conditions

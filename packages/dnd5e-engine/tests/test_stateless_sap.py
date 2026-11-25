@@ -19,7 +19,7 @@ from dnd5e_engine.evaluation_state import InventoryEntry, InventoryState
 from dnd5e_engine.events import AttackRolled, DamageApplied
 from dnd5e_engine.specs import GridScene
 from tests.evaluation_support import FOE, HERO
-from tests.test_stateless_attack import execute
+from tests.test_stateless_attack import execute, pass_after_attack
 from tests.test_stateless_equipped_class_attack import equipped_case
 from tests.test_stateless_item_closure_core import isolate
 from tests.test_stateless_spell_feature import apply_healing
@@ -122,10 +122,12 @@ def test_sap_hit_miss_crit_zero_damage_independent_and_legacy(npc, seed, ac, imm
         isolate(scoped)
         result = execute(request, loader)
     assert result.status == "accepted", result.error
-    after = apply_sap(request.state_snapshot, result)
+    attacked = apply_sap(request.state_snapshot, result)
+    passed, events = pass_after_attack(request, result, attacked, loader)
+    after = apply_sap(attacked, passed)
     assert after == legacy_snapshot(live, after)
-    assert result.proposed_events == tuple(live.event_log)
-    assert result.rng_transition.next_state == RNGState.capture(live.rng)
+    assert events == tuple(live.event_log)
+    assert passed.rng_transition.next_state == RNGState.capture(live.rng)
     roll = next(e for e in result.proposed_events if isinstance(e, AttackRolled))
     rng = random.Random(seed)
     natural = rng.randint(1, 20)
@@ -225,9 +227,13 @@ def test_mark_next_attack_or_source_start_expiry_and_reproc(npc, consume, monkey
             assert result.status == "accepted", result.error
             assert execute(current, loader) == result
         after = apply_sap(snapshot, result)
+        last, events = result, result.proposed_events
+        if intent.intent_type == "attack":
+            last, events = pass_after_attack(current, result, after, loader)
+            after = apply_sap(after, last)
         assert after == legacy_snapshot(live, after)
-        assert result.proposed_events == tuple(live.event_log[prior:])
-        assert result.rng_transition.next_state == RNGState.capture(live.rng)
+        assert events == tuple(live.event_log[prior:])
+        assert last.rng_transition.next_state == RNGState.capture(live.rng)
         if index == 0:
             assert after.combat_state.sap_marks == {FOE: HERO}
         if index == 1:
@@ -240,7 +246,7 @@ def test_mark_next_attack_or_source_start_expiry_and_reproc(npc, consume, monkey
                 assert roll.advantage == "disadvantage"
                 assert roll.disadvantage_sources == ["trait"]
         snapshot = after
-        rng = rng.model_copy(update={"state": result.rng_transition.next_state})
+        rng = rng.model_copy(update={"state": last.rng_transition.next_state})
     assert snapshot.character_states[0].classes == {"fighter": 1}
     assert snapshot.character_states[0].weapon_mastery_slugs == ("mace", "flail", "morningstar")
 
@@ -286,11 +292,14 @@ def test_sap_cancels_prone_advantage_in_actual_attack(monkeypatch):
     assert roll.natural == 13
     assert roll.advantage_sources == ["condition:target"]
     assert roll.disadvantage_sources == ["trait"]
-    after = apply_sap(snapshot, result)
+    attacked = apply_sap(snapshot, result)
+    assert not attacked.combat_state.sap_marks
+    passed, events = pass_after_attack(request, result, attacked, loader)
+    after = apply_sap(attacked, passed)
     assert after.combat_state.sap_marks == {}
     assert after == legacy_snapshot(live, after)
-    assert result.proposed_events == tuple(live.event_log)
-    assert result.rng_transition.next_state == RNGState.capture(live.rng)
+    assert events == tuple(live.event_log)
+    assert passed.rng_transition.next_state == RNGState.capture(live.rng)
 
 
 @pytest.mark.parametrize(
@@ -490,12 +499,14 @@ def test_both_real_fighters_repeated_proc_consume_and_followup(npc, monkeypatch)
             isolate(scoped)
             result = execute(current, loader)
         assert result.status == "accepted", result.error
-        snapshot = apply_sap(snapshot, result)
+        attacked = apply_sap(snapshot, result)
+        passed, events = pass_after_attack(current, result, attacked, loader)
+        snapshot = apply_sap(attacked, passed)
         assert snapshot == legacy_snapshot(live, snapshot)
         assert len(snapshot.combat_state.sap_marks) <= 1
-        assert result.proposed_events == tuple(live.event_log[prior:])
-        assert result.rng_transition.next_state == RNGState.capture(live.rng)
-        rng = rng.model_copy(update={"state": result.rng_transition.next_state})
+        assert events == tuple(live.event_log[prior:])
+        assert passed.rng_transition.next_state == RNGState.capture(live.rng)
+        rng = rng.model_copy(update={"state": passed.rng_transition.next_state})
     assert snapshot.character_states[0].hp_current == 40
     assert snapshot.character_states[1].hp_current == 40
 

@@ -11,17 +11,55 @@ from dnd5e_engine.evaluation_effect_turn import run_snapshot_effect_boundary
 from dnd5e_engine.evaluation_preflight import template_support_failure
 from dnd5e_engine.evaluation_state import CombatSnapshot
 from dnd5e_engine.events import CombatEvent, TurnPhase
+from dnd5e_engine.turn_rules import next_turn_index
 
 
 def hold_turn_support_failure(snapshot: CombatSnapshot, loader: AssetLoader) -> str | None:
     """Check dependencies for the admitted Hold Person turn lifecycle."""
-    sources = snapshot.combat_state.concentration_chain
+    combat = snapshot.combat_state
+    sources = combat.concentration_chain
     if len(sources) != 1:
         return "exactly one complete existing Hold Person source is reviewed"
-    if any(not a.is_alive or a.hp_current <= 0 for a in snapshot.character_states):
-        return "Hold Person turn graph requires living positive-HP actors"
+    source_id = next(iter(sources))
+    nonpositive = tuple(a for a in snapshot.character_states if a.hp_current <= 0 or not a.is_alive)
+    if nonpositive:
+        # The weapon path can leave a newly brought to 0 HP source concentrating
+        # when immunity prevented Unconscious. Continue a healthy-to-healthy turn
+        # handoff without composing this effect graph with a dying Turn boundary.
+        source = nonpositive[0]
+        next_turn = next_turn_index(
+            combat.initiative_ids, combat.dead_ids, combat.current_turn_index + 1
+        )
+        if (
+            len(nonpositive) != 1
+            or source.entity_id != source_id
+            or source.entity_type != "Character"
+            or not source.is_alive
+            or "unconscious" not in source.condition_immunities
+            or source.conditions
+            or (
+                source.death_saves is not None
+                and (
+                    source.death_saves.successes
+                    or source.death_saves.failures
+                    or source.death_saves.is_stable
+                )
+            )
+            or next_turn is None
+            or source_id
+            in {
+                combat.initiative_ids[combat.current_turn_index],
+                combat.initiative_ids[next_turn[0]],
+            }
+        ):
+            return "Hold Person turn graph requires living positive-HP actors at both boundaries"
     return concentration_support_failure(
-        snapshot, next(iter(sources)), loader, composed=True, turn_lifecycle=True
+        snapshot,
+        source_id,
+        loader,
+        composed=True,
+        turn_lifecycle=True,
+        reviewed_dying_source=bool(nonpositive),
     ) or template_support_failure(snapshot, loader)
 
 

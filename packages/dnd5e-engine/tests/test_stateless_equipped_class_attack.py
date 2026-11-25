@@ -18,7 +18,7 @@ from dnd5e_engine.evaluation_state import CombatSnapshot, InventoryEntry, Invent
 from dnd5e_engine.events import AttackRolled, DamageApplied
 from dnd5e_engine.specs import GridScene
 from tests.evaluation_support import FOE, HERO
-from tests.test_stateless_attack import execute
+from tests.test_stateless_attack import execute, pass_after_attack
 from tests.test_stateless_item_closure_core import isolate
 from tests.test_stateless_spell_feature import apply_healing, healing_case
 
@@ -170,9 +170,11 @@ def test_complete_equipped_attack_independent_and_legacy(seed, ac, npc, defense,
         isolate(scoped)
         result = execute(request, loader)
     assert result.status == "accepted", result.error
-    assert result.proposed_events == tuple(live.event_log)
-    assert result.rng_transition.next_state == RNGState.capture(live.rng)
-    after = apply_healing(request.state_snapshot, result)
+    attacked = apply_healing(request.state_snapshot, result)
+    passed, events = pass_after_attack(request, result, attacked, loader)
+    assert events == tuple(live.event_log)
+    assert passed.rng_transition.next_state == RNGState.capture(live.rng)
+    after = apply_healing(attacked, passed)
     legacy = capture_combat_snapshot(
         live,
         grid=GridScene(width=3, height=3),
@@ -240,8 +242,12 @@ def test_equipped_attack_pass_reset_next_attack(npc, monkeypatch):
             assert result.status == "accepted", result.error
             assert execute(current, loader) == result
             snapshot = apply_healing(snapshot, result)
-            rng = rng.model_copy(update={"state": result.rng_transition.next_state})
-            events.extend(result.proposed_events)
+            last, step_events = result, result.proposed_events
+            if intent.intent_type == "attack":
+                last, step_events = pass_after_attack(current, result, snapshot, loader)
+                snapshot = apply_healing(snapshot, last)
+            rng = rng.model_copy(update={"state": last.rng_transition.next_state})
+            events.extend(step_events)
     legacy = capture_combat_snapshot(
         live,
         grid=GridScene(width=3, height=3),
@@ -438,8 +444,10 @@ def test_equipped_target_ac_controls_hit(shield, monkeypatch):
     roll = next(e for e in result.proposed_events if isinstance(e, AttackRolled))
     assert roll.roll_total == 16
     assert roll.is_hit is (not shield)
-    assert result.proposed_events == tuple(live.event_log)
-    after = apply_healing(snapshot, result)
+    attacked = apply_healing(snapshot, result)
+    passed, events = pass_after_attack(request, result, attacked, loader)
+    assert events == tuple(live.event_log)
+    after = apply_healing(attacked, passed)
     assert after == capture_combat_snapshot(
         live,
         grid=GridScene(width=3, height=3),

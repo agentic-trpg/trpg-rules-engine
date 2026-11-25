@@ -21,7 +21,7 @@ from dnd5e_engine.evaluation_state import (
 )
 from dnd5e_engine.specs import GridScene
 from tests.evaluation_support import FOE, HERO, WEAPON, synthetic_loader
-from tests.test_stateless_attack import execute
+from tests.test_stateless_attack import execute, pass_after_attack
 from tests.test_stateless_closure import consume
 from tests.test_stateless_initialization import apply_creation
 from tests.test_stateless_item_closure_core import isolate
@@ -150,6 +150,12 @@ def test_complete_class_encounter_rest_new_encounter_workflow(feature, monkeypat
             assert execute(current, loader) == result
             snapshot = apply_healing(snapshot, result)
             rng = rng.model_copy(update={"state": result.rng_transition.next_state})
+        assert (
+            snapshot.combat_state.initiative_ids[snapshot.combat_state.current_turn_index] == ALLY
+        )
+        passed, _ = pass_after_attack(current, result, snapshot, loader)
+        snapshot = apply_healing(snapshot, passed)
+        rng = rng.model_copy(update={"state": passed.rng_transition.next_state})
     legacy = capture_combat_snapshot(
         live,
         grid=GridScene(width=3, height=3),

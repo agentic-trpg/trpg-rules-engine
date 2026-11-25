@@ -115,7 +115,7 @@ def test_world_passive_spell_keeps_unrelated_attack_delta_events_and_rng(target_
     assert result.rng_transition == normal.rng_transition
     assert result.stage_facts.coverage == "uncovered"
     assert result.state_delta == normal.state_delta
-    assert any(isinstance(op, TurnUpdate) for op in result.state_delta.operations)
+    assert not any(isinstance(op, TurnUpdate) for op in result.state_delta.operations)
 
 
 def test_world_longstrider_makes_dodge_work_when_existing_walk_speed_is_zero():
@@ -179,7 +179,9 @@ def test_hold_person_non_caster_attack_applies_advantage_and_close_critical():
     after = apply_delta(prior, result)
     target = next(actor for actor in after.character_states if actor.entity_id == HERO)
     assert target.movement_remaining == 0
-    assert after.combat_state.last_ended_turn == (prior.combat_state.round_number, ATTACKER)
+    assert after.combat_state.current_turn_index == prior.combat_state.current_turn_index
+    assert after.combat_state.turn_serial == prior.combat_state.turn_serial
+    assert after.combat_state.last_ended_turn == prior.combat_state.last_ended_turn
     assert after.combat_state.effect_lifecycles == prior.combat_state.effect_lifecycles
     assert after.combat_state.concentration_chain == prior.combat_state.concentration_chain
     assert after.effect_states == prior.effect_states

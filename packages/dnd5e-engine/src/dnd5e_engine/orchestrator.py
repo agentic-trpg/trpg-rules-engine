@@ -335,6 +335,7 @@ from dnd5e_engine.turn_lifecycle import (
     run_turn_end,
     run_turn_start,
 )
+from dnd5e_engine.turn_rules import ROUND_DURATION_SECONDS
 from dnd5e_engine.types.checks import CheckRequest, HelpCheckGrant
 from dnd5e_engine.types.combat import BehaviorProfile, Combatant, MonsterActionUses, WornArmor
 from dnd5e_engine.types.conditions import ActiveCondition
@@ -6512,11 +6513,6 @@ def _tick_durations_at_turn_end(live: _LiveCombat, actor_id: str) -> None:
         )
 
 
-#: SRD 5.2 §Duration — "a round represents about 6 seconds in the game world".
-#: The conversion factor for ``ActiveEffectDuration.seconds`` -> rounds.
-_SECONDS_PER_ROUND = 6
-
-
 def _concentration_max_rounds(spell: Spell | None) -> int | None:
     """SRD 5.2 §Concentration maximum duration, in rounds (6 s each, SRD
     §Duration). ``None`` = no engine-tracked cap: non-concentration spells,
@@ -6644,7 +6640,7 @@ def _expire_timed_effects_at_turn_end(live: _LiveCombat, actor_id: str) -> None:
                     origin=eff.origin or "", target_id=target_id, actor_id=actor_id
                 )
             ):
-                whole_rounds = -(-duration.seconds // _SECONDS_PER_ROUND)
+                whole_rounds = -(-duration.seconds // ROUND_DURATION_SECONDS)
                 rounds_left = whole_rounds - 1
                 if rounds_left > 0:
                     duration = duration.model_copy(update={"rounds": rounds_left})

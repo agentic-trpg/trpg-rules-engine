@@ -20,7 +20,7 @@ from dnd5e_engine.evaluation_snapshot import capture_combat_snapshot
 from dnd5e_engine.events import ConcentrationCheck, DamageApplied
 from dnd5e_engine.specs import GridScene
 from tests.evaluation_support import FOE, HERO, WEAPON, synthetic_loader
-from tests.test_stateless_attack import execute
+from tests.test_stateless_attack import execute, next_request, pass_after_attack
 from tests.test_stateless_concentration import apply_candidate, concentration_case
 from tests.test_stateless_item_closure_core import isolate
 from tests.test_stateless_reactions import KNOWN
@@ -195,7 +195,9 @@ def test_actual_attack_full_state_event_rng_parity(seed, success, mixed, pc, mon
         result = execute(request, loader)
         assert result.status == "accepted", result.error
         assert execute(request, loader) == result
-    after = apply_candidate(request.state_snapshot, result)
+    attacked = apply_candidate(request.state_snapshot, result)
+    passed, events = pass_after_attack(request, result, attacked, loader)
+    after = apply_candidate(attacked, passed)
     expected = capture_combat_snapshot(
         live,
         grid=GridScene(width=3, height=3),
@@ -206,8 +208,8 @@ def test_actual_attack_full_state_event_rng_parity(seed, success, mixed, pc, mon
         casting_state=after.casting_state,
     )
     assert after == expected
-    assert result.proposed_events == tuple(live.event_log)
-    assert result.rng_transition.next_state == RNGState.capture(live.rng)
+    assert events == tuple(live.event_log)
+    assert passed.rng_transition.next_state == RNGState.capture(live.rng)
     checks = [e for e in result.proposed_events if isinstance(e, ConcentrationCheck)]
     assert len(checks) == (0 if success is None else 1)
     if success is not None:
@@ -263,8 +265,9 @@ def test_atomic_cleanup_on_lethal_attack_and_version_fence(pc, monkeypatch):
     assert not after.combat_state.conditions_by_effect
     assert not after.combat_state.effect_lifecycles
     assert not next(a for a in after.character_states if a.entity_id == HERO).conditions
-    assert result.proposed_events == tuple(live.event_log)
-    assert result.rng_transition.next_state == RNGState.capture(live.rng)
+    passed, events = pass_after_attack(request, result, after, loader)
+    assert events == tuple(live.event_log)
+    assert passed.rng_transition.next_state == RNGState.capture(live.rng)
     with pytest.raises(AssertionError):
         apply_candidate(request.state_snapshot, result, world_version=8)
     with pytest.raises(AssertionError):
@@ -393,12 +396,13 @@ def test_multitarget_lineage_cleanup_and_concurrent_replay(monkeypatch):
     after = apply_candidate(snapshot, result)
     assert not after.effect_states
     assert all(not a.conditions for a in after.character_states)
-    assert result.proposed_events == tuple(live.event_log)
-    assert result.rng_transition.next_state == RNGState.capture(live.rng)
+    passed, events = pass_after_attack(request, result, after, loader)
+    assert events == tuple(live.event_log)
+    assert passed.rng_transition.next_state == RNGState.capture(live.rng)
     assert request == before
 
 
-def test_attack_round_wrap_preserves_concentration_clock_and_legacy_order(monkeypatch):
+def test_pass_after_attack_wraps_round_and_preserves_concentration_clock(monkeypatch):
     request, handle, live, loader = attack_concentration_case(mixed=True)
     attacker, held, caster = live.initiative
     live.initiative = [held, caster, attacker]
@@ -417,7 +421,10 @@ def test_attack_round_wrap_preserves_concentration_clock_and_legacy_order(monkey
     isolate(monkeypatch)
     result = execute(request, loader)
     assert result.status == "accepted", result.error
-    after = apply_candidate(snapshot, result)
+    attacked = apply_candidate(snapshot, result)
+    assert attacked.combat_state.round_number == snapshot.combat_state.round_number
+    passed, events = pass_after_attack(request, result, attacked, loader)
+    after = apply_candidate(attacked, passed)
     assert after.combat_state.round_number == snapshot.combat_state.round_number + 1
     assert (
         after.combat_state.concentration_rounds_remaining
@@ -432,8 +439,8 @@ def test_attack_round_wrap_preserves_concentration_clock_and_legacy_order(monkey
         resource_state=after.resource_state,
         casting_state=after.casting_state,
     )
-    assert result.proposed_events == tuple(live.event_log)
-    assert result.rng_transition.next_state == RNGState.capture(live.rng)
+    assert events == tuple(live.event_log)
+    assert passed.rng_transition.next_state == RNGState.capture(live.rng)
 
 
 def test_self_damage_source_turn_hooks_refuse_before_rng(monkeypatch):
@@ -477,5 +484,21 @@ def test_immune_condition_does_not_run_incapacitation_cleanup(monkeypatch):
     assert after.effect_states == snapshot.effect_states
     assert after.combat_state.concentration_chain == snapshot.combat_state.concentration_chain
     assert not after.character_states[-1].conditions
-    assert result.proposed_events == tuple(live.event_log)
-    assert result.rng_transition.next_state == RNGState.capture(live.rng)
+    passed, events = pass_after_attack(request, result, after, loader)
+    assert events == tuple(live.event_log)
+    assert passed.rng_transition.next_state == RNGState.capture(live.rng)
+    next_turn = apply_candidate(after, passed)
+    assert next_turn.effect_states == snapshot.effect_states
+    assert next_turn.combat_state.concentration_chain == snapshot.combat_state.concentration_chain
+    assert next_turn.combat_state.current_turn_index == 1
+    pending = next_request(
+        request,
+        passed,
+        next_turn,
+        command_id="attack:pass-to-dying-source",
+        payload=CombatIntentPayload(intent_type="pass"),
+    ).model_copy(update={"actor_id": HERO})
+    refused = execute(pending, loader)
+    assert refused.status == "unsupported"
+    assert refused.error.code == "turn.capability"
+    assert refused.state_delta is refused.rng_transition is None

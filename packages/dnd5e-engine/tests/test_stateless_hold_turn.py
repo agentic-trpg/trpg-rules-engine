@@ -12,7 +12,7 @@ from pydantic_core import to_json
 from dnd5e_engine import evaluation_effect_turn, live_effect_lifecycle
 from dnd5e_engine import orchestrator as orch
 from dnd5e_engine.evaluation_contracts import CombatIntentPayload, RuleEvaluationResult
-from dnd5e_engine.evaluation_delta import ConcentrationUpdate, EffectLifecycleUpdate
+from dnd5e_engine.evaluation_delta import ConcentrationUpdate, EffectLifecycleUpdate, TurnUpdate
 from dnd5e_engine.evaluation_rng import RNGState
 from dnd5e_engine.evaluation_snapshot import capture_evaluation_snapshot
 from dnd5e_engine.evaluation_state import CombatSnapshot
@@ -21,7 +21,7 @@ from dnd5e_engine.lib_loader import scoped_lib_loader
 from dnd5e_engine.specs import GridScene
 from tests.evaluation_support import FOE, HERO, WEAPON
 from tests.repeat_save_parity import expected_repeat_save_events
-from tests.test_stateless_attack import apply_delta, execute
+from tests.test_stateless_attack import apply_delta, execute, pass_after_attack
 from tests.test_stateless_attack_concentration import ATTACKER, attack_concentration_case
 from tests.test_stateless_item_closure_core import forbidden, isolate
 
@@ -157,23 +157,28 @@ def step(request, loader, handle, live, monkeypatch, actor=None, intent=None):
         result = execute(current, loader)
         assert result.status == "accepted", result.error
         assert execute(current, loader) == result
-    after = apply_hold(current.state_snapshot, result)
+        after = apply_hold(current.state_snapshot, result)
+        events = result.proposed_events
+        transition = result.rng_transition
+        if current.payload.intent_type == "attack":
+            assert not any(isinstance(op, TurnUpdate) for op in result.state_delta.operations)
+            passed, events = pass_after_attack(current, result, after, loader)
+            after = apply_hold(after, passed)
+            transition = passed.rng_transition
     expected = capture_evaluation_snapshot(
         live, current.state_snapshot, GridScene(width=3, height=3)
     )
     assert after == expected
-    assert result.proposed_events == expected_repeat_save_events(
+    assert events == expected_repeat_save_events(
         live.event_log[offset:], ability_modifier=0, proficiency=0
     )
-    assert result.rng_transition.next_state == RNGState.capture(live.rng)
+    assert transition.next_state == RNGState.capture(live.rng)
     assert RuleEvaluationResult.model_validate_json(result.model_dump_json()) == result
     assert current == original
     return current.model_copy(
         update={
             "state_snapshot": after,
-            "rng_context": current.rng_context.model_copy(
-                update={"state": result.rng_transition.next_state}
-            ),
+            "rng_context": current.rng_context.model_copy(update={"state": transition.next_state}),
         }
     ), result
 
@@ -338,6 +343,8 @@ def test_actual_source_death_cleans_graph_then_released_target_passes(monkeypatc
     assert FOE in request.state_snapshot.combat_state.dead_ids
     assert not request.state_snapshot.effect_states
     assert any(e.type == "death" for e in result.proposed_events)
+    combat = request.state_snapshot.combat_state
+    assert combat.initiative_ids[combat.current_turn_index] == HERO
     request, _ = step(request, loader, handle, live, monkeypatch)
     assert (
         request.state_snapshot.combat_state.initiative_ids[

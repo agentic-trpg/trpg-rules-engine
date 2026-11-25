@@ -42,7 +42,7 @@ from dnd5e_engine.evaluation_snapshot import capture_combat_snapshot
 from dnd5e_engine.evaluation_state import InventoryState
 from dnd5e_engine.specs import GridScene
 from tests.evaluation_support import FOE, HERO, WEAPON, synthetic_combat, synthetic_loader
-from tests.test_stateless_attack import apply_delta, execute, request_and_live
+from tests.test_stateless_attack import apply_delta, execute, pass_after_attack, request_and_live
 
 NPC_TEMPLATE = "synthetic-sentinel"
 NPC_ACTION = "synthetic-strike"
@@ -166,8 +166,10 @@ def test_explicit_npc_matches_legacy_complete_delta_events_rng_and_host_xp(
     asyncio.run(orch.submit_player_intent(handle, FOE, request.payload))
     result = execute(request, loader)
     assert result.status == "accepted", result.error
-    assert result.proposed_events == tuple(live.event_log)
-    assert result.rng_transition.next_state == RNGState.capture(live.rng)
+    attacked = apply_delta(request.state_snapshot, result)
+    passed, events = pass_after_attack(request, result, attacked, loader)
+    assert events == tuple(live.event_log)
+    assert passed.rng_transition.next_state == RNGState.capture(live.rng)
     after = capture_combat_snapshot(
         live,
         resource_state=None,
@@ -177,7 +179,7 @@ def test_explicit_npc_matches_legacy_complete_delta_events_rng_and_host_xp(
         world_version=7,
         combat_id="combat:synthetic",
     )
-    assert apply_delta(request.state_snapshot, result) == after
+    assert apply_delta(attacked, passed) == after
     assert after.combat_state.xp_value_by_entity == {FOE: 175}
     assert request == before
 
@@ -448,9 +450,11 @@ def test_canonical_bandit_explicit_attack_is_executable_and_matches_legacy(actio
     asyncio.run(orch.submit_player_intent(handle, FOE, request.payload))
     result = execute(request, loader)
     assert result.status == "accepted"
-    assert result.proposed_events == tuple(live.event_log)
-    assert result.rng_transition.next_state == RNGState.capture(live.rng)
-    assert apply_delta(request.state_snapshot, result) == capture_combat_snapshot(
+    attacked = apply_delta(request.state_snapshot, result)
+    passed, events = pass_after_attack(request, result, attacked, loader)
+    assert events == tuple(live.event_log)
+    assert passed.rng_transition.next_state == RNGState.capture(live.rng)
+    assert apply_delta(attacked, passed) == capture_combat_snapshot(
         live,
         resource_state=None,
         casting_state=None,

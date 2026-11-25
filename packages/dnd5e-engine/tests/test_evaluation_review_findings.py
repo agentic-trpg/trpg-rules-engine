@@ -25,7 +25,7 @@ from dnd5e_engine.specs import GridScene
 from dnd5e_engine.types.effects import ActiveEffect, ActiveEffectChange, ActiveEffectDuration
 from tests.evaluation_support import FOE, HERO
 from tests.test_npc_availability import NPC_TEMPLATE, npc_case
-from tests.test_stateless_attack import apply_delta, execute, request_and_live
+from tests.test_stateless_attack import apply_delta, execute, pass_after_attack, request_and_live
 
 
 def recapture(request, live):
@@ -91,32 +91,34 @@ def test_one_damage_instance_decides_massive_damage_after_all_types(hp, temp, de
     before = deepcopy(request)
     result = execute(request, loader)
     assert result.status == "accepted"
-    final = apply_delta(request.state_snapshot, result)
-    hero = next(a for a in final.character_states if a.entity_id == HERO)
+    attacked = apply_delta(request.state_snapshot, result)
+    hero = next(a for a in attacked.character_states if a.entity_id == HERO)
     damage = [e for e in result.proposed_events if e.type == "damage_applied"]
     assert [e.amount for e in damage] == [8, 5]
     assert len({e.damage_instance_id for e in damage}) == 1
     assert hero.hp_current == 0
     assert hero.is_alive is not dead
-    assert (HERO in final.combat_state.dead_ids) is dead
+    assert (HERO in attacked.combat_state.dead_ids) is dead
     expected = random.Random(0)
     expected.randint(1, 20)
     expected.randint(1, 4)
     expected.randint(1, 4)
+    assert not any(e.type == "death_save_rolled" for e in result.proposed_events)
+    assert result.rng_transition.next_state == RNGState.capture(expected)
+    passed, events = pass_after_attack(request, result, attacked, loader)
+    final = apply_delta(attacked, passed)
     if dead:
         assert [e.reason for e in result.proposed_events if e.type == "death"] == ["instant_kill"]
-        assert not any(
-            e.type in ("unconscious", "death_save_rolled") for e in result.proposed_events
-        )
+        assert not any(e.type in ("unconscious", "death_save_rolled") for e in events)
     else:
         expected.randint(1, 20)  # exactly one genuine next-turn death save
-        assert sum(e.type == "death_save_rolled" for e in result.proposed_events) == 1
-    assert result.rng_transition.next_state == RNGState.capture(expected)
+        assert sum(e.type == "death_save_rolled" for e in passed.proposed_events) == 1
+    assert passed.rng_transition.next_state == RNGState.capture(expected)
     assert request == before
     asyncio.run(orch.submit_player_intent(handle, FOE, request.payload))
-    assert tuple(live.event_log) == result.proposed_events
+    assert tuple(live.event_log) == events
     assert recapture(request, live).state_snapshot == final
-    assert RNGState.capture(live.rng) == result.rng_transition.next_state
+    assert RNGState.capture(live.rng) == passed.rng_transition.next_state
 
 
 def test_effect_snapshot_does_not_fill_missing_mechanics():

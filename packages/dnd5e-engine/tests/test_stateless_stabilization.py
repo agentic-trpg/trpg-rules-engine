@@ -12,10 +12,10 @@ from dnd5e_engine.evaluation_contracts import (
     RuleEvaluationRequest,
 )
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError, attack_delta
-from dnd5e_engine.evaluation_rng import RNGContext, RNGState
+from dnd5e_engine.evaluation_rng import RNGState
 from dnd5e_engine.evaluation_state import InventoryState, StateSnapshot
 from tests.evaluation_support import FOE, HERO
-from tests.test_stateless_attack import apply_delta, execute
+from tests.test_stateless_attack import apply_delta, execute, next_request, pass_after_attack
 from tests.test_stateless_weapons import weapon_case
 
 OTHER = "npc:other"
@@ -66,19 +66,18 @@ def test_killed_enemy_does_not_block_remaining_enemy_attack():
     committed = apply_delta(request.state_snapshot, first)
     assert committed.combat_state.dead_ids == {FOE}
     assert not committed.character_states[1].is_alive
+    assert committed.combat_state.initiative_ids[committed.combat_state.current_turn_index] == HERO
+    passed, _ = pass_after_attack(request, first, committed, loader)
+    committed = apply_delta(committed, passed)
     assert committed.combat_state.initiative_ids[committed.combat_state.current_turn_index] == OTHER
     assert not committed.combat_state.ended
-    second_request = request.model_copy(
-        update={
-            "command_id": "command:second",
-            "actor_id": OTHER,
-            "state_snapshot": committed,
-            "payload": CombatIntentPayload(intent_type="attack", weapon_id="mace", target_id=HERO),
-            "rng_context": RNGContext(
-                stream_id="main", version=4, state=first.rng_transition.next_state
-            ),
-        }
-    )
+    second_request = next_request(
+        request,
+        passed,
+        committed,
+        command_id="command:second",
+        payload=CombatIntentPayload(intent_type="attack", weapon_id="mace", target_id=HERO),
+    ).model_copy(update={"actor_id": OTHER})
     second = execute(second_request, loader)
     assert second.status == "accepted", second.error
     after = apply_delta(committed, second)
@@ -86,16 +85,15 @@ def test_killed_enemy_does_not_block_remaining_enemy_attack():
     assert after.combat_state.deaths_recorded == committed.combat_state.deaths_recorded
     assert after.character_states[0].hp_current < committed.character_states[0].hp_current
     assert execute(second_request, loader) == second
+    passed, _ = pass_after_attack(second_request, second, after, loader)
+    after = apply_delta(after, passed)
     assert after.combat_state.initiative_ids[after.combat_state.current_turn_index] == HERO
-    third_request = request.model_copy(
-        update={
-            "command_id": "command:third",
-            "state_snapshot": after,
-            "payload": CombatIntentPayload(intent_type="attack", weapon_id="mace", target_id=OTHER),
-            "rng_context": RNGContext(
-                stream_id="main", version=5, state=second.rng_transition.next_state
-            ),
-        }
+    third_request = next_request(
+        request,
+        passed,
+        after,
+        command_id="command:third",
+        payload=CombatIntentPayload(intent_type="attack", weapon_id="mace", target_id=OTHER),
     )
     third = execute(third_request, loader)
     assert third.status == "accepted", third.error
@@ -132,14 +130,16 @@ def test_inconsistent_death_fails_before_rng(mutation, monkeypatch):
 
 def test_dead_target_rejected_before_payment_or_rng(monkeypatch):
     request, loader = multi_enemy_case()
-    committed = apply_delta(request.state_snapshot, execute(request, loader))
-    candidate = request.model_copy(
-        update={
-            "actor_id": OTHER,
-            "state_snapshot": committed,
-            "payload": CombatIntentPayload(intent_type="attack", weapon_id="mace", target_id=FOE),
-        }
-    )
+    first = execute(request, loader)
+    attacked = apply_delta(request.state_snapshot, first)
+    passed, _ = pass_after_attack(request, first, attacked, loader)
+    candidate = next_request(
+        request,
+        passed,
+        apply_delta(attacked, passed),
+        command_id="command:attack-dead-target",
+        payload=CombatIntentPayload(intent_type="attack", weapon_id="mace", target_id=FOE),
+    ).model_copy(update={"actor_id": OTHER})
     before = deepcopy(candidate)
     monkeypatch.setattr(RNGState, "restore", lambda self: pytest.fail("RNG before rejection"))
     result = execute(candidate, loader)

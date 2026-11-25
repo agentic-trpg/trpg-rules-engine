@@ -25,7 +25,7 @@ from dnd5e_engine.intents import PlayerIntent
 from dnd5e_engine.lib_loader import scoped_lib_loader
 from dnd5e_engine.specs import GridScene
 from tests.evaluation_support import FOE, HERO, WEAPON
-from tests.test_stateless_attack import execute
+from tests.test_stateless_attack import execute, pass_after_attack
 from tests.test_stateless_attack_concentration import ATTACKER
 from tests.test_stateless_hold_cast import cast_case
 from tests.test_stateless_hold_turn import isolated
@@ -195,28 +195,37 @@ def step(request, handle, live, loader, monkeypatch, intent=None):
         )
         result = execute(request, loader)
         assert execute(request, loader) == result
-    assert result.status == "accepted", result.error
-    after = apply_shield(request.state_snapshot, result)
+        assert result.status == "accepted", result.error
+        after = apply_shield(request.state_snapshot, result)
+        passed = None
+        if request.payload.intent_type == "attack":
+            passed, events = pass_after_attack(request, result, after, loader)
+            after = apply_shield(after, passed)
+        else:
+            events = result.proposed_events
+    rng = (passed or result).rng_transition
     assert after == capture_evaluation_snapshot(live, after, GridScene(width=3, height=3))
-    assert result.proposed_events == tuple(live.event_log[offset:])
-    assert result.rng_transition.next_state == RNGState.capture(live.rng)
+    assert events == tuple(live.event_log[offset:])
+    assert rng.next_state == RNGState.capture(live.rng)
     assert RuleEvaluationResult.model_validate_json(result.model_dump_json()) == result
     assert request == original
-    return request.model_copy(
-        update={
-            "state_snapshot": after,
-            "rng_context": request.rng_context.model_copy(
-                update={"state": result.rng_transition.next_state}
-            ),
-        }
-    ), result
+    return (
+        request.model_copy(
+            update={
+                "state_snapshot": after,
+                "rng_context": request.rng_context.model_copy(update={"state": rng.next_state}),
+            }
+        ),
+        result,
+        passed,
+    )
 
 
 @pytest.mark.parametrize("pc", [False, True])
 @pytest.mark.parametrize("seed", [0, 1, 5, 7, 9, 31])
 def test_real_shield_trigger_original_roll_cost_and_full_legacy_parity(pc, seed, monkeypatch):
     request, handle, live, loader = shield_case(seed=seed, pc=pc)
-    after, result = step(request, handle, live, loader, monkeypatch)
+    after, result, _ = step(request, handle, live, loader, monkeypatch)
     rng = Random(seed)
     natural = rng.randint(1, 20)
     roll = next(e for e in result.proposed_events if e.type == "attack_rolled")
@@ -261,10 +270,10 @@ def test_real_shield_trigger_original_roll_cost_and_full_legacy_parity(pc, seed,
 @pytest.mark.parametrize("pc", [False, True])
 def test_persisted_plus_five_next_attack_expiry_and_later_attack(pc, monkeypatch):
     request, handle, live, loader = shield_case(seed=7, pc=pc)
-    request, first = step(request, handle, live, loader, monkeypatch)
+    request, first, _ = step(request, handle, live, loader, monkeypatch)
     assert next(e for e in first.proposed_events if e.type == "attack_rolled").is_hit is False
     assert request.state_snapshot.effect_states
-    request, second = step(
+    request, second, passed = step(
         request,
         handle,
         live,
@@ -282,16 +291,17 @@ def test_persisted_plus_five_next_attack_expiry_and_later_attack(pc, monkeypatch
     owner = next(a for a in request.state_snapshot.character_states if a.entity_id == FOE)
     assert owner.spell_slots[1] == 3
     assert owner.reaction_available is True
-    events = list(second.proposed_events)
+    assert not any(e.type == "effect_expired" for e in second.proposed_events)
+    events = list(passed.proposed_events)
     start = next(
         i for i, e in enumerate(events) if e.type == "turn_phase" and e.phase == "turn_start"
     )
     expiry = next(i for i, e in enumerate(events) if e.type == "effect_expired")
     assert start < expiry
-    request, _ = step(
+    request, _, _ = step(
         request, handle, live, loader, monkeypatch, CombatIntentPayload(intent_type="pass")
     )
-    request, last = step(
+    request, last, _ = step(
         request,
         handle,
         live,
@@ -306,7 +316,7 @@ def test_persisted_plus_five_next_attack_expiry_and_later_attack(pc, monkeypatch
 @pytest.mark.parametrize("mode", ["spent", "empty"])
 def test_legal_unavailable_reaction_retained_without_payment(mode, monkeypatch):
     request, handle, live, loader = shield_case(seed=7, **{mode: True})
-    after, result = step(request, handle, live, loader, monkeypatch)
+    after, result, _ = step(request, handle, live, loader, monkeypatch)
     assert not any(e.type == "reaction_triggered" for e in result.proposed_events)
     assert after.state_snapshot.resource_state == request.state_snapshot.resource_state
     assert (
@@ -319,9 +329,9 @@ def test_legal_unavailable_reaction_retained_without_payment(mode, monkeypatch):
 @pytest.mark.parametrize("pc", [False, True])
 def test_pass_restores_active_graph_and_expires_at_owner_start(pc, monkeypatch):
     request, handle, live, loader = shield_case(pc=pc)
-    request, _ = step(request, handle, live, loader, monkeypatch)
+    request, _, _ = step(request, handle, live, loader, monkeypatch)
     before = request.rng_context.state
-    request, result = step(
+    request, result, _ = step(
         request, handle, live, loader, monkeypatch, CombatIntentPayload(intent_type="pass")
     )
     assert result.rng_transition.next_state == before
@@ -339,7 +349,7 @@ def test_pass_restores_active_graph_and_expires_at_owner_start(pc, monkeypatch):
 @pytest.mark.parametrize("case", ["expiry", "response", "lineage", "ac", "duration"])
 def test_incomplete_persisted_graph_refuses_before_rng(case, intent, monkeypatch):
     request, handle, live, loader = shield_case()
-    request, _ = step(request, handle, live, loader, monkeypatch)
+    request, _, _ = step(request, handle, live, loader, monkeypatch)
     snap = request.state_snapshot
     state = snap.combat_state
     effect = snap.effect_states[0]
@@ -377,11 +387,13 @@ def test_incomplete_persisted_graph_refuses_before_rng(case, intent, monkeypatch
     assert request == original
 
 
-def test_creation_and_expiry_in_same_attack_is_one_atomic_result(monkeypatch):
+def test_creation_stays_in_attack_and_expiry_occurs_at_pass(monkeypatch):
     request, handle, live, loader = shield_case(seed=7, start=1)
-    after, result = step(request, handle, live, loader, monkeypatch)
+    after, result, passed = step(request, handle, live, loader, monkeypatch)
     assert any(e.type == "effect_applied" for e in result.proposed_events)
-    assert any(e.type == "effect_expired" for e in result.proposed_events)
+    assert not any(e.type == "effect_expired" for e in result.proposed_events)
+    assert apply_shield(request.state_snapshot, result).effect_states
+    assert any(e.type == "effect_expired" for e in passed.proposed_events)
     assert not after.state_snapshot.effect_states
     assert (
         next(a for a in after.state_snapshot.character_states if a.entity_id == FOE).spell_slots[1]
@@ -392,7 +404,7 @@ def test_creation_and_expiry_in_same_attack_is_one_atomic_result(monkeypatch):
 @pytest.mark.parametrize("pc", [False, True])
 def test_shield_cannot_stop_crit_damage_and_death_or_dying(pc, monkeypatch):
     request, handle, live, loader = shield_case(seed=5, pc=pc, hp=1)
-    after, result = step(request, handle, live, loader, monkeypatch)
+    after, result, _ = step(request, handle, live, loader, monkeypatch)
     assert next(e for e in result.proposed_events if e.type == "attack_rolled").is_crit is True
     assert (
         next(a for a in after.state_snapshot.character_states if a.entity_id == FOE).hp_current == 0

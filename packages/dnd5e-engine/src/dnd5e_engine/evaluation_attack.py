@@ -52,7 +52,11 @@ def execute_attack(
     loader: AssetLoader | None = None,
     before_hit: Callable[[AttackHitContext], None] | None = None,
 ) -> CombatComputationResult:
-    """Compute a private post-state for closed delta projection, never publication."""
+    """Compute attack costs and consequences while retaining the current turn.
+
+    The private result leaves turn boundaries to explicit Pass, so movement and
+    any remaining legal actions can still use the same turn.
+    """
     from dnd5e_engine.evaluation_haste import HasteComputation
     from dnd5e_engine.evaluation_shield import ShieldComputation
 
@@ -98,8 +102,7 @@ def execute_attack(
         can_see=lambda hostile, attacker: True,
     )  # Admission requires bright, unobstructed geometry.
     bands = attack_rules.weapon_attack_range_ft(plan.weapon)
-    # Dodge reads the reviewed world spell's bonus. Turn handoff uses the base
-    # combat ledgers. The host may expire the spell at the same round boundary.
+    # Dodge reads the reviewed world spell's bonus without changing movement ledgers.
     dodge_speed_actor = plan.target
     if plan.target_walk_bonus:
         dodge_speed_actor = plan.target.model_copy(
@@ -176,10 +179,6 @@ def execute_attack(
             raise RuntimeError("unadmitted mastery proc")
         marks = apply_sap(marks, actor.entity_id, target)
     computation.state = computation.state.model_copy(update={"sap_marks": marks})
-    # Keep the Haste turn available for movement and restricted or ordinary Actions.
-    # The existing explicit Pass path owns the effect's TurnEnd transition.
-    if not isinstance(computation, HasteComputation):
-        computation.finish_turn(actor.entity_id)
     computation.actors[actor.entity_id] = record_budget_changes(
         before, computation.actors[actor.entity_id]
     )

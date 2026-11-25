@@ -20,7 +20,7 @@ from dnd5e_engine.evaluation_state import InventoryState
 from dnd5e_engine.events import AttackRolled, DamageApplied
 from dnd5e_engine.specs import GridScene
 from tests.evaluation_support import FOE, HERO
-from tests.test_stateless_attack import apply_delta, execute, request_and_live
+from tests.test_stateless_attack import apply_delta, execute, pass_after_attack, request_and_live
 
 
 def weapon_case(
@@ -157,8 +157,10 @@ def test_real_weapons_match_legacy_full_state_rng_events_and_budgets(
     asyncio.run(orch.submit_player_intent(handle, request.actor_id, request.payload))
     result = execute(request, loader)
     assert result.status == "accepted", result.error
-    assert result.proposed_events == tuple(live.event_log)
-    assert result.rng_transition.next_state == RNGState.capture(live.rng)
+    attacked = apply_delta(request.state_snapshot, result)
+    passed, events = pass_after_attack(request, result, attacked, loader)
+    assert events == tuple(live.event_log)
+    assert passed.rng_transition.next_state == RNGState.capture(live.rng)
     expected = capture_combat_snapshot(
         live,
         resource_state=None,
@@ -169,7 +171,7 @@ def test_real_weapons_match_legacy_full_state_rng_events_and_budgets(
         combat_id="combat:synthetic",
         snapshot_schema_version="engine-snapshot/17",
     )
-    assert apply_delta(request.state_snapshot, result) == expected
+    assert apply_delta(attacked, passed) == expected
     assert not expected.combat_state.vex_grants
     assert not expected.combat_state.sap_marks
     assert not expected.combat_state.slow_marks

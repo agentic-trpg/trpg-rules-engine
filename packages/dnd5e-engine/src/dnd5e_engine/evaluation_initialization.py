@@ -44,7 +44,7 @@ from dnd5e_engine.movement import project_speeds
 from dnd5e_engine.rules.dice import ability_modifier
 from dnd5e_engine.spatial import GridTopology
 from dnd5e_engine.specs import GridScene
-from dnd5e_engine.turn_rules import reset_turn_budget
+from dnd5e_engine.turn_rules import fresh_turn_budget
 
 
 class CombatInitializationCandidatePayload(EvaluationModel):
@@ -210,14 +210,11 @@ def evaluate_combat_initialization_candidate(
             rng,
         )
         local = combatant(original)
-        local = reset_turn_budget(
+        local = fresh_turn_budget(
             local,
             effective_speed=project_speeds(local.base_speed, local.movement_modes).walk,
-            attacks=1,
         )
-        local = local.model_copy(
-            update={"initiative": value, "sneak_attack_spent_this_turn": False}
-        )
+        local = local.model_copy(update={"initiative": value})
         after = actor_state(local, original)
         fields = tuple(AttackBudgetState.model_fields)
         updates.append(

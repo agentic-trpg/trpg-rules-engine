@@ -16,7 +16,7 @@ from dnd5e_engine.outcome import DeathRecord
 from tests.evaluation_support import FOE, HERO, synthetic_loader
 from tests.test_evaluation_review_findings import recapture
 from tests.test_npc_availability import npc_case
-from tests.test_stateless_attack import apply_delta, execute, request_and_live
+from tests.test_stateless_attack import apply_delta, execute, pass_after_attack, request_and_live
 from tests.test_stateless_stabilization import OTHER, multi_enemy_case
 
 
@@ -143,12 +143,20 @@ def test_attack_zero_hp_death_save_boundary_matches_independent_legacy_entry(
     before = deepcopy(request)
     result = execute(request, loader)
     assert result.status == "accepted", result.error
+    attacked = apply_delta(request.state_snapshot, result)
+    assert attacked.character_states[0].hp_current == 0
+    assert not any(e.type == "death_save_rolled" for e in result.proposed_events)
+    assert (
+        attacked.combat_state.current_turn_index
+        == request.state_snapshot.combat_state.current_turn_index
+    )
+    passed, events = pass_after_attack(request, result, attacked, loader)
     asyncio.run(orch.submit_player_intent(handle, FOE, request.payload))
-    assert result.proposed_events == tuple(live.event_log)
-    assert result.rng_transition.next_state == RNGState.capture(live.rng)
-    final = apply_delta(request.state_snapshot, result)
+    assert events == tuple(live.event_log)
+    assert passed.rng_transition.next_state == RNGState.capture(live.rng)
+    final = apply_delta(attacked, passed)
     assert final == recapture(request, live).state_snapshot
-    saves = [e for e in result.proposed_events if e.type == "death_save_rolled"]
+    saves = [e for e in passed.proposed_events if e.type == "death_save_rolled"]
     assert len(saves) == 1
     assert saves[0].outcome == expected
     assert request == before
@@ -181,15 +189,17 @@ def test_multi_enemy_successive_commits_match_legacy_events_state_and_rng(monkey
         with monkeypatch.context() as isolated:
             prohibit_legacy(isolated)
             result = execute(request, loader)
+            attacked = apply_delta(request.state_snapshot, result)
+            passed, events = pass_after_attack(request, result, attacked, loader)
         assert result.status == "accepted", result.error
         offset = len(live.event_log)
         asyncio.run(submit(handle, actor, request.payload))
-        after = apply_delta(request.state_snapshot, result)
+        after = apply_delta(attacked, passed)
         assert after == recapture(request, live).state_snapshot
-        audit.extend(result.proposed_events)
+        audit.extend(events)
         assert tuple(audit) == tuple(live.event_log)
-        assert result.proposed_events == tuple(live.event_log[offset:])
-        assert result.rng_transition.next_state == RNGState.capture(live.rng)
+        assert events == tuple(live.event_log[offset:])
+        assert passed.rng_transition.next_state == RNGState.capture(live.rng)
         assert request == before
         assert FOE in after.combat_state.dead_ids
         request = request.model_copy(
@@ -198,7 +208,7 @@ def test_multi_enemy_successive_commits_match_legacy_events_state_and_rng(monkey
                 "rng_context": RNGContext(
                     stream_id="main",
                     version=request.rng_context.version + 1,
-                    state=result.rng_transition.next_state,
+                    state=passed.rng_transition.next_state,
                 ),
             }
         )
@@ -221,10 +231,12 @@ def test_dodge_uses_speed_not_unspent_movement_and_matches_legacy(npc, speed, do
     request = recapture(request, live)
     result = execute(request, loader)
     assert result.status == "accepted", result.error
+    attacked = apply_delta(request.state_snapshot, result)
+    passed, events = pass_after_attack(request, result, attacked, loader)
     asyncio.run(orch.submit_player_intent(handle, actor_id, request.payload))
-    assert result.proposed_events == tuple(live.event_log)
-    assert result.rng_transition.next_state == RNGState.capture(live.rng)
-    assert apply_delta(request.state_snapshot, result) == recapture(request, live).state_snapshot
+    assert events == tuple(live.event_log)
+    assert passed.rng_transition.next_state == RNGState.capture(live.rng)
+    assert apply_delta(attacked, passed) == recapture(request, live).state_snapshot
 
 
 @pytest.mark.parametrize("npc", [False, True])

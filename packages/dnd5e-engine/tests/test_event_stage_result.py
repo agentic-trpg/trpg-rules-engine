@@ -454,7 +454,8 @@ def test_processed_instance_cannot_move_to_later_unrelated_event(mode):
         s
         for s in stages
         if s["kind"] == "event"
-        and data["proposed_events"][s["event_cursor"] - 1]["type"] == "turn_ended"
+        and s["sequence"] > source["sequence"]
+        and data["proposed_events"][s["event_cursor"] - 1]["type"] == "condition_applied"
     )
     destination["combat_update"] = deepcopy(source["combat_update"])
     source["combat_update"] = None

@@ -14,8 +14,9 @@ from dnd5e_srd_data.schema.item import Armor, Weapon
 from pydantic import BaseModel, Field
 
 from dnd5e_engine.evaluation_base import EvaluationModel
+from dnd5e_engine.turn_rules import ROUND_DURATION_SECONDS
 
-EVALUATOR_VERSION = "dnd5e-evaluation/70"
+EVALUATOR_VERSION = "dnd5e-evaluation/71"
 RULESET_ID = "dnd-2024-srd-5.2.1"
 
 
@@ -141,6 +142,11 @@ class FrozenRuleset(FrozenAssetLoader):
     def binding(self) -> RulesetBinding:
         """Return the fixed dataset's validated three-field rules binding."""
         return self.__binding
+
+    @property
+    def round_duration_seconds(self) -> int:
+        """Return the D&D combat Round duration in game seconds for this evaluator."""
+        return ROUND_DURATION_SECONDS
 
 
 def freeze_ruleset(loader: AssetLoader) -> FrozenRuleset:

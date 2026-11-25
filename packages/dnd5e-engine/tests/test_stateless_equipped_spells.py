@@ -19,7 +19,7 @@ from dnd5e_engine.events import DamageApplied, HealingApplied, SaveRolled, Spell
 from dnd5e_engine.specs import GridScene
 from dnd5e_engine.spellcasting import spell_component_failure
 from tests.evaluation_support import FOE, HERO
-from tests.test_stateless_attack import execute
+from tests.test_stateless_attack import execute, pass_after_attack
 from tests.test_stateless_damage_spell import CLERIC_KNOWN
 from tests.test_stateless_equipped_class_attack import equipped_case
 from tests.test_stateless_item_closure_core import isolate
@@ -194,6 +194,14 @@ def test_equipped_spell_pass_reset_same_weapon_attack(spell, npc, monkeypatch):
                 "divine-order",
                 "divine-order-protector",
             }
+        assert (
+            snapshot.combat_state.initiative_ids[snapshot.combat_state.current_turn_index] == HERO
+        )
+        passed, _ = pass_after_attack(current, result, snapshot, loader)
+        snapshot = apply_healing(snapshot, passed)
+        rng = rng.model_copy(update={"state": passed.rng_transition.next_state})
+        # Legacy ends the attacker's turn in its attack call.
+        events.extend(passed.proposed_events[1:])
     assert snapshot == capture_combat_snapshot(
         live,
         grid=GridScene(width=3, height=3),

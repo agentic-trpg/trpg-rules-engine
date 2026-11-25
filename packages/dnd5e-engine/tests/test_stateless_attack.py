@@ -256,6 +256,108 @@ def apply_delta(snapshot, result):
     return CombatSnapshot.model_validate_json(to_json(value))
 
 
+def next_request(request, result, snapshot, *, command_id, payload):
+    """Model the next command using the previous command's adopted facts and RNG."""
+    transition = result.rng_transition
+    return request.model_copy(
+        update={
+            "command_id": command_id,
+            "payload": payload,
+            "state_snapshot": snapshot,
+            "rng_context": RNGContext(
+                stream_id=transition.stream_id,
+                version=transition.input_version + int(transition.state_changed),
+                state=transition.next_state,
+            ),
+        }
+    )
+
+
+def pass_after_attack(request, result, snapshot, loader=None):
+    """End the attacking actor's turn with the next physical RNG state."""
+    command = next_request(
+        request,
+        result,
+        snapshot,
+        command_id=f"{request.command_id}:pass",
+        payload=CombatIntentPayload(intent_type="pass"),
+    )
+    passed = execute(command, loader)
+    assert passed.status == "accepted", passed.error
+    declaration, *events = passed.proposed_events
+    assert declaration.type == "intent_submitted"
+    assert declaration.actor_id == request.actor_id
+    assert declaration.intent_type == "pass"
+    return passed, (*result.proposed_events, *events)
+
+
+def test_weapon_attack_spends_its_action_and_keeps_movement_until_pass():
+    request, _, live = request_and_live(ac=1)
+    starting_combat = request.state_snapshot.combat_state
+    attack = request.payload
+
+    def submit(prior, command_id, payload):
+        command = RuleEvaluationRequest.model_validate_json(
+            prior.model_copy(
+                update={"command_id": command_id, "payload": payload}
+            ).model_dump_json()
+        )
+        result = execute(command, live.ruleset_loader)
+        assert result.status == "accepted", result.error
+        snapshot = apply_delta(command.state_snapshot, result)
+        rng = command.rng_context.model_copy(
+            update={
+                "state": result.rng_transition.next_state,
+                "version": command.rng_context.version + int(result.rng_transition.state_changed),
+            }
+        )
+        return command.model_copy(update={"state_snapshot": snapshot, "rng_context": rng}), result
+
+    moved, _ = submit(
+        request,
+        "command:move-before",
+        CombatIntentPayload(intent_type="move", target_zone_id="0,1"),
+    )
+    attacked, hit = submit(moved, "command:attack", attack)
+    combat = attacked.state_snapshot.combat_state
+    assert (combat.current_turn_index, combat.round_number, combat.turn_serial) == (
+        starting_combat.current_turn_index,
+        starting_combat.round_number,
+        starting_combat.turn_serial,
+    )
+    assert not any(isinstance(op, delta.TurnUpdate) for op in hit.state_delta.operations)
+    assert not any(
+        e.type in {"turn_ended", "turn_started", "round_started"} for e in hit.proposed_events
+    )
+    assert any(e.type == "damage_applied" for e in hit.proposed_events)
+    assert hit.rng_transition.state_changed
+
+    rejected = execute(attacked, live.ruleset_loader)
+    assert rejected.status == "rejected"
+    assert rejected.rng_transition is None
+    assert rejected.state_delta is None
+
+    moved, _ = submit(
+        attacked,
+        "command:move-after",
+        CombatIntentPayload(intent_type="move", target_zone_id="1,1"),
+    )
+    combat = moved.state_snapshot.combat_state
+    assert combat.actor_zone[HERO] == "1,1"
+    assert combat.movement_ledgers[HERO].spent_ft == 10
+    assert combat.current_turn_index == starting_combat.current_turn_index
+
+    handed, passed = submit(moved, "command:pass", CombatIntentPayload(intent_type="pass"))
+    combat = handed.state_snapshot.combat_state
+    assert combat.initiative_ids[combat.current_turn_index] == FOE
+    assert combat.round_number == starting_combat.round_number
+    assert combat.turn_serial == starting_combat.turn_serial + 1
+    assert [event.actor_id for event in passed.proposed_events if event.type == "turn_started"] == [
+        FOE
+    ]
+    assert not passed.rng_transition.state_changed
+
+
 @pytest.mark.parametrize(
     "seed,ac,hp,temp_hp",
     [
@@ -301,9 +403,11 @@ def test_legacy_stateless_complete_delta_events_and_rng(seed, ac, hp, temp_hp, d
     registered = dict(orch._REGISTRY)
     result = execute(request)
     assert result.status == "accepted", result.error
-    assert result.proposed_events == tuple(live.event_log)
-    assert result.rng_transition.next_state == RNGState.capture(live.rng)
-    assert apply_delta(request.state_snapshot, result) == legacy
+    attacked = apply_delta(request.state_snapshot, result)
+    passed, events = pass_after_attack(request, result, attacked)
+    assert events == tuple(live.event_log)
+    assert passed.rng_transition.next_state == RNGState.capture(live.rng)
+    assert apply_delta(attacked, passed) == legacy
     assert result == execute(request)
     assert request == before
     assert registered == orch._REGISTRY

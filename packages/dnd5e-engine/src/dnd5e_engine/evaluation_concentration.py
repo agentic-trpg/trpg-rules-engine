@@ -328,6 +328,7 @@ def concentration_support_failure(
     *,
     composed: bool = False,
     turn_lifecycle: bool = False,
+    reviewed_dying_source: bool = False,
 ) -> str | None:
     """Check whether all concentration dependencies fit the admitted profile."""
     state = snapshot.combat_state
@@ -342,7 +343,7 @@ def concentration_support_failure(
     if (
         caster is None
         or not caster.is_alive
-        or caster.hp_current <= 0
+        or (caster.hp_current <= 0 and not reviewed_dying_source)
         or target_id in state.dead_ids
         or set(state.concentration_chain) != {target_id}
         or set(state.concentration_rounds_remaining) != {target_id}
@@ -434,9 +435,8 @@ def concentration_support_failure(
         snapshot,
         actor_dependencies=identity_failure,
         reviewed_effects=True,
-        # The exact linked Paralyzed conditions were validated above. R11's
-        # separate dying-condition profile is not this positive-HP turn slice.
-        turn_lifecycle=False,
+        # This profile validates its linked conditions independently of plain Pass.
+        reviewed_dying=reviewed_dying_source,
         movement=turn_lifecycle,
     )
 

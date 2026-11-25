@@ -44,8 +44,8 @@ from dnd5e_engine.events import (
 from dnd5e_engine.movement import MovementMode, project_speeds, speed_for_mode
 from dnd5e_engine.rules.conditions import active_condition_names, exhaustion_level_of
 from dnd5e_engine.turn_rules import (
+    fresh_turn_budget,
     next_turn_index,
-    reset_turn_budget,
 )
 from dnd5e_engine.types.combat import Combatant
 
@@ -386,8 +386,8 @@ class CombatComputation:
             }
         )
         start_event = self.on_turn_start(next_actor)
-        self.actors[next_actor] = reset_turn_budget(
-            self.actors[next_actor], effective_speed=self.speed(self.actors[next_actor]), attacks=1
+        self.actors[next_actor] = fresh_turn_budget(
+            self.actors[next_actor], effective_speed=self.speed(self.actors[next_actor])
         )
         for key, value in self.actors.items():
             if value.sneak_attack_spent_this_turn:

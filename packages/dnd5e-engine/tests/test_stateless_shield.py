@@ -10,6 +10,7 @@ from random import Random
 import pytest
 from pydantic import ValidationError
 
+from dnd5e_engine import evaluation_delta as delta
 from dnd5e_engine import evaluation_shield, live_reactions
 from dnd5e_engine import orchestrator as orch
 from dnd5e_engine.activities.context import AttackHitContext
@@ -25,7 +26,7 @@ from dnd5e_engine.intents import PlayerIntent
 from dnd5e_engine.lib_loader import scoped_lib_loader
 from dnd5e_engine.specs import GridScene
 from tests.evaluation_support import FOE, HERO, WEAPON
-from tests.test_stateless_attack import execute, pass_after_attack
+from tests.test_stateless_attack import execute, next_request, pass_after_attack
 from tests.test_stateless_attack_concentration import ATTACKER
 from tests.test_stateless_hold_cast import cast_case
 from tests.test_stateless_hold_turn import isolated
@@ -399,6 +400,86 @@ def test_creation_stays_in_attack_and_expiry_occurs_at_pass(monkeypatch):
         next(a for a in after.state_snapshot.character_states if a.entity_id == FOE).spell_slots[1]
         == 3
     )
+
+
+def test_ordinary_walk_after_shield_keeps_the_effect_and_turn_until_pass():
+    request, _, _, loader = shield_case(seed=7, start=1)
+    attack = execute(request, loader)
+    assert attack.status == "accepted", attack.error
+    armed = apply_shield(request.state_snapshot, attack)
+    before = deepcopy(armed)
+    move = next_request(
+        request,
+        attack,
+        armed,
+        command_id="shield:walk",
+        payload=CombatIntentPayload(intent_type="move", target_zone_id="1,1"),
+    )
+    result = execute(move, loader)
+    assert result.status == "accepted", result.error
+    assert {type(op) for op in result.state_delta.operations} == {
+        delta.PositionUpdate,
+        delta.MovementLedgerUpdate,
+        delta.ActionBudgetUpdate,
+    }
+    assert [event.type for event in result.proposed_events] == ["actor_moved"]
+    assert not result.rng_transition.state_changed
+    moved = apply_shield(armed, result)
+    assert moved.combat_state.actor_zone[HERO] == "1,1"
+    assert moved.combat_state.movement_ledgers[HERO].spent_ft == 5
+    assert moved.combat_state.turn_serial == armed.combat_state.turn_serial
+    assert moved.resource_state == armed.resource_state
+    assert evaluation_shield.shield_graph(moved) == evaluation_shield.shield_graph(armed)
+    assert armed == before
+
+    passed = execute(
+        next_request(
+            move,
+            result,
+            moved,
+            command_id="shield:pass",
+            payload=CombatIntentPayload(intent_type="pass"),
+        ),
+        loader,
+    )
+    assert passed.status == "accepted", passed.error
+    assert [
+        event.target_id for event in passed.proposed_events if event.type == "effect_expired"
+    ] == [FOE]
+    assert not apply_shield(moved, passed).effect_states
+
+
+@pytest.mark.parametrize("change", ["malformed", "opportunity", "dash"])
+def test_shield_walking_does_not_admit_invalid_graphs_or_other_mechanics(change, monkeypatch):
+    request, _, _, loader = shield_case(seed=7, start=1)
+    attack = execute(request, loader)
+    assert attack.status == "accepted", attack.error
+    snapshot = apply_shield(request.state_snapshot, attack)
+    combat = snapshot.combat_state
+    expected_code = "movement.capability"
+    intent = CombatIntentPayload(intent_type="move", target_zone_id="1,1")
+    if change == "malformed":
+        combat = combat.model_copy(update={"reaction_effects_pending_expiry": {}})
+    elif change == "opportunity":
+        combat = combat.model_copy(
+            update={
+                "party_ids": {HERO},
+                "encounter_ids": {ATTACKER, FOE},
+                "xp_value_by_entity": {**combat.xp_value_by_entity, ATTACKER: 0},
+            }
+        )
+        intent = CombatIntentPayload(intent_type="move", target_zone_id="2,1")
+        expected_code = "movement.opportunity_attack"
+    else:
+        intent = CombatIntentPayload(intent_type="dash")
+    snapshot = snapshot.model_copy(update={"combat_state": combat})
+    movement = next_request(request, attack, snapshot, command_id="shield:refused", payload=intent)
+    monkeypatch.setattr(RNGState, "restore", lambda *_: pytest.fail("invalid walking restored RNG"))
+    result = execute(movement, loader)
+    assert result.status == "unsupported"
+    assert result.error.code == expected_code
+    assert result.state_delta is result.rng_transition is None
+    assert not result.proposed_events
 
 
 @pytest.mark.parametrize("pc", [False, True])

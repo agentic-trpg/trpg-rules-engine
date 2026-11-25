@@ -100,7 +100,7 @@ def shield_graph(snapshot: CombatSnapshot) -> ShieldGraphValue | None:
 
 
 def plain_shield(snapshot: CombatSnapshot) -> CombatSnapshot:
-    """Check that the effect matches the reviewed Shield profile."""
+    """Project dependencies without the separately validated Shield graph."""
     return snapshot.model_copy(
         update={
             "effect_states": (),
@@ -164,7 +164,7 @@ def shield_source_id(snapshot: CombatSnapshot, owner_id: str) -> str | None:
 
 
 def shield_support_failure(
-    snapshot: CombatSnapshot, loader: AssetLoader, *, turn: bool = False
+    snapshot: CombatSnapshot, loader: AssetLoader, *, turn: bool = False, movement: bool = False
 ) -> str | None:
     """Return a reason for unsupported Shield dependencies."""
     spell = loader.get_spell("shield")
@@ -213,9 +213,20 @@ def shield_support_failure(
         attack=True,
         equipped=True,
         turn_lifecycle=turn,
-        movement=turn,
+        movement=turn or movement,
         reviewed_reactions=bool(pending),
     )
+
+
+def retained_shield_walk_failure(snapshot: CombatSnapshot, loader: AssetLoader) -> str | None:
+    """Require an exact active Shield with no pending reaction for ordinary walking.
+
+    Shield supplies AC and owner-start expiry, neither consumed by unreactive walking.
+    The caller still runs route and opportunity-attack checks on the original state.
+    """
+    if snapshot.combat_state.pending_reactions or not snapshot.effect_states:
+        return "walking with Shield requires one active effect and no pending reaction"
+    return shield_support_failure(snapshot, loader, movement=True)
 
 
 class ShieldComputation(CombatComputation):

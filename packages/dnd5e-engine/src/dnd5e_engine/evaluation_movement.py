@@ -19,6 +19,7 @@ from dnd5e_engine.evaluation_preflight import template_support_failure
 from dnd5e_engine.evaluation_projection import attack_delta
 from dnd5e_engine.evaluation_region_effect import supports_fixed_combat_regions
 from dnd5e_engine.evaluation_rng import RNGTransition
+from dnd5e_engine.evaluation_shield import has_shield, retained_shield_walk_failure
 from dnd5e_engine.evaluation_speed_effects import (
     SpeedEffectComputation,
     has_speed_effects,
@@ -156,11 +157,14 @@ def evaluate_movement(request: RuleEvaluationRequest, loader: AssetLoader) -> Tu
         return _refuse("unsupported", "movement.template", failure)
     if state.movement_ledgers[actor_id].active_mode != "walk":
         return _refuse("unsupported", "movement.mode", "only an active walking ledger is admitted")
+    retained_shield = intent.intent_type == "move" and has_shield(snapshot)
+    if retained_shield and (failure := retained_shield_walk_failure(snapshot, loader)):
+        return _refuse("unsupported", "movement.capability", failure)
     reviewed_regions = supports_fixed_combat_regions(snapshot, loader)
     try:
         speed_effect, timed = (
             (False, {})
-            if reviewed_regions
+            if reviewed_regions or retained_shield
             else _movement_effects(snapshot, loader, walking=intent.intent_type == "move")
         )
     except ValueError as error:
@@ -177,15 +181,19 @@ def evaluate_movement(request: RuleEvaluationRequest, loader: AssetLoader) -> Tu
     opportunity, failure = opportunity_dependencies(snapshot, loader)
     failure = (
         failure
-        or operation_dependencies(
-            dependencies,
-            loader,
-            movement=True,
-            attack=bool(state.pending_reactions),
-            reviewed_reactions=bool(state.pending_reactions),
-            reviewed_world_effects=bool(timed),
-            reviewed_region_conditions=reviewed_regions,
-            equipped=True,
+        or (
+            None
+            if retained_shield
+            else operation_dependencies(
+                dependencies,
+                loader,
+                movement=True,
+                attack=bool(state.pending_reactions),
+                reviewed_reactions=bool(state.pending_reactions),
+                reviewed_world_effects=bool(timed),
+                reviewed_region_conditions=reviewed_regions,
+                equipped=True,
+            )
         )
         or template_support_failure(snapshot, loader)
     )

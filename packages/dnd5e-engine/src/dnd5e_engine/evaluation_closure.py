@@ -47,10 +47,11 @@ def _refuse(
 def evaluate_closure(request: RuleEvaluationRequest, loader: AssetLoader) -> ClosureEvaluation:
     """Validate terminal combat and propose a supported victory or TPK closure.
 
-    Check roster, dependency/death consistency and representable resource ledgers,
+    Check roster, dependency/life consistency and representable resource ledgers,
     derive the final outcome and return guarded closure changes/events. Nonterminal or
     unsupported inputs return refusal. The outcome does not itself update authoritative
-    host character, world or encounter records.
+    host character, world or encounter records. A living zero-HP Character may be
+    unstable or stable; only recorded deaths count toward party defeat.
     """
     snapshot = request.state_snapshot
     if not isinstance(snapshot, CombatSnapshot):
@@ -64,11 +65,12 @@ def evaluate_closure(request: RuleEvaluationRequest, loader: AssetLoader) -> Clo
         snapshot,
         loader,
         reviewed_closure=snapshot.snapshot_schema_version == "engine-snapshot/20",
+        reviewed_dying=True,
         reviewed_region_conditions=supports_fixed_combat_regions(snapshot, loader),
     ) or template_support_failure(snapshot, loader)
     if failure:
         return _refuse("unsupported", "closure.capability", failure)
-    failure = death_consistency(snapshot)
+    failure = death_consistency(snapshot, allow_dying=True)
     if failure:
         return _refuse("unsupported", "closure.death_state", failure)
     if not state.party_ids or not state.encounter_ids:

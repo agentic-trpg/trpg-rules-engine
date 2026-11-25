@@ -225,6 +225,50 @@ def test_verified_configured_closure_uses_forced_without_xp_and_terminal_precede
     assert victory.xp_increments
 
 
+@pytest.mark.parametrize("stable", [False, True])
+@pytest.mark.parametrize("foe_dead", [False, True])
+def test_living_zero_hp_character_is_not_a_recorded_death(stable, foe_dead):
+    """Closure uses committed death membership, not a living PC's zero HP."""
+    request, _, _ = terminal_request() if foe_dead else request_and_live()
+    wire = request.model_dump(mode="json")
+    wire.update(schema_version="engine-evaluation/24", operation_kind="combat.close")
+    wire["payload"] = {"kind": "combat.close"}
+    snapshot = wire["state_snapshot"]
+    hero = next(a for a in snapshot["character_states"] if a["entity_id"] == HERO)
+    hero.update(
+        hp_current=0,
+        is_alive=True,
+        death_saves={
+            "successes": 3 if stable else 0,
+            "failures": 0 if stable else 1,
+            "is_stable": stable,
+        },
+        conditions=[
+            ConditionRecord(
+                condition="unconscious",
+                source_entity_id="implied:event",
+                scope="combat",
+                duration_rounds=None,
+                save_dc=None,
+                applied_round=1,
+                exhaustion_level=1,
+                source_effect_id=None,
+            ).model_dump(mode="json")
+        ],
+    )
+    result = execute(RuleEvaluationRequest.model_validate_json(to_json(wire)))
+    if foe_dead:
+        assert result.status == "accepted", result.error
+        (close,) = result.state_delta.operations
+        assert close.reason == "victory"
+        assert close.historical.residual_hp[HERO] == 0
+        assert close.xp_increments[HERO] > 0
+    else:
+        assert result.status == "rejected"
+        assert result.error.code == "closure.nonterminal"
+        assert result.state_delta is None
+
+
 @pytest.mark.parametrize(
     "mutation",
     [None, "pouch", "source", "duration", "other_condition", "dying", "missing_record"],
@@ -306,8 +350,10 @@ def test_equipped_wizard_closure_with_recorded_death_save(monkeypatch, mutation)
     result = execute(request, loader)
     assert request == before
     if mutation:
-        assert result.status == "unsupported"
-        assert result.error.code == "closure.capability"
+        assert result.status == ("rejected" if mutation == "dying" else "unsupported")
+        assert result.error.code == (
+            "closure.nonterminal" if mutation == "dying" else "closure.capability"
+        )
         assert result.state_delta is None
         assert result.rng_transition is None
         assert not result.proposed_events

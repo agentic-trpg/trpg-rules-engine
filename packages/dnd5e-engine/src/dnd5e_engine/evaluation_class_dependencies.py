@@ -309,6 +309,7 @@ def operation_dependencies(
     allow_stowed_healing_potions: bool = False,
     reviewed_class_lifecycle: bool = False,
     reviewed_closure: bool = False,
+    reviewed_dying: bool = False,
 ) -> str | None:
     """Pass/reset, walking, initialization and closure do not activate these grants.
 
@@ -316,7 +317,8 @@ def operation_dependencies(
     Any world effect must already have been verified by the requesting operation.
     Plain Pass can keep reviewed stowed healing potions in the equipment closure.
     Foundation admission and neutral Pass can opt in to the reviewed Lore Bard.
-    Modern closure can retain the reviewed Wizard pouch and terminal unconscious state.
+    Modern closure can retain the reviewed Wizard pouch and terminal conditions.
+    Closure independently admits validated dying or stable Character life facts.
     Other effects, reactions, traits and non-class mechanics retain ordinary guards.
     """
     from dnd5e_engine.evaluation_preflight import snapshot_support_failure
@@ -395,4 +397,5 @@ def operation_dependencies(
         reviewed_world_effects=reviewed_world_effects,
         reviewed_region_conditions=reviewed_region_conditions,
         reviewed_closure=reviewed_closure,
+        reviewed_dying=reviewed_dying,
     )

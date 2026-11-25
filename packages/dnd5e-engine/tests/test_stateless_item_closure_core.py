@@ -62,7 +62,15 @@ def test_real_item_success_without_legacy_matches_events_and_rng(monkeypatch, hp
         assert not live.event_log
         assert live.tracked_hp[HERO] == hp
     asyncio.run(orch.submit_player_intent(handle, HERO, legacy_intent()))
-    assert result.proposed_events == tuple(live.event_log)
+    # The older executor auto-passes after exhausting the turn budget.
+    # Stateless item resolution keeps the turn until an explicit Pass.
+    if last_resource:
+        assert result.proposed_events == tuple(live.event_log[:-4])
+        assert tuple(e.type for e in live.event_log[-4:]) == (
+            "turn_phase", "turn_ended", "turn_started", "turn_phase"
+        )
+    else:
+        assert result.proposed_events == tuple(live.event_log)
     assert result.rng_transition.next_state == RNGState.capture(live.rng)
     assert request == before
 
@@ -184,7 +192,7 @@ def test_item_boundary_projects_the_explicit_active_movement_mode(mode):
     update = {
         "action_available": False,
         "attacks_remaining": 0,
-        "movement_remaining": 0,
+        "movement_remaining": {"walk": 25, "swim": 10, "climb": 5}[mode],
         "movement_modes": modes,
     }
     live.initiative[0] = live.initiative[0].model_copy(update=update)

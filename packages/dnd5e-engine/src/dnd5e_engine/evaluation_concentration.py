@@ -438,6 +438,7 @@ def concentration_support_failure(
         # This profile validates its linked conditions independently of plain Pass.
         reviewed_dying=reviewed_dying_source,
         movement=turn_lifecycle,
+        reviewed_linked_hold_conditions=turn_lifecycle,
     )
 
 

@@ -6,6 +6,7 @@ from dnd5e_engine import orchestrator as orch
 from dnd5e_engine.evaluation_contracts import CombatIntentPayload
 from dnd5e_engine.evaluation_rng import RNGState
 from dnd5e_engine.evaluation_snapshot import capture_combat_snapshot
+from dnd5e_engine.events import SaveRolled
 from dnd5e_engine.specs import GridScene
 from tests.evaluation_support import FOE, HERO
 from tests.test_stateless_attack import execute
@@ -18,13 +19,16 @@ def test_full_cleric_cast_pass_reset_cast_workflow(monkeypatch):
     request, handle, live, loader = damage_spell_case(seed=2, empty_slots=True)
     steps = [
         (HERO, request.payload),
+        (HERO, CombatIntentPayload(intent_type="pass")),
         (FOE, CombatIntentPayload(intent_type="pass")),
         (HERO, request.payload),
+        (HERO, CombatIntentPayload(intent_type="pass")),
     ]
-    for actor, payload in steps:
+    for actor, payload in (steps[0], *steps[2:4]):
         asyncio.run(orch.submit_player_intent(handle, actor, payload))
     snapshot, rng = request.state_snapshot, request.rng_context
     isolate(monkeypatch)
+    saves = []
     for index, (actor, payload) in enumerate(steps):
         invocation = request.model_copy(
             update={
@@ -37,7 +41,14 @@ def test_full_cleric_cast_pass_reset_cast_workflow(monkeypatch):
         )
         result = execute(invocation, loader)
         assert result.status == "accepted", result.error
+        saves.extend(e for e in result.proposed_events if isinstance(e, SaveRolled))
         snapshot = apply_candidate(snapshot, result)
+        if payload.intent_type == "cast_spell":
+            assert (
+                snapshot.combat_state.initiative_ids[snapshot.combat_state.current_turn_index]
+                == HERO
+            )
+            assert not snapshot.character_states[0].action_available
         rng = rng.model_copy(update={"state": result.rng_transition.next_state})
     assert snapshot == capture_combat_snapshot(
         live,
@@ -50,3 +61,4 @@ def test_full_cleric_cast_pass_reset_cast_workflow(monkeypatch):
     )
     assert rng.state == RNGState.capture(live.rng)
     assert snapshot.resource_state == request.state_snapshot.resource_state
+    assert len(saves) == 2

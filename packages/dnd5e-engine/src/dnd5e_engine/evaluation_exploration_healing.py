@@ -71,7 +71,7 @@ def exploration_healing_life_delta(
     """Propose only the recovery facts belonging to a living zero-HP recipient."""
     if target.hp_current != 0 or healed_hp == 0:
         return (), False
-    operations = []
+    operations: list[DeathStateUpdate | ConditionsUpdate] = []
     if target.death_saves is not None:
         operations.append(
             DeathStateUpdate(

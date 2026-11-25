@@ -23,10 +23,9 @@ from dnd5e_engine.evaluation_contracts import (
 from dnd5e_engine.evaluation_equipment_dependencies import snapshot_equipment_kind_failure
 from dnd5e_engine.evaluation_items import evaluate_exploration_item, evaluate_item
 from dnd5e_engine.evaluation_movement import evaluate_movement
-from dnd5e_engine.evaluation_opportunity import opportunity_dependencies
+from dnd5e_engine.evaluation_opportunity import ordinary_attack_opportunity_failure
 from dnd5e_engine.evaluation_preflight import prepare_attack
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError, attack_delta
-from dnd5e_engine.evaluation_reaction_state import OpportunityAttackState, OpportunityDeclineState
 from dnd5e_engine.evaluation_rest import evaluate_rest
 from dnd5e_engine.evaluation_rng import RNGTransition
 from dnd5e_engine.evaluation_ruleset import RulesetBinding, get_default_ruleset, verify_ruleset
@@ -108,12 +107,7 @@ def _opportunity_attack_rejection(
     snapshot: CombatSnapshot, loader: AssetLoader, common: _ResultIdentity
 ) -> RuleEvaluationResult | None:
     """Validate a retained opportunity decision before an unrelated ordinary attack."""
-    pending = snapshot.combat_state.pending_reactions
-    if not pending or not all(
-        isinstance(entry, (OpportunityAttackState, OpportunityDeclineState)) for entry in pending
-    ):
-        return None
-    _, failure = opportunity_dependencies(snapshot, loader)
+    failure = ordinary_attack_opportunity_failure(snapshot, loader)
     if failure:
         return _turn_result(common, _refuse("unsupported", "attack.reaction", failure))
     return None

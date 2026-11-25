@@ -80,6 +80,7 @@ def snapshot_support_failure(
     reviewed_region_conditions: bool = False,
     reviewed_closure: bool = False,
     reviewed_dying: bool = False,
+    reviewed_linked_hold_conditions: bool = False,
 ) -> str | None:
     """Return a reason when snapshot mechanics exceed the supported operation profile.
 
@@ -90,7 +91,11 @@ def snapshot_support_failure(
     """
     state = snapshot.combat_state
     failure = death_consistency(snapshot, allow_dying=turn_lifecycle or reviewed_dying)
-    if failure is None and (turn_lifecycle or reviewed_dying):
+    if (
+        failure is None
+        and (turn_lifecycle or reviewed_dying)
+        and not reviewed_linked_hold_conditions
+    ):
         failure = turn_lifecycle_support_failure(
             snapshot, reviewed_region_conditions=reviewed_region_conditions
         )

@@ -9,7 +9,8 @@ from pydantic import Field, model_validator
 from dnd5e_engine.evaluation_base import EvaluationModel
 from dnd5e_engine.evaluation_contracts import CombatIntentPayload, RuleError
 from dnd5e_engine.evaluation_equipment_dependencies import snapshot_equipment_kind_failure
-from dnd5e_engine.evaluation_preflight import prepare_attack
+from dnd5e_engine.evaluation_opportunity import ordinary_attack_opportunity_failure
+from dnd5e_engine.evaluation_preflight import prepare_attack, refused
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError
 from dnd5e_engine.evaluation_ruleset import RulesetBinding, get_default_ruleset, verify_ruleset
 from dnd5e_engine.evaluation_state import CombatSnapshot
@@ -88,12 +89,17 @@ def query_action_availability(
             reason=RuleError(code="snapshot.capability", reason=failure),
         )
     with scoped_lib_loader(assets):
-        admission = prepare_attack(
-            request.state_snapshot,
-            request.actor_id,
-            request.payload,
-            assets,
-            common_weapons=True,
+        failure = ordinary_attack_opportunity_failure(request.state_snapshot, assets)
+        admission = (
+            refused("unsupported", "attack.reaction", failure)
+            if failure
+            else prepare_attack(
+                request.state_snapshot,
+                request.actor_id,
+                request.payload,
+                assets,
+                common_weapons=True,
+            )
         )
         status: Literal["available", "unavailable", "unknown"]
         if admission.status == "accepted":

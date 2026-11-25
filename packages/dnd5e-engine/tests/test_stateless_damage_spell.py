@@ -19,7 +19,7 @@ from dnd5e_engine.evaluation_snapshot import capture_combat_snapshot
 from dnd5e_engine.events import ConcentrationCheck, DamageApplied, SaveRolled, SpellCast
 from dnd5e_engine.specs import GridScene
 from tests.evaluation_support import FOE, HERO, WEAPON, synthetic_loader
-from tests.test_stateless_attack import execute
+from tests.test_stateless_attack import execute, pass_after_attack
 from tests.test_stateless_attack_concentration import ATTACKER, attack_concentration_case
 from tests.test_stateless_concentration import apply_candidate
 from tests.test_stateless_item_closure_core import isolate
@@ -193,6 +193,18 @@ def parity(request, handle, live, loader, monkeypatch):
         assert result.status == "accepted", result.error
         assert execute(request, loader) == result
     after = apply_candidate(request.state_snapshot, result)
+    assert (
+        after.combat_state.current_turn_index
+        == request.state_snapshot.combat_state.current_turn_index
+    )
+    assert (
+        after.combat_state.movement_ledgers == request.state_snapshot.combat_state.movement_ledgers
+    )
+    assert not next(
+        a for a in after.character_states if a.entity_id == request.actor_id
+    ).action_available
+    passed, legacy_events = pass_after_attack(request, result, after, loader)
+    after = apply_candidate(after, passed)
     assert after == capture_combat_snapshot(
         live,
         grid=GridScene(width=3, height=3),
@@ -202,8 +214,8 @@ def parity(request, handle, live, loader, monkeypatch):
         resource_state=after.resource_state,
         casting_state=after.casting_state,
     )
-    assert result.proposed_events == tuple(live.event_log)
-    assert result.rng_transition.next_state == RNGState.capture(live.rng)
+    assert legacy_events == tuple(live.event_log)
+    assert passed.rng_transition.next_state == RNGState.capture(live.rng)
     assert request == original
     return result, after
 

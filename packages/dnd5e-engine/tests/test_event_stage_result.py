@@ -175,7 +175,7 @@ def test_movement_turn_and_set_edit_contradictions_are_refused(mode, fault):
 def test_nonaccepted_evaluate_has_no_stage_records_and_cannot_accept_them(status):
     request, _, _ = request_and_live()
     payload = (
-        CombatIntentPayload(intent_type="dodge")
+        CombatIntentPayload(intent_type="hide")
         if status == "unsupported"
         else request.payload.model_copy(
             update={"weapon_id": None} if status == "needs_choice" else {"target_id": "missing"}

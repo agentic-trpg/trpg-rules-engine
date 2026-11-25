@@ -16,7 +16,7 @@ from dnd5e_engine import orchestrator as orch
 from dnd5e_engine.activities.apply import _apply_modifiers
 from dnd5e_engine.effect_lifecycle import EffectLifecycleApplication
 from dnd5e_engine.evaluation_contracts import RuleEvaluationRequest
-from dnd5e_engine.evaluation_effects import effect_state
+from dnd5e_engine.evaluation_effects import EffectDurationState, effect_state
 from dnd5e_engine.evaluation_rng import RNGState
 from dnd5e_engine.evaluation_ruleset import ruleset_binding
 from dnd5e_engine.evaluation_snapshot import capture_combat_snapshot
@@ -199,7 +199,14 @@ def test_entire_effect_state_family_requires_explicit_fields_and_roundtrips():
 
     for model in visit(state):
         raw = model.model_dump(mode="json")
-        assert set(raw) == set(type(model).model_fields)
+        omitted = (
+            {"until_long_rest", "overlay_fixed"}
+            if isinstance(model, EffectDurationState)
+            else set()
+        )
+        assert set(raw) == set(type(model).model_fields) - omitted
+        if omitted:
+            assert all(getattr(model, field) is None for field in omitted)
         schema = type(model).model_json_schema()
         definition = (
             schema["$defs"][schema["$ref"].rsplit("/", 1)[1]] if "$ref" in schema else schema
@@ -213,6 +220,21 @@ def test_entire_effect_state_family_requires_explicit_fields_and_roundtrips():
                 adapter.validate_json(json.dumps(missing))
         with pytest.raises(ValidationError):
             adapter.validate_json(json.dumps(raw | {"unknown": True}))
+
+    duration = state.duration.model_dump(mode="json")
+    for field in ("until_long_rest", "overlay_fixed"):
+        with pytest.raises(ValidationError):
+            EffectDurationState.model_validate_json(json.dumps(duration | {field: False}))
+    long_rest = EffectDurationState.model_validate(
+        duration | {"rounds": None, "until_long_rest": True}
+    )
+    assert long_rest.model_dump(mode="json")["until_long_rest"] is True
+    assert EffectDurationState.model_validate_json(long_rest.model_dump_json()) == long_rest
+    fixed = EffectDurationState.model_validate(
+        duration | {"rounds": None, "seconds": 3600, "overlay_fixed": True}
+    )
+    assert fixed.model_dump(mode="json")["overlay_fixed"] is True
+    assert EffectDurationState.model_validate_json(fixed.model_dump_json()) == fixed
 
 
 @pytest.mark.parametrize(

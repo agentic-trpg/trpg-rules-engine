@@ -196,8 +196,25 @@ def test_full_legacy_state_event_rng_and_independent_srd_costs(seed, npc, monkey
         casting_state=after.casting_state,
         reaction_sources={FOE: "class:wizard"},
     )
-    assert after == legacy
-    assert result.proposed_events == tuple(live.event_log)
+    # The legacy executor auto-passes after casting; the current evaluator keeps
+    # this turn until its owner explicitly passes.
+    assert after == legacy.model_copy(
+        update={
+            "combat_state": legacy.combat_state.model_copy(
+                update={
+                    "current_turn_index": after.combat_state.current_turn_index,
+                    "turn_serial": after.combat_state.turn_serial,
+                    "last_ended_turn": after.combat_state.last_ended_turn,
+                }
+            )
+        }
+    )
+    assert after.combat_state.turn_serial == request.state_snapshot.combat_state.turn_serial
+    assert after.combat_state.last_ended_turn == request.state_snapshot.combat_state.last_ended_turn
+    assert result.proposed_events == tuple(live.event_log[:-4])
+    assert tuple(e.type for e in live.event_log[-4:]) == (
+        "turn_phase", "turn_ended", "turn_started", "turn_phase"
+    )
     assert result.rng_transition.next_state == RNGState.capture(live.rng)
     save = next(e for e in result.proposed_events if isinstance(e, SaveRolled))
     assert save.dc == 15
@@ -211,7 +228,7 @@ def test_full_legacy_state_event_rng_and_independent_srd_costs(seed, npc, monkey
     assert pools[FOE, "arcane-recovery"] == 1
     assert not after.character_states[0].action_available
     assert not after.character_states[2].reaction_available
-    assert after.combat_state.current_turn_index == 1
+    assert after.combat_state.current_turn_index == 0
     assert not after.combat_state.pending_reactions
     assert len([e for e in result.proposed_events if isinstance(e, ReactionTriggered)]) == 1
     assert any(isinstance(e, HealingApplied) for e in result.proposed_events) is save.succeeded

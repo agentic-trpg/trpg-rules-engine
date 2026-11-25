@@ -110,9 +110,20 @@ def test_equipped_spell_complete_legacy_and_independent(spell, npc, seed, weapon
         isolate(scoped)
         result = execute(request, loader)
     assert result.status == "accepted", result.error
-    assert result.proposed_events == tuple(live.event_log)
+    spell_after = apply_healing(request.state_snapshot, result)
+    assert (
+        spell_after.combat_state.current_turn_index
+        == request.state_snapshot.combat_state.current_turn_index
+    )
+    assert not spell_after.character_states[0].action_available
+    assert (
+        spell_after.combat_state.movement_ledgers
+        == request.state_snapshot.combat_state.movement_ledgers
+    )
+    passed, legacy_events = pass_after_attack(request, result, spell_after, loader)
+    assert legacy_events == tuple(live.event_log)
     assert result.rng_transition.next_state == RNGState.capture(live.rng)
-    after = apply_healing(request.state_snapshot, result)
+    after = apply_healing(spell_after, passed)
     assert after == capture_combat_snapshot(
         live,
         grid=GridScene(width=3, height=3),
@@ -157,10 +168,11 @@ def test_equipped_spell_pass_reset_same_weapon_attack(spell, npc, monkeypatch):
     snapshot, rng = request.state_snapshot, request.rng_context
     steps = [
         (HERO, request.payload),
+        (HERO, CombatIntentPayload(intent_type="pass")),
         (FOE, CombatIntentPayload(intent_type="pass")),
         (HERO, CombatIntentPayload(intent_type="attack", weapon_id="quarterstaff", target_id=FOE)),
     ]
-    for actor_id, intent in steps:
+    for actor_id, intent in (steps[0], *steps[2:]):
         asyncio.run(orch.submit_player_intent(handle, actor_id, intent))
     events = []
     with monkeypatch.context() as scoped:
@@ -180,7 +192,10 @@ def test_equipped_spell_pass_reset_same_weapon_attack(spell, npc, monkeypatch):
             assert execute(current, loader) == result
             snapshot = apply_healing(snapshot, result)
             rng = rng.model_copy(update={"state": result.rng_transition.next_state})
-            events.extend(result.proposed_events)
+            if actor_id == HERO and intent.intent_type == "pass":
+                events.extend(result.proposed_events[1:])
+            else:
+                events.extend(result.proposed_events)
             assert snapshot.inventory_state == request.state_snapshot.inventory_state
             assert snapshot.casting_state == request.state_snapshot.casting_state
             hero = snapshot.character_states[0]

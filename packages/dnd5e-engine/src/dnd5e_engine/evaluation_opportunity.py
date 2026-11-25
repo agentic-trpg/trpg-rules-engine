@@ -37,6 +37,19 @@ class OpportunityPlan:
     reach_ft: int
 
 
+def ordinary_attack_opportunity_failure(
+    snapshot: CombatSnapshot, loader: AssetLoader
+) -> str | None:
+    """Check retained ordinary opportunity decisions before another attack."""
+    pending = snapshot.combat_state.pending_reactions
+    if not pending or not all(
+        isinstance(entry, (OpportunityAttackState, OpportunityDeclineState)) for entry in pending
+    ):
+        return None
+    _, failure = opportunity_dependencies(snapshot, loader)
+    return failure
+
+
 def opportunity_dependencies(
     snapshot: CombatSnapshot, loader: AssetLoader
 ) -> tuple[OpportunityPlan | None, str | None]:

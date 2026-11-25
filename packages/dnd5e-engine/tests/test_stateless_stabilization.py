@@ -282,6 +282,7 @@ def test_closure_cannot_smuggle_historical_balances_into_new_write_fields():
         "expected_ended",
         "ended",
         "reason",
+        "condition_id",
         "xp_increments",
         "historical",
     }

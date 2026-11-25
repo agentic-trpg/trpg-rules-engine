@@ -99,7 +99,7 @@ def evaluate_closure(request: RuleEvaluationRequest, loader: AssetLoader) -> Clo
     actors = [combatant(a) for a in snapshot.character_states]
     reason = derive_ended_reason(actors, state.party_ids, state.encounter_ids, state.dead_ids)
     configured = request.configured_close if reason == "forced" else None
-    if reason not in ("victory", "defeat_tpk") and configured is None:
+    if reason == "flee" or (reason == "forced" and configured is None):
         return _refuse("rejected", "closure.nonterminal", "combat is not a victory or TPK")
     outcome = project_outcome(
         combat_id=state.combat_id,

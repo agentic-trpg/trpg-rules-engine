@@ -119,8 +119,7 @@ def test_complete_class_encounter_rest_new_encounter_workflow(feature, monkeypat
     request, loader, handle, live = workflow_case(feature)
     original = deepcopy(request)
     steps = [(HERO, request.payload)]
-    if feature:
-        steps.append((HERO, CombatIntentPayload(intent_type="pass")))
+    steps.append((HERO, CombatIntentPayload(intent_type="pass")))
     steps += [
         (ALLY, CombatIntentPayload(intent_type="pass")),
         (FOE, CombatIntentPayload(intent_type="pass")),
@@ -129,7 +128,7 @@ def test_complete_class_encounter_rest_new_encounter_workflow(feature, monkeypat
         (ALLY, CombatIntentPayload(intent_type="attack", target_id=FOE, weapon_id=WEAPON)),
     ]
     # Execute the same complete input on isolated Legacy state for differential evidence.
-    for actor, payload in steps:
+    for actor, payload in steps if feature else (steps[0], *steps[2:]):
         asyncio.run(orch.submit_player_intent(handle, actor, payload))
     snapshot = request.state_snapshot
     rng = request.rng_context

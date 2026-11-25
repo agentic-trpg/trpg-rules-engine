@@ -40,6 +40,7 @@ from dnd5e_engine.evaluation_rng import RNGContext, RNGState
 from dnd5e_engine.evaluation_ruleset import ruleset_binding
 from dnd5e_engine.evaluation_snapshot import capture_combat_snapshot
 from dnd5e_engine.evaluation_state import InventoryState
+from dnd5e_engine.events import AttackRolled, DamageApplied
 from dnd5e_engine.specs import GridScene
 from tests.evaluation_support import FOE, HERO, WEAPON, synthetic_combat, synthetic_loader
 from tests.test_stateless_attack import apply_delta, execute, pass_after_attack, request_and_live
@@ -411,8 +412,10 @@ def test_entry_revalidates_mutated_typed_actor_identity_as_schema_error():
 
 
 @pytest.mark.parametrize("action_id", ["scimitar", "light-crossbow"])
-def test_canonical_bandit_explicit_attack_is_executable_and_matches_legacy(action_id):
-    request, handle, live, _ = npc_case()
+def test_canonical_bandit_explicit_attack_cost_turn_events_and_rng(action_id):
+    """Compare full results with Legacy and apply the SRD Scimitar correction."""
+    seed = 0
+    request, handle, live, _ = npc_case(seed=seed)
     loader = BundledAssetLoader()
     monster = loader.get_monster("bandit")
     live.ruleset_loader = loader
@@ -449,12 +452,26 @@ def test_canonical_bandit_explicit_attack_is_executable_and_matches_legacy(actio
     assert query_action_availability(query_for(request), loader=loader).status == "available"
     asyncio.run(orch.submit_player_intent(handle, FOE, request.payload))
     result = execute(request, loader)
-    assert result.status == "accepted"
+    assert result.status == "accepted", result.error
     attacked = apply_delta(request.state_snapshot, result)
+    before = request.state_snapshot.combat_state
+    combat = attacked.combat_state
+    assert (combat.current_turn_index, combat.round_number, combat.turn_serial) == (
+        before.current_turn_index,
+        before.round_number,
+        before.turn_serial,
+    )
+    attacker = next(actor for actor in attacked.character_states if actor.entity_id == FOE)
+    assert not attacker.action_available
+    assert attacker.action_taken_this_turn
+    assert attacker.attack_rolls_made_this_turn == 1
+    assert attacker.bonus_action_available
+    assert attacker.reaction_available
     passed, events = pass_after_attack(request, result, attacked, loader)
-    assert events == tuple(live.event_log)
-    assert passed.rng_transition.next_state == RNGState.capture(live.rng)
-    assert apply_delta(attacked, passed) == capture_combat_snapshot(
+    assert not passed.rng_transition.state_changed
+    expected_events = list(live.event_log)
+    expected_rng = RNGState.capture(live.rng)
+    expected_after = capture_combat_snapshot(
         live,
         resource_state=None,
         casting_state=None,
@@ -463,3 +480,39 @@ def test_canonical_bandit_explicit_attack_is_executable_and_matches_legacy(actio
         world_version=7,
         combat_id="combat:synthetic",
     )
+    if action_id == "scimitar":
+        # SRD 5.2.1 p. 261: +3 to hit and 1d6 + 1 slashing.
+        # The fixed seed hits with both the SRD and Legacy modifiers.
+        dice = random.Random(seed)
+        natural = dice.randint(1, 20)
+        damage = dice.randint(1, 6) + 1
+        expected_rng = RNGState.capture(dice)
+        for index, event in enumerate(expected_events):
+            if isinstance(event, AttackRolled):
+                expected_events[index] = event.model_copy(
+                    update={"natural": natural, "modifier": 3, "roll_total": natural + 3}
+                )
+            elif isinstance(event, DamageApplied):
+                expected_events[index] = event.model_copy(
+                    update={"amount": damage, "damage_type": "slashing"}
+                )
+        hero_before = next(
+            actor for actor in request.state_snapshot.character_states if actor.entity_id == HERO
+        )
+        hero_attacked = next(
+            actor for actor in attacked.character_states if actor.entity_id == HERO
+        )
+        assert hero_attacked.hp_current == hero_before.hp_current - damage
+        expected_after = expected_after.model_copy(
+            update={
+                "character_states": tuple(
+                    actor.model_copy(update={"hp_current": hero_before.hp_current - damage})
+                    if actor.entity_id == HERO
+                    else actor
+                    for actor in expected_after.character_states
+                )
+            }
+        )
+    assert events == tuple(expected_events)
+    assert result.rng_transition.next_state == passed.rng_transition.next_state == expected_rng
+    assert apply_delta(attacked, passed) == expected_after

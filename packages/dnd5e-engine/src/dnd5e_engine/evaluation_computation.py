@@ -8,7 +8,6 @@ that this vertical slice cannot yet execute; this is not a general combat runtim
 import random
 from dataclasses import dataclass
 
-from dnd5e_engine import attack_rules
 from dnd5e_engine.activities.context import DamageInstanceContext
 from dnd5e_engine.activities.effects import is_condition_immune
 from dnd5e_engine.damage_rules import (
@@ -312,19 +311,8 @@ class CombatComputation:
             self.emit(ConditionRemoved(target_id=actor_id, condition="unconscious"))
             self.emit(ConditionApplied(target_id=actor_id, condition="prone"))
 
-    def finish_turn(
-        self, actor_id: str, *, allow_movement: bool = False, force: bool = False
-    ) -> None:
-        """Finish or retain the current turn and update candidate round, budgets and
-        lifecycle state.
-        """
-        actor = self.actors[actor_id]
-        # All other payment/windows are explicitly excluded by admission.
-        if not force and attack_rules.can_retain_turn(
-            actor, movement_speed=self.speed if allow_movement else None
-        ):
-            self.death_save(actor_id)
-            return
+    def finish_turn(self, actor_id: str) -> None:
+        """Advance an explicit Pass to the next turn in the private candidate state."""
         self.emit(
             TurnPhase(actor_id=actor_id, phase="turn_end", round_number=self.state.round_number)
         )

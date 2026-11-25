@@ -126,10 +126,6 @@ def test_spell_attack_rng_damage_and_turn(
         "spell_cast",
         "attack_rolled",
         *(["damage_applied"] if hit else []),
-        "turn_phase",
-        "turn_ended",
-        "turn_started",
-        "turn_phase",
     ]
     cast, roll = events[1:3]
     assert isinstance(cast, SpellCast)
@@ -164,7 +160,8 @@ def test_spell_attack_rng_damage_and_turn(
     assert target.hp_current == 40 - amount
     assert caster.action_taken_this_turn
     assert not caster.action_available
-    assert after.combat_state.initiative_ids[after.combat_state.current_turn_index] == FOE
+    assert after.combat_state.initiative_ids[after.combat_state.current_turn_index] == HERO
+    assert after.combat_state.turn_serial == request.state_snapshot.combat_state.turn_serial
 
 
 def test_poison_immunity_emits_zero_damage_with_only_normal_hit_draws():

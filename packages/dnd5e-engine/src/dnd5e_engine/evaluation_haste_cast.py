@@ -182,7 +182,6 @@ def evaluate_haste_cast(request: RuleEvaluationRequest, loader: AssetLoader) -> 
             }
         )
         computation.refresh_movement(target)
-        computation.finish_turn(source)
         computation.actors[source] = record_budget_changes(caster, computation.actors[source])
         ledger = slot_ledger(snapshot, payment)
         computation.state = computation.state.model_copy(

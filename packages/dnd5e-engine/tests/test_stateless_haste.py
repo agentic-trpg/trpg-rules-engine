@@ -183,7 +183,7 @@ def test_self_haste_follow_up_survives_current_turn_and_expires_at_next_target_e
     request, loader = haste_case()
     request, cast = step(request, loader)
     [created] = [o for o in cast.state_delta.operations if isinstance(o, HasteGraphCreate)]
-    assert created.rounds == 9
+    assert created.rounds == 10
     child = created.effect.end_effects[0]
     while current(request) != FOE:
         request, _ = step(request, loader, actor_id=current(request))

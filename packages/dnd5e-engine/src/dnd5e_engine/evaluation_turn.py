@@ -109,7 +109,7 @@ def evaluate_turn(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
         haste = HasteComputation(snapshot, rng)
         haste.enable_stages()
         haste.emit(IntentSubmitted(actor_id=request.actor_id, intent_type="pass"))
-        haste.finish_turn(request.actor_id, force=True)
+        haste.finish_turn(request.actor_id)
         computed = haste.result()
         return dict(
             status="accepted",
@@ -131,7 +131,7 @@ def evaluate_turn(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
         shield = ShieldComputation(snapshot, rng, loader)
         shield.enable_stages()
         shield.emit(IntentSubmitted(actor_id=request.actor_id, intent_type="pass"))
-        shield.finish_turn(request.actor_id, force=True)
+        shield.finish_turn(request.actor_id)
         computed = shield.result()
         return dict(
             status="accepted",
@@ -189,7 +189,7 @@ def evaluate_turn(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
     computation.enable_stages()
     computation.emit(IntentSubmitted(actor_id=request.actor_id, intent_type="pass"))
     # Pass pays no Action; it closes the turn even with unused budgets.
-    computation.finish_turn(request.actor_id, force=True)
+    computation.finish_turn(request.actor_id)
     computed = computation.result()
     after = computed.candidate_state
     return dict(

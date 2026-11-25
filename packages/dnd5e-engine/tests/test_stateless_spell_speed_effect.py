@@ -169,18 +169,21 @@ def test_movement_uses_reduced_budget_and_source_start_restores_unspent_speed():
     assert target.entity_id == FOE
     assert target.base_speed == 30
     assert target.movement_remaining == 20
-    move_too_far = next_request(request, slowed, cast, "move", target_zone_id="8,0")
+    caster_pass = execute(next_request(request, slowed, cast, "pass"), loader)
+    assert caster_pass.status == "accepted", caster_pass.error
+    foe_turn = adopt(slowed, caster_pass)
+    move_too_far = next_request(request, foe_turn, caster_pass, "move", target_zone_id="8,0")
     refused = execute(move_too_far, loader)
     assert refused.status == "rejected"
     assert refused.error.code == "movement.insufficient"
     assert refused.rng_transition is None
     assert refused.proposed_events == ()
-    move = next_request(request, slowed, cast, "move", target_zone_id="6,0")
+    move = next_request(request, foe_turn, caster_pass, "move", target_zone_id="6,0")
     moved = execute(move, loader)
     assert moved.status == "accepted", moved.error
     (movement,) = [event for event in moved.proposed_events if isinstance(event, ActorMoved)]
     assert movement.movement_cost_ft == 15
-    advanced = adopt(slowed, moved)
+    advanced = adopt(foe_turn, moved)
     assert advanced.character_states[1].movement_remaining == 5
     assert advanced.effect_states == slowed.effect_states
     assert advanced.combat_state.effect_lifecycles == slowed.combat_state.effect_lifecycles
@@ -209,7 +212,7 @@ def test_movement_uses_reduced_budget_and_source_start_restores_unspent_speed():
     assert passed.rng_transition.next_state == moved.rng_transition.next_state
 
 
-def test_same_command_application_and_expiry_is_unsupported():
+def test_same_command_application_remains_until_explicit_pass():
     request = cast_request(hit_points=1)
     before = deepcopy(request)
     control = request.model_copy(
@@ -217,16 +220,12 @@ def test_same_command_application_and_expiry_is_unsupported():
     )
     ordinary = execute(control, get_default_ruleset())
     assert ordinary.status == "accepted", ordinary.error
-    assert (
-        next(event for event in ordinary.proposed_events if event.type == "turn_started").actor_id
-        == HERO
-    )
+    assert not any(event.type == "turn_started" for event in ordinary.proposed_events)
     result = execute(request, get_default_ruleset())
-    assert result.status == "unsupported"
-    assert result.error.code == "spell.effect_consequence"
-    assert result.state_delta is None
-    assert result.rng_transition is None
-    assert result.proposed_events == ()
+    assert result.status == "accepted", result.error
+    after = adopt(request.state_snapshot, result)
+    assert after.combat_state.turn_serial == request.state_snapshot.combat_state.turn_serial
+    assert after.combat_state.effect_lifecycles
     assert request == before
 
 
@@ -250,10 +249,13 @@ def test_opposing_wizard_cast_requires_a_plain_snapshot(seed, slowed):
     assert ray.status == "accepted", ray.error
     current = adopt(initial.state_snapshot, ray)
     assert bool(current.effect_states) is slowed
+    handoff = execute(next_request(initial, current, ray, "pass"), loader)
+    assert handoff.status == "accepted", handoff.error
+    foe_turn = adopt(current, handoff)
     fire_bolt = next_request(
         initial,
-        current,
-        ray,
+        foe_turn,
+        handoff,
         "cast_spell",
         spell_id="fire-bolt",
         target_id=HERO,
@@ -296,11 +298,14 @@ def test_lethal_hit_keeps_the_effect_until_source_start_when_another_actor_is_al
     slain = adopt(request.state_snapshot, cast)
     assert slain.combat_state.dead_ids == {FOE}
     assert slain.effect_states[0].target_id == FOE
-    after = next_request(request, slain, cast, "pass")
+    caster_pass = execute(next_request(request, slain, cast, "pass"), loader)
+    assert caster_pass.status == "accepted", caster_pass.error
+    second_turn = adopt(slain, caster_pass)
+    after = next_request(request, second_turn, caster_pass, "pass")
     assert after.actor_id == second
     ended = execute(after, loader)
     assert ended.status == "accepted", ended.error
-    assert not adopt(slain, ended).effect_states
+    assert not adopt(second_turn, ended).effect_states
 
 
 def test_imported_speed_effect_rejects_a_dead_source():
@@ -309,7 +314,10 @@ def test_imported_speed_effect_rejects_a_dead_source():
     cast = execute(initial, loader)
     assert cast.status == "accepted", cast.error
     slowed = adopt(initial.state_snapshot, cast)
-    wire = next_request(initial, slowed, cast, "pass").model_dump(mode="json")
+    caster_pass = execute(next_request(initial, slowed, cast, "pass"), loader)
+    assert caster_pass.status == "accepted", caster_pass.error
+    foe_turn = adopt(slowed, caster_pass)
+    wire = next_request(initial, foe_turn, caster_pass, "pass").model_dump(mode="json")
     snapshot = wire["state_snapshot"]
     snapshot["character_states"][0].update(hp_current=0, is_alive=False)
     state = snapshot["combat_state"]
@@ -381,7 +389,7 @@ def test_serialized_speed_clock_requires_a_reachable_application_turn():
     cast = execute(request, loader)
     assert cast.status == "accepted", cast.error
     slowed = adopt(request.state_snapshot, cast)
-    assert slowed.combat_state.turn_serial == 42
+    assert slowed.combat_state.turn_serial == 41
     assert slowed.combat_state.effect_lifecycles[0].state.applied_turn_serial == 41
     ending = next_request(request, slowed, cast, "pass")
     assert execute(ending, loader).status == "accepted"
@@ -391,7 +399,7 @@ def test_serialized_speed_clock_requires_a_reachable_application_turn():
     clock["applied_turn_serial"] = 0
     result = execute(RuleEvaluationRequest.model_validate_json(dumps(forged)), loader)
     assert result.status == "unsupported"
-    assert "reachable initiative slots" in result.error.reason
+    assert "source-turn application interval" in result.error.reason
     assert result.state_delta is None
     assert result.proposed_events == ()
     assert result.rng_transition is None

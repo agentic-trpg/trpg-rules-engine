@@ -63,7 +63,7 @@ from dnd5e_engine.evaluation_spell_dependencies import (
 )
 from dnd5e_engine.evaluation_state import CharacterStateV2, CombatSnapshot, NonCombatSnapshot
 from dnd5e_engine.evaluation_turn import TurnEvaluation, _refuse
-from dnd5e_engine.events import CastFailed, EffectApplied, IntentSubmitted, SpellCast
+from dnd5e_engine.events import CastFailed, IntentSubmitted, SpellCast
 from dnd5e_engine.feature_runtime import DrawFreeRandom, FeatureInvocation, preflight_feature
 from dnd5e_engine.lib_loader import scoped_lib_loader
 from dnd5e_engine.rules.conditions import (
@@ -840,7 +840,6 @@ def _resolve_invocation(
             resolve_activity(
                 plan.activity, invocation_context(computation, plan, loader, request.actor_id, rng)
             )
-    computation.finish_turn(request.actor_id, allow_movement=bonus)
     computation.actors[request.actor_id] = record_budget_changes(
         actor, computation.actors[request.actor_id]
     )
@@ -862,17 +861,8 @@ def _resolve_invocation(
         raise RuntimeError("invocation left an incomplete damage instance")
     computed = computation.result()
     after = payment_post_state(computed.candidate_state, payments)
-    if creates_speed_effect:
-        if payments or ledgers:
-            raise RuntimeError("speed effect spell attack attempted an unsupported payment")
-        if not after.combat_state.effect_lifecycles and any(
-            isinstance(event, EffectApplied) for event in computed.proposed_events
-        ):
-            return _refuse(
-                "unsupported",
-                "spell.effect_consequence",
-                "initial effect would also expire during this attack's turn advance",
-            )
+    if creates_speed_effect and (payments or ledgers):
+        raise RuntimeError("speed effect spell attack attempted an unsupported payment")
     return dict(
         status="accepted",
         state_delta=(

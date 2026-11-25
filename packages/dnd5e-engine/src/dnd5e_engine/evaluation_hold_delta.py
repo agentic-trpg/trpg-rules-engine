@@ -51,7 +51,7 @@ class HoldPersonGraphCreate(EvaluationModel):
     entries: Annotated[tuple[HoldPersonCreatedEntry, ...], Field(min_length=1)]
     concentration_id: Literal["effect:paralyzed", "effect:hold-person"]
     chain: tuple[tuple[str, str, str], ...]
-    rounds: Literal[9]
+    rounds: Literal[10]
 
     @model_validator(mode="after")
     def closed_graph(self) -> Self:

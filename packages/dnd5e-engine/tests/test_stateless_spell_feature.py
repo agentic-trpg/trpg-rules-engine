@@ -187,7 +187,7 @@ def test_public_healing_range_and_payment(spell, cells, accepted):
     bonus = spell == "healing-word"
     assert hero.action_available is bonus
     assert hero.bonus_action_available is not bonus
-    assert after.combat_state.turn_serial == before.combat_state.turn_serial + int(not bonus)
+    assert after.combat_state.turn_serial == before.combat_state.turn_serial
     assert after.resource_state.pools[0].current == before.resource_state.pools[0].current - 1
 
 
@@ -292,8 +292,22 @@ def test_actual_class_full_legacy_state_event_rng_parity(feature, seed, monkeypa
         resource_state=after.resource_state,
         casting_state=after.casting_state,
     )
-    assert after == legacy
-    assert result.proposed_events == tuple(live.event_log)
+    if feature:
+        assert after == legacy
+        assert result.proposed_events == tuple(live.event_log)
+    else:
+        assert after.character_states[0] == legacy.character_states[0]
+        assert after.character_states[1].hp_current == legacy.character_states[1].hp_current
+        assert after.resource_state == legacy.resource_state
+        assert (
+            after.combat_state.current_turn_index
+            == request.state_snapshot.combat_state.current_turn_index
+        )
+        assert result.proposed_events == tuple(
+            event
+            for event in live.event_log
+            if event.type not in {"turn_phase", "turn_ended", "turn_started", "round_started"}
+        )
     assert result.rng_transition.next_state == RNGState.capture(live.rng)
     assert RuleEvaluationResult.model_validate_json(result.model_dump_json()) == result
     assert request == original
@@ -319,7 +333,7 @@ def test_independent_rules_magnitudes_costs_budgets_and_turn(feature, expected):
     hero = after.character_states[0]
     assert hero.bonus_action_available is (not feature)
     assert hero.action_available is feature
-    assert after.combat_state.current_turn_index == (0 if feature else 1)
+    assert after.combat_state.current_turn_index == 0
     assert after.combat_state.expended_resources == ({} if feature else {HERO: {"spell_slot:1": 1}})
     with pytest.raises(AssertionError):
         apply_healing(after, result)
@@ -340,7 +354,11 @@ def test_swarm_cannot_be_healed_but_legal_spell_pays_cost_without_draw(monkeypat
     assert not after.character_states[0].action_available
     assert not any(isinstance(e, HealingApplied) for e in result.proposed_events)
     assert result.rng_transition.next_state == request.rng_context.state
-    assert result.proposed_events == tuple(live.event_log)
+    assert result.proposed_events == tuple(
+        event
+        for event in live.event_log
+        if event.type not in {"turn_phase", "turn_ended", "turn_started", "round_started"}
+    )
 
 
 @pytest.mark.parametrize("feature", [False, True])
@@ -567,7 +585,12 @@ def test_npc_uses_same_real_class_mechanics(feature, monkeypatch):
         result = execute(request, loader)
     assert result.status == "accepted"
     after = apply_healing(request.state_snapshot, result)
-    assert result.proposed_events == tuple(live.event_log)
+    assert result.proposed_events == tuple(
+        event
+        for event in live.event_log
+        if feature
+        or event.type not in {"turn_phase", "turn_ended", "turn_started", "round_started"}
+    )
     assert result.rng_transition.next_state == RNGState.capture(live.rng)
     assert after.character_states[0].entity_type == "Monster"
     heal = next(e for e in result.proposed_events if isinstance(e, HealingApplied))

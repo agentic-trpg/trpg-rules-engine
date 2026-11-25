@@ -339,7 +339,7 @@ def step(request, handle, live, loader, monkeypatch, intent=None):
         )
         events = result.proposed_events
         transition = result.rng_transition
-        if request.payload.intent_type == "attack":
+        if request.payload.intent_type in {"attack", "cast_spell"}:
             assert (
                 after.combat_state.current_turn_index
                 == request.state_snapshot.combat_state.current_turn_index
@@ -596,7 +596,7 @@ def test_concurrent_replay_closed_graph_stale_and_old_versions(monkeypatch):
     for patch in (
         {"entries": (*op.entries, op.entries[0])},
         {"source_id": HERO},
-        {"rounds": 10},
+        {"rounds": 11},
         {"expected_concentration_id": "old"},
         {"selected_target_ids": ("missing",)},
     ):

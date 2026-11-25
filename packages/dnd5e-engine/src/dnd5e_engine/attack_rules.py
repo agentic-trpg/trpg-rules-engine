@@ -242,21 +242,6 @@ def is_proficient_with_weapon(current: Combatant, weapon: Weapon | None) -> bool
     )
 
 
-def can_retain_turn(
-    current: Combatant, *, movement_speed: Callable[[Combatant], int] | None = None
-) -> bool:
-    """Check the ordinary remaining action, swings and optional movement window."""
-    return (
-        current.action_available
-        or not attack_action_is_spent(current)
-        or (
-            movement_speed is not None
-            and current.movement_remaining > 0
-            and movement_speed(current) > 0
-        )
-    )
-
-
 def attack_action_is_spent(current: Combatant) -> bool:
     """Whether the paid Attack action has no remaining swings."""
     return not current.attack_action_engaged or current.attacks_remaining <= 0

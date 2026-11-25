@@ -220,7 +220,7 @@ def hold_create_delta(
         ),
         chain=tuple(after.combat_state.concentration_chain[source.entity_id]),
         rounds=cast(
-            Literal[9], after.combat_state.concentration_rounds_remaining[source.entity_id]
+            Literal[10], after.combat_state.concentration_rounds_remaining[source.entity_id]
         ),
     )
     expected_conditions = {
@@ -437,7 +437,6 @@ def evaluate_hold_cast(request: RuleEvaluationRequest, loader: AssetLoader) -> T
                 },
             }
         )
-        computation.finish_turn(actor.entity_id)
         computation.actors[actor.entity_id] = record_budget_changes(
             actor, computation.actors[actor.entity_id]
         )

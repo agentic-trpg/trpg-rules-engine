@@ -663,12 +663,12 @@ def test_unsupported_snapshot_effects_before_rng(monkeypatch):
     assert execute(request, loader).status == "unsupported"
 
 
-def test_only_bonus_action_is_required_and_last_resource_can_advance_turn():
+def test_only_bonus_action_is_required_and_last_resource_retains_turn():
     from dnd5e_engine.evaluation_contracts import RuleEvaluationResult
     from dnd5e_engine.evaluation_delta import StateDelta
     from tests.test_stateless_attack import apply_delta
 
-    request, handle, live, loader = item_case()
+    request, _, _, loader = item_case()
     updates = {"action_available": False, "attacks_remaining": 0, "movement_remaining": 0}
     actors = list(request.state_snapshot.character_states)
     actors[0] = actors[0].model_copy(update=updates)
@@ -679,19 +679,10 @@ def test_only_bonus_action_is_required_and_last_resource_can_advance_turn():
             )
         }
     )
-    live.initiative[0] = live.initiative[0].model_copy(update=updates)
     result = execute(request, loader)
     assert result.status == "accepted"
-    asyncio.run(orch.submit_player_intent(handle, HERO, legacy_intent()))
-    assert result.proposed_events == tuple(live.event_log)
-    assert result.rng_transition.next_state == RNGState.capture(live.rng)
-    del live.custom_counters_by_entity[HERO][orch._item_use_counter_key(POTION)]
-    from dnd5e_engine.specs import GridScene
-
+    assert not any(e.type in {"turn_ended", "turn_started"} for e in result.proposed_events)
     view = request.state_snapshot
-    expected = capture_evaluation_snapshot(
-        live, view, GridScene.model_validate(view.scene_state.grid.model_dump())
-    )
     combat_result = RuleEvaluationResult.model_validate(
         result.model_copy(
             update={
@@ -706,8 +697,11 @@ def test_only_bonus_action_is_required_and_last_resource_can_advance_turn():
             }
         )
     )
-    assert apply_delta(view, combat_result) == expected
-    assert expected.combat_state.current_turn_index == 1
+    after = apply_delta(view, combat_result)
+    assert after.combat_state.current_turn_index == view.combat_state.current_turn_index
+    assert after.combat_state.turn_serial == view.combat_state.turn_serial
+    assert after.character_states[0].bonus_action_available is False
+    assert after.character_states[0].hp_current > view.character_states[0].hp_current
 
 
 @pytest.mark.parametrize("charged", [False, True])

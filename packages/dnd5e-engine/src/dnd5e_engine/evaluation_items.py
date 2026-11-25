@@ -374,7 +374,6 @@ async def evaluate_item(request: RuleEvaluationRequest, loader: AssetLoader) -> 
     )
     computation.actors[current.entity_id] = current.model_copy(update=bonus_action_payment())
     _resolve_drink(item, computation.actors[current.entity_id], rng, loader, computation.emit)
-    computation.finish_turn(current.entity_id, allow_movement=True)
     computation.actors[current.entity_id] = record_budget_changes(
         current, computation.actors[current.entity_id]
     )

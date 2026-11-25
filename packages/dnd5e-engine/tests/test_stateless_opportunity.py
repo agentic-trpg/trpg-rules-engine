@@ -523,7 +523,30 @@ def test_full_cleric_move_oa_cantrip_pass_reset_cantrip(monkeypatch):
         assert result.status == "accepted", result.error
         snapshot = (apply_opportunity if index == 0 else apply_healing)(snapshot, result)
         rng = rng.model_copy(update={"state": result.rng_transition.next_state})
-        assert result.proposed_events == tuple(live.event_log[offset:])
+        events = result.proposed_events
+        if payload.intent_type == "cast_spell":
+            state = snapshot.combat_state
+            assert state.initiative_ids[state.current_turn_index] == actor
+            assert all(event.type not in {"turn_ended", "turn_started"} for event in events)
+            # The legacy cast hands off implicitly. Compare its full outcome
+            # with the paid stateless cast followed by the public Pass.
+            pass_request = invocation.model_copy(
+                update={
+                    "state_snapshot": snapshot,
+                    "rng_context": rng,
+                    "command_id": f"oa-workflow:{index}:pass",
+                    "payload": CombatIntentPayload(intent_type="pass"),
+                }
+            )
+            with monkeypatch.context() as scoped:
+                isolate(scoped)
+                passed = execute(pass_request, loader)
+            assert passed.status == "accepted", passed.error
+            snapshot = apply_healing(snapshot, passed)
+            rng = rng.model_copy(update={"state": passed.rng_transition.next_state})
+            assert passed.proposed_events[0].type == "intent_submitted"
+            events += passed.proposed_events[1:]
+        assert events == tuple(live.event_log[offset:])
         assert rng.state == RNGState.capture(live.rng)
         assert snapshot == capture_evaluation_snapshot(live, snapshot, GridScene(width=3, height=3))
     hero = next(a for a in snapshot.character_states if a.entity_id == HERO)

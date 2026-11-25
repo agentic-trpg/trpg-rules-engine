@@ -730,12 +730,13 @@ def prepare_attack(
         maximum = attack_rules.monster_attack_range_ft([activity], current.melee_reach_ft)
     else:
         assert weapon is not None
-        activity = (
+        weapon_activity = (
             weapon.activities[0]
             if weapon.activities
             else attack_rules.synthesize_attack_from_weapon(weapon)
         )
-        assert isinstance(activity, AttackActivity)
+        assert isinstance(weapon_activity, AttackActivity)
+        activity = weapon_activity
         bands = attack_rules.weapon_attack_range_ft(weapon)
         maximum = bands[1] if bands else None
     topology = GridTopology(GridScene.model_validate(snapshot.scene_state.grid.model_dump()))

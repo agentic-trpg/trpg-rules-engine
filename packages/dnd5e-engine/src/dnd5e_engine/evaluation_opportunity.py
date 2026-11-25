@@ -100,19 +100,21 @@ def opportunity_dependencies(
             target_id=mover.entity_id,
             stat_block_action_id=declaration.stat_block_action_id,
         )
-        activity, refusal = stat_block_admission(snapshot, combatant(owner), intent, loader)
+        stat_block_activity, refusal = stat_block_admission(
+            snapshot, combatant(owner), intent, loader
+        )
         if refusal is not None:
             return None, refusal.error.reason if refusal.error else "incomplete stat-block choice"
-        assert activity is not None
+        assert stat_block_activity is not None
         if (
-            activity.attack.type.value != "melee"
+            stat_block_activity.attack.type.value != "melee"
             or declaration.stat_block_action_id
             != REVIEWED_MONSTER_OPPORTUNITY_ACTIONS[declaration.monster_slug]
         ):
             return None, "opportunity attack requires an explicit melee stat-block action"
-        reach = attack_rules.monster_attack_range_ft([activity], owner.melee_reach_ft)
+        reach = attack_rules.monster_attack_range_ft([stat_block_activity], owner.melee_reach_ft)
         assert reach is not None
-        return OpportunityPlan(declaration, None, activity, reach), None
+        return OpportunityPlan(declaration, None, stat_block_activity, reach), None
     if (
         mover is None
         or owner.entity_type != "Character"
@@ -143,18 +145,18 @@ def opportunity_dependencies(
     assert weapon is not None
     if not weapon.weapon_category.endswith("melee"):
         return None, "opportunity attack requires a melee weapon"
-    activity = (
+    weapon_activity = (
         weapon.activities[0]
         if weapon.activities
         else attack_rules.synthesize_attack_from_weapon(weapon)
     )
-    assert isinstance(activity, AttackActivity)
+    assert isinstance(weapon_activity, AttackActivity)
     reach = (
         owner.melee_reach_ft
         if weapon.slug == "unarmed-strike"
         else attack_rules.weapon_melee_reach_ft(weapon)
     )
-    return OpportunityPlan(declaration, weapon, activity, reach), None
+    return OpportunityPlan(declaration, weapon, weapon_activity, reach), None
 
 
 def step_reactors(

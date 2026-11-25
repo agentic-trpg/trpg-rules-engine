@@ -527,13 +527,20 @@ def _attack_dependencies(
         not reviewed_regions
         and current_snapshot
         and snapshot.effect_states
-        and all(effect.duration.seconds is not None for effect in snapshot.effect_states)
+        and all(
+            effect.duration.seconds is not None or effect.duration.until_long_rest
+            for effect in snapshot.effect_states
+        )
         and not state.concentration_chain
     ):
         # Elapsed-time effects can share a display-derived identity with Shield.
+        from dnd5e_engine.evaluation_world_effect import verify_duration_overlay_application
         from dnd5e_engine.evaluation_world_spell_modifiers import world_spell_combat_modifiers
 
         try:
+            for effect in snapshot.effect_states:
+                if effect.duration.until_long_rest or effect.duration.overlay_fixed:
+                    verify_duration_overlay_application(effect, loader)
             modifiers = world_spell_combat_modifiers(snapshot.effect_states)
         except ValueError as error:
             return "ordinary", 0, None, str(error)

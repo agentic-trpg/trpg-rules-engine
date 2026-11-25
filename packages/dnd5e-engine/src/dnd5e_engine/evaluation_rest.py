@@ -2,11 +2,29 @@
 
 from dnd5e_srd_data.loader import AssetLoader
 from dnd5e_srd_data.schema.feature import RecoveryRule
+from dnd5e_srd_data.schema.spell import Spell
 
 from dnd5e_engine.damage_rules import healing_balance
+from dnd5e_engine.evaluation_aid import (
+    PairedHPTransition,
+    aid_potency,
+    effective_hp_bonus,
+    paired_hp_transition,
+)
 from dnd5e_engine.evaluation_class_dependencies import class_dependencies, evoker_grants
-from dnd5e_engine.evaluation_contracts import RestPayload, RuleEvaluationRequest
-from dnd5e_engine.evaluation_delta import HPDelta, ResourceUpdate, StateDelta, StateDeltaOperation
+from dnd5e_engine.evaluation_contracts import (
+    RestPayload,
+    RuleEvaluationRequest,
+    RuleEvaluationResult,
+)
+from dnd5e_engine.evaluation_delta import (
+    HPDelta,
+    ResourceUpdate,
+    StateDelta,
+    StateDeltaOperation,
+    WorldRestEffectEnd,
+)
+from dnd5e_engine.evaluation_effects import EffectState
 from dnd5e_engine.evaluation_resources import (
     FeatureResource,
     HitDiceResource,
@@ -14,10 +32,12 @@ from dnd5e_engine.evaluation_resources import (
     SlotResource,
 )
 from dnd5e_engine.evaluation_rng import RNGTransition
-from dnd5e_engine.evaluation_ruleset import get_default_ruleset
+from dnd5e_engine.evaluation_ruleset import FrozenRuleset, get_default_ruleset, verify_ruleset
 from dnd5e_engine.evaluation_state import CharacterStateV2, InventoryState, NonCombatSnapshot
+from dnd5e_engine.evaluation_timed_spells import is_reviewed_longstrider_application
 from dnd5e_engine.evaluation_turn import TurnEvaluation, _refuse
 from dnd5e_engine.evaluation_wearables import reviewed_protective_cloak
+from dnd5e_engine.evaluation_world_effect import verify_bound_world_spell_duration
 from dnd5e_engine.events import CombatEvent, HealingApplied, RestResolved, RestSpend
 from dnd5e_engine.rest import (
     HitDicePool,
@@ -28,7 +48,156 @@ from dnd5e_engine.rest import (
 from dnd5e_engine.rules.dice import ability_modifier
 
 
-def evaluate_rest(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEvaluation:
+def _rest_effects(
+    request: RuleEvaluationRequest, loader: AssetLoader
+) -> tuple[tuple[EffectState, ...], tuple[EffectState, ...]]:
+    """Select the recipient's reviewed applications and the exact effects ending here."""
+    payload = request.payload
+    assert isinstance(payload, RestPayload)
+    effects = request.state_snapshot.effect_states
+    recipient = tuple(effect for effect in effects if effect.target_id == request.actor_id)
+    if effects and not any(
+        effect.duration.until_long_rest
+        or effect.duration.overlay_fixed
+        or (
+            type(loader) is FrozenRuleset
+            and loader.covers_spell_duration(effect.id.removeprefix("effect:"))
+        )
+        for effect in recipient
+    ):
+        raise ValueError("feature/item/effect recovery needs its own complete lifecycle")
+
+    aid = []
+    endings = []
+    spells: dict[str, Spell | None] = {}
+    for effect in recipient:
+        if effect.id == "effect:aid":
+            aid_potency(effect)
+            aid.append(effect)
+        elif not is_reviewed_longstrider_application(effect):
+            raise ValueError("feature/item/effect recovery needs its own complete lifecycle")
+        duration = effect.duration
+        slug = effect.id.removeprefix("effect:")
+        if slug not in spells:
+            spells[slug] = loader.get_spell(slug)
+        verify_bound_world_spell_duration(effect, spells[slug], loader)
+        if payload.rest_type == "long" and duration.until_long_rest:
+            endings.append(effect)
+    if endings and payload.completed_at_tick is None:
+        raise ValueError("rest-ending effects require a completed Long Rest boundary")
+    return tuple(aid), tuple(endings)
+
+
+def rest_inert_elapsed_effects(
+    request: RuleEvaluationRequest, loader: AssetLoader
+) -> tuple[EffectState, ...]:
+    """Declare recipient effects whose elapsed removal does not change rest recovery.
+
+    The host rechecks exact identity, reason and deadline during its staged time advance.
+    An elapsed Aid is excluded because ending it changes the HP inputs to rest.
+    """
+    if type(loader) is not FrozenRuleset or not loader.covers_spell_duration("longstrider"):
+        return ()
+    _rest_effects(request, loader)
+    return tuple(
+        effect
+        for effect in request.state_snapshot.effect_states
+        if effect.target_id == request.actor_id
+        and effect.duration.seconds is not None
+        and is_reviewed_longstrider_application(effect)
+    )
+
+
+def _rest_hp(
+    actor: CharacterStateV2,
+    aid: tuple[EffectState, ...],
+    endings: tuple[EffectState, ...],
+) -> PairedHPTransition | None:
+    """Recover to the post-expiry cap with one guarded HP-pair transition."""
+    if not any(effect.id == "effect:aid" for effect in endings):
+        return None
+    old_bonus = effective_hp_bonus(aid)
+    new_bonus = effective_hp_bonus(effect for effect in aid if not effect.duration.until_long_rest)
+    return paired_hp_transition(
+        actor.hp_current, actor.hp_max, old_bonus, new_bonus, entity_type=actor.entity_type
+    )
+
+
+def verify_rest_effect_end(
+    result: RuleEvaluationResult, request: RuleEvaluationRequest, loader: AssetLoader | None
+) -> None:
+    """Bind rest endings, the single final HP mutation, and recovery evidence."""
+    assert result.state_delta is not None
+    endings = tuple(
+        op for op in result.state_delta.operations if isinstance(op, WorldRestEffectEnd)
+    )
+    payload = request.payload
+    assert isinstance(payload, RestPayload)
+    has_rest_effect = any(
+        effect.target_id == request.actor_id and effect.duration.until_long_rest
+        for effect in request.state_snapshot.effect_states
+    )
+    if not has_rest_effect or payload.rest_type != "long":
+        if endings:
+            raise ValueError("rest end has no matching completion dependencies")
+        return
+    assets = loader or get_default_ruleset()
+    verify_ruleset(request.ruleset_binding, assets)
+    aid, effects = _rest_effects(request, assets)
+    actor = next(
+        a for a in request.state_snapshot.character_states if a.entity_id == request.actor_id
+    )
+    transition = _rest_hp(actor, aid, effects)
+    expected_hp = None
+    healed = actor.hp_max - actor.hp_current
+    if transition is not None:
+        expected_hp = transition.model_copy(
+            update={"current": transition.maximum, "zero_consequence": "none"}
+        )
+        healed = transition.maximum - transition.current
+    assert payload.completed_at_tick is not None
+    valid = WorldRestEffectEnd(
+        expected=effects, completed_at_tick=payload.completed_at_tick, hp=expected_hp
+    )
+    hp_deltas = tuple(op for op in result.state_delta.operations if isinstance(op, HPDelta))
+    expected_deltas: tuple[HPDelta, ...] = ()
+    if expected_hp is None and healed:
+        expected_deltas = (
+            HPDelta(
+                kind="actor.hp_delta",
+                target_id=actor.entity_id,
+                expected_hp=actor.hp_current,
+                amount=healed,
+                resulting_hp=actor.hp_max,
+            ),
+        )
+    resting_events = tuple(
+        event for event in result.proposed_events if isinstance(event, RestResolved)
+    )
+    healing_events = tuple(
+        event for event in result.proposed_events if isinstance(event, HealingApplied)
+    )
+    if (
+        endings != (valid,)
+        or any(
+            not isinstance(op, (ResourceUpdate, HPDelta, WorldRestEffectEnd))
+            for op in result.state_delta.operations
+        )
+        or hp_deltas != expected_deltas
+        or result.rng_transition is None
+        or result.rng_transition.state_changed
+        or result.proposed_events != (*resting_events, *healing_events)
+        or len(resting_events) != 1
+        or resting_events[0].actor_id != actor.entity_id
+        or resting_events[0].rest_type != "long"
+        or resting_events[0].hp_regained != healed
+        or healing_events
+        != ((HealingApplied(target_id=actor.entity_id, amount=healed),) if healed else ())
+    ):
+        raise ValueError("rest result differs from its fixed completion effects and HP recovery")
+
+
+def evaluate_rest(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEvaluation:  # noqa: C901
     """Admit explicit noncombat rest inputs and return their uncommitted recovery result.
 
     Check actor readiness, owned resource capacities, declared spends and complete
@@ -57,6 +226,11 @@ def evaluate_rest(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
     )
     grants = set(actor.granted_features or ())
     long_rest = payload.rest_type == "long"
+    try:
+        aid, endings = _rest_effects(request, loader)
+        effect_hp = _rest_hp(actor, aid, endings)
+    except ValueError as exc:
+        return _refuse("unsupported", "rest.dependencies", str(exc))
     # Arcane Recovery can be invoked separately after resting. Its own pool only
     # recharges on a Long Rest, and accepting it requires the pinned recovery profile.
     complete_recovery = long_rest or "arcane-recovery" in grants
@@ -67,21 +241,34 @@ def evaluate_rest(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
     )
     # Retain R16/R19's previously admitted explicit recovery-only profiles.
     # Complete R20/R21 builds use the stricter canonical grant/pool closure.
-    reviewed = levels in ({"cleric": 1}, {"fighter": 1}, {"wizard": 5}) and bool(
-        grants - {"second-wind", "spellcasting", "ritual-adept", "arcane-recovery"}
-        or actor.subclass_slug
-        or actor.fighting_styles
+    life_cleric = (
+        type(loader) is FrozenRuleset
+        and loader.covers_spell_duration("aid")
+        and levels in ({"cleric": 3}, {"cleric": 5})
+        and actor.subclass_slug == "life"
+    )
+    reviewed = life_cleric or (
+        levels in ({"cleric": 1}, {"fighter": 1}, {"wizard": 5})
+        and bool(
+            grants - {"second-wind", "spellcasting", "ritual-adept", "arcane-recovery"}
+            or actor.subclass_slug
+            or actor.fighting_styles
+        )
     )
     failure = (
         class_dependencies(
-            actor, snapshot, loader, get_default_ruleset(), allow_reviewed_cloak=True
+            actor,
+            snapshot,
+            loader,
+            get_default_ruleset(),
+            allow_reviewed_cloak=True,
+            reviewed_life_healing=life_cleric,
         )
         if reviewed
         else None
     )
     if (
         failure
-        or snapshot.effect_states
         or actor.conditions
         or actor.concentration_effect_id
         or actor.trait_mechanics
@@ -123,6 +310,8 @@ def evaluate_rest(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
         )
     feature_recovery = {}
     rest_pools = {"second-wind", "arcane-recovery"} if complete_recovery else {"second-wind"}
+    if life_cleric:
+        rest_pools.add("channel-divinity-cleric")
     for feature_pool in feature_pools:
         feature = loader.get_feature(feature_pool.feature_slug)
         if feature_pool.feature_slug not in rest_pools or feature is None or feature.uses is None:
@@ -181,15 +370,26 @@ def evaluate_rest(request: RuleEvaluationRequest, loader: AssetLoader) -> TurnEv
     pact = [p for p in pools if isinstance(p, SlotResource) and p.kind == "pact_slot"]
     if long_rest and payload.hit_dice:
         return _refuse("rejected", "rest.long_spend", "Long Rest does not spend Hit Dice")
-    if complete_recovery:
+    # The reviewed Life profile already verifies its whole class and pool closure.
+    if complete_recovery and not life_cleric:
         failure = _recovery_dependencies_failure(
             actor, snapshot.resource_state, classes, loader, snapshot.inventory_state
         )
         if failure:
             code = "rest.long_dependencies" if long_rest else "rest.dependencies"
             return _refuse("unsupported", code, failure)
-    compute = _compute_long_rest if long_rest else _compute_rest
-    return compute(request, actor, hit_dice, pact, feature_pools, feature_recovery)
+    if long_rest:
+        return _compute_long_rest(
+            request,
+            actor,
+            hit_dice,
+            pact,
+            feature_pools,
+            feature_recovery,
+            endings=endings,
+            effect_hp=effect_hp,
+        )
+    return _compute_rest(request, actor, hit_dice, pact, feature_pools, feature_recovery)
 
 
 def _compute_rest(
@@ -321,8 +521,11 @@ def _compute_long_rest(
     pact: list[SlotResource],
     feature_pools: list[FeatureResource],
     feature_recovery: dict[str, list[RecoveryRule]],
+    *,
+    endings: tuple[EffectState, ...],
+    effect_hp: PairedHPTransition | None,
 ) -> TurnEvaluation:
-    """Compute admitted long-rest HP/resource recovery as uncommitted operations."""
+    """Compute long-rest recovery and effect expiry without a transient HP state."""
     snapshot = request.state_snapshot
     assert snapshot.resource_state is not None
     spell = [
@@ -333,8 +536,8 @@ def _compute_long_rest(
     outcomes = {
         pid: resolve_long_rest(
             HitDicePool(hit_die_size=p.die_size, dice_remaining=p.current, dice_total=p.maximum),
-            actor.hp_current,
-            actor.hp_max,
+            actor.hp_current if effect_hp is None else effect_hp.current,
+            actor.hp_max if effect_hp is None else effect_hp.maximum,
             spell_slots={s.level: s.current for s in spell},
             spell_slot_max={s.level: s.maximum for s in spell},
             pact_slots={s.level: s.current for s in pact},
@@ -368,7 +571,24 @@ def _compute_long_rest(
                 )
             )
     healed = first.healed
-    if healed:
+    if endings:
+        payload = request.payload
+        assert isinstance(payload, RestPayload)
+        assert payload.completed_at_tick is not None
+        operations.append(
+            WorldRestEffectEnd(
+                expected=endings,
+                completed_at_tick=payload.completed_at_tick,
+                hp=(
+                    effect_hp.model_copy(
+                        update={"current": first.hp_current, "zero_consequence": "none"}
+                    )
+                    if effect_hp is not None
+                    else None
+                ),
+            )
+        )
+    if healed and effect_hp is None:
         assert first.hp_current is not None
         operations.append(
             HPDelta(

@@ -1,0 +1,11 @@
+{
+  "schema_version": "ruleset-overlay/1",
+  "overlay_id": "agentic-trpg-spell-durations",
+  "revision": "1",
+  "base_ruleset_id": "dnd-2024-srd-5.2.1",
+  "spell_durations": {
+    "applies_to": ["aid", "longstrider"],
+    "minimum_seconds": 3600,
+    "default": "until_long_rest"
+  }
+}

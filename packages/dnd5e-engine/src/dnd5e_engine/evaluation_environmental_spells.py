@@ -75,6 +75,10 @@ from dnd5e_engine.evaluation_timed_spells import (
     exploration_spell_reaches,
 )
 from dnd5e_engine.evaluation_turn import TurnEvaluation, _refuse
+from dnd5e_engine.evaluation_world_effect import (
+    DURATION_OVERLAY_SPELLS,
+    verify_bound_world_spell_duration,
+)
 from dnd5e_engine.events import (
     Ability,
     CheckRolled,
@@ -422,6 +426,8 @@ def _admit_dispel_targets(request: RuleEvaluationRequest, loader: AssetLoader) -
             spell = loader.get_spell(fact.spell_id)
             if spell is None or fact.cast_slot_level is None or fact.cast_slot_level < spell.level:
                 raise ValueError("target spell lacks a bound cast level")
+            if fact.spell_id in DURATION_OVERLAY_SPELLS:
+                verify_bound_world_spell_duration(fact.effect, spell, loader)
     else:
         effect = positions.target_effect
         if effect is None:

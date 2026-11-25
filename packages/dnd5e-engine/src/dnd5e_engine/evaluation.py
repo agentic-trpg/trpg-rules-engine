@@ -266,7 +266,7 @@ async def _evaluate(
         return result
     if request.operation_kind == "rules.rest":
         result = _turn_result(common, evaluate_rest(request, assets))
-        result.verify_request(request)
+        result.verify_request(request, loader=assets)
         return result
     if request.operation_kind == "rules.save":
         result = _turn_result(common, evaluate_save(request, assets))

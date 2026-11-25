@@ -15,7 +15,7 @@ from dnd5e_engine.evaluation_equipment_dependencies import (
     stowed_holy_symbol,
 )
 from dnd5e_engine.evaluation_resources import FeatureResource, SlotResource
-from dnd5e_engine.evaluation_ruleset import get_default_ruleset
+from dnd5e_engine.evaluation_ruleset import FrozenRuleset, get_default_ruleset
 from dnd5e_engine.evaluation_state import CharacterStateV2, CombatSnapshot, NonCombatSnapshot
 from dnd5e_engine.evaluation_wearables import reviewed_protective_cloak
 from dnd5e_engine.feature_runtime import DrawFreeRandom, scalar_formula
@@ -318,6 +318,7 @@ def operation_dependencies(
     Plain Pass can keep reviewed stowed healing potions in the equipment closure.
     Foundation admission and neutral Pass can opt in to the reviewed Lore Bard.
     Modern closure can retain the reviewed Wizard pouch and terminal conditions.
+    The Aid overlay can admit its reviewed Life Cleric in neutral Pass and closure.
     Closure independently admits validated dying or stable Character life facts.
     Other effects, reactions, traits and non-class mechanics retain ordinary guards.
     """
@@ -357,6 +358,12 @@ def operation_dependencies(
             equipped=equipped or attack,
             allow_stowed_healing_potions=actor.entity_id in potion_owners,
             reviewed_lore_bard=reviewed_class_lifecycle,
+            reviewed_life_healing=(
+                not attack
+                and (reviewed_class_lifecycle or reviewed_closure)
+                and type(loader) is FrozenRuleset
+                and loader.covers_spell_duration("aid")
+            ),
             reviewed_wizard_pouch=reviewed_closure,
         )
 

@@ -4,6 +4,7 @@ from typing import Annotated, Literal, Self
 
 from pydantic import Field, model_validator
 
+from dnd5e_engine.evaluation_aid import PairedHPTransition
 from dnd5e_engine.evaluation_base import EvaluationModel
 from dnd5e_engine.evaluation_cast_activity import WorldCastActivityBegin
 from dnd5e_engine.evaluation_effects import EffectState
@@ -385,6 +386,15 @@ class ResourceUpdate(EvaluationModel):
         return self
 
 
+class WorldRestEffectEnd(EvaluationModel):
+    """End exact recipient effects at a completed rest and adopt its final HP once."""
+
+    kind: Literal["world.rest_effect_end"] = "world.rest_effect_end"
+    expected: tuple[EffectState, ...] = Field(min_length=1)
+    completed_at_tick: int = Field(ge=1)
+    hp: PairedHPTransition | None
+
+
 class WorldEffectCreate(EvaluationModel):
     """Propose temporary passive state while guarding against existing instances."""
 
@@ -666,6 +676,7 @@ StateDeltaOperation = Annotated[
     | ResourceUpdate
     | WorldEffectCreate
     | WorldSpellEnd
+    | WorldRestEffectEnd
     | WorldCastActivityBegin
     | WorldEnvironmentalEffectCreate
     | WorldEnvironmentalEffectEnd

@@ -10,18 +10,80 @@ from copy import deepcopy
 from typing import Annotated, Literal
 
 from dnd5e_srd_data.loader import AssetLoader
+from dnd5e_srd_data.schema.spell import Spell
 from pydantic import Field, model_validator
 
 from dnd5e_engine.activities.effects import passive_effect_to_active_effect
 from dnd5e_engine.evaluation_base import EvaluationModel
 from dnd5e_engine.evaluation_effects import EffectState, effect_state
 from dnd5e_engine.evaluation_ruleset import (
+    FixedSpellDuration,
     RulesetBinding,
     get_default_ruleset,
+    spell_duration_policy,
     verify_ruleset,
 )
+from dnd5e_engine.turn_rules import ROUND_DURATION_SECONDS
+from dnd5e_engine.types.effects import ActiveEffectDuration
 
 EffectIdentity = tuple[str, str, str]
+DURATION_OVERLAY_SPELLS = ("aid", "longstrider")
+
+
+def reviewed_duration_seconds(spell: Spell) -> int:
+    """Convert the reviewed canonical spell duration using the SRD units."""
+    duration = spell.duration
+    units = {"second": 1, "minute": 60, "hour": 3600}
+    if duration.units not in units or not duration.value or duration.value <= 0:
+        raise ValueError("duration overlay requires a positive elapsed base spell duration")
+    return int(duration.value) * units[duration.units]
+
+
+def world_spell_duration(spell: Spell, loader: AssetLoader) -> ActiveEffectDuration | None:
+    """Resolve the covered duration at cast; None preserves the base application."""
+    policy = spell_duration_policy(loader, spell.slug)
+    if policy == "canonical":
+        return None
+    if spell.concentration:
+        raise ValueError("duration overlay does not alter concentration")
+    if policy == "until_long_rest":
+        return ActiveEffectDuration(until_long_rest=True)
+    assert isinstance(policy, FixedSpellDuration)
+    return ActiveEffectDuration(seconds=policy.rounds * ROUND_DURATION_SECONDS, overlay_fixed=True)
+
+
+def verify_bound_world_spell_duration(
+    effect: EffectState, spell: Spell | None, loader: AssetLoader
+) -> None:
+    """Match the exact effective clock before interpreting a reviewed duration application."""
+    if spell is None or spell.slug not in DURATION_OVERLAY_SPELLS:
+        raise ValueError("application lacks a supported bound spell duration")
+    duration = world_spell_duration(spell, loader)
+    if duration is None:
+        duration = ActiveEffectDuration(seconds=reviewed_duration_seconds(spell))
+    if duration.model_dump() != effect.duration.model_dump():
+        raise ValueError("effect clock differs from its bound duration policy")
+
+
+def verify_duration_overlay_application(effect: EffectState, loader: AssetLoader) -> None:
+    """Admit exact modified world passives where a consumer has the bound ruleset."""
+    if not (effect.duration.until_long_rest or effect.duration.overlay_fixed):
+        raise ValueError("effect has no configured duration overlay clock")
+    _verify_overlay_mechanics(effect)
+    verify_bound_world_spell_duration(
+        effect, loader.get_spell(effect.id.removeprefix("effect:")), loader
+    )
+
+
+def _verify_overlay_mechanics(effect: EffectState) -> None:
+    """Check the known passive mechanics independently of its captured clock."""
+    from dnd5e_engine.evaluation_aid import aid_potency
+    from dnd5e_engine.evaluation_timed_spells import is_reviewed_longstrider_application
+
+    if effect.id == "effect:aid":
+        aid_potency(effect)
+    elif not is_reviewed_longstrider_application(effect):
+        raise ValueError("duration overlay requires a reviewed spell effect")
 
 
 class WorldEffectApplicationRequest(EvaluationModel):
@@ -42,7 +104,7 @@ class EffectExpiryPolicy(EvaluationModel):
 
 
 class WorldEffectApplication(EvaluationModel):
-    """Bind an elapsed-time effect and its terminal policy to its original invocation.
+    """Bind an effect's elapsed or Long Rest clock to its original invocation.
 
     Concentration requests a replacement of the caster's current concentration at
     cast adoption. The host owns the existing group's identity and World clock.
@@ -62,8 +124,10 @@ class WorldEffectApplication(EvaluationModel):
         return (self.effect.target_id, self.effect.id, self.effect.origin)
 
     @property
-    def duration_seconds(self) -> int:
-        """Return the finite duration carried by the converted canonical effect."""
+    def duration_seconds(self) -> int | None:
+        """Return positive elapsed seconds, or None for the recipient's Long Rest."""
+        if self.effect.duration.until_long_rest:
+            return None
         seconds = self.effect.duration.seconds
         if seconds is None or seconds <= 0:
             raise ValueError("world effect has no finite positive seconds duration")
@@ -71,8 +135,13 @@ class WorldEffectApplication(EvaluationModel):
 
     @model_validator(mode="after")
     def finite_duration(self) -> WorldEffectApplication:
-        """Require a positive typed seconds duration on the proposed effect."""
+        """Require a positive elapsed deadline or a reviewed Long Rest clock."""
+        duration = self.effect.duration
         _ = self.duration_seconds
+        if duration.until_long_rest or duration.overlay_fixed:
+            if self.concentration:
+                raise ValueError("duration overlay cannot modify concentration")
+            _verify_overlay_mechanics(self.effect)
         if self.effect.flags.get("concentration", False) is not self.concentration:
             raise ValueError("world effect concentration differs from its application")
         return self
@@ -97,12 +166,13 @@ def _canonical_longstrider(loader: AssetLoader, source_id: str, target_id: str) 
         raise ValueError("Longstrider differs from the reviewed canonical spell")
     if len(spell.passive_effects) != 1:
         raise ValueError("Longstrider has no unique reviewed passive effect")
-    effect = effect_state(
-        passive_effect_to_active_effect(
-            spell.passive_effects[0], target_id=target_id, caster_id=source_id
-        )
+    effect = passive_effect_to_active_effect(
+        spell.passive_effects[0], target_id=target_id, caster_id=source_id
     )
-    return effect
+    duration = world_spell_duration(spell, loader)
+    if duration is not None:
+        effect = effect.model_copy(update={"duration": duration})
+    return effect_state(effect)
 
 
 def plan_longstrider_application(

@@ -20,7 +20,11 @@ from dnd5e_engine.evaluation_projection import EvaluationInvariantError
 from dnd5e_engine.evaluation_rng import RNGTransition
 from dnd5e_engine.evaluation_spells import spell_event
 from dnd5e_engine.evaluation_state import CharacterStateV2, NonCombatSnapshot
-from dnd5e_engine.evaluation_timed_spells import _passive_profile, exploration_source_failure
+from dnd5e_engine.evaluation_timed_spells import (
+    _apply_duration_policy,
+    _passive_profile,
+    exploration_source_failure,
+)
 from dnd5e_engine.evaluation_turn import TurnEvaluation, _refuse
 from dnd5e_engine.evaluation_world_effect import (
     EffectExpiryPolicy,
@@ -36,7 +40,7 @@ from dnd5e_engine.types.effects import ActiveEffect
 
 
 def _multi_spell_profile(
-    spell: Spell, payload: ExplorationMultiSpellCastPayload, caster_id: str
+    spell: Spell, payload: ExplorationMultiSpellCastPayload, caster_id: str, loader: AssetLoader
 ) -> tuple[UtilityActivity, ActiveEffect, int]:
     """Select the shared passive profile and its bound creature capacity."""
     if spell.concentration or spell.range.units != SpellRangeUnits.TOUCH:
@@ -49,7 +53,7 @@ def _multi_spell_profile(
     )
     if activity.target.affects.type != "willing":
         raise ValueError("utility must require willing creatures")
-    return activity, template, capacity
+    return activity, _apply_duration_policy(template, spell, loader), capacity
 
 
 def _touch_target_failure(
@@ -115,7 +119,9 @@ def evaluate_multi_spell(request: RuleEvaluationRequest, loader: AssetLoader) ->
             "unsupported", "spell.mechanism", "multi spell requires a defined touch range"
         )
     try:
-        activity, template, target_capacity = _multi_spell_profile(spell, payload, request.actor_id)
+        activity, template, target_capacity = _multi_spell_profile(
+            spell, payload, request.actor_id, loader
+        )
     except ValueError as exc:
         return _refuse("unsupported", "spell.mechanism", str(exc))
     if len(payload.target_ids) > target_capacity:
@@ -291,7 +297,7 @@ def verify_multi_spell_definition(
     spell = loader.get_spell(payload.spell_id)
     if spell is None or spell.slug != payload.spell_id or spell.level != payload.slot_level:
         raise ValueError("multi spell does not match its bound definition and slot level")
-    activity, template, capacity = _multi_spell_profile(spell, payload, request.actor_id)
+    activity, template, capacity = _multi_spell_profile(spell, payload, request.actor_id, loader)
     intent, cast, *_ = result.proposed_events
     if (
         len(payload.target_ids) > capacity

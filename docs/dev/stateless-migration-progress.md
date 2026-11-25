@@ -1662,3 +1662,19 @@ was corrected; current dependency/ABI mismatch and newer C-19 stage-evidence OPE
 remain explicit. See [R30–R33 review](stateless-r30-r33-review.md) for the two-axis
 matrix, retained original capabilities, actual validation and next four proposals.
 No merge, production caller cutover or complete conversion is claimed.
+
+## RUO-45 project duration overlay
+
+The optional project duration overlay in the examples directory binds reviewed
+Aid and Longstrider applications to the recipient's completed Long Rest. Its
+default applies from 3,600 canonical seconds. A per-spell exception can keep
+the canonical duration or supply a fixed number of rounds, which the evaluator
+converts to game seconds. SRD-only bindings retain Aid's 28,800 seconds and
+Longstrider's 3,600 seconds. The scope is limited to these reviewed world spells.
+
+The host supplies the completion boundary and recipient effect facts. The engine
+proposes exact removals and one guarded final HP pair when Aid ends. Full recovery
+uses the post-expiry cap without publishing an intermediate zero HP. The bound
+Life Cleric 3 and 5 rest profile checks canonical grants and capacities, including
+Channel Divinity's one-use Short Rest recovery and complete Long Rest recovery.
+Concentration keeps its own application and duration policy.

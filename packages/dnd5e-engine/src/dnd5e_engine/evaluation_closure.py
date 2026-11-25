@@ -15,6 +15,7 @@ from dnd5e_engine.evaluation_projection import EvaluationInvariantError
 from dnd5e_engine.evaluation_region_effect import supports_fixed_combat_regions
 from dnd5e_engine.evaluation_rng import RNGTransition
 from dnd5e_engine.evaluation_state import ClosureDeath, CombatSnapshot
+from dnd5e_engine.evaluation_world_effect import verify_duration_overlay_application
 from dnd5e_engine.events import CombatEnded
 from dnd5e_engine.outcome import DeathRecord
 from dnd5e_engine.outcome_rules import derive_ended_reason, project_outcome
@@ -64,6 +65,13 @@ def evaluate_closure(request: RuleEvaluationRequest, loader: AssetLoader) -> Clo
         return _refuse("rejected", "combat_ended", "combat has already ended")
     try:
         snapshot, _ = burning_turn_input(snapshot, loader)
+        overlay_effects = tuple(
+            effect
+            for effect in snapshot.effect_states
+            if effect.duration.until_long_rest or effect.duration.overlay_fixed
+        )
+        for effect in overlay_effects:
+            verify_duration_overlay_application(effect, loader)
     except ValueError as exc:
         return _refuse("unsupported", "closure.capability", str(exc))
     failure = operation_dependencies(
@@ -71,6 +79,8 @@ def evaluate_closure(request: RuleEvaluationRequest, loader: AssetLoader) -> Clo
         loader,
         reviewed_closure=snapshot.snapshot_schema_version == "engine-snapshot/20",
         reviewed_dying=True,
+        reviewed_world_effects=bool(overlay_effects)
+        and len(overlay_effects) == len(snapshot.effect_states),
         reviewed_region_conditions=supports_fixed_combat_regions(snapshot, loader),
     ) or template_support_failure(snapshot, loader)
     if failure:

@@ -106,6 +106,8 @@ def aid_potency(effect: EffectState) -> int:
     expected = _aid_template(potency // 5 + 1).model_copy(
         update={"target_id": effect.target_id, "origin": effect.origin}
     )
+    if effect.duration.until_long_rest or effect.duration.overlay_fixed:
+        expected = expected.model_copy(update={"duration": effect.duration})
     if effect != expected:
         raise ValueError("Aid effect differs from its reviewed definition")
     return potency

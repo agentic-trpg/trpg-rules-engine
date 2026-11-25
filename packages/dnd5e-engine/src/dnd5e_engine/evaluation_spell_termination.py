@@ -5,12 +5,12 @@ from typing import Annotated, Literal
 
 from dnd5e_srd_data.loader import AssetLoader
 from dnd5e_srd_data.schema.spell import Spell
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from dnd5e_engine.evaluation_base import EvaluationModel
 from dnd5e_engine.evaluation_effects import EffectState, effect_state
 from dnd5e_engine.evaluation_ruleset import RulesetBinding, get_default_ruleset, verify_ruleset
-from dnd5e_engine.evaluation_world_effect import EffectIdentity
+from dnd5e_engine.evaluation_world_effect import EffectIdentity, verify_bound_world_spell_duration
 from dnd5e_engine.events import SpellCast
 from dnd5e_engine.rules.conditions import conditions_block_actions
 
@@ -57,11 +57,20 @@ class SpellApplicationFacts(EvaluationModel):
     caster_id: Nonempty
     spell_id: Nonempty
     cast_command_id: Nonempty
-    expires_tick: Annotated[int, Field(ge=1)]
+    expires_tick: Annotated[int, Field(ge=1)] | None
     concentration_id: Nonempty | None
     cast_slot_level: Annotated[int, Field(ge=0, le=9)] | None = Field(
         default=None, exclude_if=lambda value: value is None
     )
+
+    @model_validator(mode="after")
+    def validate_clock(self) -> "SpellApplicationFacts":
+        """Require elapsed metadata only for effects with an elapsed duration."""
+        if (self.expires_tick is None) != bool(self.effect.duration.until_long_rest):
+            raise ValueError("application metadata disagrees with its effect clock")
+        if self.expires_tick is None and self.concentration_id is not None:
+            raise ValueError("Long Rest duration cannot replace concentration")
+        return self
 
     @property
     def identity(self) -> EffectIdentity:
@@ -150,18 +159,21 @@ def plan_spell_dismissal(
     binding: RulesetBinding,
     loader: AssetLoader,
 ) -> WorldSpellEnd:
-    """Apply SRD Duration to the exact original caster's reviewed elapsed spell."""
+    """Apply SRD Duration to the original caster's exact reviewed spell application."""
     from dnd5e_engine.evaluation_aid import aid_potency
-    from dnd5e_engine.evaluation_timed_spells import is_canonical_elapsed_longstrider
+    from dnd5e_engine.evaluation_timed_spells import is_reviewed_longstrider_application
 
     verify_ruleset(binding, loader)
     spell_id = application.spell_id
-    reviewed = spell_id in ("longstrider", "aid") and loader.get_spell(
-        spell_id
-    ) == get_default_ruleset().get_spell(spell_id)
+    spell = loader.get_spell(spell_id)
+    reviewed = (
+        spell_id in ("longstrider", "aid")
+        and spell is not None
+        and spell == get_default_ruleset().get_spell(spell_id)
+    )
     effect_matches = False
     if spell_id == "longstrider":
-        effect_matches = is_canonical_elapsed_longstrider(application.effect)
+        effect_matches = is_reviewed_longstrider_application(application.effect)
     elif spell_id == "aid":
         try:
             aid_potency(application.effect)
@@ -177,4 +189,5 @@ def plan_spell_dismissal(
         or not effect_matches
     ):
         raise ValueError("The acting caster cannot dismiss this application")
+    verify_bound_world_spell_duration(application.effect, spell, loader)
     return WorldSpellEnd(expected=application, reason="dismissed")

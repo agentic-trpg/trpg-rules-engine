@@ -20,6 +20,7 @@ from dnd5e_engine.evaluation_delta import (
     InventorySpendCharge,
     SpellMaterialConsume,
     StateDelta,
+    WorldRestEffectEnd,
 )
 from dnd5e_engine.evaluation_environmental_contracts import (
     EnvironmentalCreatureTarget,
@@ -448,10 +449,15 @@ class RestPayload(EvaluationModel):
     target_id: Annotated[str, Field(min_length=1)]
     rest_type: Literal["short", "long"]
     hit_dice: tuple[HitDieSpend, ...]
+    completed_at_tick: Annotated[int, Field(ge=1)] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
     @model_validator(mode="after")
     def unique_spend(self) -> Self:
         """Reject duplicate resource spends within the request."""
+        if self.completed_at_tick is not None and self.rest_type != "long":
+            raise ValueError("only a Long Rest accepts a completion boundary")
         if len({s.pool_id for s in self.hit_dice}) != len(self.hit_dice):
             raise ValueError("a rest must name each spent Hit Dice pool once")
         return self
@@ -1374,8 +1380,15 @@ class RuleEvaluationResult(EvaluationModel):
 
                 verify_charged_item_cast(self, request)
 
+            if isinstance(request.payload, RestPayload):
+                from dnd5e_engine.evaluation_rest import verify_rest_effect_end
+
+                verify_rest_effect_end(self, request, loader)
             for operation in self.state_delta.operations:
-                if isinstance(operation, (HasteGraphCreate, EffectFollowUpCreate)):
+                if isinstance(operation, WorldRestEffectEnd):
+                    if request.operation_kind != "rules.rest":
+                        raise ValueError("only a Long Rest can end rest-bound effects")
+                elif isinstance(operation, (HasteGraphCreate, EffectFollowUpCreate)):
                     if request.schema_version != "engine-evaluation/30":
                         raise ValueError("new combat effect operations require evaluation/30")
                     if isinstance(operation, HasteGraphCreate):

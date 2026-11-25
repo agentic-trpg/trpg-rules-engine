@@ -53,6 +53,10 @@ class ActiveEffectDuration(BaseModel):
         fires when ``rounds is None``. Foundry packs routinely ship both
         (Bless: ``rounds=10, seconds=60``).
 
+    ``until_long_rest`` carries the recipient's completed Long Rest condition
+    for a stateless world application. ``overlay_fixed`` identifies an explicit
+    duration override whose elapsed value is carried in ``seconds``.
+
     ``start_round`` / ``start_turn`` are carried for host bookkeeping and are
     not read by the engine. Concentration-flagged effects are exempt from
     every branch above: the concentration cascade and the per-turn repeat save
@@ -67,6 +71,12 @@ class ActiveEffectDuration(BaseModel):
     seconds: int | None = None
     start_round: int | None = None
     start_turn: int | None = None
+    until_long_rest: Literal[True] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    overlay_fixed: Literal[True] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
 
 class ActiveEffectChange(BaseModel):

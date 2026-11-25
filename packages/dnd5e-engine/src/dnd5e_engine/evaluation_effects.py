@@ -16,6 +16,7 @@ from pydantic import (
     SerializerFunctionWrapHandler,
     field_serializer,
     model_serializer,
+    model_validator,
 )
 from pydantic.json_schema import JsonSchemaValue
 from pydantic_core import CoreSchema
@@ -41,6 +42,27 @@ class EffectDurationState(EvaluationModel):
     seconds: int | None
     start_round: int | None
     start_turn: int | None
+    until_long_rest: Literal[True] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    overlay_fixed: Literal[True] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+
+    @model_validator(mode="after")
+    def validate_clock(self) -> "EffectDurationState":
+        """Use exactly one clock for a duration modified by a rules overlay."""
+        if self.until_long_rest is not None or self.overlay_fixed is not None:
+            if any(
+                v is not None for v in (self.rounds, self.turns, self.start_round, self.start_turn)
+            ):
+                raise ValueError("rules overlay duration must use one clock")
+            if self.until_long_rest is not None:
+                if self.seconds is not None or self.overlay_fixed is not None:
+                    raise ValueError("Long Rest duration cannot have an elapsed clock")
+            elif self.seconds is None or self.seconds <= 0:
+                raise ValueError("fixed overlay duration requires positive seconds")
+        return self
 
 
 class EffectChangeState(ActiveEffectChange):

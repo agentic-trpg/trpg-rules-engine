@@ -138,13 +138,14 @@ def _speed_world_effect_failure(
     effects: Sequence[EffectState], target_id: str, mode: MovementMode
 ) -> str | None:
     """Admit one effective elapsed walking bonus on the attack rider target."""
-    from dnd5e_engine.evaluation_timed_spells import is_canonical_elapsed_longstrider
+    from dnd5e_engine.evaluation_timed_spells import is_reviewed_longstrider_application
     from dnd5e_engine.evaluation_world_spell_modifiers import world_spell_combat_modifiers
 
     if not effects:
         return None
     if any(effect.target_id != target_id for effect in effects) or (
-        len(effects) > 1 and not all(is_canonical_elapsed_longstrider(effect) for effect in effects)
+        len(effects) > 1
+        and not all(is_reviewed_longstrider_application(effect) for effect in effects)
     ):
         return "speed rider admits one elapsed walk modifier on its target"
     if mode != "walk":

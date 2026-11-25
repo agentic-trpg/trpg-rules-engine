@@ -52,7 +52,11 @@ from dnd5e_engine.evaluation_spell_termination import reviewed_invisibility
 from dnd5e_engine.evaluation_spells import source_failure
 from dnd5e_engine.evaluation_state import CharacterStateV2, NonCombatSnapshot
 from dnd5e_engine.evaluation_turn import TurnEvaluation, _refuse
-from dnd5e_engine.evaluation_world_effect import EffectExpiryPolicy, WorldEffectApplication
+from dnd5e_engine.evaluation_world_effect import (
+    EffectExpiryPolicy,
+    WorldEffectApplication,
+    world_spell_duration,
+)
 from dnd5e_engine.events import EffectApplied, IntentSubmitted, SpellCast
 from dnd5e_engine.rules.armor_class import ARMOR_CLASS_FLOOR_KEYS, armor_class_floor_value
 from dnd5e_engine.rules.conditions import conditions_block_actions
@@ -340,7 +344,16 @@ def _reviewed_longstrider() -> tuple[Spell, EffectState]:
 
 
 def is_canonical_elapsed_longstrider(effect: EffectState) -> bool:
-    """Recognize the reviewed flat walk effect independently of its cast identity."""
+    """Recognize the original reviewed elapsed Longstrider effect."""
+    return (
+        not effect.duration.until_long_rest
+        and not effect.duration.overlay_fixed
+        and is_reviewed_longstrider_application(effect)
+    )
+
+
+def is_reviewed_longstrider_application(effect: EffectState) -> bool:
+    """Recognize the reviewed flat walk effect with an original or overlay clock."""
     prefix = "cast:longstrider:"
     if (
         effect.id != "effect:longstrider"
@@ -349,6 +362,8 @@ def is_canonical_elapsed_longstrider(effect: EffectState) -> bool:
     ):
         return False
     _, template = _reviewed_longstrider()
+    if effect.duration.until_long_rest or effect.duration.overlay_fixed:
+        template = template.model_copy(update={"duration": effect.duration})
     return effect == template.model_copy(
         update={"target_id": effect.target_id, "origin": effect.origin}
     )
@@ -390,7 +405,7 @@ def _admit_elapsed_overlap(
     if (
         spell.slug != "longstrider"
         or spell != _reviewed_longstrider()[0]
-        or not all(is_canonical_elapsed_longstrider(effect) for effect in overlapping)
+        or not all(is_reviewed_longstrider_application(effect) for effect in overlapping)
     ):
         return None
     origins = {effect.origin for effect in overlapping}
@@ -421,7 +436,11 @@ def _timed_effect_creation(
 
 
 def verify_timed_spell_effect(
-    request: RuleEvaluationRequest, spell: Spell, creation: WorldEffectCreate
+    request: RuleEvaluationRequest,
+    spell: Spell,
+    creation: WorldEffectCreate,
+    *,
+    loader: AssetLoader | None = None,
 ) -> None:
     """Verify one timed effect against its bound definition and frozen overlap facts."""
     snapshot, payload = request.state_snapshot, request.payload
@@ -454,9 +473,16 @@ def verify_timed_spell_effect(
             allow_consumed_material=payload.material_instance_id is not None,
             selected_skill=payload.selected_skill,
         )
+    active = _apply_duration_policy(active, spell, loader or get_default_ruleset())
     admitted = _admit_elapsed_overlap(active, spell, actor, snapshot, request.command_id)
     if admitted is None or creation != _timed_effect_creation(request, spell, admitted):
         raise ValueError("timed effect differs from its bound consequences")
+
+
+def _apply_duration_policy(active: ActiveEffect, spell: Spell, loader: AssetLoader) -> ActiveEffect:
+    """Attach the bound duration while preserving the reviewed passive mechanics."""
+    duration = world_spell_duration(spell, loader)
+    return active if duration is None else active.model_copy(update={"duration": duration})
 
 
 def validate_elapsed_spell_shape(effect: EffectState, *, allow_concentration: bool = False) -> None:
@@ -501,6 +527,8 @@ def validate_elapsed_spell_shape(effect: EffectState, *, allow_concentration: bo
 
 def is_healing_neutral_elapsed_spell(effect: EffectState) -> bool:
     """Check the elapsed movement, senses, Armor Class and skill-only vocabulary."""
+    if is_reviewed_longstrider_application(effect):
+        return True
     validate_elapsed_spell_shape(effect, allow_concentration=True)
     stat_changes = []
     for change in effect.changes:
@@ -527,8 +555,9 @@ def is_healing_neutral_elapsed_spell(effect: EffectState) -> bool:
 
 
 def attack_world_spell_modifiers(effect: EffectState) -> tuple[int, int | None]:
-    """Verify elapsed passive changes used by attacks and return walk and Armor Class."""
-    validate_elapsed_spell_shape(effect)
+    """Verify passive changes used by attacks and return walk and Armor Class."""
+    if not (effect.duration.until_long_rest and is_reviewed_longstrider_application(effect)):
+        validate_elapsed_spell_shape(effect)
     walk = []
     floors = []
     for change in effect.changes:
@@ -838,6 +867,7 @@ def evaluate_exploration_spell(  # noqa: C901 - bounded spell profiles share one
         return _refuse("rejected", "spell.source", failure)
 
     if healing is None and removal is None:
+        active = _apply_duration_policy(active, spell, loader)
         admitted = _admit_elapsed_overlap(active, spell, actor, snapshot, request.command_id)
         if admitted is None:
             return _refuse("rejected", "spell.effect_exists", "target already has this effect")

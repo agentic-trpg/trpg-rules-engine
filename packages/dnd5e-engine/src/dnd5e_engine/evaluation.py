@@ -23,8 +23,10 @@ from dnd5e_engine.evaluation_contracts import (
 from dnd5e_engine.evaluation_equipment_dependencies import snapshot_equipment_kind_failure
 from dnd5e_engine.evaluation_items import evaluate_exploration_item, evaluate_item
 from dnd5e_engine.evaluation_movement import evaluate_movement
+from dnd5e_engine.evaluation_opportunity import opportunity_dependencies
 from dnd5e_engine.evaluation_preflight import prepare_attack
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError, attack_delta
+from dnd5e_engine.evaluation_reaction_state import OpportunityAttackState, OpportunityDeclineState
 from dnd5e_engine.evaluation_rest import evaluate_rest
 from dnd5e_engine.evaluation_rng import RNGTransition
 from dnd5e_engine.evaluation_ruleset import RulesetBinding, get_default_ruleset, verify_ruleset
@@ -100,6 +102,21 @@ def _equipment_rejection(
         choice=None,
         error=RuleError(code="snapshot.capability", reason=failure),
     )
+
+
+def _opportunity_attack_rejection(
+    snapshot: CombatSnapshot, loader: AssetLoader, common: _ResultIdentity
+) -> RuleEvaluationResult | None:
+    """Validate a retained opportunity decision before an unrelated ordinary attack."""
+    pending = snapshot.combat_state.pending_reactions
+    if not pending or not all(
+        isinstance(entry, (OpportunityAttackState, OpportunityDeclineState)) for entry in pending
+    ):
+        return None
+    _, failure = opportunity_dependencies(snapshot, loader)
+    if failure:
+        return _turn_result(common, _refuse("unsupported", "attack.reaction", failure))
+    return None
 
 
 def _stage_coverage(status: str, facts: EventStageFacts | None = None) -> EventStageFacts | None:
@@ -297,14 +314,17 @@ async def _evaluate(
         result.verify_request(request)
         return result
     snapshot = request.state_snapshot
-    if request.payload.intent_type == "pass":
-        result = _turn_result(common, evaluate_turn(request, assets))
+    if request.payload.intent_type in {"pass", "move", "dash", "dodge", "disengage"}:
+        outcome = (
+            evaluate_turn(request, assets)
+            if request.payload.intent_type == "pass"
+            else evaluate_movement(request, assets)
+        )
+        result = _turn_result(common, outcome)
         result.verify_request(request)
         return result
-    if request.payload.intent_type in {"move", "dash", "disengage"}:
-        result = _turn_result(common, evaluate_movement(request, assets))
-        result.verify_request(request)
-        return result
+    if rejection := _opportunity_attack_rejection(snapshot, assets, common):
+        return rejection
     with scoped_lib_loader(assets):
         admission = prepare_attack(
             snapshot,

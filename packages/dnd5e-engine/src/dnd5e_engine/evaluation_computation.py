@@ -21,6 +21,7 @@ from dnd5e_engine.death_saves import roll_death_save
 from dnd5e_engine.evaluation_actor import actor_state, combatant
 from dnd5e_engine.evaluation_reaction_state import (
     OpportunityAttackState,
+    OpportunityDeclineState,
     StatBlockOpportunityAttackState,
 )
 from dnd5e_engine.evaluation_stage_capture import StageRecorder, stage_profile_reason
@@ -350,7 +351,14 @@ class CombatComputation:
                     p
                     for p in self.state.pending_reactions
                     if not (
-                        isinstance(p, (OpportunityAttackState, StatBlockOpportunityAttackState))
+                        isinstance(
+                            p,
+                            (
+                                OpportunityAttackState,
+                                OpportunityDeclineState,
+                                StatBlockOpportunityAttackState,
+                            ),
+                        )
                         and p.owner_id == next_actor
                     )
                 ]

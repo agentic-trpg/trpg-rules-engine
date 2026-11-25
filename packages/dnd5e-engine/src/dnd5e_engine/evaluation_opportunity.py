@@ -15,6 +15,7 @@ from dnd5e_engine.evaluation_contracts import CombatIntentPayload
 from dnd5e_engine.evaluation_preflight import stat_block_admission, weapon_admission
 from dnd5e_engine.evaluation_reaction_state import (
     OpportunityAttackState,
+    OpportunityDeclineState,
     StatBlockOpportunityAttackState,
 )
 from dnd5e_engine.evaluation_state import CombatSnapshot
@@ -30,9 +31,9 @@ from dnd5e_engine.types.combat import Combatant
 class OpportunityPlan:
     """Retain an admitted opportunity attack and its triggering movement context."""
 
-    declaration: OpportunityAttackState | StatBlockOpportunityAttackState
+    declaration: OpportunityAttackState | OpportunityDeclineState | StatBlockOpportunityAttackState
     weapon: Weapon | None
-    activity: AttackActivity
+    activity: AttackActivity | None
     reach_ft: int
 
 
@@ -44,7 +45,8 @@ def opportunity_dependencies(
     if not pending:
         return None, None
     if len(pending) != 1 or not isinstance(
-        pending[0], (OpportunityAttackState, StatBlockOpportunityAttackState)
+        pending[0],
+        (OpportunityAttackState, OpportunityDeclineState, StatBlockOpportunityAttackState),
     ):
         return None, "only one explicit ordinary opportunity declaration is reviewed"
     declaration = pending[0]
@@ -57,6 +59,14 @@ def opportunity_dependencies(
     actors = {a.entity_id: a for a in snapshot.character_states}
     owner, mover = actors[declaration.owner_id], actors.get(declaration.mover_id)
     state = snapshot.combat_state
+    if isinstance(declaration, OpportunityDeclineState):
+        if (
+            mover is None
+            or owner.entity_id == mover.entity_id
+            or (owner.entity_id in state.party_ids) == (mover.entity_id in state.party_ids)
+        ):
+            return None, "decline requires an opposing owner and mover"
+        return OpportunityPlan(declaration, None, None, owner.melee_reach_ft), None
     if isinstance(declaration, StatBlockOpportunityAttackState):
         from dnd5e_engine.evaluation_monster_movement import monster_movement_failure
 
@@ -180,6 +190,13 @@ def step_reactors(
         if not leaves_melee_reach(grid, state.actor_zone[owner_id], from_cell, to_cell, reach):
             continue
         if (
+            plan is not None
+            and isinstance(plan.declaration, OpportunityDeclineState)
+            and plan.declaration.owner_id == owner_id
+            and plan.declaration.mover_id == mover_id
+        ):
+            continue
+        if (
             plan is None
             or plan.declaration.owner_id != owner_id
             or plan.declaration.mover_id != mover_id
@@ -196,6 +213,8 @@ def resolve_opportunity(
     computation: CombatComputation, plan: OpportunityPlan, mover_id: str
 ) -> None:
     """Pay only Reaction; use the original Attack/Damage Activity Resolver."""
+    assert not isinstance(plan.declaration, OpportunityDeclineState)
+    assert plan.activity is not None
     owner_id = plan.declaration.owner_id
     owner = computation.actors[owner_id]
     mover = computation.actors[mover_id]

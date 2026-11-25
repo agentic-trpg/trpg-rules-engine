@@ -90,6 +90,16 @@ class OpportunityAttackState(EvaluationModel):
     expiry: Literal["owner_next_turn_start"]
 
 
+class OpportunityDeclineState(EvaluationModel):
+    """Record one owner's explicit refusal to react to the named mover's walk."""
+
+    source_kind: Literal["opportunity_decline"]
+    owner_id: Annotated[str, Field(min_length=1)]
+    mover_id: Annotated[str, Field(min_length=1)]
+    trigger: Literal["voluntary_leave_reach"]
+    expiry: Literal["owner_next_turn_start"]
+
+
 class StatBlockOpportunityAttackState(EvaluationModel):
     """One SM-validated owner/action/mover choice; local C-16 candidate."""
 
@@ -103,7 +113,10 @@ class StatBlockOpportunityAttackState(EvaluationModel):
 
 
 PredeclaredReactionState = Annotated[
-    PendingReactionState | OpportunityAttackState | StatBlockOpportunityAttackState,
+    PendingReactionState
+    | OpportunityAttackState
+    | OpportunityDeclineState
+    | StatBlockOpportunityAttackState,
     Field(discriminator="source_kind"),
 ]
 

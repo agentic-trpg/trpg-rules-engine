@@ -24,6 +24,7 @@ from dnd5e_engine.evaluation_death import (
     turn_lifecycle_support_failure,
 )
 from dnd5e_engine.evaluation_effects import EffectState
+from dnd5e_engine.evaluation_reaction_state import OpportunityAttackState, OpportunityDeclineState
 from dnd5e_engine.evaluation_state import CharacterStateV2, CombatSnapshot
 from dnd5e_engine.events import AttackFailed, CastFailed, DamageType
 from dnd5e_engine.intents import IntentRejectedError
@@ -569,6 +570,11 @@ def _attack_dependencies(
             snapshot,
             loader,
             attack=True,
+            reviewed_reactions=bool(snapshot.combat_state.pending_reactions)
+            and all(
+                isinstance(pending, (OpportunityAttackState, OpportunityDeclineState))
+                for pending in snapshot.combat_state.pending_reactions
+            ),
             reviewed_sap=True,
             allow_difficult_terrain=True,
             reviewed_world_effects=reviewed_world_effects,

@@ -12,7 +12,7 @@ from dnd5e_engine import evaluation_opportunity
 from dnd5e_engine import orchestrator as orch
 from dnd5e_engine.evaluation_contracts import CombatIntentPayload, RuleEvaluationResult
 from dnd5e_engine.evaluation_delta import PendingReactionUpdate
-from dnd5e_engine.evaluation_reaction_state import OpportunityAttackState
+from dnd5e_engine.evaluation_reaction_state import OpportunityAttackState, OpportunityDeclineState
 from dnd5e_engine.evaluation_rng import RNGState
 from dnd5e_engine.evaluation_snapshot import capture_evaluation_snapshot
 from dnd5e_engine.evaluation_state import CombatSnapshot, InventoryEntry, InventoryState
@@ -125,6 +125,34 @@ def apply_opportunity(snapshot, result):
             }
         )
     return CombatSnapshot.model_validate_json(after.model_dump_json())
+
+
+def test_explicit_decline_allows_one_walk_without_paying_reaction():
+    request, _, _ = opportunity_case()
+    prior = request.state_snapshot
+    selected = prior.combat_state.pending_reactions[0]
+    declined = OpportunityDeclineState(
+        source_kind="opportunity_decline",
+        owner_id=selected.owner_id,
+        mover_id=selected.mover_id,
+        trigger="voluntary_leave_reach",
+        expiry="owner_next_turn_start",
+    )
+    snapshot = prior.model_copy(
+        update={
+            "combat_state": prior.combat_state.model_copy(update={"pending_reactions": [declined]})
+        }
+    )
+    request = request.model_copy(update={"state_snapshot": snapshot})
+    result = execute(request)
+    assert result.status == "accepted", result.error
+    assert not any(isinstance(event, AttackRolled) for event in result.proposed_events)
+    assert not result.rng_transition.state_changed
+    after = apply_opportunity(snapshot, result)
+    assert after.combat_state.actor_zone[selected.mover_id] == "3,0"
+    assert not after.combat_state.pending_reactions
+    owner = next(a for a in after.character_states if a.entity_id == selected.owner_id)
+    assert owner.reaction_available
 
 
 def legacy_parity(request, handle, live, result):

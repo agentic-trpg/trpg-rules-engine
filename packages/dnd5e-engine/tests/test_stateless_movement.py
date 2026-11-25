@@ -165,7 +165,10 @@ def bandit_turns():
     return bandit, hero, loader
 
 
-@pytest.mark.parametrize("kind,event", [("dash", "dash_taken"), ("disengage", "intent_submitted")])
+@pytest.mark.parametrize(
+    "kind,event",
+    [("dash", "dash_taken"), ("dodge", "intent_submitted"), ("disengage", "intent_submitted")],
+)
 def test_stationary_actions_accept_an_unrelated_bound_bandit(bandit_turns, kind, event):
     _, hero, loader = bandit_turns
     request = hero.model_copy(update={"payload": CombatIntentPayload(intent_type=kind)})
@@ -179,6 +182,7 @@ def test_stationary_actions_accept_an_unrelated_bound_bandit(bandit_turns, kind,
     assert not actor.action_available
     assert actor.action_taken_this_turn
     assert actor.disengaging_this_turn == (kind == "disengage")
+    assert actor.dodging == (kind == "dodge")
     assert actor.movement_remaining == (60 if kind == "dash" else 30)
     assert after.combat_state.actor_zone == before.combat_state.actor_zone
     assert after.combat_state.turn_serial == before.combat_state.turn_serial

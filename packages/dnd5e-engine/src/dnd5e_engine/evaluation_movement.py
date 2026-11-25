@@ -17,6 +17,7 @@ from dnd5e_engine.evaluation_opportunity import (
 )
 from dnd5e_engine.evaluation_preflight import template_support_failure
 from dnd5e_engine.evaluation_projection import attack_delta
+from dnd5e_engine.evaluation_reaction_state import OpportunityDeclineState
 from dnd5e_engine.evaluation_region_effect import supports_fixed_combat_regions
 from dnd5e_engine.evaluation_rng import RNGTransition
 from dnd5e_engine.evaluation_shield import has_shield, retained_shield_walk_failure
@@ -140,7 +141,7 @@ def evaluate_movement(request: RuleEvaluationRequest, loader: AssetLoader) -> Tu
         return _refuse(
             "unsupported",
             "movement.intent",
-            "only ordinary walking / Action Dash / Disengage are migrated",
+            "only ordinary walking / Action Dash / Dodge / Disengage are migrated",
         )
     state, actor_id = snapshot.combat_state, request.actor_id
     if state.ended:
@@ -225,7 +226,7 @@ def evaluate_movement(request: RuleEvaluationRequest, loader: AssetLoader) -> Tu
         if isinstance(planned, dict):
             return planned
         path = planned
-    elif intent.intent_type not in {"dash", "disengage"}:
+    elif intent.intent_type not in {"dash", "dodge", "disengage"}:
         return _refuse("unsupported", "movement.intent", "unsupported movement action")
     elif not actor.action_available:
         return _refuse("rejected", "no_action_economy", "ordinary Action is unavailable")
@@ -240,6 +241,8 @@ def evaluate_movement(request: RuleEvaluationRequest, loader: AssetLoader) -> Tu
         path = _execute_walk(
             computation, path, grid, occupied, loader, opportunity, actor_id, bonus
         )
+        if opportunity is not None and isinstance(opportunity.declaration, OpportunityDeclineState):
+            computation.state = computation.state.model_copy(update={"pending_reactions": []})
     else:
         current = current.model_copy(update=ordinary_action_payment(current))
         if intent.intent_type == "dash":
@@ -261,6 +264,9 @@ def evaluate_movement(request: RuleEvaluationRequest, loader: AssetLoader) -> Tu
                     doubled_movement_remaining=remaining,
                 )
             )
+        elif intent.intent_type == "dodge":
+            current = current.model_copy(update={"dodging": True})
+            computation.emit(IntentSubmitted(actor_id=actor_id, intent_type="dodge"))
         else:
             current = current.model_copy(update={"disengaging_this_turn": True})
             computation.emit(IntentSubmitted(actor_id=actor_id, intent_type="disengage"))

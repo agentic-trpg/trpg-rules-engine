@@ -11,7 +11,14 @@ from dnd5e_engine.evaluation_actor import combatant
 from dnd5e_engine.evaluation_beacon import is_reviewed_beacon_effect
 from dnd5e_engine.evaluation_class_dependencies import class_dependencies
 from dnd5e_engine.evaluation_contracts import ExplorationSpellCastPayload, RuleEvaluationRequest
-from dnd5e_engine.evaluation_delta import HPDelta, ResourceUpdate, StateDelta
+from dnd5e_engine.evaluation_delta import (
+    ConditionsUpdate,
+    DeathState,
+    DeathStateUpdate,
+    HPDelta,
+    ResourceUpdate,
+    StateDelta,
+)
 from dnd5e_engine.evaluation_equipment_dependencies import reviewed_healing_potion_owners
 from dnd5e_engine.evaluation_projection import EvaluationInvariantError
 from dnd5e_engine.evaluation_resources import SlotResource
@@ -20,7 +27,7 @@ from dnd5e_engine.evaluation_ruleset import get_default_ruleset
 from dnd5e_engine.evaluation_spells import ordinary_spell_mechanism, spell_event
 from dnd5e_engine.evaluation_state import CharacterStateV2, NonCombatSnapshot
 from dnd5e_engine.evaluation_turn import TurnEvaluation, _refuse
-from dnd5e_engine.events import CombatEvent, HealingApplied, IntentSubmitted
+from dnd5e_engine.events import CombatEvent, ConditionRemoved, HealingApplied, IntentSubmitted
 
 
 def exploration_healing_activity(loader: AssetLoader, spell: Spell) -> HealActivity | None:
@@ -56,6 +63,53 @@ def exploration_healing_hp_delta(target: CharacterStateV2, amount: int) -> tuple
             resulting_hp=hp,
         ),
     )
+
+
+def exploration_healing_life_delta(
+    target: CharacterStateV2, healed_hp: int
+) -> tuple[tuple[DeathStateUpdate | ConditionsUpdate, ...], bool]:
+    """Propose only the recovery facts belonging to a living zero-HP recipient."""
+    if target.hp_current != 0 or healed_hp == 0:
+        return (), False
+    operations = []
+    if target.death_saves is not None:
+        operations.append(
+            DeathStateUpdate(
+                kind="actor.death_state_update",
+                target_id=target.entity_id,
+                expected=DeathState(is_alive=True, death_saves=target.death_saves),
+                value=DeathState(
+                    is_alive=True,
+                    death_saves=target.death_saves.model_copy(
+                        update={"successes": 0, "failures": 0, "is_stable": False}
+                    ),
+                ),
+            )
+        )
+    kept = tuple(
+        condition
+        for condition in target.conditions
+        if not (
+            condition.condition == "unconscious"
+            and condition.source_entity_id == "implied:event"
+            and condition.scope == "combat"
+            and condition.duration_rounds is None
+            and condition.save_dc is None
+            and condition.exhaustion_level == 1
+            and condition.source_effect_id is None
+        )
+    )
+    removed = len(kept) != len(target.conditions)
+    if removed:
+        operations.append(
+            ConditionsUpdate(
+                kind="actor.conditions_update",
+                target_id=target.entity_id,
+                expected=tuple(target.conditions),
+                value=kept,
+            )
+        )
+    return tuple(operations), removed
 
 
 def exploration_healing_maximizes(
@@ -131,14 +185,15 @@ def evaluate_exploration_healing(
 ) -> TurnEvaluation:
     """Run the shared heal over fixed actors and project the uncommitted payment and HP.
 
-    A living creature at full HP is a legal target. It still produces the rolled
-    evidence and uses one slot, with no HP edit when the capped HP is unchanged.
+    A living creature at full HP is a legal target. A living zero-HP recipient
+    recovers only its downed-sourced unconscious condition and death-save counters.
+    Both still use the ordinary payment and rolled evidence.
     """
     snapshot, payload = request.state_snapshot, request.payload
     assert isinstance(snapshot, NonCombatSnapshot)
     assert isinstance(payload, ExplorationSpellCastPayload)
-    if target.hp_current <= 0:
-        return _refuse("rejected", "target_invalid", "healing requires a living positive-HP target")
+    if not target.is_alive or target.hp_current < 0:
+        return _refuse("rejected", "target_invalid", "ordinary healing cannot revive the dead")
     try:
         modifiers = _exploration_healing_modifiers(snapshot, actor, target, payment, loader)
     except ValueError as exc:
@@ -185,11 +240,15 @@ def evaluate_exploration_healing(
         raise EvaluationInvariantError("exploration heal must produce one healing event")
     if healing.amount < 0:
         return _refuse("unsupported", "healing.amount", "negative healing is outside this profile")
+    hp = healing_balance(target.hp_current, target.hp_max, healing.amount)
+    life, removed = exploration_healing_life_delta(target, hp)
+    if removed:
+        events.append(ConditionRemoved(target_id=target.entity_id, condition="unconscious"))
     return dict(
         status="accepted",
         state_delta=StateDelta(
             expected_world_version=snapshot.world_version,
-            operations=(payment, *exploration_healing_hp_delta(target, healing.amount)),
+            operations=(payment, *exploration_healing_hp_delta(target, healing.amount), *life),
         ),
         proposed_events=tuple(events),
         rng_transition=RNGTransition.between(request.rng_context, rng),

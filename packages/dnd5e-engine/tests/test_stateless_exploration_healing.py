@@ -6,10 +6,21 @@ import pytest
 from dnd5e_srd_data import MemoryAssetLoader
 
 from dnd5e_engine.evaluation_contracts import RuleEvaluationRequest, RuleEvaluationResult
-from dnd5e_engine.evaluation_delta import HPDelta, ResourceUpdate
+from dnd5e_engine.evaluation_delta import (
+    ConditionsUpdate,
+    DeathStateUpdate,
+    HPDelta,
+    ResourceUpdate,
+)
 from dnd5e_engine.evaluation_rng import RNGState
 from dnd5e_engine.evaluation_ruleset import ruleset_binding
-from dnd5e_engine.events import HealingApplied, HealingDieDraw, HealingRollDetail, RollFixedModifier
+from dnd5e_engine.events import (
+    ConditionRemoved,
+    HealingApplied,
+    HealingDieDraw,
+    HealingRollDetail,
+    RollFixedModifier,
+)
 from tests.evaluation_support import FOE, HERO
 from tests.test_stateless_attack import execute
 from tests.test_stateless_casting_v20 import canonical_healing_wire
@@ -66,6 +77,67 @@ def test_exploration_healing_has_only_payment_and_capped_hp_proposals() -> None:
     assert healing.expected_hp == target.hp_current
     assert healing.resulting_hp == min(target.hp_max, target.hp_current + amount)
     assert result.rng_transition.next_state == RNGState.capture(rng)
+
+
+def test_living_zero_hp_character_heal_resets_saves_and_only_downed_unconscious():
+    """Keep independent conditions while proposing one typed recovery transition."""
+    wire, loader = exploration_wire()
+    target = wire["state_snapshot"]["character_states"][1]
+    target.update(
+        entity_type="Character",
+        hp_current=0,
+        is_alive=True,
+        death_saves={"successes": 1, "failures": 2, "is_stable": False},
+        conditions=[
+            {
+                "condition": name,
+                "source_entity_id": source,
+                "scope": "combat",
+                "duration_rounds": None,
+                "save_dc": None,
+                "applied_round": 0,
+                "exhaustion_level": 1,
+                "source_effect_id": None,
+            }
+            for name, source in (
+                ("unconscious", "implied:event"),
+                ("unconscious", "implied:other"),
+                ("prone", "implied:event"),
+            )
+        ],
+    )
+    request = RuleEvaluationRequest.model_validate_json(json.dumps(wire))
+    result = execute(request, loader)
+    assert result.status == "accepted", result.error
+    assert result == RuleEvaluationResult.model_validate_json(result.model_dump_json())
+    payment, hp, life, conditions = result.state_delta.operations
+    assert isinstance(payment, ResourceUpdate)
+    assert isinstance(hp, HPDelta)
+    assert hp.expected_hp == 0
+    assert hp.resulting_hp > 0
+    assert isinstance(life, DeathStateUpdate)
+    assert (life.value.is_alive, life.value.death_saves.model_dump()) == (
+        True,
+        {"successes": 0, "failures": 0, "is_stable": False},
+    )
+    assert isinstance(conditions, ConditionsUpdate)
+    assert [(c.condition, c.source_entity_id) for c in conditions.value] == [
+        ("unconscious", "implied:other"),
+        ("prone", "implied:event"),
+    ]
+    assert result.proposed_events[-1] == ConditionRemoved(target_id=FOE, condition="unconscious")
+    assert result.rng_transition.state_changed
+
+
+def test_dead_target_cannot_receive_ordinary_exploration_healing():
+    wire, loader = exploration_wire()
+    target = wire["state_snapshot"]["character_states"][1]
+    target.update(hp_current=0, is_alive=False)
+    result = execute(RuleEvaluationRequest.model_validate_json(json.dumps(wire)), loader)
+    assert (result.status, result.error.code) == ("rejected", "target_invalid")
+    assert result.state_delta is None
+    assert result.proposed_events == ()
+    assert result.rng_transition is None
 
 
 @pytest.mark.parametrize(

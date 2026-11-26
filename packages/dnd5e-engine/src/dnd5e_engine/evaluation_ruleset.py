@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field, model_validator
 from dnd5e_engine.evaluation_base import EvaluationModel
 from dnd5e_engine.turn_rules import ROUND_DURATION_SECONDS
 
-EVALUATOR_VERSION = "dnd5e-evaluation/75"
+EVALUATOR_VERSION = "dnd5e-evaluation/76"
 RULESET_ID = "dnd-2024-srd-5.2.1"
 
 

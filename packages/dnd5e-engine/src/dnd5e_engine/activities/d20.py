@@ -69,18 +69,23 @@ def legacy_sources(sources: AdvantageSources) -> tuple[AdvantageSource, ...]:
     """Keep flattened event tokens stable while directional evidence names each rule."""
 
     def collapse(values: tuple[AdvantageSource, ...]) -> tuple[AdvantageSource, ...]:
-        """Collapse each direction once while preserving its established order."""
-        mapped = (
-            "condition:attacker"
-            if value.startswith("attacker:")
-            else "condition:target"
-            if value.startswith("target:")
-            else "trait"
-            if value == "trait:MagicResistance"
-            else value
-            for value in values
-        )
-        return tuple(dict.fromkeys(mapped))
+        """Coalesce detailed condition names without dropping legacy contributions."""
+        result: list[AdvantageSource] = []
+        seen_condition_sides: set[AdvantageSource] = set()
+        for value in values:
+            if value.startswith("attacker:") or value.startswith("target:"):
+                coarse: AdvantageSource = (
+                    "condition:attacker" if value.startswith("attacker:") else "condition:target"
+                )
+                if coarse in seen_condition_sides:
+                    continue
+                seen_condition_sides.add(coarse)
+                result.append(coarse)
+            else:
+                if value in ("condition:attacker", "condition:target"):
+                    seen_condition_sides.add(value)
+                result.append("trait" if value == "trait:MagicResistance" else value)
+        return tuple(result)
 
     return collapse(sources.advantage) + collapse(sources.disadvantage)
 

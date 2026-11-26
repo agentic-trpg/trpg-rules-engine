@@ -55,3 +55,24 @@ def test_forced_natural_consumes_zero_draws():
 def test_result_carries_typed_sources():
     r = roll_d20_test(random.Random(3), 0, AdvantageSources(("flag", "help"), ()))
     assert set(r.sources) == {"flag", "help"}
+
+
+def test_legacy_sources_keep_repeated_effects_and_traits_but_coalesce_named_conditions():
+    sources = AdvantageSources(
+        advantage=("effect", "effect", "trait", "trait:MagicResistance", "trait"),
+        disadvantage=("attacker:Poisoned", "attacker:Frightened", "effect", "effect"),
+    )
+    result = roll_d20_test(random.Random(3), 0, sources)
+    assert result.mode == "normal"
+    assert result.sources == (
+        "effect",
+        "effect",
+        "trait",
+        "trait",
+        "trait",
+        "condition:attacker",
+        "effect",
+        "effect",
+    )
+    assert result.advantage_sources == sources.advantage
+    assert result.disadvantage_sources == sources.disadvantage

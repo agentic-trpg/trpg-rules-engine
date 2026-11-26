@@ -42,10 +42,11 @@ class ActionAvailabilityRequest(EvaluationModel):
     ruleset_binding: RulesetBinding
     include_hit_preview: bool = False
 
+    # Pydantic uses the model's field schema when this wrapper has no return annotation.
     @model_serializer(mode="wrap")
-    def serialize_version(
+    def serialize_version(  # type: ignore[no-untyped-def]
         self, handler: Callable[[ActionAvailabilityRequest], dict[str, Any]]
-    ) -> dict[str, Any]:
+    ):
         """Omit the /17 preview opt-in from legacy request serialization."""
         value = handler(self)
         if self.schema_version != "engine-availability/17":
@@ -84,10 +85,11 @@ class ActionAvailabilityResult(EvaluationModel):
     reason: RuleError
     hit_preview: AttackHitPreview | None = None
 
+    # Pydantic uses the model's field schema when this wrapper has no return annotation.
     @model_serializer(mode="wrap")
-    def serialize_version(
+    def serialize_version(  # type: ignore[no-untyped-def]
         self, handler: Callable[[ActionAvailabilityResult], dict[str, Any]]
-    ) -> dict[str, Any]:
+    ):
         """Keep the /13–/16 wire shape unchanged when serializing results."""
         value = handler(self)
         if self.schema_version != "engine-availability/17":

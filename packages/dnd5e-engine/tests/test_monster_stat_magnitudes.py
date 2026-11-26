@@ -104,13 +104,24 @@ def test_real_template_attack_and_base_damage(loader, slug, action_slug, bonus, 
     roll = next(e for e in live.event_log if isinstance(e, AttackRolled))
     damage = next(e for e in live.event_log if isinstance(e, DamageApplied))
     rng = random.Random(11)
-    assert (roll.natural, roll.modifier, roll.roll_total) == (rng.randint(1, 20), bonus, 15 + bonus)
+    # Both actors are adjacent. The ranged crossbow uses the lower of two d20s.
+    faces = [rng.randint(1, 20)]
+    if action_slug == "heavy-crossbow":
+        faces.append(rng.randint(1, 20))
+        assert roll.advantage == "disadvantage"
+        assert roll.disadvantage_sources == ["ranged_in_melee"]
+    else:
+        assert roll.advantage == "normal"
+    assert roll.roll_detail.d20.faces == faces
+    natural = min(faces)
+    assert (roll.natural, roll.modifier, roll.roll_total) == (natural, bonus, natural + bonus)
     assert damage.amount == sum(rng.randint(1, size) for _ in range(dice)) + mod
     if slug == "adult-red-dragon":
         fire = next(
             e for e in live.event_log if isinstance(e, DamageApplied) and e.damage_type == "fire"
         )
         assert fire.amount == rng.randint(1, 4) + rng.randint(1, 4)  # rider gets no STR.
+    assert live.rng.getstate() == rng.getstate()
     assert monster.model_dump() == before
     if slug == "crocodile":
         escape = next(a for a in monster.actions[0].activities if isinstance(a, CheckActivity))

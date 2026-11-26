@@ -269,7 +269,10 @@ def test_interleaved_sessions_requests_rng_and_frozen_stage_values_are_isolated(
 
 @pytest.mark.parametrize("mode", ["validation", "serialization"])
 def test_exported_schema_requires_stages_and_advertises_versioned_protocols(mode):
-    from dnd5e_engine.evaluation_availability import ActionAvailabilityRequest
+    from dnd5e_engine.evaluation_availability import (
+        ActionAvailabilityRequest,
+        ActionAvailabilityResult,
+    )
     from dnd5e_engine.evaluation_state import CombatSnapshot
 
     schema = RuleEvaluationResult.model_json_schema(mode=mode)
@@ -309,13 +312,34 @@ def test_exported_schema_requires_stages_and_advertises_versioned_protocols(mode
         "engine-snapshot/19",
         "engine-snapshot/20",
     ]
-    availability_schema = ActionAvailabilityRequest.model_json_schema(mode=mode)
-    assert availability_schema["properties"]["schema_version"]["enum"] == [
+    availability_versions = [
         "engine-availability/13",
         "engine-availability/14",
         "engine-availability/15",
         "engine-availability/16",
+        "engine-availability/17",
     ]
+    request_schema = ActionAvailabilityRequest.model_json_schema(mode=mode)
+    request_properties = request_schema["properties"]
+    assert request_properties["schema_version"]["enum"] == availability_versions
+    assert "state_snapshot" in request_schema["required"]
+    assert request_properties["state_snapshot"]["$ref"] == "#/$defs/CombatSnapshot"
+    assert request_properties["include_hit_preview"]["type"] == "boolean"
+
+    result_schema = ActionAvailabilityResult.model_json_schema(mode=mode)
+    result_properties = result_schema["properties"]
+    assert result_properties["schema_version"]["enum"] == availability_versions
+    assert "status" in result_schema["required"]
+    assert result_properties["reason"]["$ref"] == "#/$defs/RuleError"
+    assert {"$ref": "#/$defs/AttackHitPreview"} in result_properties["hit_preview"]["anyOf"]
+    assert set(result_schema["$defs"]["AttackHitPreview"]["properties"]) == {
+        "status",
+        "probability_numerator",
+        "probability_denominator",
+        "mode",
+        "advantage_reasons",
+        "disadvantage_reasons",
+    }
 
 
 def test_existing_attack_with_unaligned_input_budget_keeps_rule_outcome_and_reports_gap():

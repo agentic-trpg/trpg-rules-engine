@@ -113,7 +113,7 @@ def test_pre_roll_observes_complete_sources_after_consuming_one_use() -> None:
     resolve_attack(activity, ctx, weapon=weapon)
     plan = seen[0]
     assert plan.advantage_sources == ("flag", "unseen", "help", "trait", "effect")
-    assert plan.disadvantage_sources == ("flag", "condition:attacker")
+    assert plan.disadvantage_sources == ("flag", "attacker:Restrained")
     assert (plan.governing_ability, plan.weapon_slug, plan.weapon_category) == (
         "str",
         "longsword",
@@ -127,6 +127,16 @@ def test_pre_roll_observes_complete_sources_after_consuming_one_use() -> None:
     assert (plan.attack_origin, plan.turn_serial, plan.unarmed) == ("action", 12, False)
     roll = next(e for e in events if isinstance(e, AttackRolled))
     assert roll.advantage == "normal"
+    assert roll.disadvantage_sources == ["flag", "attacker:Restrained"]
+    assert roll.sources == [
+        "flag",
+        "unseen",
+        "help",
+        "trait",
+        "effect",
+        "flag",
+        "condition:attacker",
+    ]
     assert roll.modifier == 10
 
 

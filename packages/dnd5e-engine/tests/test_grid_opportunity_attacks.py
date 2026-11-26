@@ -176,7 +176,9 @@ def test_a_prone_mover_ten_feet_away_imposes_disadvantage() -> None:
     )
     [rolled] = [e for e in live.event_log if isinstance(e, AttackRolled)]
     assert rolled.advantage == "disadvantage"
-    assert "condition:target" in rolled.disadvantage_sources
+    assert rolled.advantage_sources == []
+    assert rolled.disadvantage_sources == ["target:Prone"]
+    assert rolled.sources == ["condition:target"]
 
 
 def test_the_reactors_after_the_one_that_drops_the_mover_attack_nothing() -> None:

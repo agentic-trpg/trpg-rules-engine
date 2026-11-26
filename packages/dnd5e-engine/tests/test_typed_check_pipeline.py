@@ -167,7 +167,9 @@ def test_hide_uses_shared_pipeline_with_noisy_armor_and_poisoned():
     act(handle, "char:hero", intent_type="hide")
     event = events(live, CheckRolled)[-1]
     assert (event.context, event.ability, event.skill, event.dc) == ("hide", "dex", "stealth", 15)
-    assert event.disadvantage_sources == ["condition:attacker", "armor"]
+    assert event.disadvantage_sources == ["attacker:Poisoned", "armor"]
+    assert event.sources == ["condition:attacker", "armor"]
+    assert event.advantage == "disadvantage"
     assert len(live.rng.draws) == 2
 
 
@@ -202,7 +204,8 @@ def test_charmed_help_poisoned_and_armor_cancel_and_consume_only_matching_help()
         live, request(ability="dex", skill="stealth", social_interaction=True, target_id="mon:foe")
     )
     assert event.advantage_sources == ["help", "charmed"]
-    assert event.disadvantage_sources == ["condition:attacker", "armor"]
+    assert event.disadvantage_sources == ["attacker:Poisoned", "armor"]
+    assert event.sources == ["help", "charmed", "condition:attacker", "armor"]
     assert event.advantage == "normal"
     assert len(live.rng.draws) == 1
     assert not live.help_check_grants

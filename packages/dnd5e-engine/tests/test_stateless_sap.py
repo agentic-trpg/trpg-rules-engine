@@ -290,8 +290,9 @@ def test_sap_cancels_prone_advantage_in_actual_attack(monkeypatch):
     roll = next(e for e in result.proposed_events if isinstance(e, AttackRolled))
     assert roll.advantage == "normal"
     assert roll.natural == 13
-    assert roll.advantage_sources == ["condition:target"]
+    assert roll.advantage_sources == ["target:Prone"]
     assert roll.disadvantage_sources == ["trait"]
+    assert roll.sources == ["condition:target", "trait"]
     attacked = apply_sap(snapshot, result)
     assert not attacked.combat_state.sap_marks
     passed, events = pass_after_attack(request, result, attacked, loader)

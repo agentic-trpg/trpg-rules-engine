@@ -231,8 +231,9 @@ def test_weapon_intent_damage_hp_order_and_rng(seed):
     assert isinstance(attack, AttackRolled)
     assert attack.natural == max(mirror.randint(1, 20), mirror.randint(1, 20))
     assert attack.advantage == "advantage"
-    assert attack.advantage_sources == ["condition:target"]
+    assert attack.advantage_sources == ["target:Petrified"]
     assert attack.disadvantage_sources == []
+    assert attack.sources == ["condition:target"]
     assert attack.roll_total == attack.natural + attack.modifier
     assert attack.is_hit
     assert attack.is_crit == (attack.natural == 20)

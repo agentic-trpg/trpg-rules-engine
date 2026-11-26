@@ -40,18 +40,24 @@ from dnd5e_engine.types.conditions import ActiveCondition
 
 @pytest.mark.parametrize("reactor_kind", ["character", "monster"])
 @pytest.mark.parametrize(
-    ("condition", "distance", "mode", "crit"),
+    ("condition", "distance", "mode", "crit", "advantage_sources", "disadvantage_sources"),
     [
-        ("prone", 5, "advantage", False),
-        ("prone", 10, "disadvantage", False),
-        ("paralyzed", 5, "advantage", True),
-        ("paralyzed", 10, "advantage", False),
-        ("unconscious", 5, "advantage", True),
-        ("unconscious", 10, "normal", False),
+        ("prone", 5, "advantage", False, ["target:Prone"], []),
+        ("prone", 10, "disadvantage", False, [], ["target:Prone"]),
+        ("paralyzed", 5, "advantage", True, ["target:Paralyzed"], []),
+        ("paralyzed", 10, "advantage", False, ["target:Paralyzed"], []),
+        ("unconscious", 5, "advantage", True, ["target:Unconscious", "target:Prone"], []),
+        ("unconscious", 10, "normal", False, ["target:Unconscious"], ["target:Prone"]),
     ],
 )
 def test_opportunity_resolver_consumes_scoped_target_conditions(
-    reactor_kind: str, condition: str, distance: int, mode: str, crit: bool
+    reactor_kind: str,
+    condition: str,
+    distance: int,
+    mode: str,
+    crit: bool,
+    advantage_sources: list[str],
+    disadvantage_sources: list[str],
 ) -> None:
     """Exercise the reaction resolver directly: a Speed-0 target cannot walk
     to provoke one. Both PC weapons and typed monster attacks share this seam.
@@ -87,12 +93,9 @@ def test_opportunity_resolver_consumes_scoped_target_conditions(
     assert attack.natural == natural
     assert attack.advantage == mode
     assert attack.roll_total == natural + attack.modifier
-    assert attack.advantage_sources == (
-        ["condition:target"] if condition != "prone" or distance == 5 else []
-    )
-    assert attack.disadvantage_sources == (
-        ["condition:target"] if condition != "paralyzed" and distance == 10 else []
-    )
+    assert attack.advantage_sources == advantage_sources
+    assert attack.disadvantage_sources == disadvantage_sources
+    assert attack.sources == ["condition:target"] * (2 if mode == "normal" else 1)
     assert attack.is_hit
     assert attack.is_crit is crit
     assert damage

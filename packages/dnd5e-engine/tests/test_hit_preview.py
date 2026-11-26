@@ -1,6 +1,7 @@
 """Exact read-only probability over an admitted current-schema attack."""
 
 from copy import deepcopy
+from json import loads
 
 from dnd5e_srd_data import BundledAssetLoader, MemoryAssetLoader
 from pydantic_core import to_json
@@ -82,6 +83,15 @@ def test_current_availability_preview_is_exact_and_opt_in():
     result = query_action_availability(query, loader=loader)
     assert result.status == "available"
     assert result.hit_preview.status == "known"
+    assert loads(query.model_dump_json())["include_hit_preview"] is True
+    assert loads(result.model_dump_json())["hit_preview"] == {
+        "status": "known",
+        "probability_numerator": 4,
+        "probability_denominator": 5,
+        "mode": "normal",
+        "advantage_reasons": [],
+        "disadvantage_reasons": [],
+    }
     assert result.hit_preview.mode == "normal"
     assert (
         result.hit_preview.probability_numerator,
@@ -93,10 +103,11 @@ def test_current_availability_preview_is_exact_and_opt_in():
     )
     assert hidden.status == "available"
     assert hidden.hit_preview.status == "unknown"
-    old = query_action_availability(
-        query.model_copy(update={"schema_version": "engine-availability/16"}), loader=loader
-    )
+    old_query = query.model_copy(update={"schema_version": "engine-availability/16"})
+    assert "include_hit_preview" not in loads(old_query.model_dump_json())
+    old = query_action_availability(old_query, loader=loader)
     assert "hit_preview" not in old.model_dump(mode="json")
+    assert "hit_preview" not in loads(old.model_dump_json())
 
 
 def test_prone_advantage_disadvantage_and_cancellation_use_exact_weights():

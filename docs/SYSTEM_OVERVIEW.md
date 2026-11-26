@@ -85,7 +85,7 @@ SM 持有效果、实际锚点、期限和集中状态。见
 | 共享规则解析器 | 类型化活动的攻击、伤害、检定、效果及公式解析 | `activities/resolver.py::resolve_activity`、`activities/context.py::ActivityResolutionContext` | rules、规则资产、显式上下文／RNG |
 | 空间／交付／生命周期 | 几何、目标投送、区域和效果／反应协作 | `spatial.py::GridTopology`；`spell_delivery.py::plan_delivery`；`effect_lifecycle.py::OngoingEffectLifecycle` | 各 evaluator 与 Legacy 的相应适配路径 |
 | 世界时间效果提案 | 固定 Longstrider 效果及秒数、完整身份和终止策略；不拥有时钟、施法准入或持久化 | `evaluation_world_effect.py::plan_longstrider_application` | SM 按 Session 时间绑定安排与消费期限 |
-| 探索空间法术准备 | 按已知空间目标与区域占用声明角色依赖和求值协议 | `evaluation_environmental_spells.py::prepare_environmental_spell` | World 提供空间事实，SM 按声明组装固定角色输入 |
+| 探索空间法术准备 | 从已绑定活动先声明区域占用模板，再按固定占用声明角色依赖和求值协议 | `evaluation_environmental_spells.py::environmental_spell_world_needs`、`prepare_environmental_spell` | World 按模板提供空间事实，SM 按声明组装固定角色输入 |
 | 固定探索区域效果提案 | 按绑定状态规则或被动效果配置、来源和目标提议添加或移除效果 | `evaluation_region_effect.py::plan_region_effect_transition` | [Stateless 合同](dev/stateless-evaluation.md#fixed-exploration-region-effects)，SM 判断覆盖与采用提案 |
 | SRD Data | 素材 Schema、可变／bundled 读取和冻结捕获 | `packages/dnd5e-srd-data/src/dnd5e_srd_data/loader.py::AssetLoader`；`packages/dnd5e-srd-data/src/dnd5e_srd_data/frozen.py::FrozenAssetLoader` | Engine、Bridge overlay；不持有 Session |
 | Legacy combat | 原战斗 handle、注册表、工作状态及事件循环 | `orchestrator.py::start_combat`、`orchestrator.py::submit_player_intent` | live_*、共享算法、Legacy host handoff |

@@ -103,6 +103,7 @@ _CLASSES = {
     "faerie-fire": frozenset({"bard", "druid"}),
 }
 _LIGHT = EnvironmentalSpec(kind="light", light="bright", dim_extension_ft=20, object_anchoring=True)
+_FAERIE_VISUAL_AREA = AreaTemplate("cube", "square", 20, "target", True)
 _SECONDS_PER_UNIT = {SpellDurationUnits.MINUTE: 60, SpellDurationUnits.HOUR: 3600}
 
 
@@ -112,6 +113,37 @@ class EnvironmentalSpellPreparation:
 
     actor_ids: tuple[str, ...]
     schema_version: str
+
+
+@dataclass(frozen=True)
+class EnvironmentalSpellWorldNeeds:
+    """Declare which spatial facts World must fix before actor preparation."""
+
+    schema_version: str
+    visual_occupant_area: AreaTemplate | None
+
+
+def environmental_spell_world_needs(
+    payload: ExplorationEnvironmentalSpellCastPayload, loader: AssetLoader
+) -> EnvironmentalSpellWorldNeeds:
+    """Select the supported spatial wire and its area occupancy need from bound assets.
+
+    This is dependency preparation only; formal cast admission and payment happen
+    after World supplies positions and RE receives the complete snapshot.
+    """
+    schema_version, activity = _environmental_spell_profile(
+        payload.spell_id,
+        loader,
+        ending=isinstance(
+            payload.target, (EnvironmentalCreatureTarget, EnvironmentalMagicEffectTarget)
+        ),
+    )
+    return EnvironmentalSpellWorldNeeds(
+        schema_version=schema_version,
+        visual_occupant_area=_FAERIE_VISUAL_AREA
+        if schema_version == FAERIE_FIRE_SCHEMA_VERSION and isinstance(activity, SaveActivity)
+        else None,
+    )
 
 
 def environmental_spell_schema_version(
@@ -150,6 +182,8 @@ def prepare_environmental_spell(
     actor_id: str,
     positions: ExplorationSpellPositions,
     loader: AssetLoader,
+    *,
+    world_needs: EnvironmentalSpellWorldNeeds | None = None,
 ) -> EnvironmentalSpellPreparation:
     """Declare the wire and ordered actor facts from fixed World geometry.
 
@@ -158,21 +192,19 @@ def prepare_environmental_spell(
     mechanical facts and spell admission. Preparation does not use RNG.
     """
     target = payload.target
-    schema_version, activity = _environmental_spell_profile(
-        payload.spell_id,
-        loader,
-        ending=isinstance(target, (EnvironmentalCreatureTarget, EnvironmentalMagicEffectTarget)),
+    needs = (
+        world_needs if world_needs is not None else environmental_spell_world_needs(payload, loader)
     )
     actor_ids = [actor_id]
     if isinstance(target, EnvironmentalCreatureTarget):
         actor_ids.append(target.target_id)
-    if schema_version == FAERIE_FIRE_SCHEMA_VERSION and isinstance(activity, SaveActivity):
+    if needs.visual_occupant_area is not None:
         actor_ids.extend(
             occupant.target_id
             for occupant in positions.visual_occupants
             if occupant.target_kind == "creature"
         )
-    return EnvironmentalSpellPreparation(tuple(dict.fromkeys(actor_ids)), schema_version)
+    return EnvironmentalSpellPreparation(tuple(dict.fromkeys(actor_ids)), needs.schema_version)
 
 
 @lru_cache(maxsize=len(_CLASSES))
@@ -543,7 +575,7 @@ def _faerie_plan(
         raise ValueError("Faerie Fire requires its reviewed spellcasting save activity")
     save_ability = _resolve_save_ability(activity)
     grid = GridTopology(GridScene.model_validate(snapshot.scene_state.grid.model_dump()))
-    template = AreaTemplate("cube", "square", 20, "target", True)
+    template = _FAERIE_VISUAL_AREA
     cells = area_cells(grid, template, positions.target_cell, None)
     if any(occupant.cell_id not in cells for occupant in positions.visual_occupants):
         raise ValueError("visual target is outside the cube")

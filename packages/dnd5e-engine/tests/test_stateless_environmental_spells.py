@@ -10,6 +10,7 @@ from dnd5e_srd_data.schema.common import PassiveEffect, PassiveEffectChange
 from pydantic import ValidationError
 
 from dnd5e_engine.activities.effects import passive_effect_to_active_effect
+from dnd5e_engine.areas import AreaTemplate
 from dnd5e_engine.environment import EnvironmentalSource, environmental_dispels
 from dnd5e_engine.evaluation_contracts import (
     DISPEL_MAGIC_SCHEMA_VERSION,
@@ -34,6 +35,7 @@ from dnd5e_engine.evaluation_environmental_contracts import (
 )
 from dnd5e_engine.evaluation_environmental_spells import (
     environmental_spell_schema_version,
+    environmental_spell_world_needs,
     evaluate_bound_faerie_step,
     prepare_environmental_spell,
     verify_bound_faerie_result,
@@ -161,31 +163,40 @@ def test_environmental_wire_selection_uses_typed_obscuration():
 
 
 @pytest.mark.parametrize(
-    "spell_id,target,schema_version,actor_ids",
+    "spell_id,target,schema_version,actor_ids,visual_occupant_area",
     [
         (
             "faerie-fire",
             {"kind": "point", "cell_id": "1,0"},
             FAERIE_FIRE_SCHEMA_VERSION,
             (HERO, "second", FOE),
+            AreaTemplate("cube", "square", 20, "target", True),
         ),
-        ("fog-cloud", {"kind": "point", "cell_id": "1,0"}, FOG_CLOUD_SCHEMA_VERSION, (HERO,)),
+        (
+            "fog-cloud",
+            {"kind": "point", "cell_id": "1,0"},
+            FOG_CLOUD_SCHEMA_VERSION,
+            (HERO,),
+            None,
+        ),
         (
             "dispel-magic",
             {"kind": "creature", "target_id": FOE},
             DISPEL_MAGIC_SCHEMA_VERSION,
             (HERO, FOE),
+            None,
         ),
         (
             "dispel-magic",
             {"kind": "effect", "effect_id": "effect"},
             DISPEL_MAGIC_SCHEMA_VERSION,
             (HERO,),
+            None,
         ),
     ],
 )
 def test_environmental_preparation_declares_exact_actor_scope(
-    spell_id, target, schema_version, actor_ids
+    spell_id, target, schema_version, actor_ids, visual_occupant_area
 ):
     """Keep World order, deduplicate actors, and ignore object occupants."""
     payload = ExplorationEnvironmentalSpellCastPayload.model_validate(
@@ -213,7 +224,11 @@ def test_environmental_preparation_declares_exact_actor_scope(
             ),
         )
     )
-    preparation = prepare_environmental_spell(payload, HERO, positions, BundledAssetLoader())
+    loader = BundledAssetLoader()
+    assert environmental_spell_world_needs(payload, loader).visual_occupant_area == (
+        visual_occupant_area
+    )
+    preparation = prepare_environmental_spell(payload, HERO, positions, loader)
     assert preparation.actor_ids == actor_ids
     assert preparation.schema_version == schema_version
 
@@ -239,8 +254,26 @@ def test_faerie_preparation_requires_a_typed_area_save_for_occupant_facts():
     preparation = prepare_environmental_spell(
         request.payload, HERO, request.spell_positions, MemoryAssetLoader(spells=[spell])
     )
+    assert (
+        environmental_spell_world_needs(
+            request.payload, MemoryAssetLoader(spells=[spell])
+        ).visual_occupant_area
+        is None
+    )
     assert preparation.schema_version == FAERIE_FIRE_SCHEMA_VERSION
     assert preparation.actor_ids == (HERO,)
+
+
+def test_faerie_preparation_with_no_occupants_keeps_only_caster():
+    """A valid empty area still requests its occupancy read, without extra actors."""
+    wire, loader = _faerie_wire()
+    request = _request(wire)
+    positions = request.spell_positions.model_copy(update={"visual_occupants": ()})
+    needs = environmental_spell_world_needs(request.payload, loader)
+    assert needs.visual_occupant_area == AreaTemplate("cube", "square", 20, "target", True)
+    assert prepare_environmental_spell(
+        request.payload, HERO, positions, loader, world_needs=needs
+    ).actor_ids == (HERO,)
 
 
 def test_faerie_fire_uses_its_bound_activity_and_exact_rng():

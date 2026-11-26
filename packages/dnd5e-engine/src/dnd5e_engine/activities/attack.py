@@ -17,10 +17,9 @@ MIRRORS, does not import from, ``effects/attack.py`` + ``effects/damage.py``:
   families — the attacker's own ``flags.advantage.attack`` /
   ``flags.disadvantage.attack`` effect changes (``attacker_advantage_flags`` →
   source ``"flag"``) and the condition-derived half
-  (``rules/conditions.py::conditions_grant_advantage_on_attack``, called once
-  per side over ``ctx.attacker_conditions`` / ``ctx.target_conditions[target]``
-  so the emitted source names the side that produced it — ``"condition:attacker"``
-  / ``"condition:target"``; both sides can produce either direction). Any advantage plus any
+  (``rules/conditions.py::condition_attack_source_modes``, expanding implied
+  names once per side and qualifying each condition's own clauses; both sides
+  can produce either direction). Any advantage plus any
   disadvantage cancel to ``normal`` (SRD §Advantage and Disadvantage). A mode is
   only ever active when a source exists, so a scenario with no advantage
   producer still consumes exactly ONE d20 draw per target and its seeded stream
@@ -97,8 +96,8 @@ from dnd5e_engine.events import (
 from dnd5e_engine.rules.armor_class import apply_armor_class_floor
 from dnd5e_engine.rules.conditions import (
     active_condition_names,
+    condition_attack_source_modes,
     conditions_auto_crit_within_5ft,
-    conditions_grant_advantage_on_attack,
 )
 from dnd5e_engine.spatial import cover_bonus
 
@@ -593,32 +592,26 @@ def _attack_roll_sources(
     flag_sources = attack_effect_sources(ctx, target.entity_id, governing_ability)
     adv_sources.extend(flag_sources.advantage)
     dis_sources.extend(flag_sources.disadvantage)
-    for name in dict.fromkeys(value.lower() for value in ctx.attacker_conditions):
-        grants_advantage, imposes_disadvantage = conditions_grant_advantage_on_attack(
-            [name],
-            [],
-            grappler_id=ctx.attacker_grappler_id,
-            target_id=target.entity_id,
-            attacker_invisibility_pierced=ctx.attacker_invisibility_pierced_by.get(
-                target.entity_id, False
-            ),
-            fear_source_in_sight=ctx.attacker_fear_source_in_sight,
-        )
+    for name, grants_advantage, imposes_disadvantage in condition_attack_source_modes(
+        ctx.attacker_conditions,
+        side="attacker",
+        grappler_id=ctx.attacker_grappler_id,
+        target_id=target.entity_id,
+        invisibility_pierced=ctx.attacker_invisibility_pierced_by.get(target.entity_id, False),
+        fear_source_in_sight=ctx.attacker_fear_source_in_sight,
+    ):
         if grants_advantage:
             adv_sources.append(
                 "attacker:Invisible" if name == "invisible" else "condition:attacker"
             )
         if imposes_disadvantage:
             dis_sources.append(_ATTACKER_DISADVANTAGE_REASONS.get(name, "condition:attacker"))
-    for name in dict.fromkeys(value.lower() for value in target_conditions):
-        grants_advantage, imposes_disadvantage = conditions_grant_advantage_on_attack(
-            [],
-            [name],
-            distance_ft=distance_ft,
-            target_invisibility_pierced=ctx.target_invisibility_pierced.get(
-                target.entity_id, False
-            ),
-        )
+    for name, grants_advantage, imposes_disadvantage in condition_attack_source_modes(
+        target_conditions,
+        side="target",
+        distance_ft=distance_ft,
+        invisibility_pierced=ctx.target_invisibility_pierced.get(target.entity_id, False),
+    ):
         if grants_advantage:
             adv_sources.append(_TARGET_ADVANTAGE_REASONS.get(name, "condition:target"))
         if imposes_disadvantage:

@@ -297,6 +297,31 @@ def test_multiple_auto_crit_conditions_match_single_condition_events_and_rng(
     _assert_swing(events, rng, mode="advantage", adv=True, dis=False, crit=True)
 
 
+@pytest.mark.parametrize(
+    ("distance", "mode", "advantage", "disadvantage"),
+    [
+        (5, "advantage", ["target:Unconscious", "target:Prone"], []),
+        (10, "normal", ["target:Unconscious"], ["target:Prone"]),
+    ],
+)
+def test_unconscious_implied_prone_has_one_reason_even_when_materialized(
+    distance, mode, advantage, disadvantage
+):
+    implied, implied_rng = _swing(["unconscious"], distance)
+    for materialized_names in (["unconscious", "prone"], ["prone", "unconscious"]):
+        materialized, materialized_rng = _swing(materialized_names, distance)
+        assert implied == materialized
+        assert implied_rng.draws == materialized_rng.draws
+        assert implied_rng.getstate() == materialized_rng.getstate()
+    rolled = next(event for event in implied if isinstance(event, AttackRolled))
+    assert rolled.advantage == mode
+    assert rolled.advantage_sources == advantage
+    assert rolled.disadvantage_sources == disadvantage
+    assert rolled.sources == list(
+        legacy_sources(AdvantageSources(tuple(advantage), tuple(disadvantage)))
+    )
+
+
 def _remove_clause(slug: str, kind: K, source: str, monkeypatch: pytest.MonkeyPatch) -> None:
     if source == "allowlist":
         monkeypatch.setitem(
@@ -527,10 +552,14 @@ def test_player_intent_cleave_consumes_candidate_distance_conditions_and_exact_r
     assert chain.is_hit
     assert chain.is_crit is crit
     assert chain.advantage_sources == (
-        [f"target:{condition.title()}"] if condition != "prone" or distance <= threshold else []
+        (["target:Unconscious", "target:Prone"] if distance <= 5 else ["target:Unconscious"])
+        if condition == "unconscious"
+        else [f"target:{condition.title()}"]
+        if condition != "prone" or distance <= threshold
+        else []
     )
     assert chain.disadvantage_sources == (
-        [f"target:{condition.title()}"]
+        ["target:Prone"]
         if (condition == "unconscious" and distance > 5)
         or (condition == "prone" and distance > threshold)
         else []

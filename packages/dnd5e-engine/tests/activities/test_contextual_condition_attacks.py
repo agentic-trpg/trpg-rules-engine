@@ -59,6 +59,34 @@ def _legacy_context_rules(
     return advantage, disadvantage
 
 
+def _legacy_source_modes(
+    conditions,
+    *,
+    side,
+    distance_ft=None,
+    grappler_id=None,
+    target_id=None,
+    invisibility_pierced=False,
+    fear_source_in_sight=True,
+):
+    """Apply frozen contextual predicates to each source for event parity."""
+    rows = []
+    for name in dict.fromkeys(value.lower() for value in conditions):
+        advantage, disadvantage = _legacy_context_rules(
+            [name] if side == "attacker" else [],
+            [name] if side == "target" else [],
+            distance_ft=distance_ft,
+            grappler_id=grappler_id,
+            target_id=target_id,
+            attacker_invisibility_pierced=invisibility_pierced if side == "attacker" else False,
+            target_invisibility_pierced=invisibility_pierced if side == "target" else False,
+            fear_source_in_sight=fear_source_in_sight,
+        )
+        if advantage or disadvantage:
+            rows.append((name, advantage, disadvantage))
+    return tuple(rows)
+
+
 class _RecordingRandom(random.Random):
     def __init__(self, seed=7):
         super().__init__(seed)
@@ -266,7 +294,7 @@ def test_attack_event_damage_and_rng_match_pre_migration(
     assert attack.sources == adv + dis
     assert attack.roll_total == natural + attack.modifier + mirror.randint(1, 4)
     assert sum(a == 1 and b == 20 for a, b, value in rng.draws) == (1 if mode == "normal" else 2)
-    monkeypatch.setattr(attack_rules, "conditions_grant_advantage_on_attack", _legacy_context_rules)
+    monkeypatch.setattr(attack_rules, "condition_attack_source_modes", _legacy_source_modes)
     legacy_events, legacy_rng = _swing(attacker, target, context, seed, path)
     assert events == legacy_events  # Includes exact hit/crit and all damage events.
     assert rng.draws == legacy_rng.draws
@@ -426,7 +454,7 @@ def test_opportunity_attack_context_matches_pre_migration(reactor_kind, conditio
     assert rolled.advantage == ("advantage" if condition == "invisible" else "disadvantage")
     assert rolled.sources == ["condition:attacker"]
     assert sum(a == 1 and b == 20 for a, b, value in rng.draws) == 2
-    monkeypatch.setattr(attack_rules, "conditions_grant_advantage_on_attack", _legacy_context_rules)
+    monkeypatch.setattr(attack_rules, "condition_attack_source_modes", _legacy_source_modes)
     legacy_events, legacy_rng = run()
     assert events == legacy_events
     assert rng.draws == legacy_rng.draws

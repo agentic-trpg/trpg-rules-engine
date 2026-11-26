@@ -84,8 +84,12 @@ def _assert_roll(
     assert rolled.roll_total == rolled.natural + 3
     assert rolled.advantage == mode
     assert rolled.sources == advantage_sources + disadvantage_sources
-    assert rolled.advantage_sources == advantage_sources
-    assert rolled.disadvantage_sources == disadvantage_sources
+    assert bool(rolled.advantage_sources) is bool(advantage_sources)
+    assert bool(rolled.disadvantage_sources) is bool(disadvantage_sources)
+    assert all(source.startswith("target:") for source in rolled.advantage_sources)
+    assert all(
+        source.startswith(("target:", "attacker:")) for source in rolled.disadvantage_sources
+    )
     assert rolled.attacker_id == "char:hero"
     assert rolled.target_id == "mon:foe"
     assert rolled.is_hit is (rolled.natural == 20)
@@ -313,9 +317,13 @@ def test_player_intent_keeps_event_order_and_d20_then_bonus_then_damage_draws(
     assert attack.natural == _mirror_roll(mirror, mode)
     assert attack.roll_total == attack.natural + attack.modifier + mirror.randint(1, 4)
     assert attack.advantage == mode
-    assert attack.advantage_sources == ["condition:target"]
-    assert attack.disadvantage_sources == (["condition:attacker"] if poisoned_attacker else [])
-    assert attack.sources == attack.advantage_sources + attack.disadvantage_sources
+    assert attack.advantage_sources == [f"target:{condition.title()}"] + (
+        ["target:Prone"] if condition == "unconscious" else []
+    )
+    assert attack.disadvantage_sources == (["attacker:Poisoned"] if poisoned_attacker else [])
+    assert attack.sources == ["condition:target"] + (
+        ["condition:attacker"] if poisoned_attacker else []
+    )
     assert attack.is_hit is True
     # Existing nearby auto-crit remains independent of the migrated advantage.
     is_crit = condition in {"paralyzed", "unconscious"}

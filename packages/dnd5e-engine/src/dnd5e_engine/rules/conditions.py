@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Literal, Protocol
 
 from dnd5e_srd_data.schema.condition import ConditionEffect, ConditionEffectKind
 
@@ -187,16 +187,39 @@ def standalone_condition_matches_compiled(definition: ConditionDefinition) -> bo
     return not definition.implies and condition_matches_compiled(definition)
 
 
-def _project_condition_changes(conditions: list[str]) -> list[ActiveEffectChange]:
-    """Collect migrated clauses in stable input order, ignoring duplicate names."""
+def _expanded_condition_names(
+    conditions: list[str], *, canonical_implied_order: bool = False
+) -> tuple[str, ...]:
+    """Return distinct explicit and implied names, optionally placing implications last."""
     names = dict.fromkeys(c.lower() for c in conditions)
-    # Preserve the same implied-condition semantics as the legacy predicates.
+    if canonical_implied_order:
+        implied_names = {
+            child.value
+            for parent, children in CONDITION_IMPLIES.items()
+            if parent.value in names
+            for child in children
+        }
+        names = dict.fromkeys(name for name in names if name not in implied_names)
     for condition, implied in CONDITION_IMPLIES.items():
         if condition.value in names:
             names.update(dict.fromkeys(c.value for c in implied))
+    return tuple(names)
+
+
+def _project_direct_condition_changes(name: str) -> list[ActiveEffectChange]:
+    """Project one condition's own bound clauses without expanding implications."""
     return project_condition_effects(
         effect
-        for name in names
+        for effect in _DECLARATIVE_CONDITION_EFFECTS.get(name, ())
+        if effect.kind in _DECLARATIVE_CONDITION_MIGRATIONS.get(name, frozenset())
+    )
+
+
+def _project_condition_changes(conditions: list[str]) -> list[ActiveEffectChange]:
+    """Collect migrated clauses in stable input order, ignoring duplicate names."""
+    return project_condition_effects(
+        effect
+        for name in _expanded_condition_names(conditions)
         for effect in _DECLARATIVE_CONDITION_EFFECTS.get(name, ())
         if effect.kind in _DECLARATIVE_CONDITION_MIGRATIONS.get(name, frozenset())
     )
@@ -544,10 +567,34 @@ def conditions_grant_advantage_on_attack(
       below still fires. Only an explicit ``False`` — a known, tracked
       source the Frightened attacker cannot currently see — drops it.
     """
-    # Consume the flags by side: target clauses grant advantage against that
-    # creature; its own-attack disadvantage (including implied Prone) does not.
     target_changes = _project_condition_changes(target_conditions)
     attacker_changes = _project_condition_changes(attacker_conditions)
+    return _attack_mode_from_changes(
+        attacker_changes,
+        target_changes,
+        distance_ft=distance_ft,
+        grappler_id=grappler_id,
+        target_id=target_id,
+        attacker_invisibility_pierced=attacker_invisibility_pierced,
+        target_invisibility_pierced=target_invisibility_pierced,
+        fear_source_in_sight=fear_source_in_sight,
+    )
+
+
+def _attack_mode_from_changes(
+    attacker_changes: list[ActiveEffectChange],
+    target_changes: list[ActiveEffectChange],
+    *,
+    distance_ft: int | None,
+    grappler_id: str | None,
+    target_id: str | None,
+    attacker_invisibility_pierced: bool,
+    target_invisibility_pierced: bool,
+    fear_source_in_sight: bool,
+) -> tuple[bool, bool]:
+    """Apply the existing attack flags and bound qualifiers to projected clauses."""
+    # Target clauses grant advantage against that creature; its own-attack
+    # disadvantage (including implied Prone) does not.
     advantage = (
         _attack_flag_present(target_changes, "flags.advantage.attack")
         or attack_distance_flag_applies(
@@ -585,6 +632,39 @@ def conditions_grant_advantage_on_attack(
     )
 
     return advantage, disadvantage
+
+
+def condition_attack_source_modes(
+    conditions: list[str],
+    *,
+    side: Literal["attacker", "target"],
+    distance_ft: int | None = None,
+    grappler_id: str | None = None,
+    target_id: str | None = None,
+    invisibility_pierced: bool = False,
+    fear_source_in_sight: bool = True,
+) -> tuple[tuple[str, bool, bool], ...]:
+    """Qualify each direct or implied condition once for one attack side.
+
+    Returned names identify the bound condition whose own clauses apply;
+    implied names occur once even when also materialized on the creature.
+    """
+    rows = []
+    for name in _expanded_condition_names(conditions, canonical_implied_order=True):
+        changes = _project_direct_condition_changes(name)
+        advantage, disadvantage = _attack_mode_from_changes(
+            changes if side == "attacker" else [],
+            changes if side == "target" else [],
+            distance_ft=distance_ft,
+            grappler_id=grappler_id,
+            target_id=target_id,
+            attacker_invisibility_pierced=invisibility_pierced if side == "attacker" else False,
+            target_invisibility_pierced=invisibility_pierced if side == "target" else False,
+            fear_source_in_sight=fear_source_in_sight,
+        )
+        if advantage or disadvantage:
+            rows.append((name, advantage, disadvantage))
+    return tuple(rows)
 
 
 # ── SRD 5.2 condition predicates and numeric projections (C12) ──────────────
@@ -781,6 +861,7 @@ __all__ = [
     "apply_condition",
     "apply_condition_with_implies",
     "check_immunity",
+    "condition_attack_source_modes",
     "conditions_advantage_initiative",
     "conditions_auto_crit_within_5ft",
     "conditions_block_actions",

@@ -326,6 +326,8 @@ def test_availability_unknown_choice_and_strict_schema():
         with pytest.raises(ValidationError):
             ActionAvailabilityRequest.model_validate_json(json.dumps(raw))
     for field in type(query).model_fields:
+        if field == "include_hit_preview":
+            continue  # /17-only optional extension; legacy serialized shape omits it.
         raw = query.model_dump(mode="json")
         del raw[field]
         with pytest.raises(ValidationError):

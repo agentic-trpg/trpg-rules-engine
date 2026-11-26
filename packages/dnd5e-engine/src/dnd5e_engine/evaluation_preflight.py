@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal, get_args
 
 from dnd5e_srd_data.loader import AssetLoader
@@ -59,6 +59,7 @@ class AttackPlan:
     target_walk_bonus: int
     target_ac_floor: int | None = None
     action_grant: EffectState | None = None
+    participants: tuple[Combatant, ...] = field(kw_only=True)
 
 
 def refused(status: Literal["rejected", "unsupported"], code: str, reason: str) -> AttackAdmission:
@@ -762,5 +763,6 @@ def prepare_attack(
             target_walk_bonus,
             target_ac_floor,
             grant,
+            participants=tuple(actors.values()),
         ),
     )

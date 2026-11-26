@@ -198,12 +198,7 @@ def resolve_attack(
             activity, ctx, target, weapon, governing_ability, sources
         )
         if attack_bonus is None:
-            attack_bonus = (
-                _attack_bonus(activity, ctx, weapon, governing_ability)
-                + ctx.d20_test_penalty.get(ctx.caster.entity_id, 0)
-                + _fighting_style_attack_bonus(ctx, weapon)
-                + ctx.weapon_enchantment_to_hit
-            )
+            attack_bonus = _attack_roll_flat_bonus(activity, ctx, weapon, governing_ability)
         roll_bonus += attack_bonus
         roll = roll_d20_test(ctx.rng, roll_bonus, sources, forced_natural=_forced_d20(ctx, index))
         mode: AdvantageMode = roll.mode
@@ -1006,6 +1001,21 @@ def _attack_bonus(
     if weapon is not None:
         bonus += weapon.magical_bonus
     return bonus
+
+
+def _attack_roll_flat_bonus(
+    activity: AttackActivity,
+    ctx: ActivityResolutionContext,
+    weapon: Weapon | None,
+    governing_ability: str | None,
+) -> int:
+    """Sum the fixed d20 modifier used by execution and exact preview."""
+    return (
+        _attack_bonus(activity, ctx, weapon, governing_ability)
+        + ctx.d20_test_penalty.get(ctx.caster.entity_id, 0)
+        + _fighting_style_attack_bonus(ctx, weapon)
+        + ctx.weapon_enchantment_to_hit
+    )
 
 
 def _resolve_flat_bonus(

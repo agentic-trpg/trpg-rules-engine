@@ -136,6 +136,7 @@ SM 持有效果、实际锚点、期限和集中状态。见
 
 `evaluation_availability.py::query_action_availability` 深复制／验证输入和绑定，
 复用实际攻击预检，返回 `available`／`unavailable`／`unknown`。
+RUO-88 候选的预览请求沿用实际攻击的来源和命中判定，以确定的骰面概率返回普通攻击的总命中率。
 此接口没有命令回执、请求 RNG、Delta 或资源支付，且只覆盖当前支持的查询形状；
 它不替代外部认证，也不保证未来状态下仍可执行。
 

@@ -91,6 +91,8 @@ from dnd5e_engine.events import (
     AttackRolled,
     CombatEvent,
     DamageApplied,
+    RollD20Detail,
+    RollDetail,
 )
 from dnd5e_engine.rules.armor_class import apply_armor_class_floor
 from dnd5e_engine.rules.conditions import (
@@ -260,6 +262,14 @@ def resolve_attack(
                 sources=list(roll.sources),
                 advantage_sources=list(sources.advantage),
                 disadvantage_sources=list(sources.disadvantage),
+                roll_detail=RollDetail(
+                    status="rolled",
+                    d20=RollD20Detail(
+                        faces=list(roll.faces),
+                        kept_index=roll.kept_index,
+                        origin="forced" if roll.forced else "rng",
+                    ),
+                ),
             )
         )
 
@@ -404,6 +414,14 @@ def _resolve_cleave_chain(
             sources=list(roll.sources),
             advantage_sources=list(sources.advantage),
             disadvantage_sources=list(sources.disadvantage),
+            roll_detail=RollDetail(
+                status="rolled",
+                d20=RollD20Detail(
+                    faces=list(roll.faces),
+                    kept_index=roll.kept_index,
+                    origin="forced" if roll.forced else "rng",
+                ),
+            ),
         )
     )
     ctx.mastery_procs.append(("cleave", cid))

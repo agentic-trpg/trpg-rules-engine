@@ -299,8 +299,7 @@ class AttackRolled(BaseModel):
     # for the total once advantage/disadvantage has picked higher/lower, and
     # the die the natural-20 crit / natural-1 fumble test reads. Under
     # advantage/disadvantage it is therefore NOT the first draw; the
-    # discarded die is not currently reported (``D20Result.first`` holds it
-    # inside the resolver).
+    # discarded die is recorded in ``roll_detail`` when the resolver supplies it.
     natural: int | None = None
     # ``modifier`` is the FLAT attack bonus (ability mod + proficiency +
     # parsed ``attack.bonus`` + the weapon's magical bonus). It deliberately
@@ -322,6 +321,10 @@ class AttackRolled(BaseModel):
     # unchanged for backward compatibility.
     advantage_sources: list[AdvantageSource] = Field(default_factory=list)
     disadvantage_sources: list[AdvantageSource] = Field(default_factory=list)
+    # Ordinary resolver attacks retain the ordered d20 faces. Optional attack
+    # bonus dice are not represented as modifier faces unless their provenance
+    # was captured at draw time; ``roll_total`` remains authoritative.
+    roll_detail: RollDetail | None = None
 
 
 class RiderResourceSpent(BaseModel):
@@ -391,9 +394,11 @@ class RollDieModifier(BaseModel):
 
 
 class RollDetail(BaseModel):
-    """Describe the dice and ordered contributions of a resolved check or save.
+    """Describe captured d20 faces and available modifier contributions.
 
-    Automatic outcomes contain no d20 or modifiers because no total was rolled.
+    Check and save paths capture their resolved contributions. Attack paths
+    currently capture the d20 only; an empty modifier list makes no claim
+    about optional bonus dice. Automatic outcomes have no d20 or modifiers.
     """
 
     status: Literal["rolled", "automatic_failure", "automatic_success"]

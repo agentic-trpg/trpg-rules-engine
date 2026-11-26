@@ -621,10 +621,20 @@ def _attack_roll_sources(
     # Disadvantage on the roll if you are within 5 feet of an enemy who
     # can see you and doesn't have the Incapacitated condition." The
     # spatial/incapacitated/vision predicate is pre-resolved orchestrator
-    # -side (``_hostile_adjacent_to_attacker``). The weapon and spell paths
-    # supply their own adjacency flags. Each applies only to a ranged attack
-    # of its reviewed kind.
-    if (ctx.attacker_ranged_in_melee and _attack_is_effectively_ranged(weapon, distance_ft)) or (
+    # -side (``_hostile_adjacent_to_attacker``). A stat-block weapon attack
+    # has no Weapon object; its typed activity supplies the ranged kind.
+    if (
+        ctx.attacker_ranged_in_melee
+        and (
+            _attack_is_effectively_ranged(weapon, distance_ft)
+            or (
+                weapon is None
+                and ctx.stat_block_magnitudes is not None
+                and activity.attack.type.value == "ranged"
+                and activity.attack.type.classification == "weapon"
+            )
+        )
+    ) or (
         ctx.attacker_ranged_spell_in_melee
         and _attack_origin(ctx) == "spell"
         and _is_ranged_spell_attack(activity, weapon)

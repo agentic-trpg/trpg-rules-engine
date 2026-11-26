@@ -516,3 +516,45 @@ def test_canonical_bandit_explicit_attack_cost_turn_events_and_rng(action_id):
     assert events == tuple(expected_events)
     assert result.rng_transition.next_state == passed.rng_transition.next_state == expected_rng
     assert apply_delta(attacked, passed) == expected_after
+
+
+@pytest.mark.parametrize("adjacent", [True, False])
+@pytest.mark.parametrize("action_id", ["light-crossbow", "scimitar"])
+def test_stateless_bandit_attack_checks_separate_hostile(adjacent, action_id):
+    """The nearby enemy can differ from the attack's fixed target."""
+    request, _, _, _ = npc_case()
+    loader = BundledAssetLoader()
+    wire = request.model_dump(mode="json")
+    wire["payload"] = CombatIntentPayload(
+        intent_type="attack", source_id=FOE, stat_block_action_id=action_id, target_id=HERO
+    ).model_dump(mode="json")
+    wire["ruleset_binding"] = ruleset_binding(loader).model_dump(mode="json")
+    snapshot = wire["state_snapshot"]
+    nearby = "char:nearby"
+    combat = snapshot["combat_state"]
+    combat["monster_slug_by_entity"][FOE] = "bandit"
+    combat["actor_zone"].update(
+        {
+            FOE: "0,0",
+            HERO: "2,0" if action_id == "light-crossbow" else "1,0",
+            nearby: ("1,0" if action_id == "light-crossbow" else "0,1") if adjacent else "2,2",
+        }
+    )
+    combat["party_ids"].append(nearby)
+    combat["initiative_ids"].append(nearby)
+    combat["movement_ledgers"][nearby] = deepcopy(combat["movement_ledgers"][HERO])
+    other = deepcopy(snapshot["character_states"][0])
+    other.update(entity_id=nearby, name="Nearby hero", initiative=0)
+    snapshot["character_states"].append(other)
+    request = RuleEvaluationRequest.model_validate_json(json.dumps(wire))
+    result = execute(request, loader)
+    assert result.status == "accepted", result.error
+    rolls = [e for e in result.proposed_events if isinstance(e, AttackRolled)]
+    assert len(rolls) == 1
+    assert rolls[0].advantage == (
+        "disadvantage" if adjacent and action_id == "light-crossbow" else "normal"
+    )
+    assert ("ranged_in_melee" in rolls[0].disadvantage_sources) == (
+        adjacent and action_id == "light-crossbow"
+    )
+    assert execute(request, loader) == result

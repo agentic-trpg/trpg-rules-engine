@@ -516,8 +516,12 @@ def test_six_abilities_pc_npc_shared_resolver_parity(monkeypatch, ability, npc, 
     assert event.roll_total == natural + modifier
     assert event.succeeded == (natural + modifier >= 15)
     assert event.sources == (["flag"] * (int(adv) + int(dis)))
-    assert event.model_dump(exclude={"sources", "roll_detail"}) == old.model_dump(
-        exclude={"sources", "roll_detail"}
+    assert event.advantage_sources == (["flag"] if adv else [])
+    assert event.disadvantage_sources == (["flag"] if dis else [])
+    assert event.model_dump(
+        exclude={"sources", "roll_detail", "advantage_sources", "disadvantage_sources"}
+    ) == old.model_dump(
+        exclude={"sources", "roll_detail", "advantage_sources", "disadvantage_sources"}
     )
     assert event.roll_detail.status == "rolled"
     assert event.roll_detail.d20.faces == (

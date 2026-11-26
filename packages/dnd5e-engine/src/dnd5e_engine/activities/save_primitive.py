@@ -59,6 +59,9 @@ if TYPE_CHECKING:
 # Test-determinism seam for the natural save d20 (our own code; effects/save.py
 # has none and relies on a seeded ctx.rng). Scoped to the first target.
 FORCE_SAVE_D20: Final = "force_save_d20"
+_CONDITION_SAVE_DISADVANTAGE_REASONS: dict[str, AdvantageSource] = {
+    "restrained": "target:Restrained",
+}
 
 
 @dataclass(frozen=True)
@@ -372,7 +375,7 @@ def _roll_save_d20(
     disadvantage: tuple[AdvantageSource, ...] = ()
     if has_dis:
         condition_disadvantage = tuple(
-            "target:Restrained" if name == "restrained" else "condition:target"
+            _CONDITION_SAVE_DISADVANTAGE_REASONS.get(name, "condition:target")
             for name in dict.fromkeys(
                 condition.condition.lower() for condition in target.conditions
             )

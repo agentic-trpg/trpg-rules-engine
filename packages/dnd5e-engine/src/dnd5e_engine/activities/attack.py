@@ -540,6 +540,30 @@ def _adjudicate_hit_reaction(
     return _resolve_hit_outcome(natural, total, refreshed_ac, activity, auto_crit_on_hit=auto_crit)
 
 
+_ATTACKER_DISADVANTAGE_REASONS: dict[str, AdvantageSource] = {
+    "poisoned": "attacker:Poisoned",
+    "frightened": "attacker:Frightened",
+    "prone": "attacker:Prone",
+    "restrained": "attacker:Restrained",
+    "blinded": "attacker:Blinded",
+    "grappled": "attacker:Grappled",
+}
+_TARGET_ADVANTAGE_REASONS: dict[str, AdvantageSource] = {
+    "prone": "target:Prone",
+    "restrained": "target:Restrained",
+    "blinded": "target:Blinded",
+    "paralyzed": "target:Paralyzed",
+    "unconscious": "target:Unconscious",
+    "petrified": "target:Petrified",
+    "stunned": "target:Stunned",
+}
+_TARGET_DISADVANTAGE_REASONS: dict[str, AdvantageSource] = {
+    "prone": "target:Prone",
+    "invisible": "target:Invisible",
+    "unconscious": "target:Unconscious",
+}
+
+
 def _attack_roll_sources(
     activity: AttackActivity,
     ctx: ActivityResolutionContext,
@@ -585,16 +609,7 @@ def _attack_roll_sources(
                 "attacker:Invisible" if name == "invisible" else "condition:attacker"
             )
         if imposes_disadvantage:
-            dis_sources.append(
-                {
-                    "poisoned": "attacker:Poisoned",
-                    "frightened": "attacker:Frightened",
-                    "prone": "attacker:Prone",
-                    "restrained": "attacker:Restrained",
-                    "blinded": "attacker:Blinded",
-                    "grappled": "attacker:Grappled",
-                }.get(name, "condition:attacker")
-            )
+            dis_sources.append(_ATTACKER_DISADVANTAGE_REASONS.get(name, "condition:attacker"))
     for name in dict.fromkeys(value.lower() for value in target_conditions):
         grants_advantage, imposes_disadvantage = conditions_grant_advantage_on_attack(
             [],
@@ -605,25 +620,9 @@ def _attack_roll_sources(
             ),
         )
         if grants_advantage:
-            adv_sources.append(
-                {
-                    "prone": "target:Prone",
-                    "restrained": "target:Restrained",
-                    "blinded": "target:Blinded",
-                    "paralyzed": "target:Paralyzed",
-                    "unconscious": "target:Unconscious",
-                    "petrified": "target:Petrified",
-                    "stunned": "target:Stunned",
-                }.get(name, "condition:target")
-            )
+            adv_sources.append(_TARGET_ADVANTAGE_REASONS.get(name, "condition:target"))
         if imposes_disadvantage:
-            dis_sources.append(
-                {
-                    "prone": "target:Prone",
-                    "invisible": "target:Invisible",
-                    "unconscious": "target:Unconscious",
-                }.get(name, "condition:target")
-            )
+            dis_sources.append(_TARGET_DISADVANTAGE_REASONS.get(name, "condition:target"))
     # C16b — SRD 5.2 "Unseen Attackers and Targets": "When you make an
     # attack roll against a target you can't see, you have Disadvantage";
     # "When a creature can't see you, you have Advantage on attack rolls

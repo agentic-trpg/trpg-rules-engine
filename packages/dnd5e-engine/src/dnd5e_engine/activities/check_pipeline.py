@@ -76,6 +76,10 @@ _CHECK_FLAGS = {
 _CHECK_ROLL_MODES = {
     ability: f"system.abilities.{ability}.check.roll.mode" for ability in _SCORE_ATTR
 }
+_CONDITION_CHECK_DISADVANTAGE_REASONS: dict[str, AdvantageSource] = {
+    "poisoned": "attacker:Poisoned",
+    "frightened": "attacker:Frightened",
+}
 
 
 def _bonus_buckets(request: CheckRequest) -> list[str]:
@@ -166,11 +170,7 @@ def _sources(
             if conditions_grant_disadvantage_on_ability_checks(
                 [name], fear_source_in_sight=state.fear_source_in_sight
             ):
-                dis.append(
-                    {"poisoned": "attacker:Poisoned", "frightened": "attacker:Frightened"}.get(
-                        name, "condition:attacker"
-                    )
-                )
+                dis.append(_CONDITION_CHECK_DISADVANTAGE_REASONS.get(name, "condition:attacker"))
     if request.skill == "stealth" and actor.stealth_disadvantage:
         dis.append("armor")
     if state.in_sunlight and MonsterTraitMechanic.SUNLIGHT_SENSITIVITY in actor.trait_mechanics:

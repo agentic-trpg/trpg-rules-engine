@@ -12,6 +12,7 @@ from dnd5e_srd_data.schema.condition import ConditionEffectKind
 from dnd5e_engine import PlayerIntent
 from dnd5e_engine.activities import attack as attack_rules
 from dnd5e_engine.activities.context import ActivityResolutionContext
+from dnd5e_engine.activities.d20 import AdvantageSources, legacy_sources
 from dnd5e_engine.activities.resolver import resolve_activity
 from dnd5e_engine.events import AttackRolled, DamageApplied
 from dnd5e_engine.orchestrator import (
@@ -257,8 +258,11 @@ def test_attack_event_damage_and_rng_match_pre_migration(
         natural = max(first, second) if mode == "advantage" else min(first, second)
     assert attack.natural == natural
     assert attack.advantage == mode
-    assert attack.advantage_sources == adv
-    assert attack.disadvantage_sources == dis
+    assert list(legacy_sources(AdvantageSources(tuple(attack.advantage_sources)))) == adv
+    assert (
+        list(legacy_sources(AdvantageSources(disadvantage=tuple(attack.disadvantage_sources))))
+        == dis
+    )
     assert attack.sources == adv + dis
     assert attack.roll_total == natural + attack.modifier + mirror.randint(1, 4)
     assert sum(a == 1 and b == 20 for a, b, value in rng.draws) == (1 if mode == "normal" else 2)
@@ -348,9 +352,9 @@ def test_player_intent_uses_contextual_rules_with_exact_rng(condition):
         max(first, second) if condition == "invisible" else min(first, second)
     )
     assert attack.advantage == ("advantage" if condition == "invisible" else "disadvantage")
-    assert attack.advantage_sources == (["condition:attacker"] if condition == "invisible" else [])
+    assert attack.advantage_sources == (["attacker:Invisible"] if condition == "invisible" else [])
     assert attack.disadvantage_sources == (
-        [] if condition == "invisible" else ["condition:attacker"]
+        [] if condition == "invisible" else [f"attacker:{condition.title()}"]
     )
     assert attack.roll_total == attack.natural + attack.modifier
     assert attack.is_hit
@@ -393,7 +397,7 @@ def test_player_intent_cleave_uses_candidate_visibility_and_exact_rng():
     assert chain.advantage == "disadvantage"
     assert chain.sources == ["condition:target"]
     assert chain.advantage_sources == []
-    assert chain.disadvantage_sources == ["condition:target"]
+    assert chain.disadvantage_sources == ["target:Invisible"]
     assert chain.roll_total == chain.natural + chain.modifier
     assert chain.is_hit
     assert not chain.is_crit

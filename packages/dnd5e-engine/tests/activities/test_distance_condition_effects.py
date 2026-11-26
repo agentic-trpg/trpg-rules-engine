@@ -12,6 +12,7 @@ from dnd5e_srd_data.schema.condition import ConditionEffectKind as K
 
 from dnd5e_engine import PlayerIntent
 from dnd5e_engine.activities.context import ActivityResolutionContext
+from dnd5e_engine.activities.d20 import AdvantageSources, legacy_sources
 from dnd5e_engine.activities.resolver import resolve_activity
 from dnd5e_engine.events import AttackRolled, CombatEvent, DamageApplied
 from dnd5e_engine.orchestrator import _get_live, start_combat, submit_player_intent
@@ -118,11 +119,17 @@ def _assert_swing(
     assert attack.modifier == 5
     assert attack.roll_total == natural + 5 + mirror.randint(1, 4)
     assert attack.advantage == mode
-    assert attack.advantage_sources == (["condition:target"] if adv else [])
-    assert attack.disadvantage_sources == (
-        (["condition:attacker"] if poisoned else []) + (["condition:target"] if dis else [])
+    assert list(legacy_sources(AdvantageSources(tuple(attack.advantage_sources)))) == (
+        ["condition:target"] if adv else []
     )
-    assert attack.sources == attack.advantage_sources + attack.disadvantage_sources
+    assert list(
+        legacy_sources(AdvantageSources(disadvantage=tuple(attack.disadvantage_sources)))
+    ) == ((["condition:attacker"] if poisoned else []) + (["condition:target"] if dis else []))
+    assert attack.sources == list(
+        legacy_sources(
+            AdvantageSources(tuple(attack.advantage_sources), tuple(attack.disadvantage_sources))
+        )
+    )
     assert (attack.is_hit, attack.is_crit) == (hit, crit)
     if hit:
         assert [event.type for event in events] == [
@@ -279,7 +286,12 @@ def test_multiple_auto_crit_conditions_match_single_condition_events_and_rng(
 ) -> None:
     events, rng = _swing(conditions, 5)
     expected, baseline_rng = _swing(["paralyzed"], 5)
-    assert events == expected
+    assert [
+        event.model_dump(exclude={"advantage_sources", "disadvantage_sources"}) for event in events
+    ] == [
+        event.model_dump(exclude={"advantage_sources", "disadvantage_sources"})
+        for event in expected
+    ]
     assert rng.draws == baseline_rng.draws
     assert rng.getstate() == baseline_rng.getstate()
     _assert_swing(events, rng, mode="advantage", adv=True, dis=False, crit=True)
@@ -515,10 +527,10 @@ def test_player_intent_cleave_consumes_candidate_distance_conditions_and_exact_r
     assert chain.is_hit
     assert chain.is_crit is crit
     assert chain.advantage_sources == (
-        ["condition:target"] if condition != "prone" or distance <= threshold else []
+        [f"target:{condition.title()}"] if condition != "prone" or distance <= threshold else []
     )
     assert chain.disadvantage_sources == (
-        ["condition:target"]
+        [f"target:{condition.title()}"]
         if (condition == "unconscious" and distance > 5)
         or (condition == "prone" and distance > threshold)
         else []

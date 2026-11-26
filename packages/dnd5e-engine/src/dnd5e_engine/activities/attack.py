@@ -562,51 +562,68 @@ def _attack_roll_sources(
     range) simply hold no entry, and its conditions are read off the
     ``Combatant`` directly by the caller.
     """
-    # Condition-derived half. The helper is called once PER SIDE (the other
-    # side's list empty) purely so the emitted source can name which side
-    # produced it: neither direction is one-way any more — an Invisible
-    # attacker grants itself advantage while an Invisible TARGET imposes
-    # disadvantage, and a Restrained attacker takes disadvantage while a
-    # Restrained TARGET grants advantage. Every row in the helper reads
-    # exactly one of its two arguments, so the split is exact.
-    attacker_cond_adv, attacker_cond_dis = conditions_grant_advantage_on_attack(
-        ctx.attacker_conditions,
-        [],
-        grappler_id=ctx.attacker_grappler_id,
-        target_id=target.entity_id,
-        # C16b — SRD 5.2 Invisible "can somehow see you" carve-out: does THIS
-        # target's own Blindsight/Truesight pierce the attacker's Invisible
-        # condition (``_invisibility_pierced_maps`` via the orchestrator)?
-        attacker_invisibility_pierced=ctx.attacker_invisibility_pierced_by.get(
-            target.entity_id, False
-        ),
-        # C16b — SRD 5.2 Frightened line-of-sight gate: does the attacker's
-        # own fear source stay in sight (``_fear_source_in_sight`` via the
-        # orchestrator)? Not per-target — a property of the attacker's own
-        # perception.
-        fear_source_in_sight=ctx.attacker_fear_source_in_sight,
-    )
-    target_cond_adv, target_cond_dis = conditions_grant_advantage_on_attack(
-        [],
-        target_conditions,
-        distance_ft=distance_ft,
-        # C16b — the reverse: does the ATTACKER's own Blindsight/Truesight
-        # pierce THIS target's Invisible condition?
-        target_invisibility_pierced=ctx.target_invisibility_pierced.get(target.entity_id, False),
-    )
+    # Evaluate each distinct condition once using the same bound predicate as
+    # the roll. This preserves every applicable cause without stacking its mode.
     adv_sources: list[AdvantageSource] = []
     dis_sources: list[AdvantageSource] = []
     flag_sources = attack_effect_sources(ctx, target.entity_id, governing_ability)
     adv_sources.extend(flag_sources.advantage)
-    if attacker_cond_adv:
-        adv_sources.append("condition:attacker")
-    if target_cond_adv:
-        adv_sources.append("condition:target")
     dis_sources.extend(flag_sources.disadvantage)
-    if attacker_cond_dis:
-        dis_sources.append("condition:attacker")
-    if target_cond_dis:
-        dis_sources.append("condition:target")
+    for name in dict.fromkeys(value.lower() for value in ctx.attacker_conditions):
+        grants_advantage, imposes_disadvantage = conditions_grant_advantage_on_attack(
+            [name],
+            [],
+            grappler_id=ctx.attacker_grappler_id,
+            target_id=target.entity_id,
+            attacker_invisibility_pierced=ctx.attacker_invisibility_pierced_by.get(
+                target.entity_id, False
+            ),
+            fear_source_in_sight=ctx.attacker_fear_source_in_sight,
+        )
+        if grants_advantage:
+            adv_sources.append(
+                "attacker:Invisible" if name == "invisible" else "condition:attacker"
+            )
+        if imposes_disadvantage:
+            dis_sources.append(
+                {
+                    "poisoned": "attacker:Poisoned",
+                    "frightened": "attacker:Frightened",
+                    "prone": "attacker:Prone",
+                    "restrained": "attacker:Restrained",
+                    "blinded": "attacker:Blinded",
+                    "grappled": "attacker:Grappled",
+                }.get(name, "condition:attacker")
+            )
+    for name in dict.fromkeys(value.lower() for value in target_conditions):
+        grants_advantage, imposes_disadvantage = conditions_grant_advantage_on_attack(
+            [],
+            [name],
+            distance_ft=distance_ft,
+            target_invisibility_pierced=ctx.target_invisibility_pierced.get(
+                target.entity_id, False
+            ),
+        )
+        if grants_advantage:
+            adv_sources.append(
+                {
+                    "prone": "target:Prone",
+                    "restrained": "target:Restrained",
+                    "blinded": "target:Blinded",
+                    "paralyzed": "target:Paralyzed",
+                    "unconscious": "target:Unconscious",
+                    "petrified": "target:Petrified",
+                    "stunned": "target:Stunned",
+                }.get(name, "condition:target")
+            )
+        if imposes_disadvantage:
+            dis_sources.append(
+                {
+                    "prone": "target:Prone",
+                    "invisible": "target:Invisible",
+                    "unconscious": "target:Unconscious",
+                }.get(name, "condition:target")
+            )
     # C16b — SRD 5.2 "Unseen Attackers and Targets": "When you make an
     # attack roll against a target you can't see, you have Disadvantage";
     # "When a creature can't see you, you have Advantage on attack rolls

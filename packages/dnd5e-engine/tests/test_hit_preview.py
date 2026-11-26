@@ -6,7 +6,6 @@ from dnd5e_srd_data import BundledAssetLoader, MemoryAssetLoader
 from pydantic_core import to_json
 
 from dnd5e_engine import evaluation_availability
-from dnd5e_engine.evaluation_attack import _preview_reasons
 from dnd5e_engine.evaluation_availability import (
     ActionAvailabilityRequest,
     query_action_availability,
@@ -167,10 +166,3 @@ def test_early_capability_failure_still_returns_unknown_preview(monkeypatch):
     result = query_action_availability(query, loader=loader)
     assert result.status == "unknown"
     assert result.hit_preview.status == "unknown"
-
-
-def test_compound_condition_keeps_confirmed_generic_source():
-    assert _preview_reasons(("condition:target",), [], ["prone", "restrained"]) == (
-        "condition:target",
-    )
-    assert _preview_reasons(("condition:attacker",), ["poisoned"], []) == ("condition:attacker",)

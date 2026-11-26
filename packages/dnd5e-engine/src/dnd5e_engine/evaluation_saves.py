@@ -341,6 +341,8 @@ def resolve_snapshot_save(
         natural=roll.natural,
         modifier=roll.modifier,
         sources=list(roll.sources),
+        advantage_sources=list(roll.advantage_sources),
+        disadvantage_sources=list(roll.disadvantage_sources),
         roll_detail=roll.roll_detail,
     )
 

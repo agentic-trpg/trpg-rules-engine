@@ -8,7 +8,6 @@ that this vertical slice cannot yet execute; this is not a general combat runtim
 import random
 from collections.abc import Callable, Collection
 from dataclasses import dataclass
-from typing import Literal
 
 from dnd5e_srd_data.loader import AssetLoader
 
@@ -155,22 +154,7 @@ class _NoDiceRandom(random.Random):
         raise PreviewDiceDrawError("preview cannot draw dice")
 
 
-PreviewReason = AdvantageSource | Literal["target:Prone", "attacker:Prone"]
-
-
-def _preview_reasons(
-    sources: tuple[AdvantageSource, ...], actor_conditions: list[str], target_conditions: list[str]
-) -> tuple[PreviewReason, ...]:
-    """Refine sole Prone causes; retain generic tokens for compound conditions."""
-    reasons: list[PreviewReason] = []
-    for source in sources:
-        if source == "condition:target":
-            reasons.append("target:Prone" if target_conditions == ["prone"] else source)
-        elif source == "condition:attacker":
-            reasons.append("attacker:Prone" if actor_conditions == ["prone"] else source)
-        else:
-            reasons.append(source)
-    return tuple(reasons)
+PreviewReason = AdvantageSource
 
 
 def preview_attack_hit(
@@ -222,14 +206,8 @@ def preview_attack_hit(
     bonus = _attack_roll_flat_bonus(plan.activity, ctx, plan.weapon, governing_ability)
     ac = _target_effective_ac(ctx, target)
     mode = resolve_mode(sources)
-    advantage_reasons = _preview_reasons(
-        sources.advantage, ctx.attacker_conditions, ctx.target_conditions.get(target.entity_id, [])
-    )
-    disadvantage_reasons = _preview_reasons(
-        sources.disadvantage,
-        ctx.attacker_conditions,
-        ctx.target_conditions.get(target.entity_id, []),
-    )
+    advantage_reasons = sources.advantage
+    disadvantage_reasons = sources.disadvantage
     hits = 0
     for kept in range(1, 21):
         weight = 1 if mode == "normal" else (2 * kept - 1 if mode == "advantage" else 41 - 2 * kept)

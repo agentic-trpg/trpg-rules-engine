@@ -214,9 +214,15 @@ def _fear_sight_needs(
     conditions: list[tuple[ActiveCondition, EffectState | None]],
 ) -> tuple[CreatureSightNeed, ...]:
     """Find distinct fear sources when the bound sight gate can affect this roll."""
-    if conditions_grant_disadvantage_on_ability_checks(
-        names, fear_source_in_sight=True
-    ) == conditions_grant_disadvantage_on_ability_checks(names, fear_source_in_sight=False):
+    if (
+        "frightened" not in names
+        or not conditions_grant_disadvantage_on_ability_checks(
+            ["frightened"], fear_source_in_sight=True
+        )
+        or conditions_grant_disadvantage_on_ability_checks(
+            ["frightened"], fear_source_in_sight=False
+        )
+    ):
         return ()
     return tuple(
         CreatureSightNeed(observer_id=actor_id, source_id=source_id)

@@ -78,6 +78,24 @@ AdvantageSource = Literal[
     "effect",
     "condition:attacker",
     "condition:target",
+    "attacker:Poisoned",
+    "attacker:Frightened",
+    "attacker:Prone",
+    "attacker:Restrained",
+    "attacker:Blinded",
+    "attacker:Grappled",
+    "attacker:Invisible",
+    "target:Prone",
+    "target:Restrained",
+    "target:Blinded",
+    "target:Invisible",
+    "target:Paralyzed",
+    "target:Unconscious",
+    "target:Petrified",
+    "target:Stunned",
+    "target:Grappled",
+    "target:Poisoned",
+    "trait:MagicResistance",
     "cover",
     "range:long",
     "ranged_in_melee",
@@ -407,7 +425,7 @@ class RollDetail(BaseModel):
 
 
 class SaveRolled(BaseModel):
-    """Carry saving throw evidence and its outcome."""
+    """Carry saving throw outcome with flattened and directional roll causes."""
 
     type: Literal["save_rolled"] = "save_rolled"
     target_id: str
@@ -422,6 +440,8 @@ class SaveRolled(BaseModel):
     natural: int | None = None
     modifier: int | None = None
     sources: list[AdvantageSource] = Field(default_factory=list)
+    advantage_sources: list[AdvantageSource] = Field(default_factory=list)
+    disadvantage_sources: list[AdvantageSource] = Field(default_factory=list)
     roll_detail: RollDetail | None = Field(default=None, exclude_if=lambda v: v is None)
 
 

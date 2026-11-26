@@ -420,9 +420,12 @@ def test_player_intent_preserves_d20_bonus_damage_draw_order(
     assert attack.is_crit is False
     assert attack.is_opportunity_attack is False
     assert attack.advantage_sources == (["flag"] if flag == "flags.advantage.attack" else [])
-    assert attack.disadvantage_sources == (
-        (["flag"] if flag == "flags.disadvantage.attack" else [])
-        + (["condition:attacker"] if statuses else [])
+    expected_conditions = {f"attacker:{name.title()}" for name in statuses}
+    assert set(attack.disadvantage_sources) == (
+        ({"flag"} if flag == "flags.disadvantage.attack" else set()) | expected_conditions
+    )
+    assert len(attack.disadvantage_sources) == len(expected_conditions) + (
+        flag == "flags.disadvantage.attack"
     )
     assert damage.amount == mirror.randint(1, 4)
     assert damage.target_id == "mon:foe"

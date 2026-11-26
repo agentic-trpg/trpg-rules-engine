@@ -633,7 +633,7 @@ def test_opportunity_attack_populates_split_source_lists():
     rolled = _attacks(live, "char:hero")[0]
     assert rolled.disadvantage_sources == []
     assert "unseen" in rolled.advantage_sources
-    assert "condition:target" in rolled.advantage_sources
+    assert "target:Blinded" in rolled.advantage_sources
 
 
 def test_truesight_does_not_pierce_the_blinded_condition():

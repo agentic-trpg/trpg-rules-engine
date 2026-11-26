@@ -263,6 +263,11 @@ applied) — so a host can render "14 + 5 = 19". Two residual limits:
   damage separately carries `source_actor_id` and `damage_instance_id`, so hosts
   can identify its actor and group the parts of one damage instance.
 
+Check, save and attack events also retain ordered `advantage_sources` and
+`disadvantage_sources`. These distinguish applicable rule causes even when they
+cancel to a normal roll; flattened `sources` keeps its earlier coarse labels.
+Supported ordinary attack previews use those same directional attack labels.
+
 `TurnPhase(phase, actor_id, round_number)` marks each turn boundary —
 `round_start` / `turn_start` / `turn_end` — immediately before the engine runs
 that phase's lifecycle hooks, so "top of round 3" and "end of Alice's turn" are

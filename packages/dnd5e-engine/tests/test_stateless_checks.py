@@ -7,6 +7,7 @@ from typing import get_args
 import pytest
 from dnd5e_srd_data import MemoryAssetLoader
 from dnd5e_srd_data.schema.common import PassiveEffect, PassiveEffectChange
+from dnd5e_srd_data.schema.condition import ConditionEffectKind
 from pydantic import ValidationError
 
 from dnd5e_engine.activities.effects import passive_effect_to_active_effect
@@ -29,6 +30,7 @@ from dnd5e_engine.evaluation_ruleset import (
 )
 from dnd5e_engine.evaluation_state import ConditionRecord, NonCombatSnapshot
 from dnd5e_engine.events import CheckRolled
+from dnd5e_engine.rules import conditions as condition_rules
 from dnd5e_engine.rules.skills import SKILL_ABILITIES, Skill
 from dnd5e_engine.types.conditions import ActiveCondition
 from dnd5e_engine.types.effects import ActiveEffect
@@ -469,7 +471,7 @@ def test_active_trap_poison_disadvantages_an_ability_check(linked):
     assert rolls[0] > rolls[1]
     assert event.advantage == "disadvantage"
     assert event.rolled_natural == min(rolls)
-    assert event.disadvantage_sources == ["condition:attacker"]
+    assert event.disadvantage_sources == ["attacker:Poisoned"]
     assert result.rng_transition.next_state == RNGState.capture(rng)
     assert result.state_delta.operations == ()
 
@@ -603,7 +605,7 @@ def test_typed_effect_changes_and_general_conditions_use_the_existing_check_fold
     (event,) = result.proposed_events
     assert event.advantage == "normal"
     assert event.advantage_sources == ["effect"]
-    assert event.disadvantage_sources == ["condition:attacker"]
+    assert event.disadvantage_sources == ["attacker:Poisoned"]
     rng = request.rng_context.state.restore()
     assert event.natural == rng.randint(1, 20)
     assert event.modifier == baseline.proposed_events[0].modifier + 4 - 4 + rng.randint(1, 4)
@@ -697,7 +699,7 @@ def test_frightened_check_declares_distinct_direct_and_linked_sources(visible):
     rolls = tuple(rng.randint(1, 20) for _ in range(2 if any(visible) else 1))
     assert event.advantage == ("disadvantage" if any(visible) else "normal")
     assert event.rolled_natural == min(rolls)
-    assert event.disadvantage_sources == (["condition:attacker"] if any(visible) else [])
+    assert event.disadvantage_sources == (["attacker:Frightened"] if any(visible) else [])
     assert result.rng_transition.next_state == RNGState.capture(rng)
 
 
@@ -720,6 +722,77 @@ def test_frightened_check_rejects_inexact_visibility_before_rng(monkeypatch):
     malformed["creature_sight_facts"][0]["visible"] = "false"
     with pytest.raises(ValidationError, match="boolean"):
         RuleEvaluationRequest.model_validate_json(json.dumps(malformed))
+
+
+@pytest.mark.parametrize("visible", [False, True])
+@pytest.mark.parametrize("cancel", [False, True])
+def test_poisoned_and_frightened_keep_independent_check_causes(visible, cancel):
+    fear = ActiveCondition(
+        condition="frightened", source_entity_id="npc:012345abcdef", scope="session"
+    )
+    poison = ActiveCondition(condition="poisoned", source_entity_id="implied:test", scope="session")
+    records = [
+        ConditionRecord.model_validate(condition.model_dump()) for condition in (poison, fear)
+    ]
+    request = check_case(seed=5, actor_updates={"conditions": records})
+    if cancel:
+        request = request.model_copy(
+            update={"payload": request.payload.model_copy(update={"advantage": ("flag",)})}
+        )
+    loader = synthetic_loader()
+    (need,) = check_fact_needs(request, loader)
+    assert need.source_id == fear.source_entity_id
+    without_fact = execute(request, loader)
+    assert without_fact.status == "unsupported"
+    assert without_fact.rng_transition is None
+    request = request.model_copy(
+        update={"creature_sight_facts": (CreatureSightFact(need=need, visible=visible),)}
+    )
+    result = execute(request, loader)
+    assert result.status == "accepted", result.error
+    (event,) = result.proposed_events
+    assert event.disadvantage_sources == (
+        ["attacker:Poisoned", "attacker:Frightened"] if visible else ["attacker:Poisoned"]
+    )
+    assert event.advantage_sources == (["flag"] if cancel else [])
+    assert event.advantage == ("normal" if cancel else "disadvantage")
+    assert fear.source_entity_id not in event.model_dump_json()
+
+
+def test_fear_sight_need_follows_the_bound_clause_with_poisoned(monkeypatch):
+    fear = ActiveCondition(
+        condition="frightened", source_entity_id="npc:012345abcdef", scope="session"
+    )
+    poison = ActiveCondition(condition="poisoned", source_entity_id="implied:test", scope="session")
+    request = check_case(
+        actor_updates={
+            "conditions": [
+                ConditionRecord.model_validate(condition.model_dump())
+                for condition in (poison, fear)
+            ]
+        }
+    )
+    kind = ConditionEffectKind.DISADVANTAGE_ABILITY_CHECKS
+    monkeypatch.setitem(
+        condition_rules._DECLARATIVE_CONDITION_MIGRATIONS,
+        "frightened",
+        condition_rules._DECLARATIVE_CONDITION_MIGRATIONS["frightened"] - {kind},
+    )
+    monkeypatch.setitem(
+        condition_rules._DECLARATIVE_CONDITION_EFFECTS,
+        "frightened",
+        tuple(
+            clause
+            for clause in condition_rules._DECLARATIVE_CONDITION_EFFECTS["frightened"]
+            if clause.kind != kind
+        ),
+    )
+    loader = synthetic_loader()
+    assert check_fact_needs(request, loader) == ()
+    result = execute(request, loader)
+    assert result.status == "accepted", result.error
+    (event,) = result.proposed_events
+    assert event.disadvantage_sources == ["attacker:Poisoned"]
 
 
 @pytest.mark.parametrize(("flag", "advantage"), [("true", "advantage"), ("false", "normal")])

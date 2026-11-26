@@ -110,6 +110,7 @@ def test_condition_save_scope_preserves_events_and_exact_rng_state(
             natural=natural,
             modifier=modifier,
             sources=sources,
+            disadvantage_sources=["target:Restrained"] if disadvantaged else [],
         )
     ]
     assert ctx.rng.getstate() == reference.getstate()
@@ -140,6 +141,8 @@ def test_restrained_save_advantage_cancels_only_the_scoped_disadvantage(ability:
             natural=natural,
             modifier=3,
             sources=sources,
+            advantage_sources=["trait:MagicResistance"],
+            disadvantage_sources=["target:Restrained"] if ability == "dex" else [],
         )
     ]
     assert ctx.rng.getstate() == reference.getstate()

@@ -28,8 +28,7 @@ from dnd5e_engine.events import AdvantageMode, AdvantageSource
 
 @dataclass(frozen=True)
 class AdvantageSources:
-    """The typed provenance of every advantage/disadvantage contribution
-    feeding a single D20 Test. Order is not meaningful; presence is."""
+    """Retain ordered typed causes for one D20 Test; only presence affects its mode."""
 
     advantage: tuple[AdvantageSource, ...] = ()
     disadvantage: tuple[AdvantageSource, ...] = ()
@@ -49,7 +48,8 @@ class D20Result:
     reads), and two same-named fields meaning different things is a footgun.
     ``faces`` records both draws in order for advantage/disadvantage; ties
     retain the first face. A forced natural records its supplied face although
-    it consumes no RNG.
+    it consumes no RNG. Directional source lists retain exact causes; the
+    flattened ``sources`` tuple keeps historical event labels.
     """
 
     first: int
@@ -61,6 +61,28 @@ class D20Result:
     faces: tuple[int, ...] = ()
     kept_index: int = 0
     forced: bool = False
+    advantage_sources: tuple[AdvantageSource, ...] = ()
+    disadvantage_sources: tuple[AdvantageSource, ...] = ()
+
+
+def legacy_sources(sources: AdvantageSources) -> tuple[AdvantageSource, ...]:
+    """Keep flattened event tokens stable while directional evidence names each rule."""
+
+    def collapse(values: tuple[AdvantageSource, ...]) -> tuple[AdvantageSource, ...]:
+        """Collapse each direction once while preserving its established order."""
+        mapped = (
+            "condition:attacker"
+            if value.startswith("attacker:")
+            else "condition:target"
+            if value.startswith("target:")
+            else "trait"
+            if value == "trait:MagicResistance"
+            else value
+            for value in values
+        )
+        return tuple(dict.fromkeys(mapped))
+
+    return collapse(sources.advantage) + collapse(sources.disadvantage)
 
 
 def resolve_mode(s: AdvantageSources) -> AdvantageMode:
@@ -90,7 +112,7 @@ def roll_d20_test(
     pin the natural roll (e.g. deterministic crit/fumble scaffolding).
     """
     mode = resolve_mode(sources)
-    applied = sources.advantage + sources.disadvantage
+    applied = legacy_sources(sources)
     faces: tuple[int, ...]
     if forced_natural is not None:
         kept = first = int(forced_natural)
@@ -113,4 +135,6 @@ def roll_d20_test(
         faces,
         kept_index,
         forced_natural is not None,
+        sources.advantage,
+        sources.disadvantage,
     )

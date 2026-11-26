@@ -207,6 +207,8 @@ def apply_damage(
                     natural=roll.natural,
                     modifier=roll.modifier,
                     sources=list(roll.sources),
+                    advantage_sources=list(roll.advantage_sources),
+                    disadvantage_sources=list(roll.disadvantage_sources),
                 )
             )
             if roll.legendary_resistance_remaining is not None:

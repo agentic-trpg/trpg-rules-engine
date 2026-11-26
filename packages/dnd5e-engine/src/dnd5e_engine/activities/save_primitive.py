@@ -48,6 +48,7 @@ from dnd5e_engine.events import (
     RollDieModifier,
     RollFixedModifier,
 )
+from dnd5e_engine.rules.conditions import project_passive_save_modifiers
 from dnd5e_engine.spatial import cover_bonus
 
 if TYPE_CHECKING:
@@ -88,7 +89,8 @@ class SaveRoll:
     * ``mode`` is the resolved SRD 5.2 D20 Test mode (advantage and
       disadvantage cancel to ``"normal"``); an automatic save reports
       ``"normal"`` since no die was rolled.
-    * ``sources`` is the advantage/disadvantage provenance actually applied.
+    * ``sources`` retains historical flattened labels; the directional lists
+      preserve each applicable typed cause even when modes cancel.
     * ``roll_detail`` records the d20 faces and signed contributions for
       callers that emit structured evidence; automatic results have no d20.
     """
@@ -100,6 +102,8 @@ class SaveRoll:
     mode: AdvantageMode
     sources: tuple[AdvantageSource, ...]
     roll_detail: RollDetail | None = None
+    advantage_sources: tuple[AdvantageSource, ...] = ()
+    disadvantage_sources: tuple[AdvantageSource, ...] = ()
     # C18 §Monster action economy — SRD 5.2 Legendary Resistance. Set to the
     # saving entity's REMAINING pool (post-decrement) iff this save FAILED but
     # was converted to a success by a pre-armed Legendary Resistance use;
@@ -242,6 +246,8 @@ def roll_save(
             modifier=roll.modifier,
             mode=roll.mode,
             sources=roll.sources,
+            advantage_sources=roll.advantage_sources,
+            disadvantage_sources=roll.disadvantage_sources,
             roll_detail=RollDetail(
                 status="rolled",
                 d20=RollD20Detail(
@@ -290,6 +296,8 @@ def _convert_if_legendary_resistance_armed(
         mode=roll.mode,
         sources=roll.sources,
         roll_detail=roll.roll_detail,
+        advantage_sources=roll.advantage_sources,
+        disadvantage_sources=roll.disadvantage_sources,
         legendary_resistance_remaining=new_remaining,
     )
 
@@ -341,7 +349,8 @@ def _roll_save_d20(
     on the SAVING creature. ``_fold_active_effect_changes`` never writes these
     keys, so an ``"effect"`` tag would be wrong for every entry the engine
     itself hydrates. A host hand-building the sidecar from a non-condition
-    source is the only way to make the tag inexact.
+    source is the only way to make the tag inexact. Magic Resistance has a
+    distinct directional trait label while flattened evidence remains legacy.
     """
     forced = ctx.variables.get(FORCE_SAVE_D20)
     forced_natural = int(forced) if forced is not None and target_index == 0 else None
@@ -359,8 +368,17 @@ def _roll_save_d20(
     if (
         ctx.base_spell_level is not None or ctx.save_is_magical
     ) and MonsterTraitMechanic.MAGIC_RESISTANCE in target.trait_mechanics:
-        advantage = (*advantage, "trait")
-    disadvantage: tuple[AdvantageSource, ...] = ("condition:target",) if has_dis else ()
+        advantage = (*advantage, "trait:MagicResistance")
+    disadvantage: tuple[AdvantageSource, ...] = ()
+    if has_dis:
+        condition_disadvantage = tuple(
+            "target:Restrained" if name == "restrained" else "condition:target"
+            for name in dict.fromkeys(
+                condition.condition.lower() for condition in target.conditions
+            )
+            if ability_upper in project_passive_save_modifiers([name])["passive_save_dis"]
+        )
+        disadvantage = condition_disadvantage or ("condition:target",)
     if next_disadvantage:
         disadvantage = (*disadvantage, "effect")
     if additional_sources is not None:

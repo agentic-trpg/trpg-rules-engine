@@ -12,7 +12,12 @@ from typing import TYPE_CHECKING, Literal, get_args
 from dnd5e_srd_data.schema.monster import MonsterTraitMechanic
 
 from dnd5e_engine.activities.actor_stats import _SCORE_ATTR, check_modifier, proficiency_bonus_of
-from dnd5e_engine.activities.d20 import AdvantageSources, resolve_mode, roll_d20_test
+from dnd5e_engine.activities.d20 import (
+    AdvantageSources,
+    legacy_sources,
+    resolve_mode,
+    roll_d20_test,
+)
 from dnd5e_engine.activities.dice import roll_expr
 from dnd5e_engine.events import (
     AdvantageSource,
@@ -153,15 +158,19 @@ def _sources(
     adv: list[AdvantageSource] = list(request.advantage)
     dis: list[AdvantageSource] = list(request.disadvantage)
     legacy = ctx.check_modifiers.get(actor.entity_id, {})
-    condition_dis = (
-        bool(legacy["disadvantage"])
-        if actor.entity_id not in ctx.check_states and "disadvantage" in legacy
-        else conditions_grant_disadvantage_on_ability_checks(
-            [c.condition for c in actor.conditions], fear_source_in_sight=state.fear_source_in_sight
-        )
-    )
-    if condition_dis:
-        dis.append("condition:attacker")
+    if actor.entity_id not in ctx.check_states and "disadvantage" in legacy:
+        if legacy["disadvantage"]:
+            dis.append("condition:attacker")
+    else:
+        for name in dict.fromkeys(c.condition.lower() for c in actor.conditions):
+            if conditions_grant_disadvantage_on_ability_checks(
+                [name], fear_source_in_sight=state.fear_source_in_sight
+            ):
+                dis.append(
+                    {"poisoned": "attacker:Poisoned", "frightened": "attacker:Frightened"}.get(
+                        name, "condition:attacker"
+                    )
+                )
     if request.skill == "stealth" and actor.stealth_disadvantage:
         dis.append("armor")
     if state.in_sunlight and MonsterTraitMechanic.SUNLIGHT_SENSITIVITY in actor.trait_mechanics:
@@ -346,7 +355,7 @@ def resolve_check_request(
         activity_id=activity_id,
         auto_failure=failure,
         advantage=resolve_mode(sources),
-        sources=list(sources.advantage + sources.disadvantage),
+        sources=list(legacy_sources(sources)),
         advantage_sources=list(sources.advantage),
         disadvantage_sources=list(sources.disadvantage),
     )
